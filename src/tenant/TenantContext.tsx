@@ -56,10 +56,13 @@ export const TenantProvider: React.FC<{
   const [appMode, setAppModeState] = useState<PlatformAppMode>('unknown');
 
   const availableTenants = useMemo(() => {
-    if (appMode === 'demo') {
-      return Object.values(MOCK_TENANTS);
-    }
-    return tenant ? [tenant] : [];
+    const list = appMode === 'demo' ? Object.values(MOCK_TENANTS) : (tenant ? [tenant] : []);
+    const seen = new Set<string>();
+    return list.filter((t) => {
+      if (!t?.tenantId || seen.has(t.tenantId)) return false;
+      seen.add(t.tenantId);
+      return true;
+    });
   }, [appMode, tenant]);
 
   // Sync app mode from platform backend

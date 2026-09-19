@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Story, StoryAction, Product, formatMoney } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
 import {
@@ -12,9 +12,6 @@ import {
   Layers,
   Filter,
   Plus,
-  Volume2,
-  VolumeX,
-  Film,
 } from 'lucide-react';
 
 interface StoryViewerModalProps {
@@ -51,71 +48,12 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const { tenant } = useTenant();
   const [progress, setProgress] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
-  const [isMuted, setIsMuted] = useState<boolean>(true);
-  const [mediaError, setMediaError] = useState<boolean>(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const isOpen = currentIndex !== null && currentIndex >= 0 && currentIndex < stories.length;
   const currentStory = isOpen ? stories[currentIndex] : null;
 
-  // Active story frames (support multi-frame/multi-slide stories with graceful fallback)
-  const activeFrames = useMemo(() => {
-    if (currentStory?.items && currentStory.items.length > 0) {
-      return currentStory.items;
-    }
-    return [
-      {
-        id: currentStory?.id || 'frame-1',
-        mediaUrl: currentStory?.mediaUrl || '',
-        mediaType: currentStory?.mediaType || 'image',
-        caption: currentStory?.caption,
-        duration: 5,
-      },
-    ];
-  }, [currentStory]);
-
-  const currentFrame = activeFrames[activeFrameIndex] || activeFrames[0];
-  const currentMediaUrl = currentFrame?.mediaUrl || currentStory?.mediaUrl || '';
-  const currentMediaType = currentFrame?.mediaType || currentStory?.mediaType || 'image';
-
-  // Video detection helper supporting MP4, WebM, MOV, data URIs, and explicit types
-  const isVideo = useMemo(() => {
-    if (!currentMediaUrl) return false;
-    if (currentMediaType === 'video' || currentMediaType === 'STORY_VIDEO') return true;
-    try {
-      const decoded = decodeURIComponent(currentMediaUrl.toLowerCase().split('?')[0]);
-      return (
-        decoded.endsWith('.mp4') ||
-        decoded.includes('.mp4') ||
-        decoded.endsWith('.webm') ||
-        decoded.includes('.webm') ||
-        decoded.endsWith('.mov') ||
-        decoded.includes('.mov') ||
-        decoded.endsWith('.m4v') ||
-        decoded.includes('.m4v') ||
-        decoded.endsWith('.ogg') ||
-        decoded.includes('.ogg') ||
-        currentMediaUrl.startsWith('data:video/') ||
-        currentMediaUrl.includes('video/mp4') ||
-        currentMediaUrl.includes('video%2Fmp4')
-      );
-    } catch {
-      const lower = currentMediaUrl.toLowerCase();
-      return lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mov');
-    }
-  }, [currentMediaUrl, currentMediaType]);
-
-  // Frame duration in milliseconds
-  const frameDurationMs = useMemo(() => {
-    if (currentFrame?.duration && currentFrame.duration > 0) {
-      return currentFrame.duration * 1000;
-    }
-    return STORY_DURATION_MS;
-  }, [currentFrame]);
-
   // Find linked products from catalogue
-  const linkedProducts = useMemo(() => {
+  const linkedProducts = React.useMemo(() => {
     if (!currentStory?.linkedProductPlus || currentStory.linkedProductPlus.length === 0) {
       return [];
     }
@@ -124,42 +62,17 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       .filter((p): p is Product => p !== undefined);
   }, [currentStory, products]);
 
-  // Reset frame, progress, and media error on story change
+  // Reset progress on story change
   useEffect(() => {
-    setActiveFrameIndex(0);
     setProgress(0);
-    setMediaError(false);
   }, [currentIndex]);
-
-  // Reset progress and media error on frame change
-  useEffect(() => {
-    setProgress(0);
-    setMediaError(false);
-  }, [activeFrameIndex]);
-
-  // Advance frame navigation handlers
-  const handleNextFrame = useCallback(() => {
-    if (activeFrameIndex < activeFrames.length - 1) {
-      setActiveFrameIndex((prev) => prev + 1);
-    } else {
-      onNext();
-    }
-  }, [activeFrameIndex, activeFrames.length, onNext]);
-
-  const handlePrevFrame = useCallback(() => {
-    if (activeFrameIndex > 0) {
-      setActiveFrameIndex((prev) => prev - 1);
-    } else {
-      onPrev();
-    }
-  }, [activeFrameIndex, onPrev]);
 
   // Handle story progress tick
   useEffect(() => {
     if (!isOpen || isPaused || progress >= 100) return;
 
     const interval = 50;
-    const step = (interval / frameDurationMs) * 100;
+    const step = (interval / STORY_DURATION_MS) * 100;
 
     const timer = window.setInterval(() => {
       setProgress((prev) => Math.min(100, prev + step));
@@ -168,25 +81,14 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     return () => {
       clearInterval(timer);
     };
-  }, [isOpen, isPaused, progress >= 100, frameDurationMs]);
+  }, [isOpen, isPaused, progress >= 100]);
 
-  // Advance to next frame safely when progress reaches 100%
+  // Advance to next story safely after render cycle when progress reaches 100%
   useEffect(() => {
     if (isOpen && progress >= 100) {
-      handleNextFrame();
+      onNext();
     }
-  }, [isOpen, progress, handleNextFrame]);
-
-  // Pause / Resume HTML5 video element synchronously with user interaction
-  useEffect(() => {
-    if (videoRef.current) {
-      if (isPaused) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play().catch(() => {});
-      }
-    }
-  }, [isPaused]);
+  }, [isOpen, progress, onNext]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -194,13 +96,13 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowRight') handleNextFrame();
-      if (e.key === 'ArrowLeft') handlePrevFrame();
+      if (e.key === 'ArrowRight') onNext();
+      if (e.key === 'ArrowLeft') onPrev();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, handleNextFrame, handlePrevFrame]);
+  }, [isOpen, onClose, onNext, onPrev]);
 
   if (!isOpen || !currentStory) return null;
 
@@ -223,8 +125,6 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     onClose();
   };
 
-  const activeCaption = currentFrame?.caption || currentStory.caption;
-
   return (
     <div
       id="story-viewer-modal"
@@ -238,92 +138,43 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
         onTouchStart={() => setIsPaused(true)}
         onTouchEnd={() => setIsPaused(false)}
       >
-        {/* Story Background Media (Auto detects Video vs Image) */}
-        <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
-          {isVideo ? (
-            <video
-              ref={(el) => {
-                videoRef.current = el;
-                if (el) {
-                  el.muted = isMuted;
-                  el.defaultMuted = isMuted;
-                }
-              }}
-              key={currentMediaUrl}
-              src={currentMediaUrl}
-              playsInline
-              autoPlay
-              muted={isMuted}
-              preload="auto"
-              loop={false}
-              onEnded={handleNextFrame}
-              onLoadedData={() => setMediaError(false)}
-              onPlay={() => setMediaError(false)}
-              onError={(e) => {
-                console.warn('[StoryViewer] Video media error:', e);
-                setMediaError(true);
-              }}
-              className="w-full h-full object-cover"
-            >
-              <source src={currentMediaUrl} type="video/mp4" />
-              <source src={currentMediaUrl} />
-            </video>
-          ) : (
-            <img
-              key={currentMediaUrl}
-              src={currentMediaUrl}
-              alt={currentStory.title}
-              onError={() => {
-                console.warn('[StoryViewer] Image media error');
-                setMediaError(true);
-              }}
-              className="w-full h-full object-cover"
-            />
-          )}
-
-          {/* Graceful Fallback if Media Asset is unavailable or blocked */}
-          {mediaError && (
-            <div className="absolute inset-0 bg-gray-900/90 flex flex-col items-center justify-center p-6 text-center z-1">
-              <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mb-3">
-                <Film className="w-6 h-6 text-white/70" />
-              </div>
-              <p className="text-sm font-bold text-white mb-1">{currentStory.title}</p>
-              <p className="text-xs text-white/60 max-w-xs">
-                {isVideo ? 'Video format could not be played.' : 'Media asset could not be loaded.'}
-              </p>
-            </div>
-          )}
-
+        {/* Story Background Media */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src={currentStory.mediaUrl}
+            alt={currentStory.title}
+            className="w-full h-full object-cover"
+          />
           {/* Subtle Top & Bottom Gradients for readable text */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
         </div>
 
-        {/* Tap Navigation Zones (Left 1/3 = Prev Frame, Right 2/3 = Next Frame) */}
+        {/* Tap Navigation Zones */}
         <div className="absolute inset-0 z-10 flex">
           <div
             className="w-1/3 h-full cursor-pointer"
-            onClick={handlePrevFrame}
-            aria-label="Previous story frame"
+            onClick={onPrev}
+            aria-label="Previous story"
           />
           <div
             className="w-2/3 h-full cursor-pointer"
-            onClick={handleNextFrame}
-            aria-label="Next story frame"
+            onClick={onNext}
+            aria-label="Next story"
           />
         </div>
 
         {/* Top Controls & Segmented Progress Bars */}
         <div className="relative z-20 p-4 pt-5">
-          {/* Progress Bars (Segments for each frame of this story) */}
+          {/* Progress Bars */}
           <div className="flex items-center gap-1.5 mb-3">
-            {activeFrames.map((f, idx) => {
+            {stories.map((s, idx) => {
               let fill = 0;
-              if (idx < activeFrameIndex) fill = 100;
-              else if (idx === activeFrameIndex) fill = progress;
+              if (idx < currentIndex) fill = 100;
+              else if (idx === currentIndex) fill = progress;
 
               return (
                 <div
-                  key={f.id || idx}
+                  key={s.id}
                   className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"
                 >
                   <div
@@ -349,63 +200,37 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 <p className="text-xs font-bold text-white leading-tight drop-shadow-xs">
                   {tenant?.brandName}
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <p className="text-[10px] text-white/80 leading-tight">
-                    {currentStory.tag || 'Official Brand Story'}
-                  </p>
-                  {activeFrames.length > 1 && (
-                    <span className="text-[9px] text-white/60 font-mono">
-                      • {activeFrameIndex + 1}/{activeFrames.length}
-                    </span>
-                  )}
-                </div>
+                <p className="text-[10px] text-white/80 leading-tight">
+                  {currentStory.tag || 'Official Brand Story'}
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Sound Mute/Unmute Toggle for Video Stories */}
-              {isVideo && (
-                <button
-                  type="button"
-                  id="toggle-story-sound-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsMuted((prev) => !prev);
-                  }}
-                  className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-xs cursor-pointer"
-                  aria-label={isMuted ? 'Unmute video' : 'Mute video'}
-                  title={isMuted ? 'Unmute audio' : 'Mute audio'}
-                >
-                  {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-                </button>
-              )}
-
-              <button
-                type="button"
-                id="close-story-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose();
-                }}
-                className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-xs"
-                aria-label="Close stories"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              id="close-story-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-xs"
+              aria-label="Close stories"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
         {/* Desktop Arrow Indicators */}
         <div className="hidden sm:block absolute left-2 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
-          {(currentIndex > 0 || activeFrameIndex > 0) && (
+          {currentIndex > 0 && (
             <div className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center backdrop-blur-xs">
               <ChevronLeft className="w-5 h-5" />
             </div>
           )}
         </div>
         <div className="hidden sm:block absolute right-2 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
-          {(currentIndex < stories.length - 1 || activeFrameIndex < activeFrames.length - 1) && (
+          {currentIndex < stories.length - 1 && (
             <div className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center backdrop-blur-xs">
               <ChevronRight className="w-5 h-5" />
             </div>
@@ -418,9 +243,9 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
             <h2 className="text-xl font-extrabold text-white leading-tight drop-shadow-md">
               {currentStory.title}
             </h2>
-            {activeCaption && (
+            {currentStory.caption && (
               <p className="text-xs text-white/90 mt-1 leading-relaxed drop-shadow-sm line-clamp-3">
-                {activeCaption}
+                {currentStory.caption}
               </p>
             )}
           </div>
@@ -432,7 +257,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   {currentStory.stockMatchMode === 'AND'
-                    ? `Combo Deal • All ${linkedProducts.length} Items in Stock`
+                    ? `Meal Deal • All ${linkedProducts.length} Items in Stock`
                     : `In Stock at ${selectedStoreName || 'Local Store'}`}
                 </span>
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">

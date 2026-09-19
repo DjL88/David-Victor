@@ -52,7 +52,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
   useEffect(() => {
     if (allTenants && allTenants.length > 0) {
-      setTenantsList(allTenants);
+      const seen = new Set<string>();
+      const deduped = (allTenants || []).filter((t: any) => {
+        if (!t?.tenantId || seen.has(t.tenantId)) return false;
+        seen.add(t.tenantId);
+        return true;
+      });
+      setTenantsList(deduped);
     } else {
       loadTenants();
     }
@@ -64,7 +70,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       const client = getAdminClient();
       const list = await client.listAllTenants();
       if (list && list.length > 0) {
-        setTenantsList(list);
+        const seen = new Set<string>();
+        const deduped = (list || []).filter((t: any) => {
+          if (!t?.tenantId || seen.has(t.tenantId)) return false;
+          seen.add(t.tenantId);
+          return true;
+        });
+        setTenantsList(deduped);
       }
     } catch (e) {
       console.warn('Could not fetch tenants list:', e);
@@ -324,8 +336,8 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
               onChange={(e) => setSelectedTenantId(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:outline-indigo-600 focus:border-indigo-600 font-semibold"
             >
-              {tenantsList.map((t) => (
-                <option key={t.tenantId} value={t.tenantId}>
+              {tenantsList.map((t, idx) => (
+                <option key={`domain-brand-opt-${t.tenantId}-${idx}`} value={t.tenantId}>
                   {t.brandName} ({t.tenantId})
                 </option>
               ))}

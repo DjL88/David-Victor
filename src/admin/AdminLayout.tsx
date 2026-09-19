@@ -6,6 +6,7 @@ import { useTenant } from '../tenant/TenantContext';
 import { BrandsScreen } from './screens/BrandsScreen';
 import { BrandingScreen } from './screens/BrandingScreen';
 import { StoriesAdminScreen } from './screens/StoriesAdminScreen';
+import { HeroBannersAdminScreen } from './screens/HeroBannersAdminScreen';
 import { FeesAdminScreen } from './screens/FeesAdminScreen';
 import { CountryRulesScreen } from './screens/CountryRulesScreen';
 import { ProductRulesScreen } from './screens/ProductRulesScreen';
@@ -22,7 +23,6 @@ import { NotificationsAdminScreen } from './screens/NotificationsAdminScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
-import { FeaturedOffersAdminScreen } from './screens/FeaturedOffersAdminScreen';
 import { BwydiLogo } from '../components/BwydiLogo';
 const bwydiFullLogo = '/bwydi-green.png';
 import {
@@ -49,7 +49,7 @@ import {
   X,
   ChevronRight,
   Building2,
-  Flame,
+  Sparkles,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -59,7 +59,7 @@ export type AdminTab =
   | 'integrations'
   | 'insights'
   | 'branding'
-  | 'featured_offers'
+  | 'hero_banners'
   | 'search_merch'
   | 'pages'
   | 'domains'
@@ -118,7 +118,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const loadAllTenants = async () => {
     try {
       const list = await defaultAdminClient.listAllTenants();
-      setAllTenants(list);
+      const seen = new Set<string>();
+      const deduped = (list || []).filter((t) => {
+        if (!t?.tenantId || seen.has(t.tenantId)) return false;
+        seen.add(t.tenantId);
+        return true;
+      });
+      setAllTenants(deduped);
     } catch (e) {
       console.warn('Failed to load dynamic tenants list:', e);
     }
@@ -182,7 +188,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Marketing Settings',
       items: [
         { id: 'branding', label: 'Branding & Fonts', icon: Palette },
-        { id: 'featured_offers', label: 'Featured Offers', icon: Flame },
+        { id: 'hero_banners', label: 'Hero Banners & Content', icon: Sparkles, badge: 'Live' },
         { id: 'stories', label: 'Stories Drops', icon: Film },
         { id: 'pages', label: 'Pages (CMS)', icon: FileText, badge: 'Demo' },
         { id: 'search_merch', label: 'Search Merchandising', icon: Search },
@@ -227,7 +233,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           </div>
           <div className="hidden lg:flex items-center gap-4 min-w-0">
             <div className="text-xs min-w-0"><span className="block text-white/70">Client brand</span><span className="block truncate max-w-[180px]">{tenantConfig?.brandName || currentTenantId}</span></div>
-            {currentUser.role === 'platformSuperAdmin' && <label className="text-xs min-w-0">Tenant<select aria-label="Admin tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="block bg-white/10 rounded-lg p-2 max-w-[220px] text-white">{allTenants.length ? allTenants.map((tenant) => <option className="text-gray-900" key={tenant.tenantId} value={tenant.tenantId}>{tenant.brandName}</option>) : <option className="text-gray-900" value={currentTenantId}>{currentTenantId}</option>}</select></label>}
+            {currentUser.role === 'platformSuperAdmin' && <label className="text-xs min-w-0">Tenant<select aria-label="Admin tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="block bg-white/10 rounded-lg p-2 max-w-[220px] text-white">{allTenants.length ? allTenants.map((tenant, idx) => <option className="text-gray-900" key={`admin-desk-tenant-${tenant.tenantId}-${idx}`} value={tenant.tenantId}>{tenant.brandName}</option>) : <option className="text-gray-900" value={currentTenantId}>{currentTenantId}</option>}</select></label>}
           </div>
           <button type="button" onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} title={currentUser.name + ' · ' + currentUser.role} aria-label={'Account: ' + currentUser.name} className="p-2 rounded-xl bg-white/10 shrink-0"><User className="w-5 h-5" /></button>
         </div>
@@ -253,7 +259,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             <div className="space-y-3 rounded-xl bg-white/5 p-3 text-white text-xs">
               <div><span className="block text-gray-400">Signed in</span><span>{currentUser.name}</span><span className="block text-gray-400 break-words">{currentUser.role}</span></div>
               <div className="lg:hidden"><span className="block text-gray-400">Client brand</span><span>{tenantConfig?.brandName || currentTenantId}</span></div>
-              {currentUser.role === 'platformSuperAdmin' && <label className="block lg:hidden">Tenant<select aria-label="Menu tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="mt-1 w-full bg-gray-800 text-white rounded-lg p-2">{allTenants.length ? allTenants.map((tenant) => <option key={tenant.tenantId} value={tenant.tenantId}>{tenant.brandName} ({tenant.tenantId})</option>) : <option value={currentTenantId}>{currentTenantId}</option>}</select></label>}
+              {currentUser.role === 'platformSuperAdmin' && <label className="block lg:hidden">Tenant<select aria-label="Menu tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="mt-1 w-full bg-gray-800 text-white rounded-lg p-2">{allTenants.length ? allTenants.map((tenant, idx) => <option key={`admin-mob-tenant-${tenant.tenantId}-${idx}`} value={tenant.tenantId}>{tenant.brandName} ({tenant.tenantId})</option>) : <option value={currentTenantId}>{currentTenantId}</option>}</select></label>}
               {isDemo && <label className="block">Demo user<select aria-label="Demo user" value={currentUser.id} onChange={(event) => handleUserSwitch(event.target.value)} className="mt-1 w-full bg-gray-800 rounded-lg p-2">{ALL_MOCK_ADMIN_USERS.map((user) => <option key={user.id} value={user.id}>{user.name} ({user.role})</option>)}</select></label>}
             </div>
             {navSections.map((section) => (
@@ -349,8 +355,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 onBrandingUpdated={setTenantConfig}
               />
             )}
-            {activeTab === 'featured_offers' && (
-              <FeaturedOffersAdminScreen
+            {activeTab === 'hero_banners' && (
+              <HeroBannersAdminScreen
                 tenantId={currentTenantId}
                 currentUser={currentUser}
               />

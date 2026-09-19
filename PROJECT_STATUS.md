@@ -9,11 +9,6 @@
 ## 1. Executive Status
 
 The platform is now connected directly to the live Deliverect Staging environment:
-    - **Featured Offers Management & Auto-Hide**:
-      - Added dedicated **Featured Offers & Banners** administration screen (`FeaturedOffersAdminScreen.tsx`) under **Marketing Settings** in the Admin Portal.
-      - Enables store administrators to view, create, edit, delete, reorder, and toggle active status for hero promo banners.
-      - Integrated real-time persistence with `promoBannerData.ts` and `localStorage`, broadcasting `promo-banners-updated` events.
-      - **Auto-Hide Guarantee**: When no banners are active or when the banner list is cleared/blank, `PromotionalBannerCarousel.tsx` automatically hides the "Featured Offers" tab and prevents auto-cycling to it. If both banners and meal deal bundles are absent, the entire promotional carousel collapses cleanly without leaving blank placeholders or broken UI.
 1. **LIVE DELIVERECT INTEGRATION (Operational)**:
    - Upstream OAuth handshake verified against `https://api.staging.deliverect.com/oauth/token` using `client_credentials` grant and audience `https://api.staging.deliverect.com`.
    - Linked accounts discovery maps live Deliverect account (`68517fde1c3ddaa7f6d0275c` "DELIVERECT-TEST / Daves Deli"), 4 physical locations (Folgate Tuckshop, Spitalfield Spirits, Liqueurs of Liverpool Street, Deli Delivery), and 6 channel links (Direct test channels + Deliveroo Retail + Uber Eats Retail).

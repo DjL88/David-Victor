@@ -192,117 +192,103 @@ export const DEFAULT_PROMO_BANNERS: CategoryPromoBanner[] = [
   },
 ];
 
-// In-memory tenant banner store with localStorage persistence
-const PROMO_BANNER_STORAGE_KEY = 'deliverect_tenant_promo_banners';
+// Storage key for local persistence
+const STORAGE_KEY = 'bwydi_hero_promo_banners';
 
-function loadBannersFromStorage(): CategoryPromoBanner[] {
+function loadInitialBanners(): CategoryPromoBanner[] {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      const raw = window.localStorage.getItem(PROMO_BANNER_STORAGE_KEY);
-      if (raw !== null) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
     } catch (e) {
-      console.warn('Failed to load promo banners from localStorage:', e);
+      console.warn('Failed to load promo banners from storage:', e);
     }
   }
   return [...DEFAULT_PROMO_BANNERS];
 }
 
-function persistBanners(banners: CategoryPromoBanner[]): void {
+// In-memory tenant banner store
+let customBanners: CategoryPromoBanner[] = loadInitialBanners();
+const listeners = new Set<() => void>();
+
+function notifyListeners(): void {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      window.localStorage.setItem(PROMO_BANNER_STORAGE_KEY, JSON.stringify(banners));
-      window.dispatchEvent(new CustomEvent('promo-banners-updated', { detail: banners }));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(customBanners));
     } catch (e) {
-      console.warn('Failed to persist promo banners to localStorage:', e);
+      console.warn('Failed to persist promo banners:', e);
     }
   }
+  listeners.forEach((fn) => {
+    try {
+      fn();
+    } catch (err) {
+      console.error('Error in promo banner listener:', err);
+    }
+  });
 }
 
-let customBanners: CategoryPromoBanner[] = loadBannersFromStorage();
+export function subscribePromoBanners(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => {
+    listeners.delete(callback);
+  };
+}
 
 export function getPromoBanners(): CategoryPromoBanner[] {
-  if (typeof window !== 'undefined') {
-    customBanners = loadBannersFromStorage();
-  }
   return [...customBanners];
 }
 
 export function savePromoBanner(banner: CategoryPromoBanner): void {
-  const current = getPromoBanners();
-  const idx = current.findIndex((b) => b.id === banner.id);
+  const idx = customBanners.findIndex((b) => b.id === banner.id);
   if (idx >= 0) {
-    current[idx] = { ...banner, active: banner.active !== false };
+    customBanners[idx] = { ...banner };
   } else {
-    current.push({ ...banner, active: banner.active !== false });
+    customBanners.unshift({ ...banner });
   }
-  customBanners = current;
-  persistBanners(customBanners);
-}
-
-export function togglePromoBannerActive(bannerId: string): void {
-  const current = getPromoBanners();
-  const idx = current.findIndex((b) => b.id === bannerId);
-  if (idx >= 0) {
-    current[idx].active = current[idx].active === false;
-    customBanners = current;
-    persistBanners(customBanners);
-  }
+  notifyListeners();
 }
 
 export function deletePromoBanner(bannerId: string): void {
-  const current = getPromoBanners();
-  customBanners = current.filter((b) => b.id !== bannerId);
-  persistBanners(customBanners);
+  customBanners = customBanners.filter((b) => b.id !== bannerId);
+  notifyListeners();
+}
+
+export function reorderPromoBanners(newBanners: CategoryPromoBanner[]): void {
+  customBanners = [...newBanners];
+  notifyListeners();
 }
 
 export function purgePromoBanners(): void {
   customBanners = [];
-  persistBanners([]);
+  notifyListeners();
 }
 
 export function resetPromoBanners(): void {
   customBanners = [...DEFAULT_PROMO_BANNERS];
-  persistBanners(customBanners);
-}
-
-export function reorderPromoBanners(fromIndex: number, toIndex: number): void {
-  const current = getPromoBanners();
-  if (fromIndex < 0 || fromIndex >= current.length || toIndex < 0 || toIndex >= current.length) return;
-  const [removed] = current.splice(fromIndex, 1);
-  current.splice(toIndex, 0, removed);
-  customBanners = current;
-  persistBanners(customBanners);
+  notifyListeners();
 }
 
 /**
  * Filters banners appropriate for the active category context:
  * - When categoryId is null: returns global/home banners
  * - When categoryId is selected: returns banners matching categoryId or category name/slug keywords
- * - If blank (0 active banners): returns [] so the storefront completely hides the section/tab!
  */
 export function getBannersForCategory(
   categoryId: string | null,
   categories: Category[]
 ): CategoryPromoBanner[] {
-  const allBanners = getPromoBanners();
-  const activeBanners = allBanners.filter((b) => b.active !== false);
-
-  // If blank (no active banners in the tenant), return empty list so the section is hidden!
-  if (activeBanners.length === 0) {
-    return [];
-  }
-
   if (!categoryId) {
     // Return banners meant for the home view
-    const homeBanners = activeBanners.filter(
+    const homeBanners = customBanners.filter(
       (b) => !b.categoryId || b.categorySlugMatch === 'all'
     );
-    return homeBanners.length > 0 ? homeBanners : activeBanners.slice(0, 3);
+    return homeBanners.length > 0 ? homeBanners : customBanners.slice(0, 3);
   }
 
   // Find target category name and details
@@ -322,7 +308,7 @@ export function getBannersForCategory(
   const catIdLower = categoryId.toLowerCase();
 
   // Filter banners matching exact categoryId, ancestor categoryId, or semantic keywords
-  const matched = activeBanners.filter((banner) => {
+  const matched = customBanners.filter((banner) => {
     if (banner.categoryId && (banner.categoryId === categoryId || catIdLower.includes(banner.categoryId))) {
       return true;
     }
@@ -339,14 +325,21 @@ export function getBannersForCategory(
     return matched;
   }
 
-  // Fallback to active global banners if no category-specific banner exists
-  const globalBanners = activeBanners.filter((b) => !b.categoryId || b.categorySlugMatch === 'all');
-  if (globalBanners.length > 0) {
-    return globalBanners;
-  }
-
-  // If no banners match, return empty rather than generating synthetic fake banners
-  return [];
+  // Fallback: If no custom banner exists for this category, generate an on-the-fly dynamic banner
+  return [
+    {
+      id: `dynamic-banner-${categoryId}`,
+      categoryId,
+      categorySlugMatch: catName,
+      badge: `${currentCat?.name || 'Category'} Spotlight`,
+      title: `Explore Fresh ${currentCat?.name || 'Groceries'}`,
+      subtitle: currentCat?.description || `Curated range in stock from local Essex stores. Fast courier delivery direct to door.`,
+      backgroundImageUrl: currentCat?.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=1600&auto=format&fit=crop&q=85',
+      buttonLabel: `Shop ${currentCat?.name || 'Items'}`,
+      actionType: 'CATEGORY',
+      targetCategoryId: categoryId,
+    },
+  ];
 }
 
 /**

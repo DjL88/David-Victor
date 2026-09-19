@@ -38,7 +38,13 @@ export function moneyFromMajor(major: number, currency: string = 'GBP'): Money {
 export function moneyToMajor(money?: Money | number | null): number {
   if (money === undefined || money === null) return 0;
   if (typeof money === 'number') {
-    return !isNaN(money) && isFinite(money) ? money / 100 : 0;
+    if (isNaN(money) || !isFinite(money)) return 0;
+    // If it's a decimal (e.g. 1.35, 2.95, 0.49, 1.99) or integer < 50 (e.g. 1, 2, 5, 10, 38 for £38), it is already in major units (pounds/dollars/euros)
+    if (!Number.isInteger(money) || (money < 50 && money >= 0)) {
+      return money;
+    }
+    // Large integers (e.g. 50, 100, 135, 285, 500, 1193) are in minor units (pence/cents)
+    return money / 100;
   }
   if (typeof money === 'object' && typeof (money as any).amount === 'number') {
     const amt = (money as any).amount;
@@ -50,7 +56,11 @@ export function moneyToMajor(money?: Money | number | null): number {
 export function moneyToMinor(money?: Money | number | null): number {
   if (money === undefined || money === null) return 0;
   if (typeof money === 'number') {
-    return !isNaN(money) && isFinite(money) ? Math.round(money) : 0;
+    if (isNaN(money) || !isFinite(money)) return 0;
+    if (!Number.isInteger(money) || (money < 50 && money >= 0)) {
+      return Math.round(money * 100);
+    }
+    return Math.round(money);
   }
   if (typeof money === 'object' && typeof (money as any).amount === 'number') {
     const amt = (money as any).amount;
@@ -621,7 +631,6 @@ export interface CategoryPromoBanner {
   searchQuery?: string;
   linkedProductPlus?: string[];
   stockMatchMode?: StoryStockMatchMode;
-  active?: boolean;
 }
 
 import {

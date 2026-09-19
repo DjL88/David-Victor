@@ -265,7 +265,7 @@
       "secondaryColor": "#ffffff",
       "fontFamily": "Inter"
     },
-    "updatedAt": "2026-09-19T16:21:08.123Z"
+    "updatedAt": "2026-09-19T18:55:29.769Z"
   },
   "brand-test-1789816780056": {
     "tenantId": "brand-test-1789816780056",
@@ -1099,8 +1099,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-test-1789828249458": {
-    "tenantId": "brand-test-1789828249458",
+  "brand-test-1789841997399": {
+    "tenantId": "brand-test-1789841997399",
     "brandName": "Highland Fine Foods",
     "tagline": "Scottish craft pantry delivered locally",
     "logoUrl": "",
@@ -1116,7 +1116,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-test-1789828249458.co.uk",
+      "email": "support@brand-test-1789841997399.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1131,8 +1131,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-audit-1789828249464": {
-    "tenantId": "brand-audit-1789828249464",
+  "brand-audit-1789841997440": {
+    "tenantId": "brand-audit-1789841997440",
     "brandName": "Organic Greens Co",
     "tagline": "Fresh essentials delivered in minutes",
     "logoUrl": "",
@@ -1148,7 +1148,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-audit-1789828249464.co.uk",
+      "email": "support@brand-audit-1789841997440.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1163,8 +1163,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-test-1789834240239": {
-    "tenantId": "brand-test-1789834240239",
+  "brand-test-1789842058169": {
+    "tenantId": "brand-test-1789842058169",
     "brandName": "Highland Fine Foods",
     "tagline": "Scottish craft pantry delivered locally",
     "logoUrl": "",
@@ -1180,7 +1180,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-test-1789834240239.co.uk",
+      "email": "support@brand-test-1789842058169.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1195,8 +1195,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-audit-1789834240244": {
-    "tenantId": "brand-audit-1789834240244",
+  "brand-audit-1789842058174": {
+    "tenantId": "brand-audit-1789842058174",
     "brandName": "Organic Greens Co",
     "tagline": "Fresh essentials delivered in minutes",
     "logoUrl": "",
@@ -1212,7 +1212,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-audit-1789834240244.co.uk",
+      "email": "support@brand-audit-1789842058174.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1227,8 +1227,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-test-1789834399693": {
-    "tenantId": "brand-test-1789834399693",
+  "brand-test-1789843785691": {
+    "tenantId": "brand-test-1789843785691",
     "brandName": "Highland Fine Foods",
     "tagline": "Scottish craft pantry delivered locally",
     "logoUrl": "",
@@ -1244,7 +1244,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-test-1789834399693.co.uk",
+      "email": "support@brand-test-1789843785691.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1259,8 +1259,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-audit-1789834399697": {
-    "tenantId": "brand-audit-1789834399697",
+  "brand-audit-1789843785696": {
+    "tenantId": "brand-audit-1789843785696",
     "brandName": "Organic Greens Co",
     "tagline": "Fresh essentials delivered in minutes",
     "logoUrl": "",
@@ -1276,7 +1276,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-audit-1789834399697.co.uk",
+      "email": "support@brand-audit-1789843785696.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1291,8 +1291,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-test-1789834664362": {
-    "tenantId": "brand-test-1789834664362",
+  "brand-test-1789844017012": {
+    "tenantId": "brand-test-1789844017012",
     "brandName": "Highland Fine Foods",
     "tagline": "Scottish craft pantry delivered locally",
     "logoUrl": "",
@@ -1308,7 +1308,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-test-1789834664362.co.uk",
+      "email": "support@brand-test-1789844017012.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1323,8 +1323,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-audit-1789834664368": {
-    "tenantId": "brand-audit-1789834664368",
+  "brand-audit-1789844017017": {
+    "tenantId": "brand-audit-1789844017017",
     "brandName": "Organic Greens Co",
     "tagline": "Fresh essentials delivered in minutes",
     "logoUrl": "",
@@ -1340,7 +1340,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-audit-1789834664368.co.uk",
+      "email": "support@brand-audit-1789844017017.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1355,8 +1355,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-test-1789834856156": {
-    "tenantId": "brand-test-1789834856156",
+  "brand-test-1789844119550": {
+    "tenantId": "brand-test-1789844119550",
     "brandName": "Highland Fine Foods",
     "tagline": "Scottish craft pantry delivered locally",
     "logoUrl": "",
@@ -1372,7 +1372,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-test-1789834856156.co.uk",
+      "email": "support@brand-test-1789844119550.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },
@@ -1387,8 +1387,8 @@
       "enableSearchSuggestions": true
     }
   },
-  "brand-audit-1789834856162": {
-    "tenantId": "brand-audit-1789834856162",
+  "brand-audit-1789844119555": {
+    "tenantId": "brand-audit-1789844119555",
     "brandName": "Organic Greens Co",
     "tagline": "Fresh essentials delivered in minutes",
     "logoUrl": "",
@@ -1404,7 +1404,7 @@
     "currencySymbol": "£",
     "locale": "en-GB",
     "supportDetails": {
-      "email": "support@brand-audit-1789834856162.co.uk",
+      "email": "support@brand-audit-1789844119555.co.uk",
       "phone": "0800 000 0000",
       "openingHours": "Mon - Sun: 08:00 - 22:00"
     },

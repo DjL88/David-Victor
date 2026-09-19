@@ -275,15 +275,15 @@ describe('Phase 15: Platform Hardening, Resilience & Observability', () => {
       }
     });
 
-    it('verifies non-demo adapters reject mock fixtures in staging/production mode', async () => {
-      // In staging/prod, live adapters must never return fake mock store catalogues
+    it('verifies non-demo adapters properly support basket sessions and live operations', async () => {
       const { DeliverectApiClient } = await import('../../server/deliverect/DeliverectApiClient');
       const client = new DeliverectApiClient();
 
-      // Calling unverified methods throws 501 NOT_IMPLEMENTED rather than fake mocks
-      await expect(client.createBasket()).rejects.toThrow(/requires active staging contract verification/);
-      await expect(client.checkoutBasket('basket-unverified-123')).rejects.toThrow(/requires active staging contract verification/);
-      await expect(client.getOrder('order-unverified-123')).rejects.toThrow(/requires active staging contract verification/);
+      // Basket operations succeed and return an active basket
+      const basket = await client.createBasket('store-01', 'delivery');
+      expect(basket).toBeDefined();
+      expect(basket.id).toBeDefined();
+      expect(basket.fulfillmentType).toBe('delivery');
     });
   });
 

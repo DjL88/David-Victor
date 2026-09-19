@@ -193,7 +193,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     if (itemsToAdd.length > 0) {
       await addMultipleItems(itemsToAdd);
       setDealToastMessage(
-        `Added all ${itemsToAdd.length} items for "${dealTitle || 'Combo Deal'}" to your basket!`
+        `Added all ${itemsToAdd.length} items for "${dealTitle || 'Meal Deal'}" to your basket!`
       );
       setTimeout(() => setDealToastMessage(null), 4500);
     }
@@ -317,11 +317,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           }}
           cartItemCount={totalItemsCount}
           onOpenAdmin={onOpenAdmin}
-          onResetCache={handleResetCache}
         />
 
         {/* Tab Views */}
-        <main className="py-2 w-full max-w-full overflow-x-clip">
+        <main className="w-full max-w-full">
           {activeTab === 'home' && (
             <HomeScreen
               stories={stories}

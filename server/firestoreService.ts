@@ -293,9 +293,11 @@ export class FirestoreService {
 
       snap.forEach((d) => {
         const tenant = d.data() as TenantConfig;
-        list.push(tenant);
-        seenIds.add(tenant.tenantId);
-        inMemoryTenants[tenant.tenantId] = tenant;
+        if (tenant && tenant.tenantId && !seenIds.has(tenant.tenantId)) {
+          list.push(tenant);
+          seenIds.add(tenant.tenantId);
+          inMemoryTenants[tenant.tenantId] = tenant;
+        }
       });
 
       // Merge in-memory and disk provisioned tenants

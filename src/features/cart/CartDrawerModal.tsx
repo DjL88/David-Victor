@@ -256,10 +256,10 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               <div className="w-full bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 text-left mb-4">
                 <div className="flex items-center gap-1.5 text-xs font-black text-amber-950 mb-1.5">
                   <Zap className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Test Reverse Combo Deal Calculations:</span>
+                  <span>Test Reverse Meal Deal Calculations:</span>
                 </div>
                 <p className="text-[11px] text-gray-600 mb-3 leading-snug">
-                  Click below to quickly load 2 of 3 combo deal items into your basket and see the prompt in action:
+                  Click below to quickly load 2 of 3 meal deal items into your basket and see the prompt in action:
                 </p>
                 <div className="space-y-1.5">
                   <button
@@ -328,7 +328,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               {effectiveBasket && (
                 <div className="space-y-2.5">
                   {effectiveBasket.items.map((item) => {
-                    const itemName = (item?.name || item?.plu || 'Item').replace(/###PRNT/gi, '').trim();
+                    const itemName = item?.name || item?.plu || 'Item';
                     const affected = snoozeAudit.affectedItems.find((a) => a.plu === item.plu);
                     const swap = snoozeAudit.availableSwaps.find((s) => s.originalPlu === item.plu);
 
@@ -399,7 +399,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                                     className="text-[10px] text-gray-600 flex items-center justify-between gap-1"
                                   >
                                     <span className="truncate">
-                                      • {sub.quantity > 1 ? `${sub.quantity}× ` : ''}{(sub.name || '').replace(/###PRNT/gi, '').trim()}
+                                      • {sub.quantity > 1 ? `${sub.quantity}× ` : ''}{sub.name}
                                     </span>
                                     {sub.price && sub.price.amount > 0 && (
                                       <span className="font-semibold text-emerald-700 shrink-0 font-mono text-[9.5px]">

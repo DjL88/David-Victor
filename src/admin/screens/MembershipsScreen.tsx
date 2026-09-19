@@ -71,7 +71,13 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
       ]);
       setMemberships(membershipsList);
       if (tenantsList.length > 0) {
-        setTenants(tenantsList);
+        const seen = new Set<string>();
+        const deduped = (tenantsList || []).filter((t: any) => {
+          if (!t?.tenantId || seen.has(t.tenantId)) return false;
+          seen.add(t.tenantId);
+          return true;
+        });
+        setTenants(deduped);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load team memberships');
@@ -246,8 +252,8 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
           >
             <option value="all">All Scopes (Platform + All Brands)</option>
             <option value="platform">Platform SuperAdmins Only</option>
-            {tenants.map((t) => (
-              <option key={t.tenantId} value={t.tenantId}>
+            {tenants.map((t, idx) => (
+              <option key={`membership-filter-${t.tenantId}-${idx}`} value={t.tenantId}>
                 {t.brandName} ({t.tenantId})
               </option>
             ))}
@@ -443,8 +449,8 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                       onChange={(e) => setNewTenantId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
                     >
-                      {tenants.map((t) => (
-                        <option key={t.tenantId} value={t.tenantId}>
+                      {tenants.map((t, idx) => (
+                        <option key={`new-member-tenant-${t.tenantId}-${idx}`} value={t.tenantId}>
                           {t.brandName} ({t.tenantId})
                         </option>
                       ))}

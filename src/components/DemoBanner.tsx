@@ -20,7 +20,7 @@ export const DemoBanner: React.FC<DemoBannerProps> = ({ onOpenAdmin }) => {
     <aside
       id="bwydi-demo-sandbox-banner"
       aria-label="Demo environment indicator"
-      className="bg-gray-900 text-white border-b border-gray-800 text-xs select-none sticky top-0 z-50 shadow-md"
+      className="bg-gray-900 text-white border-b border-gray-800 text-xs select-none relative z-30 shadow-md"
     >
       <div className="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-between gap-3">
         {/* Left: bwydi Branding & Mode Badge */}
@@ -57,8 +57,8 @@ export const DemoBanner: React.FC<DemoBannerProps> = ({ onOpenAdmin }) => {
                 onChange={(e) => switchTenant(e.target.value)}
                 className="bg-gray-800 text-gray-200 text-[11px] font-semibold rounded-lg px-2 py-1 pr-6 border border-gray-700 focus:outline-hidden cursor-pointer"
               >
-                {availableTenants.map((t) => (
-                  <option key={t.tenantId} value={t.tenantId} className="bg-gray-900 text-white">
+                {availableTenants.map((t, idx) => (
+                  <option key={`demo-banner-${t.tenantId}-${idx}`} value={t.tenantId} className="bg-gray-900 text-white">
                     Brand: {t.brandName}
                   </option>
                 ))}
@@ -107,8 +107,8 @@ export const DemoBanner: React.FC<DemoBannerProps> = ({ onOpenAdmin }) => {
                 onChange={(e) => switchTenant(e.target.value)}
                 className="bg-gray-800 text-gray-200 text-xs font-semibold rounded-lg px-2 py-1 border border-gray-700"
               >
-                {availableTenants.map((t) => (
-                  <option key={t.tenantId} value={t.tenantId} className="bg-gray-900 text-white">
+                {availableTenants.map((t, idx) => (
+                  <option key={`demo-banner-mob-${t.tenantId}-${idx}`} value={t.tenantId} className="bg-gray-900 text-white">
                     {t.brandName} ({t.tenantId})
                   </option>
                 ))}

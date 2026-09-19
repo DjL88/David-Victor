@@ -246,9 +246,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     if (typeof product.priceMinor === 'number') {
                       return formatCurrency(product.priceMinor / 100, currencySymbol);
                     }
-                    if (typeof (product as any).basePrice === 'number') {
-                      return formatCurrency((product as any).basePrice / 100, currencySymbol);
-                    }
                     return formatCurrency((product as any).basePrice ?? 0, currencySymbol);
                   }
                   const minP = toMajorPrice(activeSummary?.minimumPrice);
@@ -267,9 +264,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   }
                   if (typeof product.priceMinor === 'number') {
                     return formatCurrency(product.priceMinor / 100, currencySymbol);
-                  }
-                  if (typeof (product as any).basePrice === 'number') {
-                    return formatCurrency((product as any).basePrice / 100, currencySymbol);
                   }
                   return formatCurrency((product as any).basePrice ?? 0, currencySymbol);
                 })()}

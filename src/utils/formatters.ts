@@ -32,12 +32,11 @@ export function formatCurrency(
       numValue = rawVal / 100;
     }
   } else if (typeof amount === 'number' && !isNaN(amount) && isFinite(amount)) {
-    // If it's a decimal (e.g. 0.89, 1.50, 34.80), it is already in major units (pounds/euros/dollars).
-    // If it's a small integer (< 50, e.g. 1, 2, 5, 20), it represents major units (£1.00, £5.00).
-    // Only integers >= 50 (e.g. 89, 150, 1000) represent minor units (pence / cents) if passed as raw numbers.
-    if (!Number.isInteger(amount) || Math.abs(amount) < 50) {
+    // If it's a decimal (e.g. 1.35, 2.95, 0.49, 1.99) or small integer (< 50, e.g. 1, 2, 5, 10, 38 for £38), it is in major units (pounds/euros/dollars)
+    if (!Number.isInteger(amount) || (amount < 50 && amount >= 0)) {
       numValue = amount;
     } else {
+      // Minor units (e.g. 50, 100, 250, 500, 1193)
       numValue = amount / 100;
     }
   }

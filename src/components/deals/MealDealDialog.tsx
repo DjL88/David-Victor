@@ -143,7 +143,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-md text-white/90 text-[10px] font-semibold border border-white/20">
                 <Layers className="w-3 h-3 text-emerald-300" />
-                Combo Deal
+                {isAndMode ? 'Combo Deal' : 'Multi-Buy'}
               </span>
             </div>
 
@@ -169,7 +169,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
             <div className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-50 border border-gray-200">
               <div>
                 <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider block">
-                  Combo Deal Price
+                  {isAndMode ? 'Combo Deal Price' : 'Multi-Buy Price'}
                 </span>
                 <div className="flex items-baseline gap-2 mt-0.5">
                   <span className="text-2xl font-black text-gray-950 tracking-tight">

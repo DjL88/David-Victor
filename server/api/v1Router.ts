@@ -2504,76 +2504,16 @@ v1Router.get('/assets/:tenantId/:assetId', async (req: Request, res: Response) =
     if (!asset || asset.tenantId !== tenantId || asset.status !== 'READY') {
       return res.status(404).json({ error: 'Asset not found or not ready', code: 'ASSET_NOT_FOUND' });
     }
-
-    const contentType = asset.contentType || 'application/octet-stream';
-
-    // Handle data URI payload safely by streaming binary bytes (browsers reject 302 redirects to data: URLs)
-    if (asset.publicUrl && asset.publicUrl.startsWith('data:')) {
-      const parts = asset.publicUrl.split(';base64,');
-      const mime = parts[0].replace('data:', '') || contentType;
-      const buffer = Buffer.from(parts[1] || '', 'base64');
-
-      res.setHeader('Content-Type', mime);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-
-      const range = req.headers.range;
-      if (range) {
-        const total = buffer.length;
-        const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(startStr, 10);
-        const end = endStr ? parseInt(endStr, 10) : total - 1;
-        if (start >= total || end >= total) {
-          res.setHeader('Content-Range', `bytes */${total}`);
-          return res.status(416).end();
-        }
-        const chunk = buffer.subarray(start, end + 1);
-        res.status(206);
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
-        res.setHeader('Content-Length', chunk.length);
-        return res.send(chunk);
-      }
-
-      res.setHeader('Content-Length', buffer.length);
-      return res.status(200).send(buffer);
-    }
-
-    // Direct HTTP/HTTPS redirect to CDN or Firebase Storage if available
-    if (asset.publicUrl && (asset.publicUrl.startsWith('http://') || asset.publicUrl.startsWith('https://'))) {
+    if (asset.publicUrl) {
       return res.redirect(302, asset.publicUrl);
     }
-
-    // Stream from Cloud Storage with Range request support for videos
     const storage = getFirebaseStorage();
     if (storage && asset.storagePath) {
       const file = storage.bucket().file(asset.storagePath);
-      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Type', asset.contentType || 'application/octet-stream');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      res.setHeader('Accept-Ranges', 'bytes');
-
-      const range = req.headers.range;
-      if (range) {
-        const [metadata] = await file.getMetadata().catch(() => [{ size: asset.byteSize }]);
-        const total = metadata?.size ? Number(metadata.size) : asset.byteSize;
-        if (total) {
-          const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
-          const start = parseInt(startStr, 10);
-          const end = endStr ? parseInt(endStr, 10) : total - 1;
-          if (start >= total || end >= total) {
-            res.setHeader('Content-Range', `bytes */${total}`);
-            return res.status(416).end();
-          }
-          const chunkSize = end - start + 1;
-          res.status(206);
-          res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
-          res.setHeader('Content-Length', chunkSize);
-          return file.createReadStream({ start, end }).pipe(res);
-        }
-      }
-
       return file.createReadStream().pipe(res);
     }
-
     res.status(404).json({ error: 'Asset file not available', code: 'ASSET_NOT_FOUND' });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to retrieve asset');

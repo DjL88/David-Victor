@@ -56,7 +56,13 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
     setError(null);
     try {
       const list = await defaultAdminClient.listAllTenants();
-      setTenants(list);
+      const seen = new Set<string>();
+      const deduped = (list || []).filter((t) => {
+        if (!t?.tenantId || seen.has(t.tenantId)) return false;
+        seen.add(t.tenantId);
+        return true;
+      });
+      setTenants(deduped);
     } catch (err: any) {
       setError(err.message || 'Failed to load brands from platform database.');
     } finally {
@@ -171,9 +177,9 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {tenants.map((t) => (
+          {tenants.map((t, idx) => (
             <div
-              key={t.tenantId}
+              key={`brand-card-${t.tenantId}-${idx}`}
               className="bg-white border border-gray-200 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
             >
               <div className="space-y-3">

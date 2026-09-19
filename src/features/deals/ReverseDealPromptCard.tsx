@@ -69,7 +69,7 @@ export const ReverseDealPromptCard: React.FC<ReverseDealPromptCardProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-black uppercase tracking-wider text-amber-900">
-                Combo Deal Opportunity
+                Meal Deal Opportunity
               </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black tracking-tight">
                 Save {currencySymbol}{totalSavings.toFixed(2)}

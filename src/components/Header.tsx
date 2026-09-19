@@ -13,8 +13,8 @@ import {
   User,
   Clock,
   Heart,
-  ShieldCheck,
   RotateCcw,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,7 +31,6 @@ interface HeaderProps {
   cartItemCount: number;
   onOpenAdmin?: () => void;
   onNavigateTab?: (tab: 'home' | 'search' | 'orders' | 'account') => void;
-  onResetCache?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -45,7 +44,6 @@ export const Header: React.FC<HeaderProps> = ({
   cartItemCount,
   onOpenAdmin,
   onNavigateTab,
-  onResetCache,
 }) => {
   const { tenant, appMode } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
@@ -77,35 +75,11 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isAccountMenuOpen]);
 
-  // Measure and dynamically set --header-height so sticky elements below can pin flush
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-
-    const updateHeight = () => {
-      const height = el.offsetHeight;
-      document.documentElement.style.setProperty('--header-height', `${height}px`);
-    };
-
-    updateHeight();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateHeight();
-    });
-    resizeObserver.observe(el);
-
-    window.addEventListener('resize', updateHeight);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateHeight);
-    };
-  }, []);
-
   return (
     <header
       ref={headerRef}
       id="main-storefront-header"
-      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-2xs w-full max-w-full"
+      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-xs w-full max-w-full"
     >
       {/* Top Banner: Store Brand & Delivery Guarantee Bar */}
       <div className="bg-gray-900 text-white text-[11px] py-1.5 px-4 flex items-center justify-between w-full max-w-full overflow-hidden">
@@ -120,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-3 text-gray-300 text-xs">
-          <span className="hidden sm:inline text-gray-400">
+          <span className="text-gray-400">
             {tenant?.tagline || 'Delivery and collection available'}
           </span>
         </div>
@@ -306,8 +280,6 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Saved Addresses</span>
                   </button>
                 </div>
-
-
 
                 {onOpenAdmin && (appMode === 'demo' || Boolean(currentUser)) && (
                   <div className="pt-1 border-t border-gray-100">

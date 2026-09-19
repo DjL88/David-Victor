@@ -2,14 +2,13 @@
 
 /* 
  * Global 100% Screen Width Lock & Zero Left-to-Right Scrolling
- * Uses overflow-x: clip to guarantee zero horizontal spill WITHOUT breaking position: sticky
  */
 html,
 body,
 #root {
   width: 100%;
   max-width: 100%;
-  overflow-x: clip;
+  min-height: 100%;
   position: relative;
   box-sizing: border-box;
 }

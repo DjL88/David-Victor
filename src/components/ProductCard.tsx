@@ -67,9 +67,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const priceMajor =
     moneyToMajor(product.price) ||
     (typeof product.priceMinor === 'number' ? product.priceMinor / 100 : 0) ||
-    (typeof (product as any).basePrice === 'number'
-      ? (product as any).basePrice / 100
-      : moneyToMajor((product as any).basePrice));
+    moneyToMajor((product as any).basePrice);
   const hasDiscount = origPriceMajor > 0 && priceMajor > 0 && origPriceMajor > priceMajor;
   const depositMajor = moneyToMajor(product.supplementalInfo?.deposit ?? product.deposit);
 
@@ -108,9 +106,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       if (typeof product.priceMinor === 'number') {
         return formatCurrency(product.priceMinor / 100, currencySymbol);
       }
-      if (typeof (product as any).basePrice === 'number') {
-        return formatCurrency((product as any).basePrice / 100, currencySymbol);
-      }
       if ((product as any).basePrice != null) {
         return formatCurrency((product as any).basePrice, currencySymbol);
       }
@@ -138,10 +133,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
     if (typeof product.priceMinor === 'number') {
       return formatCurrency(product.priceMinor / 100, currencySymbol);
-    }
-
-    if (typeof (product as any).basePrice === 'number') {
-      return formatCurrency((product as any).basePrice / 100, currencySymbol);
     }
 
     if ((product as any).basePrice != null) {

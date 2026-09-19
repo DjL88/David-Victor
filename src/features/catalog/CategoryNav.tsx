@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Category, Store } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { CatalogFilterState } from './DietaryPreferencesModal';
@@ -56,6 +56,16 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
 
+  // Hide bundle category under aisles
+  const visibleCategories = useMemo(() => {
+    return (categories || []).filter((cat) => {
+      if (!cat) return false;
+      const name = (cat.name || '').toLowerCase();
+      const id = (cat.id || '').toLowerCase();
+      return !name.includes('bundle') && !id.includes('bundle');
+    });
+  }, [categories]);
+
   // Determine current active container category (the innermost category represented by the breadcrumbs)
   const currentCategory = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1] : null;
 
@@ -89,8 +99,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   return (
     <div
       id="category-nav-section"
-      className="sticky z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-4 py-2.5 transition-all w-full max-w-full overflow-hidden"
-      style={{ top: 'var(--header-height, 108px)' }}
+      className="sticky top-[80px] sm:top-[86px] z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-4 sm:px-6 py-2.5 transition-all w-full max-w-full"
     >
       {/* Fixed Breadcrumbs Bar directly above Search Box */}
       <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2 overflow-x-auto no-scrollbar whitespace-nowrap">
@@ -244,7 +253,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             {currentCategory?.name ? `All ${currentCategory.name}` : 'All Aisles'}
           </button>
 
-          {categories.map((cat) => {
+          {visibleCategories.map((cat) => {
             if (!cat) return null;
             const isSelected = selectedCategoryId === cat.id;
 

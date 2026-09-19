@@ -287,7 +287,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [renderableBaseProducts]);
 
   return (
-    <div id="home-screen-container" className="w-full max-w-7xl mx-auto pb-20 space-y-4 overflow-x-hidden">
+    <div id="home-screen-container" className="w-full max-w-7xl mx-auto pb-20 space-y-4">
       {/* Instagram-style horizontal Stories */}
       {!searchQuery && (
         <StoriesRow
@@ -355,7 +355,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}
       {!selectedCategoryId && !searchQuery && !activeDealFilter && offers.length > 0 && (
-        <section id="offers-near-you-section" className="px-4">
+        <section id="offers-near-you-section" className="px-4 sm:px-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-1.5">
               <Percent className="w-4 h-4 text-rose-500" />
@@ -387,7 +387,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       )}
 
       {/* Main Product Listing / Popular Near You / Filtered Deal / Search Results */}
-      <section id="main-product-listing" className="px-4">
+      <section id="main-product-listing" className="px-4 sm:px-6">
         {/* ACTIVE DEAL FILTER HIGHLIGHT CARD */}
         {activeDealFilter && (
           <div
@@ -400,7 +400,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   {activeDealFilter.badge}
                 </span>
                 <span className="text-xs font-bold text-emerald-900">
-                  Deliverect Combo Deal
+                  {activeDealFilter.stockMatchMode === 'AND'
+                    ? 'Deliverect Bundle Deal'
+                    : 'Deliverect Multi-Buy Deal'}
                 </span>
               </div>
               <h3 className="text-base font-extrabold text-emerald-950">
