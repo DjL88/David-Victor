@@ -22,6 +22,11 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /heroBanners/{bannerId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
       match /pages/{pageSlug} {
         allow read: if true;
         allow write: if false;

@@ -3,8 +3,9 @@ import path from 'path';
 import { getFirestoreDb, getWebFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { FirestoreRestService } from './firestoreRest';
-import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy } from '../src/commerce/models';
+import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
+import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted } from './runtimeMode';
 import { BFFError } from './errors';
 
@@ -30,6 +31,8 @@ const inMemoryNotificationSubscriptions: Record<string, NotificationSubscription
 const inMemoryNotifications: Record<string, DomainNotification> = {};
 const inMemoryStories: Record<string, Story[]> = {};
 const inMemoryStoriesPurged: Record<string, boolean> = {};
+const inMemoryHeroBanners: Record<string, CategoryPromoBanner[]> = {};
+const inMemoryHeroBannersPurged: Record<string, boolean> = {};
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -116,6 +119,31 @@ export function cleanUndefined<T>(obj: T): T {
 const DOMAINS_STORAGE_PATH = path.join(process.cwd(), 'data', 'domains.json');
 const TENANTS_STORAGE_PATH = path.join(process.cwd(), 'data', 'tenants.json');
 const INTEGRATIONS_STORAGE_PATH = path.join(process.cwd(), 'data', 'integrations.json');
+const HERO_BANNERS_STORAGE_PATH = path.join(process.cwd(), 'data', 'hero_banners.json');
+
+function loadPersistedHeroBanners(): Record<string, CategoryPromoBanner[]> {
+  try {
+    if (fs.existsSync(HERO_BANNERS_STORAGE_PATH)) {
+      const raw = fs.readFileSync(HERO_BANNERS_STORAGE_PATH, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('[FirestoreService] Could not read persisted hero banners file:', e);
+  }
+  return {};
+}
+
+function savePersistedHeroBanners(bannersMap: Record<string, CategoryPromoBanner[]>): void {
+  try {
+    const dir = path.dirname(HERO_BANNERS_STORAGE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(HERO_BANNERS_STORAGE_PATH, JSON.stringify(bannersMap, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[FirestoreService] Could not write persisted hero banners file:', e);
+  }
+}
 
 function loadPersistedTenants(): Record<string, TenantConfig> {
   try {
@@ -1037,6 +1065,192 @@ export class FirestoreService {
       }
     }
     return true;
+  }
+
+  /**
+   * Retrieves promotional hero banners for a tenant from Firestore, disk, or memory.
+   */
+  static async getTenantHeroBanners(tenantId: string = 'brand-alpha'): Promise<CategoryPromoBanner[]> {
+    if (inMemoryHeroBanners[tenantId]) {
+      return inMemoryHeroBanners[tenantId];
+    }
+    if (inMemoryHeroBannersPurged[tenantId]) {
+      return [];
+    }
+
+    // Check disk persistence
+    const diskMap = loadPersistedHeroBanners();
+    if (diskMap[tenantId] && Array.isArray(diskMap[tenantId]) && diskMap[tenantId].length > 0) {
+      inMemoryHeroBanners[tenantId] = diskMap[tenantId];
+    }
+
+    try {
+      const webDb = getWebFirestoreDb();
+      if (webDb) {
+        const snap = await getDocs(collection(webDb, 'tenants', tenantId, 'heroBanners'));
+        if (!snap.empty) {
+          const banners: CategoryPromoBanner[] = [];
+          snap.forEach((d) => banners.push(d.data() as CategoryPromoBanner));
+          inMemoryHeroBanners[tenantId] = banners;
+          diskMap[tenantId] = banners;
+          savePersistedHeroBanners(diskMap);
+          return banners;
+        }
+      }
+    } catch {
+      // Fall through to Admin SDK
+    }
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const snap = await db.collection('tenants').doc(tenantId).collection('heroBanners').get();
+        if (!snap.empty) {
+          const banners: CategoryPromoBanner[] = [];
+          snap.forEach((d) => banners.push(d.data() as CategoryPromoBanner));
+          inMemoryHeroBanners[tenantId] = banners;
+          diskMap[tenantId] = banners;
+          savePersistedHeroBanners(diskMap);
+          return banners;
+        }
+      } catch (err) {
+        console.warn(`[Firestore Admin] Error fetching hero banners for tenant ${tenantId}:`, err);
+      }
+    }
+
+    if (inMemoryHeroBanners[tenantId]) {
+      return inMemoryHeroBanners[tenantId];
+    }
+
+    // Fallback to defaults
+    const defaults = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
+    inMemoryHeroBanners[tenantId] = defaults;
+    return defaults;
+  }
+
+  /**
+   * Saves or updates a promotional hero banner in Firestore, disk, and memory per tenant.
+   */
+  static async saveTenantHeroBanner(tenantId: string, banner: CategoryPromoBanner): Promise<CategoryPromoBanner> {
+    if (!inMemoryHeroBanners[tenantId]) {
+      inMemoryHeroBanners[tenantId] = (await this.getTenantHeroBanners(tenantId)) || [];
+    }
+    const existingIndex = inMemoryHeroBanners[tenantId].findIndex((b) => b.id === banner.id);
+    if (existingIndex >= 0) {
+      inMemoryHeroBanners[tenantId][existingIndex] = { ...inMemoryHeroBanners[tenantId][existingIndex], ...banner };
+    } else {
+      inMemoryHeroBanners[tenantId].push(banner);
+    }
+    inMemoryHeroBannersPurged[tenantId] = false;
+
+    // Persist to disk
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = inMemoryHeroBanners[tenantId];
+    savePersistedHeroBanners(diskMap);
+
+    // Persist to Firestore
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('heroBanners')
+          .doc(banner.id)
+          .set(cleanUndefined(banner), { merge: true });
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to save hero banner:`, err);
+      }
+    }
+    return banner;
+  }
+
+  /**
+   * Saves / reorders a batch of promotional hero banners for a tenant.
+   */
+  static async saveTenantHeroBannersBatch(tenantId: string, banners: CategoryPromoBanner[]): Promise<CategoryPromoBanner[]> {
+    inMemoryHeroBanners[tenantId] = [...banners];
+    inMemoryHeroBannersPurged[tenantId] = false;
+
+    // Persist to disk
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = banners;
+    savePersistedHeroBanners(diskMap);
+
+    // Persist to Firestore
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const batch = db.batch();
+        const collRef = db.collection('tenants').doc(tenantId).collection('heroBanners');
+        for (const banner of banners) {
+          batch.set(collRef.doc(banner.id), cleanUndefined(banner), { merge: true });
+        }
+        await batch.commit();
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to save hero banners batch:`, err);
+      }
+    }
+    return banners;
+  }
+
+  /**
+   * Deletes a promotional hero banner for a tenant.
+   */
+  static async deleteTenantHeroBanner(tenantId: string, bannerId: string): Promise<boolean> {
+    if (inMemoryHeroBanners[tenantId]) {
+      inMemoryHeroBanners[tenantId] = inMemoryHeroBanners[tenantId].filter((b) => b.id !== bannerId);
+    }
+
+    const diskMap = loadPersistedHeroBanners();
+    if (diskMap[tenantId]) {
+      diskMap[tenantId] = diskMap[tenantId].filter((b) => b.id !== bannerId);
+      savePersistedHeroBanners(diskMap);
+    }
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('heroBanners')
+          .doc(bannerId)
+          .delete();
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to delete hero banner:`, err);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Resets promotional hero banners for a tenant back to system defaults.
+   */
+  static async resetTenantHeroBanners(tenantId: string): Promise<CategoryPromoBanner[]> {
+    const defaults = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
+    inMemoryHeroBanners[tenantId] = defaults;
+    inMemoryHeroBannersPurged[tenantId] = false;
+
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = defaults;
+    savePersistedHeroBanners(diskMap);
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const snap = await db.collection('tenants').doc(tenantId).collection('heroBanners').get();
+        const batch = db.batch();
+        snap.forEach((doc) => batch.delete(doc.ref));
+        for (const banner of defaults) {
+          batch.set(db.collection('tenants').doc(tenantId).collection('heroBanners').doc(banner.id), cleanUndefined(banner));
+        }
+        await batch.commit();
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to reset hero banners in Firestore:`, err);
+      }
+    }
+    return defaults;
   }
 
   /**

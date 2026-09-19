@@ -2,6 +2,7 @@ import {
   TenantConfig,
   TenantFeePolicy,
   Story,
+  CategoryPromoBanner,
   VisualRule,
   AdminUser,
   AuditLogEntry,
@@ -71,6 +72,31 @@ export interface AdminClient {
    * Purges all stories and fake offers for a tenant.
    */
   purgeStories?(tenantId?: string): Promise<boolean>;
+
+  /**
+   * Retrieves all promotional hero banners for this tenant.
+   */
+  getHeroBanners?(tenantId?: string): Promise<CategoryPromoBanner[]>;
+
+  /**
+   * Creates or updates a promotional hero banner.
+   */
+  saveHeroBanner?(banner: CategoryPromoBanner, tenantId?: string): Promise<CategoryPromoBanner>;
+
+  /**
+   * Reorders / updates a batch of promotional hero banners.
+   */
+  reorderHeroBanners?(banners: CategoryPromoBanner[], tenantId?: string): Promise<CategoryPromoBanner[]>;
+
+  /**
+   * Deletes a promotional hero banner.
+   */
+  deleteHeroBanner?(bannerId: string, tenantId?: string): Promise<boolean>;
+
+  /**
+   * Resets promotional hero banners to system defaults.
+   */
+  resetHeroBanners?(tenantId?: string): Promise<CategoryPromoBanner[]>;
 
   /**
    * Retrieves visual country and product rules.

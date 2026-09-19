@@ -363,6 +363,32 @@ export const SaveStorySchema = z
   })
   .passthrough();
 
+export const SaveHeroBannerSchema = z
+  .object({
+    id: z.string().min(1, 'Banner ID is required'),
+    title: z.string().min(1, 'Banner title is required'),
+    subtitle: z.string().optional(),
+    badge: z.string().optional(),
+    backgroundImageUrl: z.string().min(1, 'Background image is required'),
+    buttonLabel: z.string().min(1, 'Button label is required'),
+    actionType: z.enum(['CATEGORY', 'PRODUCT', 'SEARCH', 'STORE_PICKER']).optional(),
+    targetPlu: z.string().optional(),
+    targetCategoryId: z.string().optional(),
+    categoryId: z.string().optional(),
+    categorySlugMatch: z.string().optional(),
+    linkedProductPlus: z.array(z.string()).optional(),
+    stockMatchMode: z.enum(['AND', 'OR']).optional(),
+    searchQuery: z.string().optional(),
+    orderIndex: z.number().optional(),
+  })
+  .passthrough();
+
+export const ReorderHeroBannersSchema = z
+  .object({
+    banners: z.array(SaveHeroBannerSchema).min(1, 'Banners array is required'),
+  })
+  .passthrough();
+
 export const UpdateIntegrationSchema = z.object({
   deliverectAccountId: z.string().optional(),
   environment: z.enum(['staging', 'production']).optional(),

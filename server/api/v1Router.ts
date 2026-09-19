@@ -60,6 +60,8 @@ import {
   UpdateTenantConfigSchema,
   UpdateFeePolicySchema,
   SaveStorySchema,
+  SaveHeroBannerSchema,
+  ReorderHeroBannersSchema,
   UpdateIntegrationSchema,
   TestConnectionSchema,
   UpdateIntegrationCredentialsSchema,
@@ -724,13 +726,32 @@ v1Router.get('/products/:plu', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 5. STORIES
+// 5. STORIES & HERO BANNERS
 // ==========================================
 v1Router.get('/stories', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
     const stories = await FirestorePlatformService.getTenantStories(tenantId);
     sendConditionalJson(req, res, stories, 'public, max-age=60, stale-while-revalidate=300');
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.get('/hero-banners', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const banners = await FirestorePlatformService.getTenantHeroBanners(tenantId);
+    sendConditionalJson(req, res, banners, 'public, max-age=60, stale-while-revalidate=300');
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.get('/tenants/:id/hero-banners', async (req: Request, res: Response) => {
+  try {
+    const banners = await FirestorePlatformService.getTenantHeroBanners(req.params.id);
+    sendConditionalJson(req, res, banners, 'public, max-age=60, stale-while-revalidate=300');
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2009,7 +2030,97 @@ v1Router.post('/admin/tenants/:id/stories/purge', requireAdminAuth('marketingEdi
   }
 });
 
-// 9.7 Audit Logs
+// 9.7 Hero Banners Admin
+v1Router.get('/admin/tenants/:id/hero-banners', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const banners = await FirestorePlatformService.getTenantHeroBanners(req.params.id);
+    res.json(banners);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.post('/admin/tenants/:id/hero-banners', requireAdminAuth('marketingEditor'), validateBody(SaveHeroBannerSchema), async (req: Request, res: Response) => {
+  try {
+    const banner = await FirestorePlatformService.saveTenantHeroBanner(req.params.id, req.body);
+
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Branding',
+      action: 'SAVE_HERO_BANNER',
+      details: `Saved hero banner ${banner.id}: "${banner.title}"`,
+    });
+
+    res.json(banner);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.put('/admin/tenants/:id/hero-banners/reorder', requireAdminAuth('marketingEditor'), validateBody(ReorderHeroBannersSchema), async (req: Request, res: Response) => {
+  try {
+    const banners = await FirestorePlatformService.saveTenantHeroBannersBatch(req.params.id, req.body.banners);
+
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Branding',
+      action: 'REORDER_HERO_BANNERS',
+      details: `Reordered ${banners.length} hero banners for tenant ${req.params.id}`,
+    });
+
+    res.json(banners);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.delete('/admin/tenants/:id/hero-banners/:bannerId', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+  try {
+    const success = await FirestorePlatformService.deleteTenantHeroBanner(req.params.id, req.params.bannerId);
+
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Branding',
+      action: 'DELETE_HERO_BANNER',
+      details: `Deleted hero banner ${req.params.bannerId}`,
+    });
+
+    res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.post('/admin/tenants/:id/hero-banners/reset', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+  try {
+    const banners = await FirestorePlatformService.resetTenantHeroBanners(req.params.id);
+
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Branding',
+      action: 'RESET_HERO_BANNERS',
+      details: `Reset hero banners to defaults for tenant ${req.params.id}`,
+    });
+
+    res.json(banners);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9.8 Audit Logs
 v1Router.get('/admin/tenants/:id/audit-logs', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
     const logs = await FirestorePlatformService.getAuditLogs(req.params.id);

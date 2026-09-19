@@ -188,7 +188,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
           }
 
           case 'OfferCarousel': {
-            const allBanners = getPromoBanners();
+            const allBanners = getPromoBanners(tenant?.tenantId);
             const relevantBanners = block.bannerIds && block.bannerIds.length > 0
               ? allBanners.filter((b) => block.bannerIds!.includes(b.id))
               : allBanners;

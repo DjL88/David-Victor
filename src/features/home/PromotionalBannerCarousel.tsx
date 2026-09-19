@@ -28,6 +28,7 @@ import {
   getBannersForCategory,
   checkBannerStock,
   subscribePromoBanners,
+  fetchPromoBannersForTenant,
 } from '../../commerce/promoBannerData';
 import {
   DELIVERECT_CATALOG_DEALS,
@@ -63,6 +64,7 @@ interface PromotionalBannerCarouselProps {
   getBasketQuantity?: (plu: string) => number;
   activeCarouselTab?: 'featured' | 'deals';
   onTabChange?: (tab: 'featured' | 'deals') => void;
+  tenantId?: string;
 }
 
 export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps> = ({
@@ -85,6 +87,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
   getBasketQuantity,
   activeCarouselTab = 'featured',
   onTabChange,
+  tenantId = 'brand-alpha',
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
 
@@ -120,16 +123,22 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
   const [bannerVersion, setBannerVersion] = useState(0);
 
   useEffect(() => {
-    const unsub = subscribePromoBanners(() => {
-      setBannerVersion((v) => v + 1);
+    fetchPromoBannersForTenant(tenantId);
+  }, [tenantId]);
+
+  useEffect(() => {
+    const unsub = subscribePromoBanners((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        setBannerVersion((v) => v + 1);
+      }
     });
     return () => unsub();
-  }, []);
+  }, [tenantId]);
 
   // Retrieve banners filtered by selected category
   const banners = useMemo(() => {
-    return getBannersForCategory(selectedCategoryId, categories);
-  }, [selectedCategoryId, categories, bannerVersion]);
+    return getBannersForCategory(selectedCategoryId, categories, tenantId);
+  }, [selectedCategoryId, categories, bannerVersion, tenantId]);
 
   const bannersCountRef = useRef(banners.length);
   bannersCountRef.current = banners.length;

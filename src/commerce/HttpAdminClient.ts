@@ -2,6 +2,7 @@ import type { AdminClient } from './AdminClient';
 import {
   TenantConfig,
   Story,
+  CategoryPromoBanner,
   TenantFeePolicy,
   VisualRule,
   Store,
@@ -524,6 +525,64 @@ export class HttpAdminClient implements AdminClient {
       headers,
     });
     return res.ok;
+  }
+
+  // ==========================================
+  // HERO BANNERS
+  // ==========================================
+  async getHeroBanners(tenantId?: string): Promise<CategoryPromoBanner[]> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/hero-banners`, {
+      headers,
+    });
+    if (res.ok) return res.json();
+    return [];
+  }
+
+  async saveHeroBanner(banner: CategoryPromoBanner, tenantId?: string): Promise<CategoryPromoBanner> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/hero-banners`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(banner),
+    });
+    if (!res.ok) throw new Error('Failed to save hero banner');
+    return res.json();
+  }
+
+  async reorderHeroBanners(banners: CategoryPromoBanner[], tenantId?: string): Promise<CategoryPromoBanner[]> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/hero-banners/reorder`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ banners }),
+    });
+    if (!res.ok) throw new Error('Failed to reorder hero banners');
+    return res.json();
+  }
+
+  async deleteHeroBanner(bannerId: string, tenantId?: string): Promise<boolean> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/hero-banners/${bannerId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    return res.ok;
+  }
+
+  async resetHeroBanners(tenantId?: string): Promise<CategoryPromoBanner[]> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/hero-banners/reset`, {
+      method: 'POST',
+      headers,
+    });
+    if (res.ok) return res.json();
+    return [];
   }
 
   // ==========================================

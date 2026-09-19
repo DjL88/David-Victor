@@ -13,6 +13,7 @@ import {
   reorderPromoBanners,
   resetPromoBanners,
   subscribePromoBanners,
+  fetchPromoBannersForTenant,
 } from '../../commerce/promoBannerData';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
@@ -112,7 +113,8 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   const loadData = async () => {
     setLoading(true);
     try {
-      setBanners(getPromoBanners());
+      const fetchedBanners = await fetchPromoBannersForTenant(tenantId);
+      setBanners(fetchedBanners);
       const [cats, prods, storeList] = await Promise.all([
         commerceClient.getCategories?.() || Promise.resolve([]),
         commerceClient.getProducts?.() || Promise.resolve([]),
@@ -130,8 +132,10 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
   useEffect(() => {
     loadData();
-    const unsub = subscribePromoBanners(() => {
-      setBanners(getPromoBanners());
+    const unsub = subscribePromoBanners((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        setBanners(getPromoBanners(tenantId));
+      }
     });
     return () => unsub();
   }, [tenantId]);
@@ -164,7 +168,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     setIsEditorOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentEditingBanner.title.trim()) {
       showToast('Please enter a banner headline title.');
       return;
@@ -174,30 +178,30 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
       return;
     }
 
-    savePromoBanner(currentEditingBanner);
+    await savePromoBanner(currentEditingBanner, tenantId);
     setIsEditorOpen(false);
     showToast(isEditingExisting ? 'Hero banner updated!' : 'New hero banner created!');
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this hero banner?')) {
-      deletePromoBanner(id);
+      await deletePromoBanner(id, tenantId);
       showToast('Hero banner deleted.');
     }
   };
 
-  const handleMove = (index: number, direction: 'up' | 'down') => {
+  const handleMove = async (index: number, direction: 'up' | 'down') => {
     const newIdx = direction === 'up' ? index - 1 : index + 1;
     if (newIdx < 0 || newIdx >= banners.length) return;
     const copy = [...banners];
     const item = copy.splice(index, 1)[0];
     copy.splice(newIdx, 0, item);
-    reorderPromoBanners(copy);
+    await reorderPromoBanners(copy, tenantId);
   };
 
-  const handleResetDefaults = () => {
+  const handleResetDefaults = async () => {
     if (window.confirm('Reset all hero promotional banners to original defaults?')) {
-      resetPromoBanners();
+      await resetPromoBanners(tenantId);
       showToast('Banners reset to defaults.');
     }
   };

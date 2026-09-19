@@ -136,6 +136,30 @@
         "createdAt": { "type": "string", "description": "ISO timestamp" }
       },
       "required": ["notificationId", "tenantId", "recipientUid", "title", "body", "type", "createdAt"]
+    },
+    "HeroBanner": {
+      "title": "HeroBanner",
+      "description": "Storefront promotional hero banner configured per tenant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique banner ID" },
+        "tenantId": { "type": "string", "description": "Associated tenant ID" },
+        "title": { "type": "string", "description": "Banner headline title" },
+        "subtitle": { "type": "string", "description": "Banner descriptive subtitle" },
+        "badge": { "type": "string", "description": "Optional badge label" },
+        "backgroundImageUrl": { "type": "string", "description": "Banner background image URL" },
+        "buttonLabel": { "type": "string", "description": "Call-to-action button label" },
+        "actionType": { "type": "string", "description": "Action type: CATEGORY, PRODUCT, SEARCH, or STORE_PICKER" },
+        "targetPlu": { "type": "string", "description": "Target product PLU" },
+        "targetCategoryId": { "type": "string", "description": "Target category ID" },
+        "categoryId": { "type": "string", "description": "Category filter ID or undefined for home" },
+        "categorySlugMatch": { "type": "string", "description": "Category keyword filter match" },
+        "linkedProductPlus": { "type": "array", "description": "Stock linked PLU list" },
+        "stockMatchMode": { "type": "string", "description": "Stock verification mode (AND or OR)" },
+        "orderIndex": { "type": "number", "description": "Sort order index" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["id", "title", "backgroundImageUrl", "buttonLabel", "actionType"]
     }
   },
   "firestore": {
@@ -146,6 +170,10 @@
     "/tenants/{tenantId}/stories/{storyId}": {
       "schema": "Story",
       "description": "Storefront marketing stories for a tenant"
+    },
+    "/tenants/{tenantId}/heroBanners/{bannerId}": {
+      "schema": "HeroBanner",
+      "description": "Storefront marketing hero banners for a tenant"
     },
     "/tenantMemberships/{membershipId}": {
       "schema": "TenantMembership",

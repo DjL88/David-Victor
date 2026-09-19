@@ -302,6 +302,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* Hero / Category-Customizable Promotional Carousel with background images and stock linking */}
       {!searchQuery && (
         <PromotionalBannerCarousel
+          tenantId={tenant?.tenantId}
           selectedCategoryId={selectedCategoryId}
           categories={categories}
           selectedStore={selectedStore}

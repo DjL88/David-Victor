@@ -1,4 +1,5 @@
 import { CategoryPromoBanner, Category, Product } from './models';
+import { defaultAdminClient } from './HttpAdminClient';
 
 export const DEFAULT_PROMO_BANNERS: CategoryPromoBanner[] = [
   // GLOBAL / HOME BANNERS (When on All Categories / Home)
@@ -192,105 +193,227 @@ export const DEFAULT_PROMO_BANNERS: CategoryPromoBanner[] = [
   },
 ];
 
-// Storage key for local persistence
-const STORAGE_KEY = 'bwydi_hero_promo_banners';
+const getStorageKey = (tenantId: string = 'brand-alpha') => `bwydi_hero_promo_banners_${tenantId}`;
 
-function loadInitialBanners(): CategoryPromoBanner[] {
+function loadInitialBannersForTenant(tenantId: string = 'brand-alpha'): CategoryPromoBanner[] {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
+      const saved = window.localStorage.getItem(getStorageKey(tenantId));
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
+      // Fallback for brand-alpha legacy key
+      if (tenantId === 'brand-alpha') {
+        const legacy = window.localStorage.getItem('bwydi_hero_promo_banners');
+        if (legacy) {
+          const parsed = JSON.parse(legacy);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      }
     } catch (e) {
-      console.warn('Failed to load promo banners from storage:', e);
+      console.warn(`Failed to load promo banners from storage for tenant ${tenantId}:`, e);
     }
   }
   return [...DEFAULT_PROMO_BANNERS];
 }
 
-// In-memory tenant banner store
-let customBanners: CategoryPromoBanner[] = loadInitialBanners();
-const listeners = new Set<() => void>();
+// In-memory tenant banner store keyed by tenantId
+const customBannersByTenant: Record<string, CategoryPromoBanner[]> = {};
+const listeners = new Set<(tenantId?: string) => void>();
 
-function notifyListeners(): void {
-  if (typeof window !== 'undefined' && window.localStorage) {
+function notifyListeners(tenantId?: string): void {
+  const tId = tenantId || 'brand-alpha';
+  if (typeof window !== 'undefined' && window.localStorage && customBannersByTenant[tId]) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(customBanners));
+      window.localStorage.setItem(getStorageKey(tId), JSON.stringify(customBannersByTenant[tId]));
     } catch (e) {
-      console.warn('Failed to persist promo banners:', e);
+      console.warn(`Failed to persist promo banners for tenant ${tId}:`, e);
     }
   }
   listeners.forEach((fn) => {
     try {
-      fn();
+      fn(tenantId);
     } catch (err) {
       console.error('Error in promo banner listener:', err);
     }
   });
 }
 
-export function subscribePromoBanners(callback: () => void): () => void {
+export function subscribePromoBanners(callback: (tenantId?: string) => void): () => void {
   listeners.add(callback);
   return () => {
     listeners.delete(callback);
   };
 }
 
-export function getPromoBanners(): CategoryPromoBanner[] {
-  return [...customBanners];
-}
-
-export function savePromoBanner(banner: CategoryPromoBanner): void {
-  const idx = customBanners.findIndex((b) => b.id === banner.id);
-  if (idx >= 0) {
-    customBanners[idx] = { ...banner };
-  } else {
-    customBanners.unshift({ ...banner });
+/**
+ * Fetches promotional hero banners from the Firestore backend for a specific tenant.
+ * Updates in-memory store and local cache.
+ */
+export async function fetchPromoBannersForTenant(tenantId: string = 'brand-alpha'): Promise<CategoryPromoBanner[]> {
+  try {
+    const res = await fetch(`/api/v1/tenants/${encodeURIComponent(tenantId)}/hero-banners`, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Tenant-ID': tenantId,
+      },
+    });
+    if (res.ok) {
+      const banners = await res.json();
+      if (Array.isArray(banners)) {
+        customBannersByTenant[tenantId] = banners;
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            window.localStorage.setItem(getStorageKey(tenantId), JSON.stringify(banners));
+          } catch {
+            // ignore
+          }
+        }
+        notifyListeners(tenantId);
+        return banners;
+      }
+    }
+  } catch (err) {
+    console.warn(`[PromoBanners] Failed to fetch banners from API for tenant ${tenantId}:`, err);
   }
-  notifyListeners();
+
+  if (!customBannersByTenant[tenantId]) {
+    customBannersByTenant[tenantId] = loadInitialBannersForTenant(tenantId);
+  }
+  return customBannersByTenant[tenantId];
 }
 
-export function deletePromoBanner(bannerId: string): void {
-  customBanners = customBanners.filter((b) => b.id !== bannerId);
-  notifyListeners();
+export function getPromoBanners(tenantId: string = 'brand-alpha'): CategoryPromoBanner[] {
+  if (!customBannersByTenant[tenantId]) {
+    customBannersByTenant[tenantId] = loadInitialBannersForTenant(tenantId);
+  }
+  return [...customBannersByTenant[tenantId]];
 }
 
-export function reorderPromoBanners(newBanners: CategoryPromoBanner[]): void {
-  customBanners = [...newBanners];
-  notifyListeners();
+export async function savePromoBanner(banner: CategoryPromoBanner, tenantId: string = 'brand-alpha'): Promise<void> {
+  if (!customBannersByTenant[tenantId]) {
+    customBannersByTenant[tenantId] = loadInitialBannersForTenant(tenantId);
+  }
+  const idx = customBannersByTenant[tenantId].findIndex((b) => b.id === banner.id);
+  if (idx >= 0) {
+    customBannersByTenant[tenantId][idx] = { ...banner };
+  } else {
+    customBannersByTenant[tenantId].unshift({ ...banner });
+  }
+  notifyListeners(tenantId);
+
+  // Sync to Firestore backend via Admin API
+  try {
+    if (defaultAdminClient?.saveHeroBanner) {
+      await defaultAdminClient.saveHeroBanner(banner, tenantId);
+    } else {
+      await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/hero-banners`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId },
+        body: JSON.stringify(banner),
+      });
+    }
+  } catch (err) {
+    console.warn(`[PromoBanners] Backend sync failed for banner ${banner.id}:`, err);
+  }
 }
 
-export function purgePromoBanners(): void {
-  customBanners = [];
-  notifyListeners();
+export async function deletePromoBanner(bannerId: string, tenantId: string = 'brand-alpha'): Promise<void> {
+  if (!customBannersByTenant[tenantId]) {
+    customBannersByTenant[tenantId] = loadInitialBannersForTenant(tenantId);
+  }
+  customBannersByTenant[tenantId] = customBannersByTenant[tenantId].filter((b) => b.id !== bannerId);
+  notifyListeners(tenantId);
+
+  // Sync to Firestore backend via Admin API
+  try {
+    if (defaultAdminClient?.deleteHeroBanner) {
+      await defaultAdminClient.deleteHeroBanner(bannerId, tenantId);
+    } else {
+      await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/hero-banners/${encodeURIComponent(bannerId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Tenant-ID': tenantId },
+      });
+    }
+  } catch (err) {
+    console.warn(`[PromoBanners] Backend sync failed for deleting banner ${bannerId}:`, err);
+  }
 }
 
-export function resetPromoBanners(): void {
-  customBanners = [...DEFAULT_PROMO_BANNERS];
-  notifyListeners();
+export async function reorderPromoBanners(newBanners: CategoryPromoBanner[], tenantId: string = 'brand-alpha'): Promise<void> {
+  customBannersByTenant[tenantId] = [...newBanners];
+  notifyListeners(tenantId);
+
+  // Sync to Firestore backend via Admin API
+  try {
+    if (defaultAdminClient?.reorderHeroBanners) {
+      await defaultAdminClient.reorderHeroBanners(newBanners, tenantId);
+    } else {
+      await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/hero-banners/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId },
+        body: JSON.stringify({ banners: newBanners }),
+      });
+    }
+  } catch (err) {
+    console.warn(`[PromoBanners] Backend sync failed for reordering banners:`, err);
+  }
+}
+
+export async function purgePromoBanners(tenantId: string = 'brand-alpha'): Promise<void> {
+  customBannersByTenant[tenantId] = [];
+  notifyListeners(tenantId);
+}
+
+export async function resetPromoBanners(tenantId: string = 'brand-alpha'): Promise<void> {
+  // Sync to Firestore backend via Admin API
+  try {
+    if (defaultAdminClient?.resetHeroBanners) {
+      const res = await defaultAdminClient.resetHeroBanners(tenantId);
+      customBannersByTenant[tenantId] = res && res.length > 0 ? res : [...DEFAULT_PROMO_BANNERS];
+    } else {
+      const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/hero-banners/reset`, {
+        method: 'POST',
+        headers: { 'X-Tenant-ID': tenantId },
+      });
+      if (res.ok) {
+        const banners = await res.json();
+        customBannersByTenant[tenantId] = Array.isArray(banners) ? banners : [...DEFAULT_PROMO_BANNERS];
+      } else {
+        customBannersByTenant[tenantId] = [...DEFAULT_PROMO_BANNERS];
+      }
+    }
+  } catch {
+    customBannersByTenant[tenantId] = [...DEFAULT_PROMO_BANNERS];
+  }
+  notifyListeners(tenantId);
 }
 
 /**
- * Filters banners appropriate for the active category context:
+ * Filters banners appropriate for the active category context and tenant:
  * - When categoryId is null: returns global/home banners
  * - When categoryId is selected: returns banners matching categoryId or category name/slug keywords
  */
 export function getBannersForCategory(
   categoryId: string | null,
-  categories: Category[]
+  categories: Category[],
+  tenantId: string = 'brand-alpha'
 ): CategoryPromoBanner[] {
+  const currentBanners = getPromoBanners(tenantId);
+
   if (!categoryId) {
     // Return all banners meant for the home view or custom configured banners
-    if (customBanners.length > 0) {
+    if (currentBanners.length > 0) {
       // Prioritize global/home banners first, followed by category-specific ones so all banners are browsable in the carousel
-      const homeBanners = customBanners.filter(
+      const homeBanners = currentBanners.filter(
         (b) => !b.categoryId || b.categorySlugMatch === 'all'
       );
-      const otherBanners = customBanners.filter(
+      const otherBanners = currentBanners.filter(
         (b) => b.categoryId && b.categorySlugMatch !== 'all'
       );
       const combined = [...homeBanners, ...otherBanners];
@@ -316,7 +439,7 @@ export function getBannersForCategory(
   const catIdLower = categoryId.toLowerCase();
 
   // Filter banners matching exact categoryId, ancestor categoryId, or semantic keywords
-  const matched = customBanners.filter((banner) => {
+  const matched = currentBanners.filter((banner) => {
     if (banner.categoryId && (banner.categoryId === categoryId || catIdLower.includes(banner.categoryId))) {
       return true;
     }
@@ -405,3 +528,4 @@ export function checkBannerStock(
     statusLabel,
   };
 }
+
