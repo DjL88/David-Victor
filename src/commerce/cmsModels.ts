@@ -90,8 +90,10 @@ export interface CategoryCarouselBlock extends BaseCmsBlock {
 export interface OfferCarouselBlock extends BaseCmsBlock {
   type: 'OfferCarousel';
   title: string;
+  subtitle?: string;
   badge?: string;
-  productPlus: string[];
+  bannerIds?: string[];
+  productPlus?: string[];
 }
 
 export interface StoreFinderBlock extends BaseCmsBlock {

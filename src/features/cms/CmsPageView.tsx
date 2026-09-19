@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CmsPage, CmsBlock } from '../../commerce/cmsModels';
 import { Product, Category, Story } from '../../commerce/models';
+import { getPromoBanners } from '../../commerce/promoBannerData';
 import { useTenant } from '../../tenant/TenantContext';
 import { HeroImage, ProductImage, CategoryImage } from '../../components/media/Media';
 import { formatCurrency } from '../../utils/formatters';
@@ -179,6 +180,65 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                       <span className="text-xs font-bold text-gray-800 line-clamp-1">
                         {cat?.name || 'Category'}
                       </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          case 'OfferCarousel': {
+            const allBanners = getPromoBanners();
+            const relevantBanners = block.bannerIds && block.bannerIds.length > 0
+              ? allBanners.filter((b) => block.bannerIds!.includes(b.id))
+              : allBanners;
+
+            return (
+              <div key={block.id} className="space-y-3">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{block.title}</h3>
+                  {block.subtitle && (
+                    <p className="text-xs text-gray-500">{block.subtitle}</p>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {relevantBanners.map((banner) => (
+                    <div
+                      key={banner.id}
+                      className="relative rounded-2xl overflow-hidden h-48 bg-gray-900 text-white p-5 flex flex-col justify-between shadow-md border border-gray-100"
+                    >
+                      <img
+                        src={banner.backgroundImageUrl}
+                        alt={banner.title}
+                        className="absolute inset-0 w-full h-full object-cover opacity-60"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+                      <div className="relative z-10">
+                        {banner.badge && (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-white mb-2 shadow-xs">
+                            {banner.badge}
+                          </span>
+                        )}
+                        <h4 className="font-extrabold text-base text-white tracking-tight line-clamp-1">
+                          {banner.title}
+                        </h4>
+                        <p className="text-xs text-gray-300 line-clamp-2 mt-1">
+                          {banner.subtitle}
+                        </p>
+                      </div>
+                      <div className="relative z-10 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (banner.targetCategoryId) {
+                              onSelectCategory(banner.targetCategoryId);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl font-bold text-xs bg-white text-gray-900 hover:bg-gray-100 transition-transform active:scale-95 shadow-xs"
+                        >
+                          {banner.buttonLabel || 'Explore Offer'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -15,6 +15,7 @@ import {
   HelpCircle,
   ShoppingBag,
   Store,
+  Sparkles,
 } from 'lucide-react';
 
 interface PagesAdminScreenProps {
@@ -69,6 +70,15 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           order: newOrder,
           title: 'Featured Organic Essentials',
           productPlus: ['PLU-SOURDOUGH-01', 'PLU-ORGANIC-EGGS-6PK'],
+        };
+        break;
+      case 'OfferCarousel':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'OfferCarousel',
+          order: newOrder,
+          title: 'Special Deals & Promo Spotlights',
+          subtitle: 'Limited-time bundles and seasonal savings',
         };
         break;
       case 'FAQ':
@@ -289,8 +299,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
               <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in fade-in">
                 {[
                   { type: 'Hero', label: 'Hero Banner', icon: Layers },
-                  { type: 'RichText', label: 'Rich Text', icon: FileText },
+                  { type: 'OfferCarousel', label: 'Offer Carousel', icon: Sparkles },
                   { type: 'ProductCarousel', label: 'Product Carousel', icon: ShoppingBag },
+                  { type: 'RichText', label: 'Rich Text', icon: FileText },
                   { type: 'StoreFinder', label: 'Store Finder', icon: Store },
                   { type: 'FAQ', label: 'FAQ Accordion', icon: HelpCircle },
                   { type: 'Divider', label: 'Divider', icon: Layout },
@@ -394,6 +405,33 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                       }}
                       className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
                     />
+                  )}
+
+                  {block.type === 'OfferCarousel' && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Offer Carousel Title"
+                        value={block.title}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).title = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-bold"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Offer Carousel Subtitle"
+                        value={block.subtitle || ''}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).subtitle = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                      />
+                    </div>
                   )}
 
                   {block.type === 'ProductCarousel' && (

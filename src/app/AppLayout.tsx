@@ -21,7 +21,7 @@ import { StoreSwitchDiffModal } from '../features/stores/StoreSwitchDiffModal';
 import { CartDrawerModal } from '../features/cart/CartDrawerModal';
 import { CheckoutModal } from '../features/checkout/CheckoutModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
-import { DemoBanner } from '../components/DemoBanner';
+import { AislesModal } from '../features/catalog/AislesModal';
 import { MealDealDialog } from '../components/deals/MealDealDialog';
 import { BundleSelectionDialog } from '../components/deals/BundleSelectionDialog';
 import { DeliverectDeal, getDealForStory } from '../commerce/dealModels';
@@ -62,6 +62,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
   // Checkout modal
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+  // Aisles Directory Modal
+  const [isAislesModalOpen, setIsAislesModalOpen] = useState<boolean>(false);
 
   // Location & Store management
   const {
@@ -295,29 +297,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
       className="min-h-screen w-full bg-gray-50 text-gray-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white"
     >
       <div className="w-full">
-        {/* Top Demo Banner (only visible in Demo mode) */}
-        <DemoBanner onOpenAdmin={onOpenAdmin} />
-
-        {/* White-label Header */}
-        <Header
-          currentAddress={currentAddress}
-          selectedStore={selectedStore}
-          fulfillmentType={fulfillmentType}
-          onFulfillmentChange={setFulfillmentType}
-          onOpenLocationPicker={() => setIsLocationModalOpen(true)}
-          onOpenStorePicker={() => setIsStorePickerOpen(true)}
-          onOpenCart={() => setIsCartOpen(true)}
-          onOpenSearch={() => setActiveTab('search')}
-          searchQuery={searchQuery}
-          onSearchChange={(q) => {
-            setSearchQuery(q);
-            if (activeTab === 'orders' || activeTab === 'account') {
-              setActiveTab('home');
-            }
-          }}
-          cartItemCount={totalItemsCount}
-          onOpenAdmin={onOpenAdmin}
-        />
+        {/* Sticky/Frozen Header Wrapper across Mobile and Desktop */}
+        <div id="sticky-header-container" className="sticky top-0 z-40 w-full max-w-full bg-white/95 backdrop-blur-md">
+          {/* White-label Header */}
+          <Header
+            currentAddress={currentAddress}
+            selectedStore={selectedStore}
+            fulfillmentType={fulfillmentType}
+            onFulfillmentChange={setFulfillmentType}
+            onOpenLocationPicker={() => setIsLocationModalOpen(true)}
+            onOpenStorePicker={() => setIsStorePickerOpen(true)}
+            onOpenCart={() => setIsCartOpen(true)}
+            onOpenSearch={() => setActiveTab('search')}
+            searchQuery={searchQuery}
+            onSearchChange={(q) => {
+              setSearchQuery(q);
+              if (activeTab === 'orders' || activeTab === 'account') {
+                setActiveTab('home');
+              }
+            }}
+            cartItemCount={totalItemsCount}
+            onOpenAdmin={onOpenAdmin}
+          />
+        </div>
 
         {/* Tab Views */}
         <main className="w-full max-w-full">
@@ -355,6 +357,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               onAddItemsToBasket={handleAddAllToBasket}
               activeStores={activeStores}
               onSelectStore={selectStore}
+              onOpenAislesModal={() => setIsAislesModalOpen(true)}
             />
           )}
 
@@ -393,6 +396,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
       <MobileNav
         activeTab={activeTab}
         onChangeTab={setActiveTab}
+        onOpenAisles={() => setIsAislesModalOpen(true)}
       />
 
       {/* Story Fullscreen Viewer Modal */}
@@ -574,6 +578,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           setActiveDealForModal(deal);
         }}
         loading={basketLoading}
+      />
+
+      {/* All Aisles & Categories Directory Modal */}
+      <AislesModal
+        isOpen={isAislesModalOpen}
+        onClose={() => setIsAislesModalOpen(false)}
+        categories={catalog?.categories || []}
+        selectedCategoryId={selectedCategoryId}
+        onSelectCategory={(catId) => {
+          navigateToCategory(catId);
+          setActiveTab('home');
+          setIsAislesModalOpen(false);
+        }}
+        storeName={selectedStore?.name}
       />
 
       {/* Checkout Modal - mounted conditionally when open to guarantee consistent hook execution order */}

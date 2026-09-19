@@ -66,6 +66,7 @@ interface HomeScreenProps {
   onAddItemsToBasket?: (plus: string[], dealTitle?: string) => void;
   activeStores?: Store[];
   onSelectStore?: (store: Store | null) => void;
+  onOpenAislesModal?: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -101,6 +102,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onAddItemsToBasket,
   activeStores = [],
   onSelectStore,
+  onOpenAislesModal,
 }) => {
   const { tenant } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
@@ -348,6 +350,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onOpenStorePicker={onOpenStorePicker}
         filterState={filterState}
         onOpenFiltersModal={() => setIsFilterModalOpen(true)}
+        onOpenAislesModal={onOpenAislesModal}
         onToggleFavouritesFilter={() =>
           setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }))
         }

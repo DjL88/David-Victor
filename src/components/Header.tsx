@@ -81,25 +81,6 @@ export const Header: React.FC<HeaderProps> = ({
       id="main-storefront-header"
       className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-xs w-full max-w-full"
     >
-      {/* Top Banner: Store Brand & Delivery Guarantee Bar */}
-      <div className="bg-gray-900 text-white text-[11px] py-1.5 px-4 flex items-center justify-between w-full max-w-full overflow-hidden">
-        <div className="flex items-center gap-2 truncate">
-          <span className="font-bold text-xs" style={{ color: tenant?.primaryColour || '#10b981' }}>
-            {tenant?.brandName || 'Storefront'}
-          </span>
-          <span className="text-gray-500">•</span>
-          <span className="text-gray-300 text-xs truncate">
-            {selectedStore?.name || 'Local Delivery & Collection'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3 text-gray-300 text-xs">
-          <span className="text-gray-400">
-            {tenant?.tagline || 'Delivery and collection available'}
-          </span>
-        </div>
-      </div>
-
       {/* Main Brand, Location, Search, Account & Basket Row */}
       <div className="w-full max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
         {/* Brand Logo & Name */}

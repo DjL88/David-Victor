@@ -284,11 +284,19 @@ export function getBannersForCategory(
   categories: Category[]
 ): CategoryPromoBanner[] {
   if (!categoryId) {
-    // Return banners meant for the home view
-    const homeBanners = customBanners.filter(
-      (b) => !b.categoryId || b.categorySlugMatch === 'all'
-    );
-    return homeBanners.length > 0 ? homeBanners : customBanners.slice(0, 3);
+    // Return all banners meant for the home view or custom configured banners
+    if (customBanners.length > 0) {
+      // Prioritize global/home banners first, followed by category-specific ones so all banners are browsable in the carousel
+      const homeBanners = customBanners.filter(
+        (b) => !b.categoryId || b.categorySlugMatch === 'all'
+      );
+      const otherBanners = customBanners.filter(
+        (b) => b.categoryId && b.categorySlugMatch !== 'all'
+      );
+      const combined = [...homeBanners, ...otherBanners];
+      return combined.length > 0 ? combined : [...DEFAULT_PROMO_BANNERS];
+    }
+    return [...DEFAULT_PROMO_BANNERS];
   }
 
   // Find target category name and details

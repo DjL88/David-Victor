@@ -3,6 +3,7 @@ import {
   BasketItem,
   Money,
   toMoney,
+  moneyToMinor,
   Address,
   DeliveryOption,
   DeliverySlot,
@@ -14,7 +15,7 @@ import {
 export class BasketService {
   private static instance: BasketService;
   private baskets = new Map<string, Basket>();
-  private orders = new Map<string, Order>();
+  private orders = new Map<string, any>();
 
   static getInstance(): BasketService {
     if (!BasketService.instance) {
@@ -33,11 +34,13 @@ export class BasketService {
       id,
       storeId,
       storeName: storeId === 'store-02' ? 'Market Lane Artisan Provisions' : 'Chelmsford Flagship Superstore',
-      channelLinkId: storeId,
       fulfillmentType,
       items: [],
       subtotal: toMoney(0, currency),
       total: toMoney(fulfillmentType === 'delivery' ? 250 : 0, currency),
+      discountTotal: toMoney(0, currency),
+      currency,
+      validationErrors: [],
       discounts: [],
       charges: fulfillmentType === 'delivery' ? [
         {
@@ -48,7 +51,6 @@ export class BasketService {
         }
       ] : [],
       restrictions: [],
-      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     this.baskets.set(id, basket);
@@ -74,7 +76,7 @@ export class BasketService {
     } else if (existingIndex >= 0) {
       basket.items[existingIndex].quantity = quantity;
       basket.items[existingIndex].totalPrice = toMoney(
-        basket.items[existingIndex].price.amountMinor * quantity,
+        moneyToMinor(basket.items[existingIndex].price) * quantity,
         basket.items[existingIndex].price.currency
       );
     } else {
@@ -86,7 +88,7 @@ export class BasketService {
         quantity,
         price: defaultPrice,
         unitPrice: defaultPrice,
-        totalPrice: toMoney(defaultPrice.amountMinor * quantity, defaultPrice.currency),
+        totalPrice: toMoney(moneyToMinor(defaultPrice) * quantity, defaultPrice.currency),
       });
     }
 
@@ -134,7 +136,7 @@ export class BasketService {
         if (incoming.substitutionPreference) item.substitutionPreference = incoming.substitutionPreference;
         if (incoming.preferredSubstitutePlu) item.preferredSubstitutePlu = incoming.preferredSubstitutePlu;
         if (incoming.subItems) item.subItems = incoming.subItems;
-        item.totalPrice = toMoney(item.price.amountMinor * item.quantity, item.price.currency);
+        item.totalPrice = toMoney(moneyToMinor(item.price) * item.quantity, item.price.currency);
       } else {
         const price = incoming.price || toMoney(450, basket.subtotal.currency);
         basket.items.push({
@@ -144,7 +146,7 @@ export class BasketService {
           quantity: incoming.quantity,
           price,
           unitPrice: price,
-          totalPrice: toMoney(price.amountMinor * incoming.quantity, price.currency),
+          totalPrice: toMoney(moneyToMinor(price) * incoming.quantity, price.currency),
           substitutionPreference: incoming.substitutionPreference,
           substituteCandidatePlus: incoming.substituteCandidatePlus,
           preferredSubstitutePlu: incoming.preferredSubstitutePlu,
@@ -194,7 +196,7 @@ export class BasketService {
       basket.deliveryAddress = fulfillment.address;
     }
     if (fulfillment.slot) {
-      basket.slot = fulfillment.slot;
+      basket.fulfillmentSlot = fulfillment.slot;
     }
 
     this.recalculateBasket(basket);
@@ -211,7 +213,6 @@ export class BasketService {
 
     basket.storeId = storeId;
     basket.storeName = storeId === 'store-02' ? 'Market Lane Artisan Provisions' : 'Chelmsford Flagship Superstore';
-    basket.channelLinkId = storeId;
     this.recalculateBasket(basket);
 
     return {
@@ -304,11 +305,9 @@ export class BasketService {
       return [
         {
           id: 'opt_pickup_free',
-          title: 'Store Collection',
+          displayName: 'Store Collection',
           price: toMoney(0, 'GBP'),
-          estimatedMinutes: 20,
-          type: 'pickup',
-          isDefault: true,
+          deliveryEta: '20 mins',
         },
       ];
     }
@@ -316,19 +315,16 @@ export class BasketService {
     return [
       {
         id: 'opt_delivery_standard',
-        title: 'Priority Courier Delivery',
+        displayName: 'Priority Courier Delivery',
         price: toMoney(250, 'GBP'),
-        estimatedMinutes: 35,
-        type: 'delivery',
-        isDefault: true,
+        deliveryEta: '35 mins',
+        recommended: true,
       },
       {
         id: 'opt_delivery_express',
-        title: 'Rush Ultra-Fast Delivery',
+        displayName: 'Rush Ultra-Fast Delivery',
         price: toMoney(499, 'GBP'),
-        estimatedMinutes: 20,
-        type: 'delivery',
-        isDefault: false,
+        deliveryEta: '20 mins',
       },
     ];
   }
@@ -345,21 +341,23 @@ export class BasketService {
     const today = new Date().toISOString().split('T')[0];
     const slot1: DeliverySlot = {
       id: `slot_${today}_asap`,
+      dayLabel: 'Today',
+      dateString: today,
       startTime: '10:00',
       endTime: '11:00',
-      date: today,
       isAvailable: true,
-      price: toMoney(250, 'GBP'),
-      formattedTime: 'Today, 10:00 - 11:00',
+      fee: toMoney(250, 'GBP'),
+      formatted: 'Today, 10:00 - 11:00',
     };
     const slot2: DeliverySlot = {
       id: `slot_${today}_noon`,
+      dayLabel: 'Today',
+      dateString: today,
       startTime: '12:00',
       endTime: '13:00',
-      date: today,
       isAvailable: true,
-      price: toMoney(199, 'GBP'),
-      formattedTime: 'Today, 12:00 - 13:00',
+      fee: toMoney(199, 'GBP'),
+      formatted: 'Today, 12:00 - 13:00',
     };
 
     return {
@@ -386,15 +384,12 @@ export class BasketService {
     const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
     return {
-      id: sessionId,
       sessionId,
-      clientSecret: `secret_${sessionId}`,
-      publishableKey: 'pk_live_dpay_sample_key',
-      amount: sessionAmount,
-      currency: sessionAmount.currency,
-      status: 'pending',
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       redirectUrl: `/orders/confirm?sessionId=${sessionId}`,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      amount: sessionAmount,
+      currency: sessionAmount.currency || 'GBP',
+      provider: 'DELIVERECT_PAY',
     };
   }
 
@@ -411,48 +406,53 @@ export class BasketService {
       dispatchValidationId?: string;
       dispatchValidationExpiresAt?: string;
     }
-  ): Promise<Order> {
+  ): Promise<any> {
     const basket = await this.getBasket(basketId);
     const orderId = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const currency = basket?.subtotal.currency || 'GBP';
 
-    const order: Order = {
+    const order: any = {
       id: orderId,
+      displayId: `#ORD-${Math.floor(100000 + Math.random() * 900000)}`,
       orderNumber: `BW-${Math.floor(100000 + Math.random() * 900000)}`,
+      tenantId: 'brand-alpha',
       storeId: basket?.storeId || 'store-01',
       storeName: basket?.storeName || 'Chelmsford Flagship Superstore',
       status: 'SUBMITTED',
-      fulfillmentType: basket?.fulfillmentType || 'delivery',
-      deliveryAddress: options?.deliveryAddress || basket?.deliveryAddress,
+      fulfillment: {
+        type: basket?.fulfillmentType || 'delivery',
+        address: options?.deliveryAddress || basket?.deliveryAddress,
+      },
       customer: basket?.customer || { name: 'Customer', email: 'guest@example.com' },
-      items: basket ? [...basket.items] : [],
-      subtotal: basket?.subtotal || toMoney(0, currency),
-      total: basket?.total || toMoney(0, currency),
-      charges: basket?.charges || [],
-      discounts: basket?.discounts || [],
-      tip: basket?.tip,
+      originalBasket: basket ? { ...basket } : undefined,
+      currentOrder: {
+        subtotal: basket?.subtotal || toMoney(0, currency),
+        total: basket?.total || toMoney(0, currency),
+        charges: basket?.charges || [],
+        discounts: basket?.discounts || [],
+        itemCount: basket?.items.length || 0,
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      slot: basket?.slot,
     };
 
     this.orders.set(orderId, order);
     return order;
   }
 
-  async getOrder(orderId: string): Promise<Order | null> {
+  async getOrder(orderId: string): Promise<any | null> {
     return this.orders.get(orderId) || null;
   }
 
-  async advancePickingDemo(orderId: string): Promise<Order | null> {
+  async advancePickingDemo(orderId: string): Promise<any | null> {
     const order = this.orders.get(orderId);
     if (!order) return null;
 
     if (order.status === 'SUBMITTED') order.status = 'ACCEPTED';
     else if (order.status === 'ACCEPTED') order.status = 'PICKING';
     else if (order.status === 'PICKING') order.status = 'PICKED';
-    else if (order.status === 'PICKED') order.status = 'IN_TRANSIT';
-    else if (order.status === 'IN_TRANSIT') order.status = 'DELIVERED';
+    else if (order.status === 'PICKED') order.status = 'OUT_FOR_DELIVERY';
+    else if (order.status === 'OUT_FOR_DELIVERY') order.status = 'DELIVERED';
 
     order.updatedAt = new Date().toISOString();
     return order;
@@ -463,7 +463,7 @@ export class BasketService {
     let subtotalMinor = 0;
 
     for (const item of basket.items) {
-      const itemTotalMinor = (item.price?.amountMinor || 0) * (item.quantity || 1);
+      const itemTotalMinor = moneyToMinor(item.price) * (item.quantity || 1);
       item.totalPrice = toMoney(itemTotalMinor, currency);
       subtotalMinor += itemTotalMinor;
     }
@@ -473,7 +473,7 @@ export class BasketService {
     let chargesMinor = 0;
     if (basket.charges && basket.charges.length > 0) {
       for (const charge of basket.charges) {
-        chargesMinor += charge.amount?.amountMinor || 0;
+        chargesMinor += moneyToMinor(charge.amount);
       }
     } else if (basket.fulfillmentType === 'delivery') {
       chargesMinor = 250;
@@ -490,14 +490,15 @@ export class BasketService {
     let discountsMinor = 0;
     if (basket.discounts) {
       for (const disc of basket.discounts) {
-        discountsMinor += disc.amount?.amountMinor || 0;
+        discountsMinor += moneyToMinor(disc.amount);
       }
     }
 
-    const tipMinor = basket.tip?.amountMinor || 0;
+    const tipMinor = moneyToMinor(basket.tip);
     const totalMinor = Math.max(0, subtotalMinor + chargesMinor + tipMinor - discountsMinor);
 
     basket.total = toMoney(totalMinor, currency);
+    basket.discountTotal = toMoney(discountsMinor, currency);
     basket.updatedAt = new Date().toISOString();
   }
 }
