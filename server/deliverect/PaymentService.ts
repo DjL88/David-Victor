@@ -1,0 +1,735 @@
+import {
+  DPayPaymentRequest,
+  DPayPaymentResponse,
+  PaymentGatewayProfile,
+  DomainPaymentProjection,
+  SettlementResult,
+} from '../../src/domain/models';
+import { Money } from '../../src/domain/money';
+import { CommerceError, ErrorCode } from '../errors';
+import { DPayAdapter } from './DPayAdapter';
+import { DemoPaymentAdapter } from './DemoPaymentAdapter';
+import { DeliverectDPayAdapter } from './DeliverectDPayAdapter';
+import { IntegrationUnavailableDPayAdapter } from './IntegrationUnavailableDPayAdapter';
+import { OAuthTokenManager } from './OAuthTokenManager';
+import { FirestorePlatformService, OrderProjection } from '../firestoreService';
+import { getServerRuntimeMode } from '../runtimeMode';
+
+const dPayAdapters = new Map<string, DPayAdapter>();
+
+export function getDPayAdapter(
+  tenantId: string = 'brand-alpha',
+  environment: string = process.env.DELIVERECT_ENV || 'staging',
+  deliverectAccountId: string = 'default'
+): DPayAdapter {
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  let adapter = dPayAdapters.get(key);
+  if (!adapter) {
+    const appMode = getServerRuntimeMode();
+    const tokenManager = OAuthTokenManager.getInstance(normalizedTenantId);
+    const hasCredentials = tokenManager.isConfigured;
+
+    if (appMode === 'demo') {
+      adapter = new DemoPaymentAdapter();
+    } else if (hasCredentials) {
+      adapter = new DeliverectDPayAdapter(tokenManager);
+    } else {
+      console.warn(
+        `[Deliverect Pay] Non-demo mode (${appMode}) with no credentials for ${key}. Using IntegrationUnavailableDPayAdapter.`
+      );
+      adapter = new IntegrationUnavailableDPayAdapter();
+    }
+    dPayAdapters.set(key, adapter);
+    console.log(`[Deliverect Pay] Active DPay Adapter for [${key}]: ${adapter.adapterName}`);
+  }
+  return adapter;
+}
+
+export function setDPayAdapter(
+  adapter: DPayAdapter,
+  tenantId?: string,
+  environment: string = process.env.DELIVERECT_ENV || 'staging',
+  deliverectAccountId: string = 'default'
+): void {
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  dPayAdapters.set(key, adapter);
+}
+
+export function resetDPayAdapter(): void {
+  dPayAdapters.clear();
+}
+
+export interface CeilingCalculationOptions {
+  approvedSubstituteUplift?: Money;
+  approvedCatchWeightTolerance?: Money;
+  explicitAgreedCharges?: Money[];
+  // Disallowed arbitrary buffer fields for defensive check
+  arbitraryBufferPercentage?: number;
+  safetyBufferPercentage?: number;
+}
+
+export class PaymentService {
+  /**
+   * Section 20: Explicit Customer-Approved Authorization Ceiling.
+   *
+   * ABSOLUTELY DO NOT implement arbitrary percentage buffers (e.g., 10% or 15%).
+   * Authorized ceiling must derive strictly and exclusively from customer consent:
+   *   reconciledBasketTotal
+   *   + explicitly customer-approved substitute uplift
+   *   + explicitly customer-approved catch-weight tolerance where applicable
+   *   + other explicitly agreed potential charges
+   */
+  static calculateApprovedAuthorizationCeiling(
+    reconciledBasketTotal: Money,
+    options: CeilingCalculationOptions = {}
+  ): Money {
+    if (
+      options.arbitraryBufferPercentage !== undefined ||
+      options.safetyBufferPercentage !== undefined
+    ) {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        'Arbitrary safety buffers or percentage markups (e.g. 10% or 15%) are strictly prohibited by platform policy. Every authorized amount must be traceable to explicit customer consent.',
+        422
+      );
+    }
+
+    if (!Number.isInteger(reconciledBasketTotal.amount) || reconciledBasketTotal.amount < 0) {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        `Reconciled basket total must be a non-negative integer minor unit (received: ${reconciledBasketTotal.amount})`,
+        422
+      );
+    }
+
+    const currency = reconciledBasketTotal.currency;
+    let ceilingMinor = reconciledBasketTotal.amount;
+
+    if (options.approvedSubstituteUplift) {
+      if (options.approvedSubstituteUplift.currency !== currency) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          `Currency mismatch for substitute uplift: expected ${currency}, received ${options.approvedSubstituteUplift.currency}`,
+          422
+        );
+      }
+      if (!Number.isInteger(options.approvedSubstituteUplift.amount) || options.approvedSubstituteUplift.amount < 0) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          'Substitute uplift must be a non-negative integer minor unit',
+          422
+        );
+      }
+      ceilingMinor += options.approvedSubstituteUplift.amount;
+    }
+
+    if (options.approvedCatchWeightTolerance) {
+      if (options.approvedCatchWeightTolerance.currency !== currency) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          `Currency mismatch for catch-weight tolerance: expected ${currency}, received ${options.approvedCatchWeightTolerance.currency}`,
+          422
+        );
+      }
+      if (!Number.isInteger(options.approvedCatchWeightTolerance.amount) || options.approvedCatchWeightTolerance.amount < 0) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          'Catch-weight tolerance must be a non-negative integer minor unit',
+          422
+        );
+      }
+      ceilingMinor += options.approvedCatchWeightTolerance.amount;
+    }
+
+    if (options.explicitAgreedCharges && options.explicitAgreedCharges.length > 0) {
+      for (const charge of options.explicitAgreedCharges) {
+        if (charge.currency !== currency) {
+          throw new CommerceError(
+            ErrorCode.INVALID_INPUT,
+            `Currency mismatch for agreed charge: expected ${currency}, received ${charge.currency}`,
+            422
+          );
+        }
+        if (!Number.isInteger(charge.amount) || charge.amount < 0) {
+          throw new CommerceError(
+            ErrorCode.INVALID_INPUT,
+            'Agreed charge must be a non-negative integer minor unit',
+            422
+          );
+        }
+        ceilingMinor += charge.amount;
+      }
+    }
+
+    return {
+      amount: ceilingMinor,
+      currency,
+    };
+  }
+
+  /**
+   * Retrieves payment gateways for a store/channel link (PAY-01).
+   */
+  static async getPaymentGateways(channelLinkId: string, tenantId?: string): Promise<PaymentGatewayProfile[]> {
+    const adapter = getDPayAdapter(tenantId);
+    return adapter.getPaymentGateways(channelLinkId);
+  }
+
+  /**
+   * Requests payment authorization (PAY-02, PAY-04, PAY-06).
+   * Verifies minor units, tokenized mode, and checks against customerApprovedMaxAmount.
+   */
+  static async requestPayment(
+    request: DPayPaymentRequest,
+    tenantId: string
+  ): Promise<DPayPaymentResponse> {
+    // Check for raw PAN/CVC leaks
+    const payloadStr = JSON.stringify(request);
+    if (payloadStr.includes('pan') || payloadStr.includes('cvc') || payloadStr.includes('cvv')) {
+      if (/\b(?:\d[ -]*?){13,16}\b/.test(payloadStr)) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          'Raw PAN/CVC detected in request payload. Raw card information must never be sent to our BFF.',
+          400
+        );
+      }
+    }
+
+    // Ensure tokenized mode
+    if (!request.mode || request.mode.type !== 'token' || !request.mode.tokenId) {
+      throw new CommerceError(
+        ErrorCode.PAYMENT_NOT_AUTHORISED,
+        'Deliverect Pay requires tokenized payment credentials. Raw cards must be tokenized directly via the payment proxy.',
+        422
+      );
+    }
+
+    // Minor units verification
+    if (!Number.isInteger(request.amount) || request.amount <= 0) {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        `Payment amount must be an integer minor unit (e.g. 1550 for £15.50), received: ${request.amount}`,
+        422
+      );
+    }
+
+    // Ceiling check (PAY-06)
+    if (request.customerApprovedMaxAmount) {
+      if (request.customerApprovedMaxAmount.currency !== request.currency) {
+        throw new CommerceError(
+          ErrorCode.INVALID_INPUT,
+          `Payment currency (${request.currency}) does not match authorized ceiling currency (${request.customerApprovedMaxAmount.currency})`,
+          422
+        );
+      }
+      if (request.amount > request.customerApprovedMaxAmount.amount) {
+        throw new CommerceError(
+          ErrorCode.PAYMENT_NOT_AUTHORISED,
+          `Payment request amount of ${request.amount} exceeds customer-approved maximum authorized ceiling of ${request.customerApprovedMaxAmount.amount}`,
+          422
+        );
+      }
+    }
+
+    const adapter = getDPayAdapter(tenantId);
+    const response = await adapter.requestPayment(request);
+
+    // Save payment projection
+    const projection: DomainPaymentProjection = {
+      paymentId: response.paymentId,
+      tenantId,
+      channelLinkId: request.channelLinkId,
+      status: response.status,
+      amount: { amount: response.amount, currency: response.currency },
+      authorizedAmount: { amount: response.authorizedAmount, currency: response.currency },
+      capturedAmount: { amount: response.capturedAmount, currency: response.currency },
+      captureMode: response.captureMode,
+      currency: response.currency,
+      residualHoldAmount: response.residualHoldAmount !== undefined
+        ? { amount: response.residualHoldAmount, currency: response.currency }
+        : undefined,
+      orderReference: response.orderReference,
+      createdAt: response.createdAt,
+      updatedAt: response.updatedAt || response.createdAt,
+    };
+
+    await FirestorePlatformService.savePaymentProjection(projection);
+    return response;
+  }
+
+  /**
+   * Retrieves payment status and projection.
+   */
+  static async getPayment(paymentId: string, tenantId?: string): Promise<DPayPaymentResponse> {
+    const adapter = getDPayAdapter(tenantId);
+    return adapter.getPayment(paymentId);
+  }
+
+  /**
+   * Captures an authorized payment (PAY-07, PAY-08).
+   */
+  static async capture(paymentId: string, finalAmountMinor: number, tenantId?: string): Promise<DPayPaymentResponse> {
+    const adapter = getDPayAdapter(tenantId);
+    const response = await adapter.capture(paymentId, finalAmountMinor);
+
+    await FirestorePlatformService.updatePaymentProjection(paymentId, {
+      status: response.status,
+      capturedAmount: { amount: response.capturedAmount, currency: response.currency },
+      residualHoldAmount: response.residualHoldAmount !== undefined
+        ? { amount: response.residualHoldAmount, currency: response.currency }
+        : undefined,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return response;
+  }
+
+  /**
+   * Refunds a captured payment.
+   */
+  static async refund(
+    paymentId: string,
+    refundAmountMinor: number,
+    reason?: string,
+    tenantId?: string
+  ): Promise<DPayPaymentResponse> {
+    const adapter = getDPayAdapter(tenantId);
+    const response = await adapter.refund(paymentId, refundAmountMinor, reason);
+
+    await FirestorePlatformService.updatePaymentProjection(paymentId, {
+      status: response.status,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return response;
+  }
+
+  /**
+   * Reauthorizes or performs additional auth if picked amount exceeds ceiling (PAY-08).
+   */
+  static async reauthorize(
+    paymentId: string,
+    additionalAmountMinor: number,
+    tenantId?: string
+  ): Promise<DPayPaymentResponse> {
+    const adapter = getDPayAdapter(tenantId);
+    const response = await adapter.reauthorize(paymentId, additionalAmountMinor);
+
+    await FirestorePlatformService.updatePaymentProjection(paymentId, {
+      authorizedAmount: { amount: response.authorizedAmount, currency: response.currency },
+      amount: { amount: response.amount, currency: response.currency },
+      updatedAt: new Date().toISOString(),
+    });
+
+    return response;
+  }
+
+  /**
+   * Derives authoritative final order amount from picked items, amended quantities,
+   * customer substitutions, and non-item order charges (PAY-05, PAY-07, PAY-08).
+   * Enforces non-negative integer minor units.
+   */
+  static calculateAuthoritativeFinalAmount(order: OrderProjection): number {
+    // If picking items exist, derive exact subtotal from picked states
+    if (order.picking?.items && order.picking.items.length > 0) {
+      let itemsSubtotal = 0;
+      for (const item of order.picking.items) {
+        const itemState = (item.state || (item as any).status || 'PENDING').toUpperCase();
+        if (itemState === 'REMOVED' || itemState === 'OUT_OF_STOCK') {
+          continue;
+        }
+
+        const qty = item.pickedQuantity !== undefined ? item.pickedQuantity : (item.originalQuantity ?? 1);
+        if (qty <= 0) continue;
+
+        const getItemPrice = (priceVal: any): number => {
+          if (typeof priceVal === 'number') return priceVal;
+          if (priceVal && typeof priceVal.amount === 'number') return priceVal.amount;
+          return 0;
+        };
+
+        if (itemState === 'SUBSTITUTED') {
+          const finalPrice = getItemPrice(item.finalPrice);
+          if (finalPrice > 0) {
+            itemsSubtotal += Math.round(finalPrice * qty);
+          } else if ((item as any).substitutedBy?.price || item.substitution?.substitutePrice) {
+            const originalPrice = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
+            const substitutePrice = getItemPrice((item as any).substitutedBy?.price) || getItemPrice(item.substitution?.substitutePrice);
+            // Best-match price policy: customer pays lower of original or substitute
+            const effectiveUnitPrice = Math.min(originalPrice, substitutePrice);
+            itemsSubtotal += Math.round(effectiveUnitPrice * qty);
+          } else {
+            const price = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
+            itemsSubtotal += Math.round(price * qty);
+          }
+        } else {
+          // PICKED, PENDING, etc.
+          const finalPrice = getItemPrice(item.finalPrice);
+          if (finalPrice > 0) {
+            itemsSubtotal += Math.round(finalPrice * qty);
+          } else {
+            const price = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
+            itemsSubtotal += Math.round(price * qty);
+          }
+        }
+      }
+
+      // Calculate fees/charges from metadata if available
+      let nonItemCharges = 0;
+      if (order.metadata?.charges && typeof order.metadata.charges === 'object') {
+        for (const charge of Object.values(order.metadata.charges)) {
+          if (typeof charge === 'number') {
+            nonItemCharges += Math.round(charge);
+          } else if (charge && typeof (charge as any).amount === 'number') {
+            nonItemCharges += Math.round((charge as any).amount);
+          }
+        }
+      }
+
+      const calculated = itemsSubtotal + nonItemCharges;
+      // Legitimate zero-value must remain 0; never fall back to order.total when picking items were processed
+      return Math.max(0, Math.round(calculated));
+    }
+
+    // If order already has an explicitly calculated finalAmount without picking items array
+    if (typeof order.finalAmount === 'number' && order.finalAmount >= 0) {
+      return Math.round(order.finalAmount);
+    }
+
+    // Fallback to order.total only when there genuinely is no picking or final amount data
+    return Math.max(0, Math.round(order.total || 0));
+  }
+
+  /**
+   * Final Payment Settlement Reconciliation (Phase 13, PAY-07, PAY-08).
+   * 
+   * Traced lifecycle from Quest PICKING_COMPLETE:
+   * 1. Derives authoritative final order amount.
+   * 2. If final <= authorized: captures exact final amount and releases residual hold.
+   * 3. If final > authorized: triggers reauthorization if requested, or flags PAYMENT_ACTION_REQUIRED.
+   * 4. Updates order and payment projections in Firestore and writes structured audit record.
+   */
+  static async settleOrderPayment(
+    orderId: string,
+    tenantId: string = 'brand-alpha',
+    options?: { reauthorizeIfNeeded?: boolean; actor?: any }
+  ): Promise<SettlementResult> {
+    const order = await FirestorePlatformService.getOrderProjection(orderId);
+    if (!order) {
+      throw new CommerceError(ErrorCode.ORDER_NOT_FOUND, `Order '${orderId}' not found for payment settlement`, 404);
+    }
+
+    // Resolve payment ID
+    let paymentId = order.paymentId;
+    if (!paymentId && order.checkoutId) {
+      const checkout = await FirestorePlatformService.getCheckoutProjection(order.checkoutId);
+      paymentId = checkout?.paymentId;
+    }
+
+    if (!paymentId) {
+      console.warn(`[PaymentService] Order '${orderId}' does not have an associated paymentId. Cannot execute DPay capture.`);
+      const finalAmount = this.calculateAuthoritativeFinalAmount(order);
+
+      // Check if order was placed with an explicit offline payment method
+      const isOfflinePayment =
+        order.metadata?.paymentMethod === 'CASH_ON_COLLECTION' ||
+        (order as any).paymentMethod === 'CASH_ON_COLLECTION';
+
+      if (isOfflinePayment) {
+        return {
+          status: 'SETTLED',
+          orderId,
+          paymentId: 'offline',
+          finalAmount,
+          authorizedAmount: 0,
+          capturedAmount: 0,
+          residualHoldReleased: 0,
+          settledAt: new Date().toISOString(),
+        };
+      }
+
+      // Online DPay order with missing payment ID -> settlement failure / operational alert
+      return {
+        status: 'PAYMENT_ACTION_REQUIRED',
+        orderId,
+        paymentId: 'unattached',
+        finalAmount,
+        authorizedAmount: order.authorizedMaximum || order.total || 0,
+        capturedAmount: 0,
+        residualHoldReleased: 0,
+        settledAt: new Date().toISOString(),
+      };
+    }
+
+    // Resolve authorized amount from payment projection or order
+    const payment = (await FirestorePlatformService.getPaymentProjection(paymentId)) ||
+      (await PaymentService.getPayment(paymentId, tenantId).catch(() => null));
+
+    const authorizedAmount = payment?.authorizedAmount?.amount ??
+      (payment?.authorizedAmount as any) ??
+      order.authorizedMaximum ??
+      order.total;
+
+    const finalAmount = this.calculateAuthoritativeFinalAmount(order);
+
+    // CASE 1: finalAmount <= authorizedAmount (PAY-07)
+    if (finalAmount <= authorizedAmount) {
+      try {
+        await PaymentService.capture(paymentId, finalAmount, tenantId);
+        const residualHold = Math.max(0, authorizedAmount - finalAmount);
+
+        const settlementResult: SettlementResult = {
+          status: 'SETTLED',
+          orderId,
+          paymentId,
+          finalAmount,
+          authorizedAmount,
+          capturedAmount: finalAmount,
+          residualHoldReleased: residualHold,
+          settledAt: new Date().toISOString(),
+        };
+
+        // Update OrderProjection with captured state and residual hold
+        await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
+          paymentState: 'CAPTURED',
+          finalAmount,
+          capturedAmount: finalAmount,
+          residualHoldReleased: residualHold,
+          settlementDetails: settlementResult,
+        });
+
+        // Audit Log
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: options?.actor?.uid || 'system:dpay-settlement',
+          userName: options?.actor?.email || 'System Payment Settlement',
+          userRole: 'platformSuperAdmin',
+          tenantId,
+          action: 'PAYMENT_SETTLED',
+          category: 'Payment',
+          details: `Successfully settled payment ${paymentId} for order ${orderId}. Captured £${(finalAmount / 100).toFixed(2)}, released residual hold of £${(residualHold / 100).toFixed(2)}.`,
+        });
+
+        return settlementResult;
+      } catch (err: any) {
+        console.error(`[PaymentService] Capture failed for payment ${paymentId} on order ${orderId}:`, err);
+        const failureResult: SettlementResult = {
+          status: 'CAPTURE_FAILED',
+          orderId,
+          paymentId,
+          finalAmount,
+          authorizedAmount,
+          error: err.message,
+          settledAt: new Date().toISOString(),
+        };
+
+        await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
+          paymentState: 'CAPTURE_FAILED',
+          finalAmount,
+          settlementDetails: failureResult,
+        });
+
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: options?.actor?.uid || 'system:dpay-settlement',
+          userName: options?.actor?.email || 'System Payment Settlement',
+          userRole: 'platformSuperAdmin',
+          tenantId,
+          action: 'PAYMENT_CAPTURE_FAILED',
+          category: 'Payment',
+          details: `Payment capture failed for payment ${paymentId} on order ${orderId}: ${err.message}`,
+        });
+
+        return failureResult;
+      }
+    }
+
+    // CASE 2: finalAmount > authorizedAmount (PAY-08)
+    const excessAmount = finalAmount - authorizedAmount;
+
+    if (options?.reauthorizeIfNeeded) {
+      try {
+        console.log(`[PaymentService] Reauthorizing payment ${paymentId} by ${excessAmount} minor units...`);
+        await PaymentService.reauthorize(paymentId, excessAmount, tenantId);
+        
+        // Reauthorization succeeded: now capture finalAmount
+        await PaymentService.capture(paymentId, finalAmount, tenantId);
+        const settlementResult: SettlementResult = {
+          status: 'SETTLED',
+          orderId,
+          paymentId,
+          finalAmount,
+          authorizedAmount: finalAmount,
+          capturedAmount: finalAmount,
+          residualHoldReleased: 0,
+          settledAt: new Date().toISOString(),
+        };
+
+        await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
+          paymentState: 'CAPTURED',
+          finalAmount,
+          capturedAmount: finalAmount,
+          residualHoldReleased: 0,
+          settlementDetails: settlementResult,
+        });
+
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: options?.actor?.uid || 'system:dpay-settlement',
+          userName: options?.actor?.email || 'System Payment Settlement',
+          userRole: 'platformSuperAdmin',
+          tenantId,
+          action: 'PAYMENT_REAUTHORIZED_AND_SETTLED',
+          category: 'Payment',
+          details: `Successfully reauthorized additional £${(excessAmount / 100).toFixed(2)} and captured £${(finalAmount / 100).toFixed(2)} for order ${orderId}.`,
+        });
+
+        return settlementResult;
+      } catch (err: any) {
+        console.warn(`[PaymentService] Reauthorization failed for payment ${paymentId}:`, err.message);
+      }
+    }
+
+    // Reauthorization not performed or failed: DO NOT capture over ceiling!
+    const reasonText = `Final picked amount (£${(finalAmount / 100).toFixed(2)}) exceeds customer-approved authorization ceiling (£${(authorizedAmount / 100).toFixed(2)}) by £${(excessAmount / 100).toFixed(2)}. Customer reauthorization or merchant approval required.`;
+    const actionRequiredResult: SettlementResult = {
+      status: 'PAYMENT_ACTION_REQUIRED',
+      orderId,
+      paymentId,
+      finalAmount,
+      authorizedAmount,
+      capturedAmount: 0,
+      excessAmount,
+      requiresReauthorization: true,
+      reason: reasonText,
+      errorMessage: reasonText,
+      settledAt: new Date().toISOString(),
+    };
+
+    await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
+      paymentState: 'PAYMENT_ACTION_REQUIRED',
+      finalAmount,
+      settlementDetails: actionRequiredResult,
+    });
+
+    await FirestorePlatformService.addAuditLog(tenantId, {
+      userId: options?.actor?.uid || 'system:dpay-settlement',
+      userName: options?.actor?.email || 'System Payment Settlement',
+      userRole: 'platformSuperAdmin',
+      tenantId,
+      action: 'SETTLEMENT_REAUTHORIZATION_REQUIRED',
+      category: 'Payment',
+      details: `Order ${orderId} final amount (£${(finalAmount / 100).toFixed(2)}) exceeds authorized ceiling (£${(authorizedAmount / 100).toFixed(2)}). Reauthorization required before capture.`,
+    });
+
+    return actionRequiredResult;
+  }
+
+  /**
+   * Handles payment lifecycle when an order is cancelled or failed.
+   * If authorized but not captured: releases pre-authorization hold.
+   * If already captured: issues full refund.
+   */
+  static async handleOrderCancellation(
+    orderId: string,
+    tenantId: string = 'brand-alpha',
+    reason?: string,
+    actor?: any
+  ): Promise<SettlementResult> {
+    const order = await FirestorePlatformService.getOrderProjection(orderId);
+    if (!order) {
+      throw new CommerceError(ErrorCode.ORDER_NOT_FOUND, `Order '${orderId}' not found`, 404);
+    }
+
+    let paymentId = order.paymentId;
+    if (!paymentId && order.checkoutId) {
+      const checkout = await FirestorePlatformService.getCheckoutProjection(order.checkoutId);
+      paymentId = checkout?.paymentId;
+    }
+
+    if (!paymentId) {
+      return {
+        status: 'VOIDED',
+        orderId,
+        paymentId: 'none',
+        finalAmount: 0,
+        authorizedAmount: 0,
+        settledAt: new Date().toISOString(),
+      };
+    }
+
+    const payment = (await FirestorePlatformService.getPaymentProjection(paymentId)) ||
+      (await PaymentService.getPayment(paymentId, tenantId).catch(() => null));
+
+    const isCaptured = payment?.status === 'captured' || order.paymentState === 'CAPTURED';
+
+    if (isCaptured) {
+      // Already captured: refund
+      const refundAmount = payment?.capturedAmount?.amount ?? order.capturedAmount ?? order.finalAmount ?? order.total;
+      await PaymentService.refund(paymentId, refundAmount, reason || 'Order cancelled', tenantId);
+
+      const refundResult: SettlementResult = {
+        status: 'REFUNDED',
+        orderId,
+        paymentId,
+        finalAmount: 0,
+        authorizedAmount: payment?.authorizedAmount?.amount ?? 0,
+        capturedAmount: refundAmount,
+        reason: reason || 'Order cancelled after capture. Full refund issued.',
+        settledAt: new Date().toISOString(),
+      };
+
+      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+        paymentState: 'REFUNDED',
+        settlementDetails: refundResult,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: actor?.uid || 'system:order-cancellation',
+        userName: actor?.email || 'System Order Cancellation',
+        userRole: 'platformSuperAdmin',
+        tenantId,
+        action: 'PAYMENT_REFUNDED',
+        category: 'Payment',
+        details: `Order ${orderId} cancelled. Refund of £${(refundAmount / 100).toFixed(2)} issued on payment ${paymentId}.`,
+      });
+
+      return refundResult;
+    } else {
+      // Authorized only: release hold
+      const authorizedAmount = payment?.authorizedAmount?.amount ?? order.authorizedMaximum ?? order.total;
+      await FirestorePlatformService.updatePaymentProjection(paymentId, {
+        status: 'canceled',
+        residualHoldAmount: { amount: authorizedAmount, currency: payment?.currency || 'GBP' },
+        updatedAt: new Date().toISOString(),
+      });
+
+      const voidResult: SettlementResult = {
+        status: 'VOIDED',
+        orderId,
+        paymentId,
+        finalAmount: 0,
+        authorizedAmount,
+        residualHoldReleased: authorizedAmount,
+        reason: reason || 'Order cancelled before capture. Pre-authorization hold released.',
+        settledAt: new Date().toISOString(),
+      };
+
+      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+        paymentState: 'VOIDED',
+        settlementDetails: voidResult,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: actor?.uid || 'system:order-cancellation',
+        userName: actor?.email || 'System Order Cancellation',
+        userRole: 'platformSuperAdmin',
+        tenantId,
+        action: 'PAYMENT_AUTHORIZATION_RELEASED',
+        category: 'Payment',
+        details: `Order ${orderId} cancelled. Pre-authorization hold of £${(authorizedAmount / 100).toFixed(2)} on payment ${paymentId} released.`,
+      });
+
+      return voidResult;
+    }
+  }
+}

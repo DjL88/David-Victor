@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* 
+ * Global 100% Screen Width Lock & Zero Left-to-Right Scrolling
+ */
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Touch momentum scrolling for all horizontal in-page carousels */
+.no-scrollbar,
+.scrollbar-none,
+[class*="overflow-x-auto"],
+[class*="overflow-x-scroll"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Utilities to hide scrollbars */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
+    display: none !important;
+    width: 0px !important;
+    height: 0px !important;
+  }
+  .no-scrollbar,
+  .scrollbar-none {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+}
+
+/* 
+ * On mobile devices, hide scrollbars everywhere across the application
+ */
+@media (max-width: 768px) {
+  * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0px !important;
+    height: 0px !important;
+  }
+}

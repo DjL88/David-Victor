@@ -1,0 +1,630 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import crypto from 'crypto';
+import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/WebhookService';
+import { SubstitutionCallbackService } from '../../server/deliverect/SubstitutionCallbackService';
+import { FirestorePlatformService } from '../../server/firestoreService';
+import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
+
+describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01 to QST-05, WH-04)', () => {
+  const testTenant = 'brand-alpha';
+  const testSecret = 'demo_deliverect_webhook_secret_key_123';
+  let adapter: MockDeliverectAdapter;
+
+  beforeEach(() => {
+    adapter = new MockDeliverectAdapter();
+    process.env.APP_MODE = 'demo';
+  });
+
+  // Helper to build Deliverect signed HMAC headers
+  const buildSignatureHeaders = (rawPayload: string, secret: string = testSecret) => {
+    const signature = crypto.createHmac('sha256', secret).update(rawPayload).digest('hex');
+    return {
+      'x-deliverect-signature': signature,
+      'content-type': 'application/json',
+    };
+  };
+
+  // ========================================================
+  // QST-01: Picking Status Webhook Lifecycle
+  // ========================================================
+  describe('QST-01: Picking Status Updates', () => {
+    it('handles PICKING_STARTED and moves order state and picking status to PICKING', async () => {
+      const orderId = `quest_ord_${Date.now()}_01`;
+      const initialOrder = {
+        orderId,
+        orderReference: 'REF-QST-01',
+        channelLinkId: 'store-1',
+        status: 'STORE_ACCEPTED',
+        paymentState: 'AUTHORIZED',
+        total: 2500,
+        authorizedMaximum: 3000,
+        finalAmount: 2500,
+        itemsCount: 2,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'NOT_STARTED' as const,
+          totalItems: 2,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'item-1',
+              plu: 'PLU-MILK',
+              name: 'Organic Whole Milk',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 150,
+              finalPrice: 150,
+              state: 'PENDING' as const,
+            },
+            {
+              id: 'item-2',
+              plu: 'PLU-BREAD',
+              name: 'Sourdough Loaf',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 200,
+              finalPrice: 200,
+              state: 'PENDING' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const pickingStartedPayload = JSON.stringify({
+        event: 'PICKING_STARTED',
+        orderId,
+        channelLinkId: 'store-1',
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(pickingStartedPayload),
+        pickingStartedPayload,
+        buildSignatureHeaders(pickingStartedPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated).not.toBeNull();
+      expect(updated?.status).toBe('PICKING');
+      expect(updated?.picking?.status).toBe('IN_PROGRESS');
+    });
+
+    it('handles PICKING_COMPLETE and transitions order status to PICKED / ready', async () => {
+      const orderId = `quest_ord_${Date.now()}_02`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 1500,
+        authorizedMaximum: 2000,
+        finalAmount: 1500,
+        itemsCount: 1,
+        fulfillmentType: 'collection',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 1,
+          hasChanges: false,
+          items: [],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const completePayload = JSON.stringify({
+        event: 'PICKING_COMPLETE',
+        orderId,
+        channelLinkId: 'store-1',
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(completePayload),
+        completePayload,
+        buildSignatureHeaders(completePayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated?.status).toBe('PICKED');
+      expect(updated?.picking?.status).toBe('COMPLETED');
+    });
+  });
+
+  // ========================================================
+  // QST-02: Item Removal During Picking
+  // ========================================================
+  describe('QST-02: Item Removal (ITEM_REMOVED)', () => {
+    it('marks item as REMOVED and adjusts final order total', async () => {
+      const orderId = `quest_ord_${Date.now()}_03`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 1000,
+        authorizedMaximum: 1200,
+        finalAmount: 1000,
+        itemsCount: 2,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 2,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-1',
+              plu: 'PLU-EGGS',
+              name: 'Free Range Eggs 6pk',
+              orderedQuantity: 1,
+              pickedQuantity: 1,
+              originalPrice: 250,
+              finalPrice: 250,
+              state: 'PICKED' as const,
+            },
+            {
+              id: 'line-2',
+              plu: 'PLU-BERRIES',
+              name: 'Fresh Blueberries 150g',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 200,
+              finalPrice: 200,
+              state: 'PENDING' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const removePayload = JSON.stringify({
+        event: 'ITEM_REMOVED',
+        orderId,
+        plu: 'PLU-BERRIES',
+        reason: 'Out of stock in aisle 3',
+        newFinalAmount: 800,
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(removePayload),
+        removePayload,
+        buildSignatureHeaders(removePayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated?.picking?.hasChanges).toBe(true);
+      expect(updated?.status).toBe('PICKING_WITH_CHANGES');
+      expect(updated?.finalAmount).toBe(800);
+
+      const removedItem = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BERRIES');
+      expect(removedItem?.state).toBe('REMOVED');
+      expect(removedItem?.pickedQuantity).toBe(0);
+      expect((removedItem?.finalPrice as any)?.amount ?? removedItem?.finalPrice).toBe(0);
+    });
+  });
+
+  // ========================================================
+  // QST-03: Quantity Amendments (Catch-weight / Partial Stock)
+  // ========================================================
+  describe('QST-03: Quantity Amendment (ITEM_QUANTITY_AMENDED)', () => {
+    it('updates item quantity and line price', async () => {
+      const orderId = `quest_ord_${Date.now()}_04`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 1500,
+        authorizedMaximum: 1800,
+        finalAmount: 1500,
+        itemsCount: 1,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-banana',
+              plu: 'PLU-BANANAS',
+              name: 'Fairtrade Bananas 1kg',
+              orderedQuantity: 3,
+              pickedQuantity: 0,
+              originalPrice: 300,
+              finalPrice: 300,
+              state: 'PENDING' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const amendPayload = JSON.stringify({
+        event: 'ITEM_QUANTITY_AMENDED',
+        orderId,
+        plu: 'PLU-BANANAS',
+        orderedQuantity: 3,
+        amendedQuantity: 2,
+        amendedPrice: 200,
+        reason: 'Only 2 bunches available on shelf',
+        newFinalAmount: 1400,
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(amendPayload),
+        amendPayload,
+        buildSignatureHeaders(amendPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated?.picking?.hasChanges).toBe(true);
+      expect(updated?.status).toBe('PICKING_WITH_CHANGES');
+      expect(updated?.finalAmount).toBe(1400);
+
+      const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BANANAS');
+      expect(amended?.state).toBe('QUANTITY_AMENDED');
+      expect(amended?.pickedQuantity).toBe(2);
+      expect(amended?.finalPrice).toBe(200);
+      expect(amended?.amendment?.reason).toContain('Only 2 bunches available');
+    });
+  });
+
+  // ========================================================
+  // QST-04: Substitutions & Callback Service
+  // ========================================================
+  describe('QST-04: Item Substitution & Substitute Callback Service', () => {
+    it('processes ITEM_SUBSTITUTED webhook and enforces best-match price guarantee', async () => {
+      const orderId = `quest_ord_${Date.now()}_05`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 1000,
+        authorizedMaximum: 1500,
+        finalAmount: 1000,
+        itemsCount: 1,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-coke',
+              plu: 'PLU-COKE-330',
+              name: 'Coca-Cola Original 330ml Can',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 120, // 120p
+              finalPrice: 120,
+              state: 'PENDING' as const,
+              substitutionPreference: 'BEST_MATCH' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      // Picker substitutes with 500ml Bottle (shelf price 180p), but under Best-Match guarantee customer pays 120p
+      const subPayload = JSON.stringify({
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'PLU-COKE-330',
+        substitutePlu: 'PLU-COKE-500',
+        substituteName: 'Coca-Cola 500ml Bottle',
+        substitutePrice: 180,
+        chargedPrice: 120, // Guaranteed lower of original or substitute
+        reason: 'Out of cans; upgraded to bottle',
+        newFinalAmount: 1000,
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(subPayload),
+        subPayload,
+        buildSignatureHeaders(subPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated?.picking?.hasChanges).toBe(true);
+
+      const substituted = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-COKE-330');
+      expect(substituted?.state).toBe('SUBSTITUTED');
+      expect((substituted?.finalPrice as any)?.amount ?? substituted?.finalPrice).toBe(120);
+      expect(substituted?.substitution?.substituteName).toBe('Coca-Cola 500ml Bottle');
+      expect((substituted?.substitution?.substitutePrice as any)?.amount ?? substituted?.substitution?.substitutePrice).toBe(180);
+    });
+
+    it('resolves substitution preference & candidates via SubstitutionCallbackService', async () => {
+      const orderId = `quest_ord_${Date.now()}_06`;
+      const testOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 500,
+        itemsCount: 1,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-coffee',
+              plu: 'PLU-COFFEE-ESPRESSO',
+              name: 'Artisan Espresso Beans 250g',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 650,
+              finalPrice: 650,
+              state: 'PENDING' as const,
+              substitutionPreference: 'CUSTOMER_SELECTED' as const,
+              substituteCandidates: [
+                {
+                  plu: 'PLU-COFFEE-DARK',
+                  name: 'Dark Roast Ground 250g',
+                  price: 650,
+                },
+                {
+                  plu: 'PLU-COFFEE-COLOMBIA',
+                  name: 'Single Origin Colombia 250g',
+                  price: 700,
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(testOrder as any, testTenant);
+
+      const callbackResult = await SubstitutionCallbackService.getSubstitutionForPlu(
+        orderId,
+        'PLU-COFFEE-ESPRESSO',
+        testTenant
+      );
+
+      expect(callbackResult).not.toBeNull();
+      expect(callbackResult?.orderId).toBe(orderId);
+      expect(callbackResult?.plu).toBe('PLU-COFFEE-ESPRESSO');
+      expect(callbackResult?.substitutionPolicy).toBe('CUSTOMER_SELECTED');
+      expect(callbackResult?.candidates).toHaveLength(2);
+      expect(callbackResult?.candidates[0].plu).toBe('PLU-COFFEE-DARK');
+    });
+  });
+
+  // ========================================================
+  // QST-05: Policy Enforcement: CANCEL_ORDER_IF_UNAVAILABLE
+  // ========================================================
+  describe('QST-05: Substitution Policy Enforcement', () => {
+    it('cancels entire order when customer preference is CANCEL_ORDER_IF_UNAVAILABLE and item is missing', async () => {
+      const orderId = `quest_ord_${Date.now()}_07`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 2000,
+        authorizedMaximum: 2500,
+        finalAmount: 2000,
+        itemsCount: 1,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-allergen',
+              plu: 'PLU-GLUTENFREE-BREAD',
+              name: 'Gluten Free Artisan Bread',
+              orderedQuantity: 1,
+              pickedQuantity: 0,
+              originalPrice: 350,
+              finalPrice: 350,
+              state: 'PENDING' as const,
+              substitutionPreference: 'CANCEL_ORDER_IF_UNAVAILABLE' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const cancelPayload = JSON.stringify({
+        event: 'ORDER_CANCELLED',
+        orderId,
+        reason: 'Essential item PLU-GLUTENFREE-BREAD unavailable; order cancelled per customer policy',
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(cancelPayload),
+        cancelPayload,
+        buildSignatureHeaders(cancelPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(updated?.status).toBe('ORDER_CANCELLED');
+    });
+  });
+
+  // ========================================================
+  // WH-04: GET Substitute Callback Signature Verification
+  // ========================================================
+  describe('WH-04: GET Substitute Callback Signature Verification', () => {
+    it('validates a correct HMAC signature on GET callback request', () => {
+      const path = '/api/v1/orders/ord-123/substitute/PLU-001';
+      const query = { timestamp: '1720000000', tenantId: testTenant };
+      const dataToSign = `${path}?tenantId=${testTenant}&timestamp=1720000000`;
+      const signature = crypto.createHmac('sha256', testSecret).update(dataToSign).digest('hex');
+
+      const headers = {
+        'x-deliverect-signature': signature,
+      };
+
+      const isValid = SubstitutionCallbackService.verifyGetSignature(
+        path,
+        query,
+        headers,
+        testTenant,
+        testSecret
+      );
+
+      expect(isValid).toBe(true);
+    });
+
+    it('validates an empty-body HMAC signature on GET callback request per Deliverect spec', () => {
+      const path = '/api/v1/orders/ord-123/substitute/PLU-001';
+      const query = { timestamp: '1720000000', tenantId: testTenant };
+      const emptySignature = crypto.createHmac('sha256', testSecret).update('').digest('hex');
+
+      const headers = {
+        'x-deliverect-signature': emptySignature,
+      };
+
+      const isValid = SubstitutionCallbackService.verifyGetSignature(
+        path,
+        query,
+        headers,
+        testTenant,
+        testSecret
+      );
+
+      expect(isValid).toBe(true);
+    });
+
+    it('rejects an altered or forged HMAC signature on GET callback request', () => {
+      const path = '/api/v1/orders/ord-123/substitute/PLU-001';
+      const query = { timestamp: '1720000000' };
+      const headers = {
+        'x-deliverect-signature': 'forged_fake_signature_hex_000',
+      };
+
+      const isValid = SubstitutionCallbackService.verifyGetSignature(
+        path,
+        query,
+        headers,
+        testTenant,
+        testSecret
+      );
+
+      expect(isValid).toBe(false);
+    });
+
+    it('rejects unsigned GET callback requests in staging/production mode', () => {
+      const prevMode = process.env.APP_MODE;
+      process.env.APP_MODE = 'staging';
+
+      try {
+        const path = '/api/v1/orders/ord-123/substitute/PLU-001';
+        const query = { timestamp: '1720000000', tenantId: testTenant };
+        const headers = {};
+
+        const isValid = SubstitutionCallbackService.verifyGetSignature(
+          path,
+          query,
+          headers,
+          testTenant,
+          testSecret
+        );
+
+        expect(isValid).toBe(false);
+      } finally {
+        process.env.APP_MODE = prevMode;
+      }
+    });
+  });
+
+  // ========================================================
+  // Monotonic Quest Ordering Safeguards
+  // ========================================================
+  describe('Monotonic Quest Ordering Progression', () => {
+    it('ignores stale earlier events (e.g. ORDER_ACCEPTED) after order is already PICKED', async () => {
+      const orderId = `quest_ord_${Date.now()}_08`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKED',
+        total: 1000,
+        authorizedMaximum: 1200,
+        finalAmount: 1000,
+        itemsCount: 1,
+        fulfillmentType: 'collection',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'COMPLETED' as const,
+          totalItems: 1,
+          itemsPicked: 1,
+          hasChanges: false,
+          items: [],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      // Stale event arrived late from upstream
+      const stalePayload = JSON.stringify({
+        event: 'ORDER_ACCEPTED',
+        orderId,
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(stalePayload),
+        stalePayload,
+        buildSignatureHeaders(stalePayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      // Ensure state did NOT regress from PICKED back to STORE_ACCEPTED
+      const current = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(current?.status).toBe('PICKED');
+      expect(ORDER_STATE_RANKING['PICKED']).toBeGreaterThan(ORDER_STATE_RANKING['STORE_ACCEPTED']);
+    });
+  });
+});

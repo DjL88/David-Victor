@@ -1,0 +1,78 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import { APIProvider } from '@vis.gl/react-google-maps';
+import { TenantProvider } from './tenant/TenantContext';
+import { I18nProvider } from './i18n/I18nContext';
+import { AppLayout } from './app/AppLayout';
+import { AdminLayout } from './admin/AdminLayout';
+import { AdminGuard } from './admin/AdminGuard';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+const GOOGLE_MAPS_API_KEY =
+  (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) ||
+  'xDh0vIFs-lfpjyGqlg9KJnrAMqQ=';
+
+// Catch Google Maps auth / activation errors globally to prevent unhandled script alerts
+if (typeof window !== 'undefined') {
+  (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = () => {
+    console.warn(
+      'Google Maps API error: ApiNotActivatedMapError. Maps JavaScript API is pending activation in Google Cloud Console. Falling back to built-in distance and proximity engine.'
+    );
+    window.dispatchEvent(new CustomEvent('gmp-auth-failure'));
+  };
+}
+
+export default function App() {
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.hash === '#admin';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setIsAdminMode(window.location.hash === '#admin');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleOpenAdmin = () => {
+    window.location.hash = '#admin';
+    setIsAdminMode(true);
+  };
+
+  const handleExitAdmin = () => {
+    window.location.hash = '';
+    setIsAdminMode(false);
+  };
+
+  return (
+    <ErrorBoundary>
+      <APIProvider
+        apiKey={GOOGLE_MAPS_API_KEY}
+        libraries={['places', 'geometry', 'geocoding', 'marker']}
+        onError={(err) => {
+          console.warn('Google Maps API loading note:', err);
+        }}
+      >
+        <TenantProvider>
+          <I18nProvider>
+            {isAdminMode ? (
+              <AdminGuard onExit={handleExitAdmin}>
+                {(user) => <AdminLayout onExitAdmin={handleExitAdmin} initialUser={user} />}
+              </AdminGuard>
+            ) : (
+              <AppLayout onOpenAdmin={handleOpenAdmin} />
+            )}
+          </I18nProvider>
+        </TenantProvider>
+      </APIProvider>
+    </ErrorBoundary>
+  );
+}

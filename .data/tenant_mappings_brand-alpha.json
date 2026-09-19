@@ -1,0 +1,102 @@
+{
+  "tenantId": "brand-alpha",
+  "accounts": [
+    {
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "integrationId": "int_brand-alpha",
+      "deliverectAccountId": "68517fde1c3ddaa7f6d0275c",
+      "displayName": "DELIVERECT-TEST / Daves Deli",
+      "status": "ACTIVE"
+    }
+  ],
+  "locations": [
+    {
+      "physicalLocationId": "loc_undefined",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "statusProjection": "ACTIVE"
+    },
+    {
+      "physicalLocationId": "loc_undefined",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "statusProjection": "ACTIVE"
+    },
+    {
+      "physicalLocationId": "loc_undefined",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "statusProjection": "ACTIVE"
+    },
+    {
+      "physicalLocationId": "loc_undefined",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "statusProjection": "ACTIVE"
+    }
+  ],
+  "stores": [
+    {
+      "commerceStoreId": "cstore_6aadaa0cb3aef90f42ab345d",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "physicalLocationId": null,
+      "channelLinkId": "6aadaa0cb3aef90f42ab345d",
+      "name": "Dave's Delicatessen",
+      "stateProjection": "open",
+      "address": {
+        "line1": "High Street",
+        "street": "High Street",
+        "city": "Kington",
+        "postcode": "HR5 3UA",
+        "postalCode": "HR5 3UA",
+        "country": "GB",
+        "formattedAddress": "High Street, Kington, HR5 3UA, GB"
+      },
+      "coordinates": {
+        "latitude": 52.205398,
+        "longitude": -3.034417
+      },
+      "openingHours": {
+        "timezone": "Europe/London",
+        "dayTimeRanges": [
+          {
+            "dayOfWeek": 1,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 2,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 3,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 4,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 5,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 6,
+            "startTime": "00:00:00",
+            "endTime": "23:00:00"
+          },
+          {
+            "dayOfWeek": 7,
+            "startTime": "00:00:00",
+            "endTime": "22:00:00"
+          }
+        ],
+        "specialHours": []
+      },
+      "currency": "EUR",
+      "status": "open",
+      "lastSeenAt": "2026-09-19T06:00:35.168Z"
+    }
+  ],
+  "syncedAt": "2026-09-19T06:00:35.118Z"
+}

@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper: is the client request authenticated?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper: is the user accessing their own user document?
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Public storefront read-only access for tenant configuration and UI branding metadata.
+    // All administrative modifications MUST go through the Cloud Run BFF via Admin SDK.
+    match /tenants/{tenantId} {
+      allow read: if true;
+      allow write: if false; // Deny direct browser writes; managed exclusively via BFF
+
+      match /stories/{storyId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /pages/{pageSlug} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /assets/{assetId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /collections/{collectionId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /feePolicies/{policyId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /schedulingPolicies/{policyId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /domains/{domainId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /commerceStores/{channelLinkId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    // Top-level stories read-only collection for public storefront
+    match /stories/{storyId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Top-level domains read-only collection for hostname resolution
+    match /domains/{domainId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Privileged collections:
+    // Strictly DENIED to client-side Firestore SDK. Cloud Run BFF accesses via Admin SDK.
+    match /integrations/{tenantId} {
+      allow read, write: if false;
+    }
+
+    match /accountLinks/{accountLinkId} {
+      allow read, write: if false;
+    }
+
+    match /tenantMemberships/{membershipId} {
+      allow read, write: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read, write: if false;
+    }
+
+    match /auditEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /webhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /analytics/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /analyticsEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /notificationSubscriptions/{subId} {
+      allow read, write: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow read, write: if false;
+    }
+
+    // Customer order projections: managed and reconciled exclusively via BFF
+    match /orderProjections/{orderId} {
+      allow read, write: if false;
+    }
+
+    // User profile documents: users may read/write only their own document
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Default deny for all other collections and documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

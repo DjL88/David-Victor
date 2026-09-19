@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Tenant brand configuration, UI styling, domains, and feature flags",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant identifier" },
+        "brandName": { "type": "string", "description": "Brand display name" },
+        "tagline": { "type": "string", "description": "Short brand marketing tagline" },
+        "primaryColour": { "type": "string", "description": "Primary hex colour" },
+        "secondaryColour": { "type": "string", "description": "Secondary hex colour" },
+        "backgroundColour": { "type": "string", "description": "Background hex colour" },
+        "textColour": { "type": "string", "description": "Text hex colour" },
+        "borderRadius": { "type": "string", "description": "Border radius style" },
+        "fontFamily": { "type": "string", "description": "Brand font family" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["tenantId", "brandName"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "Visual promotional stories for tenant storefront",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique story ID" },
+        "tenantId": { "type": "string", "description": "Associated tenant ID" },
+        "title": { "type": "string", "description": "Story headline" },
+        "caption": { "type": "string", "description": "Story caption text" },
+        "mediaUrl": { "type": "string", "description": "Media asset URL" },
+        "mediaType": { "type": "string", "description": "Media type (image or video)" }
+      },
+      "required": ["id", "title"]
+    },
+    "TenantMembership": {
+      "title": "TenantMembership",
+      "description": "Role-based access control (RBAC) mapping for admin portal users",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user UID" },
+        "tenantId": { "type": "string", "description": "Target tenant identifier or 'platform'" },
+        "email": { "type": "string", "description": "User email address" },
+        "role": { "type": "string", "enum": ["platformSuperAdmin", "tenantAdmin", "marketingEditor", "operationsEditor", "viewer"], "description": "Authorized RBAC role" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of assignment" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of modification" }
+      },
+      "required": ["uid", "tenantId", "role"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable audit record for administrative and configuration actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique audit log identifier" },
+        "tenantId": { "type": "string", "description": "Target tenant" },
+        "actorUid": { "type": "string", "description": "UID of user performing action" },
+        "actorEmail": { "type": "string", "description": "Email of user" },
+        "action": { "type": "string", "description": "Action performed (e.g. BRANDING_SAVED, DOMAIN_PROVISIONED)" },
+        "details": { "type": "object", "description": "Structured payload metadata" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["id", "tenantId", "actorUid", "action", "timestamp"]
+    },
+    "IntegrationConfig": {
+      "title": "IntegrationConfig",
+      "description": "Tenant Deliverect and payment gateway configurations (Server-Side Only)",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Associated tenant ID" },
+        "deliverectAccountId": { "type": "string", "description": "Deliverect channel account ID" },
+        "environment": { "type": "string", "description": "staging or production" },
+        "status": { "type": "string", "description": "connected, standalone, or error" },
+        "lastSyncAt": { "type": "string", "description": "ISO timestamp of last catalog sync" }
+      },
+      "required": ["tenantId"]
+    },
+    "OrderProjection": {
+      "title": "OrderProjection",
+      "description": "GDPR-compliant read-optimized order status projections without raw PII",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string", "description": "Unique order identifier" },
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "status": { "type": "string", "description": "Current order state" },
+        "maskedIdentifier": { "type": "string", "description": "De-identified customer reference (e.g. initial + domain)" },
+        "total": { "type": "number", "description": "Order total in cents/minor units" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["orderId", "tenantId", "status"]
+    },
+    "AnalyticsEvent": {
+      "title": "AnalyticsEvent",
+      "description": "Sanitized analytics event without PII or sensitive data",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "description": "Unique event identifier" },
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "type": { "type": "string", "description": "Event classification" },
+        "sessionId": { "type": "string", "description": "Pseudonymous session ID" },
+        "customerUid": { "type": "string", "description": "Pseudonymous customer ID" },
+        "channelLinkId": { "type": "string", "description": "Channel link or store ID" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "properties": { "type": "object", "description": "Sanitized event properties" }
+      },
+      "required": ["eventId", "tenantId", "type", "sessionId", "timestamp"]
+    },
+    "NotificationSubscription": {
+      "title": "NotificationSubscription",
+      "description": "Web Push or device notification subscription registration",
+      "type": "object",
+      "properties": {
+        "subscriptionId": { "type": "string", "description": "Unique subscription ID" },
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "endpoint": { "type": "string", "description": "Push service endpoint" },
+        "channel": { "type": "string", "description": "Notification channel (e.g. WEB_PUSH)" },
+        "customerUid": { "type": "string", "description": "Optional customer UID" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["subscriptionId", "tenantId", "endpoint", "channel", "createdAt"]
+    },
+    "CustomerNotification": {
+      "title": "CustomerNotification",
+      "description": "Transactional customer notifications across order lifecycle",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string", "description": "Unique notification ID" },
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "recipientUid": { "type": "string", "description": "Recipient customer UID or session ID" },
+        "orderId": { "type": "string", "description": "Associated order ID" },
+        "title": { "type": "string", "description": "Notification title" },
+        "body": { "type": "string", "description": "Notification body message" },
+        "type": { "type": "string", "description": "Lifecycle notification type" },
+        "channel": { "type": "string", "description": "Delivery channel" },
+        "read": { "type": "boolean", "description": "Whether read by customer" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["notificationId", "tenantId", "recipientUid", "title", "body", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/tenants/{tenantId}": {
+      "schema": "Tenant",
+      "description": "Tenant brand configuration, feature flags, and UI theme"
+    },
+    "/tenants/{tenantId}/stories/{storyId}": {
+      "schema": "Story",
+      "description": "Storefront marketing stories for a tenant"
+    },
+    "/tenantMemberships/{membershipId}": {
+      "schema": "TenantMembership",
+      "description": "RBAC user authorizations and role memberships (Server-Side Only)"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Administrative audit trail events (Server-Side Only)"
+    },
+    "/integrations/{tenantId}": {
+      "schema": "IntegrationConfig",
+      "description": "Channel integrations and Deliverect credentials (Server-Side Only)"
+    },
+    "/orderProjections/{orderId}": {
+      "schema": "OrderProjection",
+      "description": "Read-optimized customer order status projections"
+    },
+    "/analyticsEvents/{eventId}": {
+      "schema": "AnalyticsEvent",
+      "description": "Sanitized analytics events (Server-Side Only)"
+    },
+    "/notificationSubscriptions/{subscriptionId}": {
+      "schema": "NotificationSubscription",
+      "description": "Customer notification and push subscriptions (Server-Side Only)"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "CustomerNotification",
+      "description": "Customer transactional inbox notifications (BFF Managed)"
+    }
+  }
+}

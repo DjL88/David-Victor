@@ -1,0 +1,431 @@
+import React, { useState } from 'react';
+import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
+import { MOCK_CMS_PAGES } from '../../commerce/cmsData';
+import {
+  FileText,
+  Plus,
+  Trash2,
+  MoveUp,
+  MoveDown,
+  Eye,
+  Check,
+  Globe,
+  Layers,
+  Layout,
+  HelpCircle,
+  ShoppingBag,
+  Store,
+} from 'lucide-react';
+
+interface PagesAdminScreenProps {
+  tenantId: string;
+}
+
+export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) => {
+  const [pages, setPages] = useState<CmsPage[]>(
+    MOCK_CMS_PAGES[tenantId] || MOCK_CMS_PAGES['brand-alpha']
+  );
+  const [selectedPage, setSelectedPage] = useState<CmsPage>(pages[0]);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showBlockPicker, setShowBlockPicker] = useState(false);
+
+  const handleSavePage = () => {
+    setPages((prev) =>
+      prev.map((p) => (p.id === selectedPage.id ? { ...selectedPage, updatedAt: new Date().toISOString() } : p))
+    );
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  const addBlock = (type: CmsBlockType) => {
+    const newOrder = selectedPage.blocks.length + 1;
+    let newBlock: CmsBlock;
+
+    switch (type) {
+      case 'Hero':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'Hero',
+          order: newOrder,
+          headline: 'Seasonal Harvest Arriving Daily',
+          subheadline: 'Hand-picked from certified sustainable farms.',
+          badge: 'New Season',
+          imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=1200',
+          ctaText: 'Shop Essentials',
+        };
+        break;
+      case 'RichText':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'RichText',
+          order: newOrder,
+          content: 'Add your story and artisanal heritage details here. Safe, structured prose.',
+        };
+        break;
+      case 'ProductCarousel':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'ProductCarousel',
+          order: newOrder,
+          title: 'Featured Organic Essentials',
+          productPlus: ['PLU-SOURDOUGH-01', 'PLU-ORGANIC-EGGS-6PK'],
+        };
+        break;
+      case 'FAQ':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'FAQ',
+          order: newOrder,
+          title: 'Frequently Asked Questions',
+          items: [
+            { question: 'What is the delivery cutoff time?', answer: 'Orders placed before 9 PM arrive by 10 AM next morning.' },
+          ],
+        };
+        break;
+      case 'StoreFinder':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'StoreFinder',
+          order: newOrder,
+          title: 'Find Your Nearest Artisan Hub',
+        };
+        break;
+      case 'Divider':
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'Divider',
+          order: newOrder,
+          style: 'subtle',
+        };
+        break;
+      default:
+        newBlock = {
+          id: `b_${Date.now()}`,
+          type: 'Spacer',
+          order: newOrder,
+          heightPx: 32,
+        };
+    }
+
+    setSelectedPage((prev) => ({
+      ...prev,
+      blocks: [...prev.blocks, newBlock],
+    }));
+    setShowBlockPicker(false);
+  };
+
+  const removeBlock = (id: string) => {
+    setSelectedPage((prev) => ({
+      ...prev,
+      blocks: prev.blocks.filter((b) => b.id !== id),
+    }));
+  };
+
+  const moveBlock = (index: number, direction: 'up' | 'down') => {
+    const newBlocks = [...selectedPage.blocks];
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= newBlocks.length) return;
+
+    const temp = newBlocks[index];
+    newBlocks[index] = newBlocks[targetIdx];
+    newBlocks[targetIdx] = temp;
+
+    // re-assign orders
+    newBlocks.forEach((b, i) => {
+      b.order = i + 1;
+    });
+
+    setSelectedPage((prev) => ({ ...prev, blocks: newBlocks }));
+  };
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-600" />
+              <span>Structured CMS Page Builder</span>
+            </h1>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
+              Demo Simulation
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Build SEO-optimized landing pages and narrative stories with live Deliverect references and zero arbitrary code execution.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {saveSuccess && (
+            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+              <Check className="w-3.5 h-3.5" />
+              Page published to CDN
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleSavePage}
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5"
+          >
+            <Check className="w-4 h-4" />
+            <span>Save & Publish</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* PAGE METADATA & SEO (LEFT 4 COLS) */}
+        <div className="lg:col-span-4 space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+              <Globe className="w-4 h-4 text-indigo-600" />
+              <span>Page Metadata & SEO</span>
+            </h3>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Page Title</label>
+              <input
+                type="text"
+                value={selectedPage.title}
+                onChange={(e) => setSelectedPage({ ...selectedPage, title: e.target.value })}
+                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">URL Slug</label>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-400 font-mono">/pages/</span>
+                <input
+                  type="text"
+                  value={selectedPage.slug}
+                  onChange={(e) => setSelectedPage({ ...selectedPage, slug: e.target.value })}
+                  className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Status</label>
+              <select
+                value={selectedPage.status}
+                onChange={(e) => setSelectedPage({ ...selectedPage, status: e.target.value as any })}
+                className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              >
+                <option value="published">Published</option>
+                <option value="draft">Draft</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Navigation Placement</label>
+              <select
+                value={selectedPage.navigationVisibility}
+                onChange={(e) =>
+                  setSelectedPage({ ...selectedPage, navigationVisibility: e.target.value as any })
+                }
+                className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              >
+                <option value="both">Header & Footer Nav</option>
+                <option value="header">Header Nav Only</option>
+                <option value="footer">Footer Nav Only</option>
+                <option value="hidden">Hidden from Nav</option>
+              </select>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100">
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">SEO Title</label>
+              <input
+                type="text"
+                value={selectedPage.seoTitle || ''}
+                onChange={(e) => setSelectedPage({ ...selectedPage, seoTitle: e.target.value })}
+                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                placeholder="Browser tab title"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">SEO Description</label>
+              <textarea
+                value={selectedPage.seoDescription || ''}
+                onChange={(e) => setSelectedPage({ ...selectedPage, seoDescription: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                placeholder="Google search summary"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* STRUCTURED BLOCKS BUILDER (RIGHT 8 COLS) */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Layout className="w-4 h-4 text-indigo-600" />
+                  <span>Structured Page Blocks ({selectedPage.blocks.length})</span>
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Blocks reference live Deliverect products by PLU without hardcoding prices.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowBlockPicker(!showBlockPicker)}
+                className="px-3 py-1.5 rounded-xl bg-gray-900 text-white text-xs font-bold hover:bg-gray-800 flex items-center gap-1.5 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Block</span>
+              </button>
+            </div>
+
+            {/* BLOCK PICKER POPUP */}
+            {showBlockPicker && (
+              <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in fade-in">
+                {[
+                  { type: 'Hero', label: 'Hero Banner', icon: Layers },
+                  { type: 'RichText', label: 'Rich Text', icon: FileText },
+                  { type: 'ProductCarousel', label: 'Product Carousel', icon: ShoppingBag },
+                  { type: 'StoreFinder', label: 'Store Finder', icon: Store },
+                  { type: 'FAQ', label: 'FAQ Accordion', icon: HelpCircle },
+                  { type: 'Divider', label: 'Divider', icon: Layout },
+                ].map((b) => {
+                  const Icon = b.icon;
+                  return (
+                    <button
+                      key={b.type}
+                      type="button"
+                      onClick={() => addBlock(b.type as any)}
+                      className="p-3 rounded-xl bg-white border border-indigo-100 text-left hover:border-indigo-400 hover:shadow-xs flex items-center gap-2 text-xs font-bold text-gray-900 transition-all"
+                    >
+                      <Icon className="w-4 h-4 text-indigo-600" />
+                      <span>{b.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* BLOCK LIST */}
+            <div className="space-y-3">
+              {selectedPage.blocks.map((block, idx) => (
+                <div
+                  key={block.id}
+                  className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white transition-all space-y-3"
+                >
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-700 text-[10px] font-bold flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <span className="font-bold text-xs text-gray-900 uppercase tracking-wider">
+                        {block.type} Block
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveBlock(idx, 'up')}
+                        className="p-1 text-gray-400 hover:text-gray-900 disabled:opacity-30"
+                      >
+                        <MoveUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === selectedPage.blocks.length - 1}
+                        onClick={() => moveBlock(idx, 'down')}
+                        className="p-1 text-gray-400 hover:text-gray-900 disabled:opacity-30"
+                      >
+                        <MoveDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeBlock(block.id)}
+                        className="p-1 text-gray-400 hover:text-rose-600 ml-2"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* BLOCK SPECIFIC EDITORS */}
+                  {block.type === 'Hero' && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Headline"
+                        value={block.headline}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).headline = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-bold"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Subheadline"
+                        value={block.subheadline || ''}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).subheadline = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                      />
+                    </div>
+                  )}
+
+                  {block.type === 'RichText' && (
+                    <textarea
+                      rows={3}
+                      value={block.content}
+                      onChange={(e) => {
+                        const updated = [...selectedPage.blocks];
+                        (updated[idx] as any).content = e.target.value;
+                        setSelectedPage({ ...selectedPage, blocks: updated });
+                      }}
+                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                    />
+                  )}
+
+                  {block.type === 'ProductCarousel' && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Carousel Title"
+                        value={block.title}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).title = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-bold"
+                      />
+                      <div className="text-[11px] text-gray-500 font-mono">
+                        Referenced Deliverect PLUs: {block.productPlus.join(', ')}
+                      </div>
+                    </div>
+                  )}
+
+                  {block.type === 'FAQ' && (
+                    <div className="text-xs text-gray-600">
+                      {block.items.length} Question & Answer pairs configured.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
