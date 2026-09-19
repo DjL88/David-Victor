@@ -621,6 +621,7 @@ export interface CategoryPromoBanner {
   searchQuery?: string;
   linkedProductPlus?: string[];
   stockMatchMode?: StoryStockMatchMode;
+  active?: boolean;
 }
 
 import {

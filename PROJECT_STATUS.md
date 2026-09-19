@@ -9,6 +9,11 @@
 ## 1. Executive Status
 
 The platform is now connected directly to the live Deliverect Staging environment:
+    - **Featured Offers Management & Auto-Hide**:
+      - Added dedicated **Featured Offers & Banners** administration screen (`FeaturedOffersAdminScreen.tsx`) under **Marketing Settings** in the Admin Portal.
+      - Enables store administrators to view, create, edit, delete, reorder, and toggle active status for hero promo banners.
+      - Integrated real-time persistence with `promoBannerData.ts` and `localStorage`, broadcasting `promo-banners-updated` events.
+      - **Auto-Hide Guarantee**: When no banners are active or when the banner list is cleared/blank, `PromotionalBannerCarousel.tsx` automatically hides the "Featured Offers" tab and prevents auto-cycling to it. If both banners and meal deal bundles are absent, the entire promotional carousel collapses cleanly without leaving blank placeholders or broken UI.
 1. **LIVE DELIVERECT INTEGRATION (Operational)**:
    - Upstream OAuth handshake verified against `https://api.staging.deliverect.com/oauth/token` using `client_credentials` grant and audience `https://api.staging.deliverect.com`.
    - Linked accounts discovery maps live Deliverect account (`68517fde1c3ddaa7f6d0275c` "DELIVERECT-TEST / Daves Deli"), 4 physical locations (Folgate Tuckshop, Spitalfield Spirits, Liqueurs of Liverpool Street, Deli Delivery), and 6 channel links (Direct test channels + Deliveroo Retail + Uber Eats Retail).
@@ -17,6 +22,7 @@ The platform is now connected directly to the live Deliverect Staging environmen
    - Zero mock data fallback in staging/production: `DeliverectApiClient` queries the real Deliverect Eve/REST endpoints with live OAuth tokens.
    - **Cache Reset & Live Sync Mechanism**: Implemented `POST /api/v1/cache/reset` and query param `refresh=true` across all catalog and bundle routes. Added a prominent, dedicated "Reset Cache / Sync" action button in the storefront header and account menu to clear all in-memory and client-side caches and immediately re-pull fresh Deliverect data.
    - **Prominent Meal Deals Display**: Featured Meal Deals & Combos in a dedicated section on the Home Screen as well as in the Promotional Banner Carousel, opening the interactive `BundleSelectionDialog` for customising included fruit, snacks, and upsell selections.
+   - **Display Hardening & Defensive Type Checking**: Resolved storefront display crash (`Cannot read properties of undefined (reading 'type')`). Added safe optional chaining to `currentStory.action?.type` in `StoryViewerModal.tsx`, `handleStoryAction` in `AppLayout.tsx`, `order.fulfillment?.type` and `order.scheduledTime?.type` in `OrderTrackingView.tsx`, charges in `CartDrawerModal.tsx`, CMS blocks in `CmsPageView.tsx`, and search boost rules in `searchMerchEngine.ts`.
 2. **DOMAIN & BFF PLATFORM FOUNDATION (Complete & Hardened)**:
    - Authoritative internal domain logic, Cloud Run Express BFF, Zod validation schemas, rate limiting, circuit breakers, security headers, and Prometheus telemetry.
    - Comprehensive test suite passing across all domains (Money, baskets, substitutions, payments, quest picking, analytics).

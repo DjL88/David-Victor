@@ -353,99 +353,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         }
       />
 
-      {/* Deliverect Meal Deals & Combos (Featured Bundles) */}
-      {!selectedCategoryId && !searchQuery && !activeDealFilter && bundles && bundles.length > 0 && (
-        <section id="meal-deals-combos-section" className="px-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-gray-900 tracking-tight">
-                  Meal Deals & Combos
-                </h2>
-                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Deliverect Live
-                </span>
-              </div>
-            </div>
-            <span className="text-xs font-semibold text-emerald-600">
-              Customise & Save
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-            {bundles.map((bundle) => {
-              const totalItems = bundle.sections.reduce((acc, s) => acc + (s.max || 1), 0);
-
-              return (
-                <div
-                  key={bundle.id}
-                  id={`bundle-card-${bundle.id}`}
-                  onClick={() => onOpenBundleDialog?.(bundle)}
-                  className="group bg-white rounded-2xl border border-gray-200/90 hover:border-emerald-500 overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-                >
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="bg-emerald-600 text-white text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-md shadow-2xs">
-                          {bundle.badge || 'Meal Deal'}
-                        </span>
-                        <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                          {totalItems} items included
-                        </span>
-                      </div>
-                      <span className="text-sm font-black text-gray-900 shrink-0">
-                        {formatMoney(bundle.price, bundle.currency || 'GBP')}
-                      </span>
-                    </div>
-
-                    <h3 className="font-extrabold text-gray-900 text-sm sm:text-base group-hover:text-emerald-700 transition-colors line-clamp-1">
-                      {bundle.name}
-                    </h3>
-
-                    {bundle.description && (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">
-                        {bundle.description}
-                      </p>
-                    )}
-
-                    {bundle.sections.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap gap-1.5">
-                        {bundle.sections.map((sec) => (
-                          <span
-                            key={sec.id}
-                            className="inline-flex items-center text-[10px] font-medium bg-gray-50 text-gray-600 border border-gray-200/60 px-2 py-0.5 rounded-md"
-                          >
-                            <span className="font-bold text-gray-800 mr-1">{sec.max || 1}x</span>
-                            {sec.name.replace(/Select your /i, '').replace(/\(.*\)/, '').trim()}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="px-4 pb-3 pt-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenBundleDialog?.(bundle);
-                      }}
-                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs group-hover:shadow-sm"
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>Customise Deal</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}
       {!selectedCategoryId && !searchQuery && !activeDealFilter && offers.length > 0 && (
         <section id="offers-near-you-section" className="px-4">
@@ -493,9 +400,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   {activeDealFilter.badge}
                 </span>
                 <span className="text-xs font-bold text-emerald-900">
-                  {activeDealFilter.stockMatchMode === 'AND'
-                    ? 'Deliverect Bundle Deal'
-                    : 'Deliverect Multi-Buy Deal'}
+                  Deliverect Combo Deal
                 </span>
               </div>
               <h3 className="text-base font-extrabold text-emerald-950">

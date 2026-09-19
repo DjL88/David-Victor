@@ -824,7 +824,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold text-gray-900 block truncate">{item?.name || item?.plu || 'Item'}</span>
+                              <span className="font-bold text-gray-900 block truncate">{(item?.name || item?.plu || 'Item').replace(/###PRNT/gi, '').trim()}</span>
                               {item.isCombo && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
                                   Combo
@@ -833,7 +833,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </div>
                             {item.subItems && item.subItems.length > 0 && (
                               <div className="text-[10px] text-gray-500 truncate">
-                                {item.subItems.map((s) => `${s.quantity > 1 ? `${s.quantity}× ` : ''}${s.name}`).join(' • ')}
+                                {item.subItems.map((s) => `${s.quantity > 1 ? `${s.quantity}× ` : ''}${(s.name || '').replace(/###PRNT/gi, '').trim()}`).join(' • ')}
                               </div>
                             )}
                             <span className="text-gray-500 text-[11px] block">

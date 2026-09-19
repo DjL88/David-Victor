@@ -32,8 +32,14 @@ export function formatCurrency(
       numValue = rawVal / 100;
     }
   } else if (typeof amount === 'number' && !isNaN(amount) && isFinite(amount)) {
-    // In our commerce platform, raw amounts are in integer minor units (pence / cents)
-    numValue = amount / 100;
+    // If it's a decimal (e.g. 0.89, 1.50, 34.80), it is already in major units (pounds/euros/dollars).
+    // If it's a small integer (< 50, e.g. 1, 2, 5, 20), it represents major units (£1.00, £5.00).
+    // Only integers >= 50 (e.g. 89, 150, 1000) represent minor units (pence / cents) if passed as raw numbers.
+    if (!Number.isInteger(amount) || Math.abs(amount) < 50) {
+      numValue = amount;
+    } else {
+      numValue = amount / 100;
+    }
   }
 
   // Comma decimal separator is only used for European locales that use commas (e.g. de, fr, es, it, nl)

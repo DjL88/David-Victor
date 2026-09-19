@@ -193,7 +193,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     if (itemsToAdd.length > 0) {
       await addMultipleItems(itemsToAdd);
       setDealToastMessage(
-        `Added all ${itemsToAdd.length} items for "${dealTitle || 'Meal Deal'}" to your basket!`
+        `Added all ${itemsToAdd.length} items for "${dealTitle || 'Combo Deal'}" to your basket!`
       );
       setTimeout(() => setDealToastMessage(null), 4500);
     }
@@ -229,7 +229,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   }, [client, refreshCatalog]);
 
   // Handle Story Action (Product, Category, Search, Offer)
-  const handleStoryAction = (action: StoryAction) => {
+  const handleStoryAction = (action?: StoryAction) => {
+    if (!action) return;
     if (action.type === 'PRODUCT' && action.targetPlu) {
       const targetProd = products.find((p) => p.plu === action.targetPlu);
       if (targetProd) {
@@ -320,7 +321,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         />
 
         {/* Tab Views */}
-        <main className="py-2 w-full max-w-full overflow-x-hidden">
+        <main className="py-2 w-full max-w-full overflow-x-clip">
           {activeTab === 'home' && (
             <HomeScreen
               stories={stories}

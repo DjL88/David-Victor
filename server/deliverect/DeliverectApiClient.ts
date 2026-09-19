@@ -516,36 +516,59 @@ export class DeliverectApiClient implements DeliverectAdapter {
       }
     }
 
-    // Build raw modifier groups map
+    // Build raw modifier groups map - include modifierGroups, subProducts, bundleSections, sections, subItems
     const rawModifierGroupsMap = new Map<string, any>();
-    const rawModifierGroups = rawMenu.modifierGroups;
-    if (Array.isArray(rawModifierGroups)) {
-      for (const mg of rawModifierGroups) {
-        if (mg && (mg.id || mg._id)) {
-          rawModifierGroupsMap.set(String(mg.id || mg._id), mg);
+    const registerModifierGroup = (key: string, mg: any) => {
+      if (!mg || typeof mg !== 'object') return;
+      const id = String(mg.id || mg._id || key);
+      rawModifierGroupsMap.set(id, mg);
+      if (mg.plu) rawModifierGroupsMap.set(String(mg.plu), mg);
+    };
+
+    const mgSources = [
+      rawMenu.modifierGroups,
+      rawMenu.subProducts,
+      rawMenu.bundleSections,
+      rawMenu.sections,
+      rawMenu.subItems,
+    ];
+
+    for (const src of mgSources) {
+      if (Array.isArray(src)) {
+        for (const mg of src) {
+          if (mg) registerModifierGroup(String(mg.id || mg._id || ''), mg);
         }
-      }
-    } else if (rawModifierGroups && typeof rawModifierGroups === 'object') {
-      for (const [key, mg] of Object.entries(rawModifierGroups)) {
-        if (mg && typeof mg === 'object') {
-          rawModifierGroupsMap.set(String((mg as any).id || (mg as any)._id || key), mg);
+      } else if (src && typeof src === 'object') {
+        for (const [key, mg] of Object.entries(src)) {
+          registerModifierGroup(key, mg);
         }
       }
     }
 
-    // Build raw modifiers map
+    // Build raw modifiers map - include modifiers, subItems, subProducts
     const rawModifiersMap = new Map<string, any>();
-    const rawModifiers = rawMenu.modifiers;
-    if (Array.isArray(rawModifiers)) {
-      for (const mod of rawModifiers) {
-        if (mod && (mod.id || mod._id)) {
-          rawModifiersMap.set(String(mod.id || mod._id), mod);
+    const registerModifier = (key: string, mod: any) => {
+      if (!mod || typeof mod !== 'object') return;
+      const id = String(mod.id || mod._id || key);
+      rawModifiersMap.set(id, mod);
+      if (mod.plu) rawModifiersMap.set(String(mod.plu), mod);
+    };
+
+    const modSources = [
+      rawMenu.modifiers,
+      rawMenu.subItems,
+      rawMenu.subProducts,
+      rawMenu.items,
+    ];
+
+    for (const src of modSources) {
+      if (Array.isArray(src)) {
+        for (const mod of src) {
+          if (mod) registerModifier(String(mod.id || mod._id || ''), mod);
         }
-      }
-    } else if (rawModifiers && typeof rawModifiers === 'object') {
-      for (const [key, mod] of Object.entries(rawModifiers)) {
-        if (mod && typeof mod === 'object') {
-          rawModifiersMap.set(String((mod as any).id || (mod as any)._id || key), mod);
+      } else if (src && typeof src === 'object') {
+        for (const [key, mod] of Object.entries(src)) {
+          registerModifier(key, mod);
         }
       }
     }
@@ -565,7 +588,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const snoozedPayload = rawMenu.snoozedProducts || rawMenu.snoozed || {};
 
-    const standardProducts: Product[] = [];
+    const standardProductsByPlu = new Map<string, Product>();
     const bundleProducts: BundleProduct[] = [];
 
     for (const p of rawProducts) {
@@ -574,16 +597,38 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const assignedCatIds = productCategoryMap.get(prodId) || [];
       const imageUrl = p.imageUrl || p.image || undefined;
 
-      // Extract raw modifier groups (subProducts in Deliverect represent modifier group IDs for combos)
-      const rawProductModGroups: any[] = Array.isArray(p.modifierGroups)
-        ? p.modifierGroups
-        : p.modifierGroups && typeof p.modifierGroups === 'object'
-        ? Object.values(p.modifierGroups)
-        : Array.isArray(p.subProducts)
-        ? p.subProducts
-        : Array.isArray(p.subItems)
-        ? p.subItems
-        : [];
+      // Extract raw modifier groups (Deliverect combos can distribute sections across modifierGroups, subProducts, subItems, sections, bundleSections)
+      const extractGroupList = (val: any): any[] => {
+        if (!val) return [];
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'object') return Object.values(val);
+        return [val];
+      };
+
+      const rawProductModGroups: any[] = [];
+      const seenGroupKeys = new Set<string>();
+
+      const candidateGroupSources = [
+        extractGroupList(p.modifierGroups),
+        extractGroupList(p.subProducts),
+        extractGroupList(p.subItems),
+        extractGroupList(p.sections),
+        extractGroupList(p.bundleSections),
+        extractGroupList(p.modifierGroupIds),
+      ];
+
+      for (const groupList of candidateGroupSources) {
+        for (const item of groupList) {
+          if (!item) continue;
+          const key = typeof item === 'string'
+            ? item
+            : String(item.id || item._id || item.name || JSON.stringify(item));
+          if (!seenGroupKeys.has(key)) {
+            seenGroupKeys.add(key);
+            rawProductModGroups.push(item);
+          }
+        }
+      }
 
       // Deliverect combos have productType 3, or subProducts pointing to modifierGroups, or explicit combo flags, or meal deal naming/PLU
       const hasModifierGroupsInSubProducts =
@@ -617,31 +662,46 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
         const sections: BundleModifierGroup[] = rawProductModGroups.map((mgRef: any, groupIndex: number) => {
           const mgId = typeof mgRef === 'string' ? mgRef : String(mgRef.id || mgRef._id || `section_${groupIndex}`);
-          const mgData = typeof mgRef === 'object' ? mgRef : rawModifierGroupsMap.get(mgId) || {};
+          const mgData = typeof mgRef === 'object' ? mgRef : (rawModifierGroupsMap.get(mgId) || rawProductsMap.get(mgId) || {});
 
           const sectionMin = typeof mgData.min === 'number' ? mgData.min : (typeof mgRef.min === 'number' ? mgRef.min : 0);
           const sectionMax = typeof mgData.max === 'number' ? mgData.max : (typeof mgRef.max === 'number' ? mgRef.max : Math.max(1, sectionMin));
           const isSectionCombo = mgData.isCombo !== undefined ? Boolean(mgData.isCombo) : (mgRef.isCombo !== undefined ? Boolean(mgRef.isCombo) : sectionMin > 0);
           const isSectionUpsell = mgData.isUpsell !== undefined ? Boolean(mgData.isUpsell) : (mgRef.isUpsell !== undefined ? Boolean(mgRef.isUpsell) : sectionMin === 0);
 
-          // Modifiers in section - inspect modifiers, subProducts, subItems
-          const rawModList: any[] = Array.isArray(mgData.modifiers)
-            ? mgData.modifiers
-            : Array.isArray(mgData.subProducts)
-            ? mgData.subProducts
-            : Array.isArray(mgData.subItems)
-            ? mgData.subItems
-            : Array.isArray(mgRef.modifiers)
-            ? mgRef.modifiers
-            : Array.isArray(mgRef.subProducts)
-            ? mgRef.subProducts
-            : [];
+          // Modifiers in section - inspect modifiers, subProducts, subItems, items across both mgData and mgRef
+          const rawModList: any[] = [];
+          const seenModKeys = new Set<string>();
+          const candidateModSources = [
+            extractGroupList(mgData.modifiers),
+            extractGroupList(mgData.subProducts),
+            extractGroupList(mgData.subItems),
+            extractGroupList(mgData.items),
+            extractGroupList(mgRef.modifiers),
+            extractGroupList(mgRef.subProducts),
+            extractGroupList(mgRef.subItems),
+            extractGroupList(mgRef.items),
+          ];
+
+          for (const list of candidateModSources) {
+            for (const m of list) {
+              if (!m) continue;
+              const mKey = typeof m === 'string'
+                ? m
+                : String(m.id || m._id || m.plu || m.name || JSON.stringify(m));
+              if (!seenModKeys.has(mKey)) {
+                seenModKeys.add(mKey);
+                rawModList.push(m);
+              }
+            }
+          }
 
           const modifiers: BundleModifier[] = rawModList.map((mRef: any, modIndex: number) => {
             const mId = typeof mRef === 'string' ? mRef : String(mRef.id || mRef._id || `mod_${modIndex}`);
             const mData = typeof mRef === 'object' ? mRef : (rawModifiersMap.get(mId) || rawProductsMap.get(mId) || {});
             const modPlu = String(mData.plu || mRef.plu || mId);
-            const modName = String(mData.name || mRef.name || modPlu);
+            const rawModName = String(mData.name || mRef.name || modPlu);
+            const modName = rawModName.replace(/###PRNT/gi, '').trim() || modPlu;
 
             // Component pricing: 0 for included, exact minor unit uplift for premium
             const modPriceMinor = typeof mData.price === 'number' ? Math.round(mData.price) : (typeof mRef.price === 'number' ? Math.round(mRef.price) : 0);
@@ -744,12 +804,35 @@ export class DeliverectApiClient implements DeliverectAdapter {
         bundleProducts.push(bundleProd);
       } else {
         // Standard Product parsing
+        // Merge items with PLU DAV1015###PRNT as DAV1015 for display and inventory purposes
+        const canonicalPlu = plu.replace(/###PRNT$/i, '').trim();
+        const rawName = String(p.name || plu);
+        const cleanName = rawName.replace(/###PRNT/gi, '').trim() || canonicalPlu;
+
+        const existingProd = standardProductsByPlu.get(canonicalPlu);
+        if (existingProd) {
+          // Merge category IDs
+          for (const catId of assignedCatIds) {
+            if (!existingProd.categoryIds.includes(catId)) {
+              existingProd.categoryIds.push(catId);
+            }
+          }
+          // Enrich images if missing
+          if (!existingProd.imageUrl && imageUrl) {
+            existingProd.imageUrl = imageUrl;
+            existingProd.image = imageUrl;
+            existingProd.images = [imageUrl];
+          }
+          // Do not treat ###PRNT alias as a separate item or duplicate inventory
+          continue;
+        }
+
         const baseProd: Product = {
           id: prodId,
-          plu,
+          plu: canonicalPlu,
           gtin: p.gtin ? (Array.isArray(p.gtin) ? p.gtin : [p.gtin]) : [],
-          name: String(p.name || plu),
-          description: p.description || '',
+          name: cleanName,
+          description: p.description ? p.description.replace(/###PRNT/gi, '').trim() : '',
           imageUrl,
           image: imageUrl,
           images: imageUrl ? [imageUrl] : [],
@@ -800,9 +883,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
           baseProd.active = true;
         }
 
-        standardProducts.push(baseProd);
+        standardProductsByPlu.set(canonicalPlu, baseProd);
       }
     }
+
+    const standardProducts = Array.from(standardProductsByPlu.values());
 
     const bundleCatalog: BundleCatalog = {
       id: `bundle_catalog_${rawMenu.menuId || rawMenu.id || rawMenu._id || 'default'}`,

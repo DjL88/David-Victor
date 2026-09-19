@@ -151,7 +151,14 @@ export class DemoAdminClient implements AdminClient {
       tenantId: payload.tenantId || this.currentTenantId,
       type: payload.type,
       fileName: payload.fileName,
-      publicUrl: payload.fileData.startsWith('data:') ? payload.fileData : `https://images.unsplash.com/photo-1542838132-92c53300491e?w=800`,
+      publicUrl:
+        payload.fileData.startsWith('data:') ||
+        payload.fileData.startsWith('blob:') ||
+        payload.fileData.startsWith('http')
+          ? payload.fileData
+          : payload.type === 'STORY_VIDEO'
+          ? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+          : `https://images.unsplash.com/photo-1542838132-92c53300491e?w=800`,
       status: 'READY',
       createdAt: new Date().toISOString(),
     };

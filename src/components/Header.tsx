@@ -13,8 +13,8 @@ import {
   User,
   Clock,
   Heart,
-  RotateCcw,
   ShieldCheck,
+  RotateCcw,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -123,18 +123,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden sm:inline text-gray-400">
             {tenant?.tagline || 'Delivery and collection available'}
           </span>
-          {onResetCache && (
-            <button
-              type="button"
-              id="header-reset-cache-btn"
-              onClick={onResetCache}
-              className="flex items-center gap-1.5 text-[11px] font-bold text-gray-200 hover:text-white bg-gray-800/90 hover:bg-gray-700 px-2.5 py-0.5 rounded-lg transition-all cursor-pointer border border-gray-700 active:scale-95 shadow-2xs"
-              title="Reset Cache & Sync Live Deliverect Catalog"
-            >
-              <RotateCcw className="w-3 h-3 text-emerald-400" />
-              <span>Reset Cache / Sync</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -319,22 +307,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 </div>
 
-                {onResetCache && (
-                  <div className="py-1 border-t border-gray-100">
-                    <button
-                      type="button"
-                      id="header-dropdown-reset-cache-btn"
-                      onClick={() => {
-                        setIsAccountMenuOpen(false);
-                        onResetCache();
-                      }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-gray-50 text-gray-700 flex items-center gap-2.5 cursor-pointer font-medium"
-                    >
-                      <RotateCcw className="w-4 h-4 text-emerald-600" />
-                      <span>Sync & Reset Cache</span>
-                    </button>
-                  </div>
-                )}
+
 
                 {onOpenAdmin && (appMode === 'demo' || Boolean(currentUser)) && (
                   <div className="pt-1 border-t border-gray-100">

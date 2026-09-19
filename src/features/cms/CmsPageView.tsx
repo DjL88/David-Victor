@@ -54,6 +54,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
 
       {/* Render structured blocks safely */}
       {sortedBlocks.map((block) => {
+        if (!block || !block.type) return null;
         switch (block.type) {
           case 'Hero':
             return (

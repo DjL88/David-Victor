@@ -22,6 +22,7 @@ import { NotificationsAdminScreen } from './screens/NotificationsAdminScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
+import { FeaturedOffersAdminScreen } from './screens/FeaturedOffersAdminScreen';
 import { BwydiLogo } from '../components/BwydiLogo';
 const bwydiFullLogo = '/bwydi-green.png';
 import {
@@ -48,6 +49,7 @@ import {
   X,
   ChevronRight,
   Building2,
+  Flame,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -57,6 +59,7 @@ export type AdminTab =
   | 'integrations'
   | 'insights'
   | 'branding'
+  | 'featured_offers'
   | 'search_merch'
   | 'pages'
   | 'domains'
@@ -179,6 +182,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Marketing Settings',
       items: [
         { id: 'branding', label: 'Branding & Fonts', icon: Palette },
+        { id: 'featured_offers', label: 'Featured Offers', icon: Flame },
         { id: 'stories', label: 'Stories Drops', icon: Film },
         { id: 'pages', label: 'Pages (CMS)', icon: FileText, badge: 'Demo' },
         { id: 'search_merch', label: 'Search Merchandising', icon: Search },
@@ -343,6 +347,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 tenantId={currentTenantId}
                 currentUser={currentUser}
                 onBrandingUpdated={setTenantConfig}
+              />
+            )}
+            {activeTab === 'featured_offers' && (
+              <FeaturedOffersAdminScreen
+                tenantId={currentTenantId}
+                currentUser={currentUser}
               />
             )}
             {activeTab === 'search_merch' && <SearchMerchScreen tenantId={currentTenantId} />}

@@ -207,13 +207,41 @@ export class CatalogueProjectionCache {
     const norm = normalizeStoreId(storeId);
     const storeMap = this.storeAvailability[norm];
     if (storeMap && storeMap[plu]) {
-      return { ...storeMap[plu] };
+      const record = { ...storeMap[plu] };
+      const masterProduct = this.getProductByPlu(plu);
+      if (masterProduct && typeof record.storePrice === 'number' && record.storePrice > 0 && record.storePrice < 0.20) {
+        const expectedPrice = typeof masterProduct.price === 'number'
+          ? masterProduct.price
+          : (masterProduct.price && typeof masterProduct.price === 'object' && 'amount' in masterProduct.price
+              ? masterProduct.price.amount / 100
+              : (typeof (masterProduct as any).basePrice === 'number' ? (masterProduct as any).basePrice : 0));
+        if (expectedPrice >= 0.50 && Math.abs(record.storePrice - expectedPrice / 100) < 0.005) {
+          record.storePrice = expectedPrice;
+          this.storeAvailability[norm][plu] = record;
+        }
+      }
+      return record;
     }
 
     // If no availability record exists yet for this store/plu, derive a default from the master product
     const masterProduct = this.getProductByPlu(plu);
     if (masterProduct) {
-      const defaultPrice = moneyToMajor(masterProduct.price);
+      let defaultPrice: number = 0;
+      if (typeof masterProduct.price === 'number') {
+        defaultPrice = masterProduct.price;
+      } else if (masterProduct.price && typeof masterProduct.price === 'object' && 'amount' in masterProduct.price) {
+        defaultPrice = masterProduct.price.amount / 100;
+      } else if (typeof (masterProduct as any).basePrice === 'number') {
+        defaultPrice = (masterProduct as any).basePrice;
+      }
+
+      let originalPrice: number | undefined = undefined;
+      if (typeof masterProduct.originalPrice === 'number') {
+        originalPrice = masterProduct.originalPrice;
+      } else if (masterProduct.originalPrice && typeof masterProduct.originalPrice === 'object' && 'amount' in masterProduct.originalPrice) {
+        originalPrice = masterProduct.originalPrice.amount / 100;
+      }
+
       const isCarried = true;
       const inStock = masterProduct.stockStatus !== 'OUT_OF_STOCK';
       const defaultAvail: StoreProductAvailability = {
@@ -223,7 +251,7 @@ export class CatalogueProjectionCache {
         stockQuantity: masterProduct.stockQuantity ?? 50,
         stockStatus: masterProduct.stockStatus || (inStock ? 'IN_STOCK' : 'OUT_OF_STOCK'),
         storePrice: defaultPrice,
-        originalPrice: masterProduct.originalPrice ? moneyToMajor(masterProduct.originalPrice) : undefined,
+        originalPrice,
         isCarried,
         active: masterProduct.active !== false,
         lastSyncAt: new Date().toISOString(),

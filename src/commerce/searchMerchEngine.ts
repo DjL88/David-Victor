@@ -163,7 +163,7 @@ export function applySearchMerchandising(
     let totalMultiplier = 1.0;
     if (config?.boostRules) {
       config.boostRules.forEach((rule) => {
-        if (!rule.isActive) return;
+        if (!rule || !rule.isActive) return;
         if (rule.type === 'product' && rule.targetId === product.plu) {
           totalMultiplier *= rule.boostMultiplier;
         } else if (

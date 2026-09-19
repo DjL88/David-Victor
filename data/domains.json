@@ -65,11 +65,11 @@
   "highland.marketlane.app": {
     "domainId": "dom_highland.marketlane.app",
     "hostname": "highland.marketlane.app",
-    "tenantId": "brand-test-1789826176257",
+    "tenantId": "brand-test-1789834856156",
     "isPrimary": true,
     "status": "active",
     "createdAt": "2026-09-19T09:49:01.354Z",
-    "updatedAt": "2026-09-19T13:56:16.259Z"
+    "updatedAt": "2026-09-19T16:20:56.157Z"
   },
   "brand-audit-1789811341358.marketlane.app": {
     "domainId": "dom_brand-audit-1789811341358.marketlane.app",
@@ -232,5 +232,50 @@
     "status": "active",
     "createdAt": "2026-09-19T13:56:16.263Z",
     "updatedAt": "2026-09-19T13:56:16.263Z"
+  },
+  "brand-audit-1789828249464.marketlane.app": {
+    "domainId": "dom_brand-audit-1789828249464.marketlane.app",
+    "hostname": "brand-audit-1789828249464.marketlane.app",
+    "tenantId": "brand-audit-1789828249464",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-19T14:30:49.465Z",
+    "updatedAt": "2026-09-19T14:30:49.465Z"
+  },
+  "brand-audit-1789834240244.marketlane.app": {
+    "domainId": "dom_brand-audit-1789834240244.marketlane.app",
+    "hostname": "brand-audit-1789834240244.marketlane.app",
+    "tenantId": "brand-audit-1789834240244",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-19T16:10:40.244Z",
+    "updatedAt": "2026-09-19T16:10:40.244Z"
+  },
+  "brand-audit-1789834399697.marketlane.app": {
+    "domainId": "dom_brand-audit-1789834399697.marketlane.app",
+    "hostname": "brand-audit-1789834399697.marketlane.app",
+    "tenantId": "brand-audit-1789834399697",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-19T16:13:19.698Z",
+    "updatedAt": "2026-09-19T16:13:19.698Z"
+  },
+  "brand-audit-1789834664368.marketlane.app": {
+    "domainId": "dom_brand-audit-1789834664368.marketlane.app",
+    "hostname": "brand-audit-1789834664368.marketlane.app",
+    "tenantId": "brand-audit-1789834664368",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-19T16:17:44.369Z",
+    "updatedAt": "2026-09-19T16:17:44.369Z"
+  },
+  "brand-audit-1789834856162.marketlane.app": {
+    "domainId": "dom_brand-audit-1789834856162.marketlane.app",
+    "hostname": "brand-audit-1789834856162.marketlane.app",
+    "tenantId": "brand-audit-1789834856162",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-19T16:20:56.163Z",
+    "updatedAt": "2026-09-19T16:20:56.163Z"
   }
 }

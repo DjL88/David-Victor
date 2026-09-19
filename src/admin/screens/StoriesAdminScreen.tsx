@@ -18,6 +18,32 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
+export const isVideoMediaUrl = (url?: string): boolean => {
+  if (!url) return false;
+  try {
+    const decoded = decodeURIComponent(url.toLowerCase().split('?')[0]);
+    return (
+      decoded.endsWith('.mp4') ||
+      decoded.includes('.mp4') ||
+      decoded.endsWith('.webm') ||
+      decoded.includes('.webm') ||
+      decoded.endsWith('.mov') ||
+      decoded.includes('.mov') ||
+      decoded.endsWith('.m4v') ||
+      decoded.includes('.m4v') ||
+      decoded.endsWith('.ogg') ||
+      decoded.includes('.ogg') ||
+      url.startsWith('data:video/') ||
+      url.includes('video/mp4') ||
+      url.includes('video%2Fmp4') ||
+      url.includes('video%2f')
+    );
+  } catch {
+    const lower = url.toLowerCase();
+    return lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mov');
+  }
+};
+
 interface StoriesAdminScreenProps {
   tenantId: string;
   currentUser: AdminUser;
@@ -201,22 +227,30 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
               },
             ];
 
-      const firstItemType = items[0]?.mediaType;
-      const mediaType: 'image' | 'video' =
-        firstItemType === 'video' || editingStory.mediaType === 'video' ? 'video' : 'image';
+      const normalizedItems = items.map((it) => {
+        const isVid = it.mediaType === 'video' || isVideoMediaUrl(it.mediaUrl);
+        return {
+          ...it,
+          mediaType: isVid ? ('video' as const) : ('image' as const),
+        };
+      });
+
+      const firstItemIsVid =
+        normalizedItems[0]?.mediaType === 'video' ||
+        isVideoMediaUrl(items[0]?.mediaUrl) ||
+        isVideoMediaUrl(editingStory.mediaUrl) ||
+        editingStory.mediaType === 'video';
+      const mediaType: 'image' | 'video' = firstItemIsVid ? 'video' : 'image';
 
       const normalizedStory: Story = {
         ...editingStory,
-        mediaUrl: items[0]?.mediaUrl || editingStory.mediaUrl,
+        mediaUrl: normalizedItems[0]?.mediaUrl || editingStory.mediaUrl,
         mediaType,
         avatarUrl:
           editingStory.avatarUrl ||
-          items[0]?.mediaUrl ||
+          normalizedItems[0]?.mediaUrl ||
           'https://images.unsplash.com/photo-1542838132-92c53300491e?w=100&auto=format&fit=crop&q=80',
-        items: items.map((it) => ({
-          ...it,
-          mediaType: it.mediaType === 'video' ? ('video' as const) : ('image' as const),
-        })),
+        items: normalizedItems,
         storeIds: editingStory.storeIds || editingStory.eligibleStoreIds || [],
         eligibleStoreIds: editingStory.storeIds || editingStory.eligibleStoreIds || [],
         linkedProductPlus: editingStory.linkedProductPlus || [],
@@ -877,17 +911,46 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                       </label>
                     </div>
 
-                    <input
-                      type="text"
-                      placeholder="Image / Video URL or Cloud Storage permanent link"
-                      value={item.mediaUrl}
-                      onChange={(e) => {
-                        const newItems = [...(editingStory.items || [])];
-                        newItems[idx] = { ...newItems[idx], mediaUrl: e.target.value };
-                        setEditingStory({ ...editingStory, items: newItems });
-                      }}
-                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Image / Video URL or Cloud Storage permanent link (e.g. .mp4)"
+                        value={item.mediaUrl}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const isVid = isVideoMediaUrl(val);
+                          const newItems = [...(editingStory.items || [])];
+                          newItems[idx] = {
+                            ...newItems[idx],
+                            mediaUrl: val,
+                            mediaType: isVid ? 'video' : newItems[idx].mediaType,
+                          };
+                          setEditingStory({
+                            ...editingStory,
+                            items: newItems,
+                            mediaType: isVid || editingStory.mediaType === 'video' ? 'video' : 'image',
+                          });
+                        }}
+                        className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentType = item.mediaType === 'video' ? 'image' : 'video';
+                          const newItems = [...(editingStory.items || [])];
+                          newItems[idx] = { ...newItems[idx], mediaType: currentType };
+                          setEditingStory({ ...editingStory, items: newItems });
+                        }}
+                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer border ${
+                          item.mediaType === 'video' || isVideoMediaUrl(item.mediaUrl)
+                            ? 'bg-purple-100 text-purple-800 border-purple-200'
+                            : 'bg-gray-100 text-gray-700 border-gray-200'
+                        }`}
+                        title="Click to toggle Media Type"
+                      >
+                        {item.mediaType === 'video' || isVideoMediaUrl(item.mediaUrl) ? 'Video (MP4)' : 'Image'}
+                      </button>
+                    </div>
                     <input
                       type="text"
                       placeholder="Overlay Caption"

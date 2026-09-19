@@ -5,8 +5,8 @@
     "status": "connected",
     "connectionState": "CONNECTED",
     "bffProxyUrl": "/api/v1",
-    "lastSyncAt": "2026-09-19T13:56:24.145Z",
-    "updatedAt": "2026-09-19T13:56:24.145Z"
+    "lastSyncAt": "2026-09-19T16:21:08.120Z",
+    "updatedAt": "2026-09-19T16:21:08.120Z"
   },
   "tenant_platform_oauth_1789816166581": {
     "tenantId": "tenant_platform_oauth_1789816166581",
@@ -133,5 +133,50 @@
     "bffProxyUrl": "/api/v1",
     "lastSyncAt": "2026-09-19T13:56:24.148Z",
     "updatedAt": "2026-09-19T13:56:24.148Z"
+  },
+  "tenant_platform_oauth_1789828261452": {
+    "tenantId": "tenant_platform_oauth_1789828261452",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-19T14:31:01.452Z",
+    "updatedAt": "2026-09-19T14:31:01.452Z"
+  },
+  "tenant_platform_oauth_1789834250269": {
+    "tenantId": "tenant_platform_oauth_1789834250269",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-19T16:10:50.269Z",
+    "updatedAt": "2026-09-19T16:10:50.269Z"
+  },
+  "tenant_platform_oauth_1789834409372": {
+    "tenantId": "tenant_platform_oauth_1789834409372",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-19T16:13:29.372Z",
+    "updatedAt": "2026-09-19T16:13:29.372Z"
+  },
+  "tenant_platform_oauth_1789834679654": {
+    "tenantId": "tenant_platform_oauth_1789834679654",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-19T16:17:59.654Z",
+    "updatedAt": "2026-09-19T16:17:59.654Z"
+  },
+  "tenant_platform_oauth_1789834868122": {
+    "tenantId": "tenant_platform_oauth_1789834868122",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-19T16:21:08.122Z",
+    "updatedAt": "2026-09-19T16:21:08.122Z"
   }
 }

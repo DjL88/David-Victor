@@ -150,7 +150,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                       key={i}
                       className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-800 font-semibold text-[11px]"
                     >
-                      {act.type} {act.params ? JSON.stringify(act.params) : ''}
+                      {act?.type} {act?.params ? JSON.stringify(act.params) : ''}
                     </span>
                   ))}
                 </div>
