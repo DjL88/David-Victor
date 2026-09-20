@@ -54,7 +54,7 @@
       ],
       "currency": "GBP",
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-20T10:42:55.218Z"
+      "lastSeenAt": "2026-09-20T17:25:17.752Z"
     },
     {
       "commerceStoreId": "cstore_cl_channel_unlinked",
@@ -66,8 +66,8 @@
       "services": [],
       "currency": "GBP",
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-20T10:42:55.218Z"
+      "lastSeenAt": "2026-09-20T17:25:17.752Z"
     }
   ],
-  "syncedAt": "2026-09-20T10:42:55.218Z"
+  "syncedAt": "2026-09-20T17:25:17.752Z"
 }

@@ -122,7 +122,7 @@ export function useCatalog(selectedStoreId?: string) {
       }
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : 'Failed to load products for category';
-      console.error('Failed to load products for category:', err);
+      console.warn('[useCatalog] Failed to load products for category:', err);
       setError(errMessage);
 
       // In live modes and on error: strictly clear stale products, summaries, and snapshots

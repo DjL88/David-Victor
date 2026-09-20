@@ -1,1 +1,20 @@
-{}
+{
+  "brand-diagnostic-test": {
+    "tenantId": "brand-diagnostic-test",
+    "environment": "staging",
+    "status": "connected",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-20T17:25:52.799Z",
+    "updatedAt": "2026-09-20T17:25:52.799Z"
+  },
+  "tenant_platform_oauth_1789925152801": {
+    "tenantId": "tenant_platform_oauth_1789925152801",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-20T17:25:52.801Z",
+    "updatedAt": "2026-09-20T17:25:52.801Z"
+  }
+}

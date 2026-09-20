@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Story, StoryAction, Product, formatMoney } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
+import { resolveStoryMediaUrl } from '../../utils/storyMediaUtils';
+import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
 import {
   X,
   ChevronLeft,
@@ -10,8 +12,11 @@ import {
   ArrowRight,
   CheckCircle2,
   Layers,
-  Filter,
   Plus,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Play,
 } from 'lucide-react';
 
 interface StoryViewerModalProps {
@@ -29,7 +34,8 @@ interface StoryViewerModalProps {
   onFilterByDeal?: (story: Story) => void;
 }
 
-const STORY_DURATION_MS = 6000;
+const DEFAULT_IMAGE_DURATION_MS = 6000;
+const DEFAULT_VIDEO_DURATION_MS = 12000;
 
 export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   stories,
@@ -48,13 +54,24 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const { tenant } = useTenant();
   const [progress, setProgress] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [mediaFailed, setMediaFailed] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true);
+  const [directVideoFailed, setDirectVideoFailed] = useState<boolean>(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const isOpen = currentIndex !== null && currentIndex >= 0 && currentIndex < stories.length;
   const currentStory = isOpen ? stories[currentIndex] : null;
 
+  // Extract media info
+  const currentFrame = currentStory?.items?.[0];
+  const rawMediaUrl = currentFrame?.mediaUrl || currentStory?.mediaUrl || '';
+  const explicitMediaType = currentFrame?.mediaType || currentStory?.mediaType;
+  
+  const parsedMedia = useMemo(() => {
+    return parseStoryMedia(rawMediaUrl, explicitMediaType);
+  }, [rawMediaUrl, explicitMediaType]);
+
   // Find linked products from catalogue
-  const linkedProducts = React.useMemo(() => {
+  const linkedProducts = useMemo(() => {
     if (!currentStory?.linkedProductPlus || currentStory.linkedProductPlus.length === 0) {
       return [];
     }
@@ -63,35 +80,56 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       .filter((p): p is Product => p !== undefined);
   }, [currentStory, products]);
 
-  // Reset progress on story change
+  // Reset state on story switch
   useEffect(() => {
     setProgress(0);
+    setDirectVideoFailed(false);
   }, [currentIndex]);
 
-  // Handle story progress tick
+  // Direct video play / pause synchronization
+  useEffect(() => {
+    if (!isOpen || parsedMedia.provider !== 'direct' || !videoRef.current) return;
+
+    if (isPaused) {
+      videoRef.current.pause();
+    } else {
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Autoplay handled gracefully
+        });
+      }
+    }
+  }, [isOpen, isPaused, parsedMedia.provider, currentIndex]);
+
+  // Timer-based progress bar for images and embedded videos (YouTube/Vimeo/Loom)
   useEffect(() => {
     if (!isOpen || isPaused || progress >= 100) return;
+    if (parsedMedia.provider === 'direct' && !directVideoFailed) return;
 
-    const interval = 50;
-    const step = (interval / STORY_DURATION_MS) * 100;
+    const frameSecs = currentFrame?.duration || (parsedMedia.mediaType === 'video' ? 12 : 6);
+    const durationMs = frameSecs * 1000;
+    const intervalMs = 40;
+    const step = (intervalMs / durationMs) * 100;
 
     const timer = window.setInterval(() => {
-      setProgress((prev) => Math.min(100, prev + step));
-    }, interval);
+      setProgress((prev) => {
+        const next = prev + step;
+        return next >= 100 ? 100 : next;
+      });
+    }, intervalMs);
 
-    return () => {
-      clearInterval(timer);
-    };
-  }, [isOpen, isPaused, progress >= 100]);
+    return () => clearInterval(timer);
+  }, [isOpen, isPaused, progress, parsedMedia.provider, parsedMedia.mediaType, directVideoFailed, currentFrame?.duration]);
 
-  // Advance to next story safely after render cycle when progress reaches 100%
+  // Auto-advance when progress reaches 100%
   useEffect(() => {
     if (isOpen && progress >= 100) {
       onNext();
     }
   }, [isOpen, progress, onNext]);
 
-  // Handle keyboard navigation
+  // Keyboard navigation
   useEffect(() => {
     if (!isOpen) return;
 
@@ -111,7 +149,6 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     e.stopPropagation();
     if (!currentStory) return;
 
-    // "if story is an 'AND' then add all items to basket"
     if (
       currentStory.stockMatchMode === 'AND' &&
       currentStory.linkedProductPlus &&
@@ -126,54 +163,112 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     onClose();
   };
 
+  const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.duration && !isNaN(video.duration) && video.duration > 0) {
+      setProgress((video.currentTime / video.duration) * 100);
+    }
+  };
+
+  const handleVideoEnded = () => {
+    setProgress(100);
+    onNext();
+  };
+
+  const effectiveThumbnail =
+    (currentStory.thumbnailUrl && !isGenericPlaceholder(currentStory.thumbnailUrl)
+      ? currentStory.thumbnailUrl
+      : parsedMedia.thumbnailUrl) || undefined;
+
   return (
     <div
       id="story-viewer-modal"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md select-none overflow-x-hidden"
     >
-      {/* Desktop Container */}
+      {/* Story Container (Card Shape) */}
       <div
-        className="relative w-full max-w-md h-full max-h-[92vh] sm:rounded-3xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl overflow-x-hidden"
+        className="relative w-full max-w-md h-full max-h-[92vh] sm:rounded-3xl overflow-hidden bg-slate-950 flex flex-col justify-between shadow-2xl"
         onMouseDown={() => setIsPaused(true)}
         onMouseUp={() => setIsPaused(false)}
         onTouchStart={() => setIsPaused(true)}
         onTouchEnd={() => setIsPaused(false)}
       >
-        {/* Story Background Media */}
-        <div className="absolute inset-0 z-0">
-          {!currentMediaUrl || mediaFailed ? (
-            <div className="w-full h-full flex items-center justify-center bg-slate-900 text-white/80 px-6 text-center">
-              <p className="text-sm font-semibold">Story media is unavailable</p>
+        {/* BACKGROUND MEDIA CANVAS */}
+        <div className="absolute inset-0 z-0 bg-slate-950 overflow-hidden flex items-center justify-center">
+          {parsedMedia.provider === 'youtube' && parsedMedia.embedUrl ? (
+            /* YouTube Iframe Player */
+            <div className="relative w-full h-full pointer-events-none">
+              <iframe
+                key={`${currentStory.id}-${parsedMedia.videoId}`}
+                src={parsedMedia.embedUrl}
+                title={currentStory.title}
+                className="w-[140%] h-[120%] -ml-[20%] -mt-[10%] object-cover border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
             </div>
-          ) : isVideoMedia ? (
+          ) : parsedMedia.provider === 'vimeo' && parsedMedia.embedUrl ? (
+            /* Vimeo Iframe Player */
+            <div className="relative w-full h-full pointer-events-none">
+              <iframe
+                key={`${currentStory.id}-${parsedMedia.videoId}`}
+                src={parsedMedia.embedUrl}
+                title={currentStory.title}
+                className="w-[140%] h-[120%] -ml-[20%] -mt-[10%] object-cover border-0"
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : parsedMedia.provider === 'loom' && parsedMedia.embedUrl ? (
+            /* Loom Iframe Player */
+            <div className="relative w-full h-full pointer-events-none">
+              <iframe
+                key={`${currentStory.id}-${parsedMedia.videoId}`}
+                src={parsedMedia.embedUrl}
+                title={currentStory.title}
+                className="w-full h-full object-cover border-0"
+                allow="autoplay; fullscreen"
+                allowFullScreen
+              />
+            </div>
+          ) : parsedMedia.provider === 'direct' && !directVideoFailed ? (
+            /* Native Direct Video (MP4 / WebM / Cloud Video) */
             <video
-              key={currentStory.id}
-              src={currentMediaUrl}
-              poster={currentStory.thumbnailUrl}
+              ref={videoRef}
+              key={`${currentStory.id}-${parsedMedia.rawUrl}`}
+              src={parsedMedia.rawUrl}
+              poster={effectiveThumbnail}
               aria-label={currentStory.title}
               autoPlay
-              muted
+              muted={isMuted}
               playsInline
-              loop
-              preload="metadata"
+              preload="auto"
               className="w-full h-full object-cover"
-              onPlay={() => setIsPaused(false)}
-              onPause={() => setIsPaused(true)}
-              onError={() => setMediaFailed(true)}
+              onTimeUpdate={handleVideoTimeUpdate}
+              onEnded={handleVideoEnded}
+              onError={() => setDirectVideoFailed(true)}
             />
           ) : (
+            /* Image / Fallback Background */
             <img
-              src={currentMediaUrl}
+              src={parsedMedia.rawUrl || effectiveThumbnail}
               alt={currentStory.title}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                // Fallback to effective thumbnail or placeholder
+                if (e.currentTarget.src !== effectiveThumbnail) {
+                  e.currentTarget.src = effectiveThumbnail;
+                }
+              }}
             />
           )}
-          {/* Subtle Top & Bottom Gradients for readable text */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
+
+          {/* Gradients for high-contrast legible text */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-transparent to-black/85 pointer-events-none" />
         </div>
 
-        {/* Tap Navigation Zones */}
-        <div className="absolute inset-0 z-10 flex">
+        {/* TAP NAVIGATION TOUCH ZONES (Left 35% for Previous, Right 65% for Next) */}
+        <div className="absolute inset-0 z-10 flex pointer-events-auto">
           <div
             className="w-1/3 h-full cursor-pointer"
             onClick={onPrev}
@@ -186,9 +281,9 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           />
         </div>
 
-        {/* Top Controls & Segmented Progress Bars */}
-        <div className="relative z-20 p-4 pt-5">
-          {/* Progress Bars */}
+        {/* TOP CONTROLS & SEGMENTED PROGRESS BARS */}
+        <div className="relative z-20 p-4 pt-5 pointer-events-none">
+          {/* Progress Bars for all stories in sequence */}
           <div className="flex items-center gap-1.5 mb-3">
             {stories.map((s, idx) => {
               let fill = 0;
@@ -210,41 +305,72 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           </div>
 
           {/* Header Bar */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pointer-events-auto">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full overflow-hidden bg-white p-0.5 border border-white/50">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-white p-0.5 border border-white/50 shadow-xs shrink-0">
                 <img
-                  src={tenant?.iconUrl || tenant?.logoUrl}
+                  src={tenant?.iconUrl || tenant?.logoUrl || effectiveThumbnail}
                   alt={tenant?.brandName}
                   className="w-full h-full object-cover rounded-full"
                 />
               </div>
               <div>
                 <p className="text-xs font-bold text-white leading-tight drop-shadow-xs">
-                  {tenant?.brandName}
+                  {currentStory.author || tenant?.brandName || 'Market Lane'}
                 </p>
-                <p className="text-[10px] text-white/80 leading-tight">
-                  {currentStory.tag || 'Official Brand Story'}
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] text-white/80 leading-tight">
+                    {currentStory.tag || 'Featured Story'}
+                  </span>
+                  {parsedMedia.mediaType === 'video' && (
+                    <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-[9px] font-bold text-white flex items-center gap-1">
+                      <Play className="w-2 h-2 fill-white" />
+                      <span>{parsedMedia.provider === 'youtube' ? 'YouTube' : 'Video'}</span>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <button
-              type="button"
-              id="close-story-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-xs"
-              aria-label="Close stories"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Sound Toggle (Direct Videos) */}
+              {parsedMedia.provider === 'direct' && !directVideoFailed && (
+                <button
+                  type="button"
+                  id="toggle-story-sound-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsMuted((prev) => !prev);
+                  }}
+                  className="w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors backdrop-blur-xs cursor-pointer"
+                  aria-label={isMuted ? 'Unmute story' : 'Mute story'}
+                >
+                  {isMuted ? (
+                    <VolumeX className="w-4 h-4 text-white/80" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-emerald-400" />
+                  )}
+                </button>
+              )}
+
+              {/* Close Button */}
+              <button
+                type="button"
+                id="close-story-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors backdrop-blur-xs cursor-pointer"
+                aria-label="Close stories"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Desktop Arrow Indicators */}
+        {/* Desktop Side Chevron Indicators */}
         <div className="hidden sm:block absolute left-2 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
           {currentIndex > 0 && (
             <div className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center backdrop-blur-xs">
@@ -260,8 +386,8 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           )}
         </div>
 
-        {/* Bottom Story Information & Interactive Call to Action */}
-        <div className="relative z-20 p-5 pb-7 flex flex-col gap-3">
+        {/* BOTTOM STORY CONTENT & CALL TO ACTION */}
+        <div className="relative z-20 p-5 pb-7 flex flex-col gap-3 pointer-events-auto">
           <div>
             <h2 className="text-xl font-extrabold text-white leading-tight drop-shadow-md">
               {currentStory.title}
@@ -273,7 +399,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
             )}
           </div>
 
-          {/* Linked Products & AND/OR Stock Verification Indicator */}
+          {/* Linked Stock Verification Card */}
           {linkedProducts.length > 0 && (
             <div className="bg-black/70 backdrop-blur-md rounded-2xl p-3 border border-white/15 space-y-2.5">
               <div className="flex items-center justify-between text-[11px] font-semibold text-gray-200">
@@ -284,11 +410,11 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                     : `In Stock at ${selectedStoreName || 'Local Store'}`}
                 </span>
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">
-                  {currentStory.stockMatchMode === 'AND' ? 'Bundle (AND)' : 'Flavours (OR)'}
+                  {currentStory.stockMatchMode === 'AND' ? 'Bundle (AND)' : 'Variants (OR)'}
                 </span>
               </div>
 
-              {/* Product items horizontal scroll */}
+              {/* Product items scroll */}
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                 {linkedProducts.map((p) => {
                   if (!p) return null;
@@ -322,80 +448,37 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 })}
               </div>
 
-              {/* Options to Filter Catalogue or Open Dialog of All Items */}
-              <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                {onOpenDealDialog && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenDealDialog(currentStory);
-                      onClose();
-                    }}
-                    className="flex-1 py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-amber-300" />
-                    <span>View Deal Breakdown</span>
-                  </button>
-                )}
-
-                {onFilterByDeal && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onFilterByDeal(currentStory);
-                      onClose();
-                    }}
-                    className="flex-1 py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Filter className="w-3.5 h-3.5 text-emerald-300" />
-                    <span>Filter Catalogue</span>
-                  </button>
-                )}
-              </div>
+              {/* Deal Breakdown Button */}
+              {onOpenDealDialog && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDealDialog(currentStory);
+                    onClose();
+                  }}
+                  className="w-full py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-300" />
+                  <span>View Full Deal Breakdown</span>
+                </button>
+              )}
             </div>
           )}
 
-          {/* Interactive CTA button: If AND, adds all items to basket */}
-          <button
-            type="button"
-            id="story-action-cta"
-            onClick={handleActionClick}
-            className={`w-full py-3.5 px-5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-xl active:scale-[0.98] transition-all cursor-pointer ${
-              currentStory.stockMatchMode === 'AND'
-                ? 'bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black'
-                : 'bg-white hover:bg-gray-100 text-gray-900'
-            }`}
-          >
-            {currentStory.stockMatchMode === 'AND' ? (
-              <>
-                <ShoppingBag className="w-4 h-4 text-gray-950" />
-                <span>
-                  {currentStory.action?.buttonLabel ||
-                    `Add All ${linkedProducts.length} Items to Basket`}
-                </span>
-                <span className="ml-1 px-2 py-0.5 rounded-full bg-black/20 text-gray-950 text-[10px] font-black uppercase tracking-wider">
-                  AND Deal
-                </span>
-              </>
-            ) : currentStory.action?.type === 'PRODUCT' ? (
-              <>
-                <ShoppingBag className="w-4 h-4 text-emerald-600" />
-                <span>{currentStory.action?.buttonLabel || 'View Product'}</span>
-              </>
-            ) : currentStory.action?.type === 'CATEGORY' ? (
-              <>
-                <ArrowRight className="w-4 h-4 text-emerald-600" />
-                <span>{currentStory.action?.buttonLabel || 'Explore Category'}</span>
-              </>
-            ) : (
-              <>
-                <ExternalLink className="w-4 h-4 text-emerald-600" />
-                <span>{currentStory.action?.buttonLabel || 'Learn More'}</span>
-              </>
-            )}
-          </button>
+          {/* Action Button */}
+          {currentStory.action && (
+            <button
+              type="button"
+              id="story-action-button"
+              onClick={handleActionClick}
+              className="w-full py-3 px-4 rounded-2xl bg-white text-gray-900 font-bold text-xs flex items-center justify-center gap-2 shadow-lg hover:bg-gray-100 transition-all active:scale-98 cursor-pointer"
+            >
+              <ShoppingBag className="w-4 h-4 text-indigo-600" />
+              <span>{currentStory.action.buttonLabel || 'Shop Story Feature'}</span>
+              <ArrowRight className="w-4 h-4 ml-auto text-gray-500" />
+            </button>
+          )}
         </div>
       </div>
     </div>

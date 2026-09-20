@@ -120,10 +120,15 @@ export const TenantProvider: React.FC<{
         }
       } catch (err: unknown) {
         if (isMounted) {
-          console.warn('[TenantContext] Bootstrap endpoint note, using default tenant configuration:', err);
-          const fallbackId = initialTenant || 'brand-alpha';
-          setTenant((prev) => prev || MOCK_TENANTS[fallbackId] || MOCK_TENANTS['brand-alpha']);
-          setError(null);
+          console.warn('[TenantContext] Bootstrap endpoint failed:', err);
+          if (appMode === 'demo') {
+            const fallbackId = initialTenant || 'brand-alpha';
+            setTenant((prev) => prev || MOCK_TENANTS[fallbackId] || MOCK_TENANTS['brand-alpha']);
+            setError(null);
+          } else {
+            setTenant(null);
+            setError(err instanceof Error ? err.message : 'Tenant configuration could not be loaded.');
+          }
         }
       } finally {
         if (isMounted) {
@@ -137,7 +142,7 @@ export const TenantProvider: React.FC<{
     return () => {
       isMounted = false;
     };
-  }, [commerceClient]);
+  }, [commerceClient, appMode]);
 
   // Apply dynamic CSS custom properties and Google Fonts to document root
   useEffect(() => {

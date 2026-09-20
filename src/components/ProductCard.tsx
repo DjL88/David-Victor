@@ -18,6 +18,8 @@ interface ProductCardProps {
   onUpdateQuantity: (product: Product, quantity: number) => void;
   isStoreSelected: boolean;
   onPromptSelectStore?: (product?: Product) => void;
+  isFav?: boolean;
+  onToggleFav?: (plu: string) => void;
 }
 
 /**
@@ -35,10 +37,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onUpdateQuantity,
   isStoreSelected,
   onPromptSelectStore,
+  isFav: propIsFav,
+  onToggleFav,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
-  const { isFavourite, toggleFavourite } = useFavourites();
-  const isFav = isFavourite(product.plu);
+  const favouritesHook = useFavourites();
+  const isFav = propIsFav !== undefined ? propIsFav : favouritesHook.isFavourite(product.plu);
+  const handleToggleFav = onToggleFav || favouritesHook.toggleFavourite;
 
   const decision = evaluateProductAvailability(
     product,
@@ -201,7 +206,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           aria-label={isFav ? 'Remove from favourites' : 'Add to favourites'}
           onClick={(e) => {
             e.stopPropagation();
-            toggleFavourite(product.plu);
+            handleToggleFav(product.plu);
           }}
           className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0 ${
             isFav

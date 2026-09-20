@@ -20,8 +20,8 @@ export const ProductCardSkeleton: React.FC = () => {
 export const StoryBubbleSkeleton: React.FC = () => {
   return (
     <div className="flex flex-col items-center gap-1.5 shrink-0 animate-pulse">
-      <div className="w-18 h-18 rounded-full bg-gray-200" />
-      <div className="h-2.5 bg-gray-200 rounded-md w-12" />
+      <div className="w-[74px] h-[74px] sm:w-[84px] sm:h-[84px] rounded-full bg-gray-200" />
+      <div className="h-2.5 bg-gray-200 rounded-md w-14" />
     </div>
   );
 };

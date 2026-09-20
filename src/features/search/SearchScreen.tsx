@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Product, ProductAvailabilitySummary, BasketItem } from '../../commerce/models';
 import { ProductCard } from '../../components/ProductCard';
 import { getRenderableProducts } from '../../rules/availabilityRules';
+import { useFavourites } from '../../hooks/useFavourites';
 import { Search as SearchIcon, X, TrendingUp } from 'lucide-react';
 
 interface SearchScreenProps {
@@ -13,7 +14,7 @@ interface SearchScreenProps {
   onSelectProduct: (p: Product) => void;
   onUpdateQuantity: (p: Product, q: number) => void;
   isStoreSelected: boolean;
-  onPromptSelectStore: () => void;
+  onPromptSelectStore: (product?: Product) => void;
   getBasketQuantity: (plu: string) => number;
   basketItems?: BasketItem[];
 }
@@ -31,6 +32,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   getBasketQuantity,
   basketItems = [],
 }) => {
+  const { isFavourite, toggleFavourite } = useFavourites();
   const popularKeywords = ['Strawberries', 'Milk', 'Sourdough', 'Pizza', 'Rosé', 'IPA', 'Paracetamol', 'Crisps'];
 
   const renderableResults = useMemo(() => {
@@ -114,6 +116,8 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
               onUpdateQuantity={onUpdateQuantity}
               isStoreSelected={isStoreSelected}
               onPromptSelectStore={onPromptSelectStore}
+              isFav={isFavourite(product.plu)}
+              onToggleFav={toggleFavourite}
             />
           ))}
         </div>

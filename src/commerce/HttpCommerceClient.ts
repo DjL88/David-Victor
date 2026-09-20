@@ -80,27 +80,31 @@ export class HttpCommerceClient implements CommerceClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Tenant-ID': this.currentTenantId,
-          ...(options.headers || {}),
-        },
-      });
-    } catch (err) {
-      // Retry once after brief pause if fetch failed due to transient network interruption
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      res = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Tenant-ID': this.currentTenantId,
-          ...(options.headers || {}),
-        },
-      });
+    let res: Response | null = null;
+    let lastError: unknown = null;
+    const retryDelays = [200, 600, 1200];
+
+    for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+      try {
+        res = await fetch(url, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-ID': this.currentTenantId,
+            ...(options.headers || {}),
+          },
+        });
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < retryDelays.length) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+        }
+      }
+    }
+
+    if (!res) {
+      throw lastError || new Error(`Network request failed for ${endpoint}`);
     }
 
     if (!res.ok) {

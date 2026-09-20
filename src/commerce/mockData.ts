@@ -376,6 +376,27 @@ export const MOCK_PRODUCTS: Product[] = ALL_ROOT_PRODUCTS.map((root) => ({
 // Realistic Instagram-style stories with multiple linked products and AND / OR stock matching rules
 export const MOCK_STORIES: Story[] = [
   {
+    id: 'story-video-pizza-sizzle',
+    title: 'Hot Pizza Sizzle',
+    caption: 'Watch the mozzarella bubble! Woodfired sourdough pizzas baked fresh to order in 90 seconds.',
+    mediaType: 'video',
+    mediaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    thumbnailUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80',
+    countryCodes: ['GB'],
+    storeIds: [],
+    action: {
+      type: 'PRODUCT',
+      targetPlu: 'PLU-PIZZA-MARGHERITA-WOODFIRED',
+      buttonLabel: 'Order Fresh Pizza • £5.95',
+    },
+    tag: 'Live Kitchen 🎥',
+    linkedProductPlus: [
+      'PLU-PIZZA-MARGHERITA-WOODFIRED',
+      'PLU-PIZZA-SPICY-NDUJA-WOODFIRED',
+    ],
+    stockMatchMode: 'OR',
+  },
+  {
     id: 'story-meal-deal',
     title: 'Artisan Meal Deal',
     caption: 'Woodfired sourdough pizza, hand-cooked crisps & cold craft beer. All 3 items in stock guarantee.',
@@ -396,6 +417,27 @@ export const MOCK_STORIES: Story[] = [
       'PLU-BEER-VERDANT-LIGHTBULB-440ML',
     ],
     stockMatchMode: 'AND', // All 3 components MUST be in stock at the store
+  },
+  {
+    id: 'story-video-cocktail-craft',
+    title: 'Cold Drinks & Craft',
+    caption: 'Discover cold-chain craft IPAs and organic Chablis, delivered ice cold to your door.',
+    mediaType: 'video',
+    mediaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
+    thumbnailUrl: 'https://images.unsplash.com/photo-1558001373-7b93ee48ffa0?w=600&auto=format&fit=crop&q=80',
+    countryCodes: ['GB'],
+    storeIds: [],
+    action: {
+      type: 'PRODUCT',
+      targetPlu: 'PLU-BEER-VERDANT-LIGHTBULB-440ML',
+      buttonLabel: 'Explore Cold Drinks',
+    },
+    tag: 'Drinks 🎥',
+    linkedProductPlus: [
+      'PLU-BEER-VERDANT-LIGHTBULB-440ML',
+      'PLU-WINE-CHABLIS-ORGANIC-75CL',
+    ],
+    stockMatchMode: 'OR',
   },
   {
     id: 'story-crisps-snacks',

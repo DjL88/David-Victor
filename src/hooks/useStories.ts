@@ -12,9 +12,10 @@ export function useStories(selectedStoreId?: string) {
     try {
       setLoading(true);
       const res = await client.getStories({ storeId: selectedStoreId });
-      setStories(res);
+      setStories(Array.isArray(res) ? res : []);
     } catch (err) {
-      console.error('Failed to load stories:', err);
+      console.warn('[useStories] Could not load stories from backend:', err);
+      setStories([]);
     } finally {
       setLoading(false);
     }

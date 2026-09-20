@@ -66,7 +66,7 @@ export const FloatingCartBar: React.FC<FloatingCartBarProps> = ({
         id="floating-view-basket-btn"
         onClick={onOpenCart}
         style={primaryBtnStyle}
-        className="w-full py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl shadow-xl flex items-center justify-between font-bold text-sm active:scale-[0.98] transition-all hover:brightness-105 cursor-pointer"
+        className="w-full py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl shadow-[0_14px_40px_rgba(15,23,42,0.38)] ring-2 ring-white/80 flex items-center justify-between font-bold text-sm active:scale-[0.98] transition-all hover:brightness-105 cursor-pointer"
       >
         <div className="flex items-center gap-2.5 sm:gap-3 text-left">
           <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">

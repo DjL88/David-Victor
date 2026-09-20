@@ -44,7 +44,7 @@ interface HomeScreenProps {
   catalogError?: string | null;
   onRetryCatalog?: () => void;
   selectedStore: Store | null;
-  onOpenStorePicker: () => void;
+  onOpenStorePicker: (product?: Product) => void;
   categories: Category[];
   breadcrumbs: Category[];
   selectedCategoryId: string | null;
@@ -107,7 +107,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const { tenant } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
-  const { favourites, isFavourite } = useFavourites();
+  const { favourites, isFavourite, toggleFavourite } = useFavourites();
   const isStoreSelected = selectedStore !== null;
   const [mainCarouselTab, setMainCarouselTab] = useState<'featured' | 'deals'>('featured');
 
@@ -410,6 +410,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 onUpdateQuantity={onUpdateQuantity}
                 isStoreSelected={isStoreSelected}
                 onPromptSelectStore={onOpenStorePicker}
+                isFav={isFavourite(product.plu)}
+                onToggleFav={toggleFavourite}
               />
             ))}
           </div>
@@ -558,6 +560,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       onUpdateQuantity={onUpdateQuantity}
                       isStoreSelected={isStoreSelected}
                       onPromptSelectStore={onOpenStorePicker}
+                      isFav={isFavourite(product.plu)}
+                      onToggleFav={toggleFavourite}
                     />
                   ))}
                 </div>
@@ -615,6 +619,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           onUpdateQuantity={onUpdateQuantity}
                           isStoreSelected={isStoreSelected}
                           onPromptSelectStore={onOpenStorePicker}
+                          isFav={isFavourite(product.plu)}
+                          onToggleFav={toggleFavourite}
                         />
                       </div>
                     );
@@ -712,6 +718,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       onUpdateQuantity={onUpdateQuantity}
                       isStoreSelected={isStoreSelected}
                       onPromptSelectStore={onOpenStorePicker}
+                      isFav={isFavourite(product.plu)}
+                      onToggleFav={toggleFavourite}
                     />
                   ))}
                 </div>

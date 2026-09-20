@@ -65,11 +65,11 @@
   "highland.marketlane.app": {
     "domainId": "dom_highland.marketlane.app",
     "hostname": "highland.marketlane.app",
-    "tenantId": "brand-test-1789900548145",
+    "tenantId": "brand-test-1789925100977",
     "isPrimary": true,
     "status": "active",
     "createdAt": "2026-09-19T09:49:01.354Z",
-    "updatedAt": "2026-09-20T10:35:48.146Z"
+    "updatedAt": "2026-09-20T17:25:00.978Z"
   },
   "ais-dev-ciigtiumqqu7x57kplguwi-232948319569.europe-west3.run.app": {
     "domainId": "dom_ais-dev-ciigtiumqqu7x57kplguwi-232948319569.europe-west3.run.app",
@@ -88,5 +88,41 @@
     "status": "active",
     "createdAt": "2026-09-20T10:59:09.164Z",
     "updatedAt": "2026-09-20T10:59:09.164Z"
+  },
+  "brand-audit-1789924921169.marketlane.app": {
+    "domainId": "dom_brand-audit-1789924921169.marketlane.app",
+    "hostname": "brand-audit-1789924921169.marketlane.app",
+    "tenantId": "brand-audit-1789924921169",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-20T17:22:01.169Z",
+    "updatedAt": "2026-09-20T17:22:01.169Z"
+  },
+  "brand-audit-1789924935259.marketlane.app": {
+    "domainId": "dom_brand-audit-1789924935259.marketlane.app",
+    "hostname": "brand-audit-1789924935259.marketlane.app",
+    "tenantId": "brand-audit-1789924935259",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-20T17:22:15.259Z",
+    "updatedAt": "2026-09-20T17:22:15.259Z"
+  },
+  "brand-audit-1789925100981.marketlane.app": {
+    "domainId": "dom_brand-audit-1789925100981.marketlane.app",
+    "hostname": "brand-audit-1789925100981.marketlane.app",
+    "tenantId": "brand-audit-1789925100981",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-20T17:25:00.981Z",
+    "updatedAt": "2026-09-20T17:25:00.981Z"
+  },
+  "brand-diagnostic-test.marketlane.app": {
+    "domainId": "dom_brand-diagnostic-test.marketlane.app",
+    "hostname": "brand-diagnostic-test.marketlane.app",
+    "tenantId": "brand-diagnostic-test",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-20T17:25:52.794Z",
+    "updatedAt": "2026-09-20T17:25:52.794Z"
   }
 }

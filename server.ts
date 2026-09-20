@@ -66,6 +66,34 @@ async function startServer() {
   );
   app.use(express.urlencoded({ extended: true }));
 
+  // Same-origin proxy for tokenized Firebase Storage story media. Browsers in the
+  // managed preview otherwise reject embedded range requests even when the URL
+  // itself is publicly playable.
+  app.get('/media/firebase', async (req, res) => {
+    try {
+      const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+      const mediaUrl = new URL(rawUrl);
+      if (mediaUrl.protocol !== 'https:' || mediaUrl.hostname !== 'firebasestorage.googleapis.com') {
+        return res.status(400).json({ error: 'Unsupported media URL' });
+      }
+      const upstream = await fetch(mediaUrl, {
+        headers: req.headers.range ? { Range: req.headers.range } : undefined,
+      });
+      if (!upstream.ok && upstream.status !== 206) {
+        return res.status(upstream.status).json({ error: 'Media unavailable' });
+      }
+      for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+        const value = upstream.headers.get(header);
+        if (value) res.setHeader(header, value);
+      }
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const body = Buffer.from(await upstream.arrayBuffer());
+      return res.status(upstream.status).send(body);
+    } catch {
+      return res.status(400).json({ error: 'Invalid media URL' });
+    }
+  });
+
   // Initialize DB and Adapter early
   getFirestoreDb();
   getDeliverectAdapter();

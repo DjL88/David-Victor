@@ -305,6 +305,7 @@ export interface Store {
   channelLinkId?: string;
   physicalLocationId?: string;
   brandStoreId?: string;
+  currency?: string;
   timezone?: string;
   services?: Array<{ id: string; name: string; channel?: string | number; url?: string; source: 'DELIVERECT' | 'MANUAL' }>;
 }

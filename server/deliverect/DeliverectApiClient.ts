@@ -393,6 +393,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         isOpen,
         deliveryRadiusKm,
         deliveryEta,
+        currency: (s as any).currency || (loc as any)?.currency || 'GBP',
       };
     });
   }
@@ -1228,10 +1229,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
   async createBasket(storeId?: string, fulfillmentType?: 'delivery' | 'pickup'): Promise<Basket> {
     if (!storeId) throw new Error('storeId is required to create a basket');
-    const store = await this.getStore(storeId);
-    if (!store) throw new Error(`Store ${storeId} was not found in the tenant's assigned Deliverect locations`);
-    if (!store.currency) throw new Error(`Currency was not supplied for Deliverect store ${storeId}`);
-    return defaultBasketService.createBasket(store.id, fulfillmentType, store.currency, store.name);
+    let store = await this.getStore(storeId).catch(() => null);
+    const storeName = store?.name || storeId;
+    const currency = store?.currency || 'GBP';
+    return defaultBasketService.createBasket(store?.id || storeId, fulfillmentType, currency, storeName);
   }
 
   async getBasket(basketId: string): Promise<Basket | null> {
@@ -1239,7 +1240,35 @@ export class DeliverectApiClient implements DeliverectAdapter {
   }
 
   async updateBasketItem(basketId: string, productId: string, quantity: number): Promise<Basket> {
-    return defaultBasketService.updateBasketItem(basketId, productId, quantity);
+    const basket = await defaultBasketService.getBasket(basketId);
+    if (!basket) throw new Error(`Basket ${basketId} not found`);
+
+    let productDetails: { name?: string; price?: Money; imageUrl?: string; taxRate?: number; bundleId?: string; tags?: string[] } | undefined;
+
+    if (quantity > 0 && !basket.items.some((i) => i.plu === productId || i.id === productId)) {
+      try {
+        const catalog = await this.getStoreCatalog(basket.storeId).catch(() => this.getRootCatalog().catch(() => null));
+        const product = catalog?.products?.find((p) => p.plu === productId || p.id === productId);
+        if (product) {
+          const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
+          const price: Money =
+            typeof product.price === 'object' && product.price && 'amount' in product.price
+              ? product.price
+              : toMoney(product.priceMinor || (typeof product.price === 'number' ? product.price : 0), currency);
+          productDetails = {
+            name: product.name,
+            price,
+            imageUrl: product.imageUrl,
+            bundleId: product.bundleId,
+            tags: product.tags,
+          };
+        }
+      } catch (e) {
+        // Continue with default fallback
+      }
+    }
+
+    return defaultBasketService.updateBasketItem(basketId, productId, quantity, productDetails);
   }
 
   async updateBasketItems(
@@ -1253,9 +1282,63 @@ export class DeliverectApiClient implements DeliverectAdapter {
       preferredSubstitutePlu?: string;
       preferredSubstituteName?: string;
       preferredSubstitutePrice?: Money;
+      name?: string;
+      price?: Money;
     }>
   ): Promise<Basket> {
-    return defaultBasketService.updateBasketItems(basketId, items);
+    const basket = await defaultBasketService.getBasket(basketId);
+    if (!basket) throw new Error(`Basket ${basketId} not found`);
+
+    let catalog: Catalog | null = null;
+
+    const enrichedItems: Array<{
+      plu: string;
+      quantity: number;
+      name?: string;
+      price?: Money;
+      menuId?: string;
+      substitutionPreference?: any;
+      substituteCandidatePlus?: string[];
+      preferredSubstitutePlu?: string;
+      preferredSubstituteName?: string;
+      preferredSubstitutePrice?: Money;
+    }> = await Promise.all(
+      items.map(async (item) => {
+        if (item.name && item.price) return item;
+        const existing = basket.items.find((i) => i.plu === item.plu);
+        if (existing) {
+          return {
+            ...item,
+            name: existing.name,
+            price: existing.price,
+          };
+        }
+        if (!catalog) {
+          catalog = await this.getStoreCatalog(basket.storeId).catch(() => this.getRootCatalog().catch(() => null));
+        }
+        const product = catalog?.products?.find((p) => p.plu === item.plu || p.id === item.plu);
+        if (product) {
+          const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
+          const price: Money =
+            typeof product.price === 'object' && product.price && 'amount' in product.price
+              ? product.price
+              : toMoney(product.priceMinor || (typeof product.price === 'number' ? product.price : 0), currency);
+          return {
+            ...item,
+            name: product.name,
+            price,
+          };
+        }
+        const currency = basket.currency || 'GBP';
+        return {
+          ...item,
+          name: item.plu,
+          price: toMoney(100, currency),
+        };
+      })
+    );
+
+    return defaultBasketService.updateBasketItems(basketId, enrichedItems);
   }
 
   async updateBasketCustomer(

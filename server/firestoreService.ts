@@ -901,7 +901,17 @@ export class FirestoreService {
    * Updates tenant branding and features in Firestore.
    */
   static async updateTenantConfig(tenantId: string, updates: Partial<TenantConfig>): Promise<TenantConfig> {
-    const current = await this.getTenantConfig(tenantId);
+    let current: TenantConfig;
+    try {
+      current = await this.getTenantConfig(tenantId);
+    } catch {
+      current = await this.createTenant({
+        tenantId,
+        brandName: (updates as any).brandName || (updates as any).name || tenantId,
+        country: (updates as any).country || 'GB',
+        currency: (updates as any).currency || 'GBP',
+      });
+    }
     const updated = {
       ...current,
       ...updates,

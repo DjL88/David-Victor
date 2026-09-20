@@ -35,7 +35,12 @@
       "physicalLocationId": "loc_68518030d3bc95d3b96579d5",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
       "deliverectLocationId": "68518030d3bc95d3b96579d5",
-      "name": "Ewan's Corner Shop",
+      "name": "Ewans Corner Shop",
+      "addressProjection": {
+        "street": "Dunfield Lane",
+        "city": "Kington",
+        "postcode": "HR5 3NN"
+      },
       "statusProjection": "ACTIVE",
       "services": [
         {
@@ -144,15 +149,24 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-20T13:54:33.255Z"
+      "lastSeenAt": "2026-09-20T17:26:02.246Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c418596ac8a7730c052",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
       "physicalLocationId": "loc_68518030d3bc95d3b96579d5",
       "channelLinkId": "6aae5c418596ac8a7730c052",
-      "name": "Ewan's Corner Shop",
+      "name": "Ewans of Edinburgh",
       "stateProjection": "closed",
+      "coordinates": {
+        "latitude": 52.2193621,
+        "longitude": -3.0645284
+      },
+      "address": {
+        "street": "Dunfield House Dunfield Lane HR5 3NN Kington",
+        "city": "Kington",
+        "postcode": "HR5 3NN"
+      },
       "openingHours": {
         "timezone": "Europe/London",
         "dayTimeRanges": [],
@@ -174,7 +188,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-20T13:54:33.255Z"
+      "lastSeenAt": "2026-09-20T17:26:02.246Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c0885ccd3ab9ac0adec",
@@ -204,7 +218,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-20T13:54:33.255Z"
+      "lastSeenAt": "2026-09-20T17:26:02.246Z"
     },
     {
       "commerceStoreId": "cstore_6aadaa0cb3aef90f42ab345d",
@@ -294,10 +308,10 @@
       ],
       "currency": "EUR",
       "status": "open",
-      "lastSeenAt": "2026-09-20T13:54:33.255Z"
+      "lastSeenAt": "2026-09-20T17:26:02.246Z"
     }
   ],
-  "syncedAt": "2026-09-20T13:54:33.258Z",
+  "syncedAt": "2026-09-20T17:26:02.247Z",
   "status": "DISCOVERY_SUCCEEDED_PERSISTENCE_FAILED",
   "persistenceStatus": "FAILED",
   "persistenceCode": "DATABASE_PERMISSION_DENIED",

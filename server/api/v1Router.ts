@@ -145,23 +145,20 @@ export function resolveTenant(req: Request): string {
     return 'brand-alpha';
   }
 
-  // 5. Server environment variable for authorized preview tenant
-  if (process.env.PREVIEW_TENANT_ID) {
-    const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
-    const isContainerOrPreviewHost =
-      host.endsWith('.run.app') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.googleusercontent.com') ||
-      host.endsWith('.ai.studio') ||
-      host.includes('aistudio') ||
-      host === 'localhost' ||
-      host === '127.0.0.1';
-    if (isContainerOrPreviewHost) {
-      return process.env.PREVIEW_TENANT_ID;
-    }
+  // 5. Container / preview hosts fallback
+  const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
+  const isContainerOrPreviewHost =
+    host.endsWith('.run.app') ||
+    host.endsWith('.google.com') ||
+    host.endsWith('.googleusercontent.com') ||
+    host.endsWith('.ai.studio') ||
+    host.includes('aistudio') ||
+    host === 'localhost' ||
+    host === '127.0.0.1';
+  if (isContainerOrPreviewHost) {
+    return requestedOverride || process.env.PREVIEW_TENANT_ID || 'brand-alpha';
   }
 
-  const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
   throw new BFFError('TENANT_NOT_FOUND', `Tenant not found for domain "${host}".`, 404);
 }
 
@@ -276,8 +273,8 @@ v1Router.use(async (req: Request, res: Response, next) => {
       host === 'localhost' ||
       host === '127.0.0.1';
 
-    if (isContainerOrPreviewHost && process.env.PREVIEW_TENANT_ID) {
-      (req as any).resolvedTenantId = process.env.PREVIEW_TENANT_ID;
+    if (isContainerOrPreviewHost) {
+      (req as any).resolvedTenantId = requestedOverride || process.env.PREVIEW_TENANT_ID || 'brand-alpha';
       return next();
     }
 

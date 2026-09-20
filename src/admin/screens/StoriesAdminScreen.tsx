@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Story, AdminUser, Store, Product, StoryStockMatchMode } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
+import { StoryThumbnailMedia } from '../../components/media/Media';
 import {
   Film,
   Plus,
@@ -16,6 +18,11 @@ import {
   Search,
   Upload,
   RefreshCw,
+  Play,
+  Video,
+  Image as ImageIcon,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 
 interface StoriesAdminScreenProps {
@@ -186,7 +193,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
     if (!editingStory) return;
     setSaving(true);
     try {
-      const items =
+      const rawItems =
         editingStory.items && editingStory.items.length > 0
           ? editingStory.items
           : [
@@ -201,22 +208,36 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
               },
             ];
 
-      const firstItemType = items[0]?.mediaType;
-      const mediaType: 'image' | 'video' =
-        firstItemType === 'video' || editingStory.mediaType === 'video' ? 'video' : 'image';
+      // Parse each frame media
+      const items = rawItems.map((it) => {
+        const parsed = parseStoryMedia(it.mediaUrl, it.mediaType);
+        return {
+          ...it,
+          mediaType: parsed.mediaType,
+          duration: it.duration || (parsed.mediaType === 'video' ? 12 : 5),
+        };
+      });
+
+      const firstParsed = parseStoryMedia(items[0]?.mediaUrl, items[0]?.mediaType);
+      const topMediaType: 'image' | 'video' = firstParsed.mediaType;
+      const effectiveThumbnail =
+        (editingStory.thumbnailUrl && !isGenericPlaceholder(editingStory.thumbnailUrl)
+          ? editingStory.thumbnailUrl
+          : '') ||
+        firstParsed.thumbnailUrl ||
+        (firstParsed.mediaType === 'image' ? firstParsed.rawUrl : '') ||
+        '';
 
       const normalizedStory: Story = {
         ...editingStory,
         mediaUrl: items[0]?.mediaUrl || editingStory.mediaUrl,
-        mediaType,
+        mediaType: topMediaType,
+        thumbnailUrl: effectiveThumbnail,
         avatarUrl:
-          editingStory.avatarUrl ||
-          items[0]?.mediaUrl ||
-          'https://images.unsplash.com/photo-1542838132-92c53300491e?w=100&auto=format&fit=crop&q=80',
-        items: items.map((it) => ({
-          ...it,
-          mediaType: it.mediaType === 'video' ? ('video' as const) : ('image' as const),
-        })),
+          (editingStory.avatarUrl && !isGenericPlaceholder(editingStory.avatarUrl) ? editingStory.avatarUrl : '') ||
+          effectiveThumbnail ||
+          '',
+        items,
         storeIds: editingStory.storeIds || editingStory.eligibleStoreIds || [],
         eligibleStoreIds: editingStory.storeIds || editingStory.eligibleStoreIds || [],
         linkedProductPlus: editingStory.linkedProductPlus || [],
@@ -434,8 +455,21 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                     </div>
                   </div>
 
-                  <h3 className="text-sm font-bold text-gray-900">{s.title}</h3>
-                  {s.caption && <p className="text-xs text-gray-600 line-clamp-2">{s.caption}</p>}
+                  <div className="flex items-start gap-3">
+                    <div className="w-14 h-18 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-gray-200 shadow-inner relative">
+                      <StoryThumbnailMedia
+                        mediaUrl={s.items?.[0]?.mediaUrl || s.mediaUrl}
+                        mediaType={s.items?.[0]?.mediaType || s.mediaType}
+                        thumbnailUrl={s.thumbnailUrl}
+                        alt={s.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-gray-900 leading-snug">{s.title}</h3>
+                      {s.caption && <p className="text-xs text-gray-600 line-clamp-2 mt-0.5">{s.caption}</p>}
+                    </div>
+                  </div>
 
                   {/* LINKED PRODUCTS */}
                   <div className="pt-2 border-t border-gray-100 space-y-1">
@@ -580,6 +614,49 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl"
                   />
                 </div>
+              </div>
+
+              {/* THUMBNAIL COVER */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-gray-700">Story Thumbnail / Bubble Cover</label>
+                  {editingStory.items?.[0]?.mediaUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const parsed = parseStoryMedia(editingStory.items?.[0]?.mediaUrl);
+                        if (parsed.thumbnailUrl) {
+                          setEditingStory({ ...editingStory, thumbnailUrl: parsed.thumbnailUrl });
+                        }
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Auto-fill from Frame 1</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-900 border-2 border-indigo-400 shrink-0 shadow-xs">
+                    <StoryThumbnailMedia
+                      mediaUrl={editingStory.items?.[0]?.mediaUrl || editingStory.mediaUrl}
+                      mediaType={editingStory.items?.[0]?.mediaType || editingStory.mediaType}
+                      thumbnailUrl={editingStory.thumbnailUrl}
+                      alt={editingStory.title || 'Preview'}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Auto-detected from video/image, or enter custom poster URL"
+                    value={editingStory.thumbnailUrl || ''}
+                    onChange={(e) => setEditingStory({ ...editingStory, thumbnailUrl: e.target.value })}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl font-mono text-xs bg-white"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Leave empty to automatically show the live video frame / YouTube thumbnail in the story circle.
+                </p>
               </div>
 
               {/* LINKED PRODUCTS & AND / OR STOCK MATCHING RULE */}
@@ -813,8 +890,14 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
               </div>
 
               {/* Story frames */}
-              <div className="space-y-2 pt-2 border-t border-gray-100">
-                <span className="font-bold text-gray-700 block">Story Frame Media</span>
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-gray-700 block">Story Frames & Media</span>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    Supports YouTube, Vimeo, Loom, Direct Video (MP4/WebM), & Images
+                  </span>
+                </div>
+
                 {(editingStory.items || [
                   {
                     id: 'item-1',
@@ -823,84 +906,215 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                     caption: editingStory.caption || '',
                     duration: 5,
                   },
-                ]).map((item, idx) => (
-                  <div key={item.id} className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-700 text-xs">Frame {idx + 1}</span>
-                        {(editingStory.items || []).length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (editingStory.items || []).filter((_, i) => i !== idx);
-                              setEditingStory({ ...editingStory, items: updated });
-                            }}
-                            className="p-1 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Remove this frame"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 shadow-2xs">
-                        {uploadingFrameIdx === idx ? (
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Upload className="w-3 h-3" />
-                        )}
-                        <span>{uploadingFrameIdx === idx ? 'Uploading...' : 'Upload Media'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,video/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            setUploadingFrameIdx(idx);
-                            try {
-                              const assetType = file.type.startsWith('video/') ? 'STORY_VIDEO' : 'STORY_IMAGE';
-                              const uploaded = await defaultAdminClient.uploadAssetFile(file, assetType, tenantId);
-                              const newItems = [...(editingStory.items || [])];
-                              newItems[idx] = {
-                                ...newItems[idx],
-                                mediaUrl: uploaded.publicUrl,
-                                mediaType: file.type.startsWith('video/') ? 'video' : 'image',
-                              };
-                              setEditingStory({ ...editingStory, items: newItems });
-                            } catch (err: any) {
-                              alert(`Upload failed: ${err.message || err}`);
-                            } finally {
-                              setUploadingFrameIdx(null);
-                            }
-                          }}
-                        />
-                      </label>
-                    </div>
+                ]).map((item, idx) => {
+                  const parsed = parseStoryMedia(item.mediaUrl, item.mediaType);
 
-                    <input
-                      type="text"
-                      placeholder="Image / Video URL or Cloud Storage permanent link"
-                      value={item.mediaUrl}
-                      onChange={(e) => {
-                        const newItems = [...(editingStory.items || [])];
-                        newItems[idx] = { ...newItems[idx], mediaUrl: e.target.value };
-                        setEditingStory({ ...editingStory, items: newItems });
-                      }}
-                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Overlay Caption"
-                      value={item.caption || ''}
-                      onChange={(e) => {
-                        const newItems = [...(editingStory.items || [])];
-                        newItems[idx] = { ...newItems[idx], caption: e.target.value };
-                        setEditingStory({ ...editingStory, items: newItems });
-                      }}
-                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
-                    />
-                  </div>
-                ))}
+                  return (
+                    <div key={item.id} className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-800 text-xs">Frame {idx + 1}</span>
+                          
+                          {/* Format badge */}
+                          {parsed.provider === 'youtube' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                              <Play className="w-2.5 h-2.5 fill-current" />
+                              YouTube Video
+                            </span>
+                          )}
+                          {parsed.provider === 'vimeo' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700 border border-sky-200">
+                              <Video className="w-2.5 h-2.5" />
+                              Vimeo Video
+                            </span>
+                          )}
+                          {parsed.provider === 'loom' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                              <Video className="w-2.5 h-2.5" />
+                              Loom Video
+                            </span>
+                          )}
+                          {parsed.provider === 'direct' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              <Video className="w-2.5 h-2.5" />
+                              Direct Video (MP4)
+                            </span>
+                          )}
+                          {parsed.mediaType === 'image' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-700">
+                              <ImageIcon className="w-2.5 h-2.5" />
+                              Image
+                            </span>
+                          )}
+
+                          {(editingStory.items || []).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (editingStory.items || []).filter((_, i) => i !== idx);
+                                setEditingStory({ ...editingStory, items: updated });
+                              }}
+                              className="p-1 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Remove this frame"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 shadow-2xs">
+                          {uploadingFrameIdx === idx ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Upload className="w-3 h-3" />
+                          )}
+                          <span>{uploadingFrameIdx === idx ? 'Uploading...' : 'Upload Media'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setUploadingFrameIdx(idx);
+                              try {
+                                const assetType = file.type.startsWith('video/') ? 'STORY_VIDEO' : 'STORY_IMAGE';
+                                const uploaded = await defaultAdminClient.uploadAssetFile(file, assetType, tenantId);
+                                const newItems = [...(editingStory.items || [])];
+                                newItems[idx] = {
+                                  ...newItems[idx],
+                                  mediaUrl: uploaded.publicUrl,
+                                  mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+                                  duration: file.type.startsWith('video/') ? 12 : 5,
+                                };
+                                setEditingStory({ ...editingStory, items: newItems });
+                              } catch (err: any) {
+                                alert(`Upload failed: ${err.message || err}`);
+                              } finally {
+                                setUploadingFrameIdx(null);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {/* URL input */}
+                      <div>
+                        <label className="block font-semibold text-gray-700 text-[11px] mb-1">
+                          Media URL (YouTube link, Vimeo link, MP4 file, or Image URL)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="https://www.youtube.com/watch?v=... or https://...image.jpg"
+                          value={item.mediaUrl}
+                          onChange={(e) => {
+                            const newUrl = e.target.value;
+                            const newParsed = parseStoryMedia(newUrl);
+                            const newItems = [...(editingStory.items || [])];
+                            newItems[idx] = {
+                              ...newItems[idx],
+                              mediaUrl: newUrl,
+                              mediaType: newParsed.mediaType,
+                              duration: newItems[idx].duration || (newParsed.mediaType === 'video' ? 12 : 5),
+                            };
+                            setEditingStory({ ...editingStory, items: newItems });
+                          }}
+                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+                        />
+                      </div>
+
+                      {/* Live Media Preview & Settings */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+                        {/* Preview Box */}
+                        <div className="sm:col-span-1 aspect-[9/14] max-h-44 bg-black rounded-xl overflow-hidden relative shadow-inner border border-gray-300 flex items-center justify-center">
+                          {parsed.provider === 'youtube' && parsed.embedUrl ? (
+                            <iframe
+                              src={parsed.embedUrl}
+                              title="Frame preview"
+                              className="w-full h-full border-0 pointer-events-auto"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            />
+                          ) : parsed.provider === 'vimeo' && parsed.embedUrl ? (
+                            <iframe
+                              src={parsed.embedUrl}
+                              title="Frame preview"
+                              className="w-full h-full border-0 pointer-events-auto"
+                              allow="autoplay; fullscreen; picture-in-picture"
+                            />
+                          ) : parsed.provider === 'loom' && parsed.embedUrl ? (
+                            <iframe
+                              src={parsed.embedUrl}
+                              title="Frame preview"
+                              className="w-full h-full border-0 pointer-events-auto"
+                            />
+                          ) : parsed.provider === 'direct' ? (
+                            <video
+                              src={parsed.rawUrl}
+                              muted
+                              autoPlay
+                              loop
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                          ) : parsed.mediaType === 'image' && parsed.rawUrl ? (
+                            <img
+                              src={parsed.rawUrl}
+                              alt="Frame preview"
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="text-gray-400 text-[11px] text-center px-2">No preview</div>
+                          )}
+                        </div>
+
+                        {/* Caption & Duration */}
+                        <div className="sm:col-span-2 space-y-2">
+                          <div>
+                            <label className="block font-semibold text-gray-700 text-[11px] mb-1">
+                              Overlay Caption
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Try our special chef platter today!"
+                              value={item.caption || ''}
+                              onChange={(e) => {
+                                const newItems = [...(editingStory.items || [])];
+                                newItems[idx] = { ...newItems[idx], caption: e.target.value };
+                                setEditingStory({ ...editingStory, items: newItems });
+                              }}
+                              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-semibold text-gray-700 text-[11px] mb-1">
+                              Frame Duration (Seconds)
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={2}
+                                max={60}
+                                value={item.duration || (parsed.mediaType === 'video' ? 12 : 5)}
+                                onChange={(e) => {
+                                  const dur = Math.max(2, parseInt(e.target.value, 10) || 5);
+                                  const newItems = [...(editingStory.items || [])];
+                                  newItems[idx] = { ...newItems[idx], duration: dur };
+                                  setEditingStory({ ...editingStory, items: newItems });
+                                }}
+                                className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-semibold"
+                              />
+                              <span className="text-[11px] text-gray-500">
+                                {parsed.mediaType === 'video' ? 'Suggested: 10-20s' : 'Suggested: 5s'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {/* ADD FRAME / SLIDE BUTTON */}
                 <button

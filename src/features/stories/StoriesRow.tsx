@@ -1,8 +1,9 @@
 import React from 'react';
 import { Story } from '../../commerce/models';
 import { StoryBubbleSkeleton } from '../../components/SkeletonLoader';
-import { useTenantStyles } from '../../tenant/useTenant';
-import { Flame } from 'lucide-react';
+import { StoryThumbnailMedia } from '../../components/media/Media';
+import { parseStoryMedia } from '../../utils/storyMediaUtils';
+import { Flame, Play } from 'lucide-react';
 
 interface StoriesRowProps {
   stories: Story[];
@@ -15,8 +16,6 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
   loading,
   onSelectStory,
 }) => {
-  const { brandName } = useTenantStyles();
-
   if (loading) {
     return (
       <div className="py-2 overflow-x-auto no-scrollbar w-full max-w-full">
@@ -34,8 +33,8 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
   }
 
   return (
-    <div id="stories-section" className="py-2.5 w-full max-w-full overflow-hidden">
-      <div className="flex items-center justify-between px-4 mb-2">
+    <div id="stories-section" className="pt-1 pb-0 mb-1 w-full max-w-full overflow-hidden">
+      <div className="flex items-center justify-between px-4 mb-1.5">
         <div className="flex items-center gap-1.5">
           <Flame className="w-4 h-4 text-amber-500" />
           <h2 className="text-sm font-bold text-gray-900 tracking-tight">
@@ -47,60 +46,58 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
         </span>
       </div>
 
-      <div className="overflow-x-auto no-scrollbar scroll-smooth scroll-px-4 px-4 py-1.5 w-full max-w-full">
-        <div className="flex items-center gap-4 px-4 min-w-max pt-2 pb-3 pr-8">
+      <div className="overflow-x-auto no-scrollbar scroll-smooth scroll-px-4 px-4 pt-1 pb-0 w-full max-w-full">
+        <div className="flex items-center gap-4.5 px-2 min-w-max pt-1 pb-1 pr-6">
           {stories.map((story, index) => {
             const firstFrame = story.items?.[0];
-            const mediaUrl = firstFrame?.mediaUrl || story.mediaUrl || '';
-            const mediaType = firstFrame?.mediaType || story.mediaType;
-            let decodedMediaUrl = mediaUrl;
-            try { decodedMediaUrl = decodeURIComponent(mediaUrl); } catch {}
-            const isVideo = mediaType?.toLowerCase() === 'video' ||
-              /\.(mp4|mov|m4v|webm)(?=$|[?#])/i.test(decodedMediaUrl) ||
-              /(?:story-video|video%2f|contenttype=video)/i.test(mediaUrl);
+            const sourceMediaUrl = firstFrame?.mediaUrl || story.mediaUrl || '';
+            let mediaUrl = sourceMediaUrl;
+            try { mediaUrl = decodeURI(sourceMediaUrl); } catch { /* keep original valid URL */ }
+            const explicitMediaType = firstFrame?.mediaType || story.mediaType;
+            const parsed = parseStoryMedia(mediaUrl, explicitMediaType);
+            const isVideo = parsed.mediaType === 'video';
+
             return (
-            <button
-              key={story.id}
-              id={`story-bubble-${story.id}`}
-              type="button"
-              onClick={() => onSelectStory(index)}
-              className="group flex flex-col items-center gap-1.5 p-1 focus:outline-hidden transition-transform active:scale-95"
-            >
-              {/* Instagram-style Ring Gradient */}
-              <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 shadow-xs group-hover:scale-105 transition-transform duration-200">
-                <div className="p-0.5 rounded-full bg-white">
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
-                    {isVideo && !story.thumbnailUrl ? (
-                      <video
-                        src={mediaUrl}
-                        aria-label={story.title}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
-                      />
-                    ) : (
-                      <img
-                        src={story.thumbnailUrl || mediaUrl}
+              <button
+                key={story.id}
+                id={`story-bubble-${story.id}`}
+                type="button"
+                onClick={() => onSelectStory(index)}
+                className="group flex flex-col items-center gap-1.5 p-0.5 focus:outline-hidden transition-transform active:scale-95 cursor-pointer"
+              >
+                {/* Instagram-style Ring Gradient */}
+                <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 shadow-xs group-hover:scale-105 transition-transform duration-200">
+                  <div className="p-0.5 rounded-full bg-white">
+                    <div className="w-[74px] h-[74px] sm:w-[84px] sm:h-[84px] rounded-full overflow-hidden bg-gray-100 flex items-center justify-center relative">
+                      <StoryThumbnailMedia
+                        mediaUrl={mediaUrl}
+                        mediaType={explicitMediaType}
+                        thumbnailUrl={story.thumbnailUrl}
                         alt={story.title}
-                        loading="lazy"
-                        className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
-                    )}
+                    </div>
                   </div>
+
+                  {/* Video Play Badge Indicator */}
+                  {isVideo && (
+                    <div className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 backdrop-blur-xs flex items-center justify-center border border-white/70 shadow-2xs">
+                      <Play className="w-2.5 h-2.5 text-white fill-white translate-x-0.2" />
+                    </div>
+                  )}
+
+                  {/* Tag badge */}
+                  {story.tag && (
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-indigo-600 text-white shadow-2xs whitespace-nowrap">
+                      {story.tag}
+                    </span>
+                  )}
                 </div>
 
-                {story.tag && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-indigo-600 text-white shadow-2xs whitespace-nowrap">
-                    {story.tag}
-                  </span>
-                )}
-              </div>
-
-              <span className="text-xs font-medium text-gray-800 max-w-[76px] truncate text-center group-hover:text-indigo-600 transition-colors">
-                {story.title}
-              </span>
-            </button>
+                <span className="text-xs font-medium text-gray-800 max-w-[88px] truncate text-center group-hover:text-indigo-600 transition-colors">
+                  {story.title}
+                </span>
+              </button>
             );
           })}
         </div>

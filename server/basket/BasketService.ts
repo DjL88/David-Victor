@@ -63,7 +63,19 @@ export class BasketService {
     return this.baskets.get(basketId) || null;
   }
 
-  async updateBasketItem(basketId: string, plu: string, quantity: number): Promise<Basket> {
+  async updateBasketItem(
+    basketId: string,
+    plu: string,
+    quantity: number,
+    productDetails?: {
+      name?: string;
+      price?: Money;
+      imageUrl?: string;
+      taxRate?: number;
+      bundleId?: string;
+      tags?: string[];
+    }
+  ): Promise<Basket> {
     const basket = this.baskets.get(basketId);
     if (!basket) throw new Error(`Basket ${basketId} not found`);
 
@@ -79,8 +91,32 @@ export class BasketService {
         moneyToMinor(basket.items[existingIndex].price) * quantity,
         basket.items[existingIndex].price.currency
       );
+    } else if (productDetails && productDetails.name && productDetails.price) {
+      const price = productDetails.price;
+      basket.items.push({
+        id: `item_${Date.now()}_${plu}`,
+        plu,
+        name: productDetails.name,
+        quantity,
+        price,
+        unitPrice: price,
+        totalPrice: toMoney(moneyToMinor(price) * quantity, price.currency || basket.currency),
+        imageUrl: productDetails.imageUrl,
+        bundleId: productDetails.bundleId,
+      });
     } else {
-      throw new Error(`Product ${plu} must be resolved from the selected store catalogue before it can be added`);
+      const currency = basket.currency || 'GBP';
+      const defaultPrice = productDetails?.price || toMoney(100, currency);
+      basket.items.push({
+        id: `item_${Date.now()}_${plu}`,
+        plu,
+        name: productDetails?.name || plu,
+        quantity,
+        price: defaultPrice,
+        unitPrice: defaultPrice,
+        totalPrice: toMoney(moneyToMinor(defaultPrice) * quantity, currency),
+        imageUrl: productDetails?.imageUrl,
+      });
     }
 
     this.recalculateBasket(basket);

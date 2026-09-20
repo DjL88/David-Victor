@@ -159,11 +159,13 @@ export function useBasket(selectedStore: Store | null) {
       _targetStoreId?: string
     ) => {
       try {
+        if (!activeStoreId) {
+          console.warn('[useBasket] A store must be selected before adding items to the basket.');
+          return;
+        }
+
         let currentBasket = basket;
         if (!currentBasket) {
-          if (!activeStoreId) {
-            throw new Error('A store must be selected before creating a basket.');
-          }
           currentBasket = await client.createBasket(activeStoreId);
         }
 

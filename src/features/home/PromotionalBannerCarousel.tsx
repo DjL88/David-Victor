@@ -255,7 +255,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
   return (
     <div
       id="main-promotional-super-carousel"
-      className="w-full max-w-full space-y-2 select-none overflow-hidden sm:px-6"
+      className="w-full max-w-full space-y-2 select-none overflow-hidden sm:px-6 mt-2 sm:mt-3"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       role="region"

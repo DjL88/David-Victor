@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Package, Tag, AlertCircle, Loader2 } from 'lucide-react';
+import { Package, Tag, AlertCircle, Loader2, Play } from 'lucide-react';
 import { useTenant } from '../../tenant/TenantContext';
+import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
 
 export type MediaLoadStatus = 'loading' | 'loaded' | 'failed';
 
@@ -180,7 +181,7 @@ export const StoryImage: React.FC<
 
 /**
  * StoryVideo
- * If video playback or decode fails, triggers onStoryFailure to hide Story.
+ * Supports direct video, YouTube, Vimeo, Loom, and fallback previews.
  */
 export const StoryVideo: React.FC<{
   src: string;
@@ -189,15 +190,55 @@ export const StoryVideo: React.FC<{
   onStoryFailure?: () => void;
 }> = ({ src, poster, className = 'w-full h-full object-cover', onStoryFailure }) => {
   const [failed, setFailed] = useState(false);
+  const parsed = parseStoryMedia(src);
 
   if (failed || !src) {
-    return null; // Video failure hides the Story completely
+    if (poster) {
+      return <img src={poster} alt="Story video preview" className={className} />;
+    }
+    return null;
+  }
+
+  if (parsed.provider === 'youtube' && parsed.embedUrl) {
+    return (
+      <iframe
+        src={parsed.embedUrl}
+        title="Story video"
+        className={`border-0 ${className}`}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    );
+  }
+
+  if (parsed.provider === 'vimeo' && parsed.embedUrl) {
+    return (
+      <iframe
+        src={parsed.embedUrl}
+        title="Story video"
+        className={`border-0 ${className}`}
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+      />
+    );
+  }
+
+  if (parsed.provider === 'loom' && parsed.embedUrl) {
+    return (
+      <iframe
+        src={parsed.embedUrl}
+        title="Story video"
+        className={`border-0 ${className}`}
+        allow="autoplay; fullscreen"
+        allowFullScreen
+      />
+    );
   }
 
   return (
     <video
-      src={src}
-      poster={poster}
+      src={parsed.rawUrl}
+      poster={poster || parsed.thumbnailUrl}
       autoPlay
       playsInline
       muted
@@ -206,6 +247,206 @@ export const StoryVideo: React.FC<{
         setFailed(true);
         onStoryFailure?.();
       }}
+      className={className}
+    />
+  );
+};
+
+/**
+ * StoryThumbnailMedia
+ * Renders authentic video preview or image thumbnail for story bubbles and preview cards.
+ * Handles:
+ * 1. Direct Video files (MP4/WebM) via autoplaying muted micro-loop video
+ * 2. YouTube auto-generated high-res thumbnails with cascade fallbacks
+ * 3. Vimeo / Loom video preview frames
+ * 4. Custom story thumbnail images (ignoring generic placeholder fallbacks)
+ */
+export const StoryThumbnailMedia: React.FC<{
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | string;
+  thumbnailUrl?: string;
+  alt: string;
+  className?: string;
+  onStoryFailure?: () => void;
+}> = ({
+  mediaUrl,
+  mediaType,
+  thumbnailUrl,
+  alt,
+  className = 'w-full h-full object-cover',
+  onStoryFailure,
+}) => {
+  const [ytErrorCount, setYtErrorCount] = useState(0);
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const parsed = parseStoryMedia(mediaUrl, mediaType);
+
+  // Trigger silent autoplay on mount for direct videos
+  useEffect(() => {
+    if (videoRef.current && parsed.provider === 'direct') {
+      videoRef.current.defaultMuted = true;
+      videoRef.current.muted = true;
+      const p = videoRef.current.play();
+      if (p !== undefined) {
+        p.catch(() => {
+          // Handled silently
+        });
+      }
+    }
+  }, [parsed.rawUrl, parsed.provider]);
+
+  // 1. YouTube Video - Instant official high-res video frame thumbnail
+  if (parsed.provider === 'youtube' && parsed.videoId) {
+    const ytThumbnails = [
+      `https://img.youtube.com/vi/${parsed.videoId}/hqdefault.jpg`,
+      `https://i.ytimg.com/vi/${parsed.videoId}/hqdefault.jpg`,
+      `https://img.youtube.com/vi/${parsed.videoId}/0.jpg`,
+      `https://img.youtube.com/vi/${parsed.videoId}/mqdefault.jpg`,
+    ];
+    const currentYtSrc = ytThumbnails[Math.min(ytErrorCount, ytThumbnails.length - 1)];
+
+    return (
+      <img
+        src={currentYtSrc}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        onError={() => {
+          if (ytErrorCount < ytThumbnails.length - 1) {
+            setYtErrorCount((prev) => prev + 1);
+          }
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 2. Vimeo Video - Instant video snapshot frame
+  if (parsed.provider === 'vimeo' && parsed.videoId) {
+    return (
+      <img
+        src={`https://vumbnail.com/${parsed.videoId}.jpg`}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        onError={(e) => {
+          e.currentTarget.src = `https://vumbnail.com/${parsed.videoId}_large.jpg`;
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 3. Loom Video - Instant video snapshot frame
+  if (parsed.provider === 'loom' && parsed.videoId) {
+    return (
+      <img
+        src={`https://cdn.loom.com/sessions/thumbnails/${parsed.videoId}-00001.jpg`}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        onError={(e) => {
+          e.currentTarget.src = `https://cdn.loom.com/sessions/thumbnails/${parsed.videoId}-with-play.gif`;
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 4. Direct Video file (MP4, WebM, MOV, Cloud storage)
+  if (parsed.provider === 'direct' && parsed.rawUrl) {
+    const posterSrc =
+      thumbnailUrl && !isGenericPlaceholder(thumbnailUrl)
+        ? thumbnailUrl
+        : undefined;
+
+    return (
+      <div className="relative w-full h-full overflow-hidden bg-slate-900 flex items-center justify-center">
+        {posterSrc && (
+          <img
+            src={posterSrc}
+            alt={alt}
+            referrerPolicy="no-referrer"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+              videoLoaded ? 'opacity-0' : 'opacity-100'
+            }`}
+          />
+        )}
+        <video
+          ref={videoRef}
+          src={parsed.rawUrl}
+          poster={posterSrc}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          onLoadedData={() => {
+            setVideoLoaded(true);
+            void videoRef.current?.play().catch(() => undefined);
+          }}
+          onCanPlay={() => setVideoLoaded(true)}
+          className={`${className} pointer-events-none object-cover w-full h-full`}
+        />
+      </div>
+    );
+  }
+
+  // 5. Valid custom thumbnail image (if not a placeholder)
+  const isCustomThumbValid =
+    thumbnailUrl &&
+    thumbnailUrl.trim() !== '' &&
+    !isGenericPlaceholder(thumbnailUrl);
+
+  if (isCustomThumbValid) {
+    return (
+      <img
+        src={thumbnailUrl}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        className={className}
+      />
+    );
+  }
+
+  // 6. Standard Image Story
+  if (parsed.rawUrl) {
+    return (
+      <img
+        src={parsed.rawUrl}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        className={className}
+      />
+    );
+  }
+
+  // 7. Video fallback (if mediaType === 'video' but url is resolving)
+  if (mediaType === 'video' && mediaUrl) {
+    return (
+      <video
+        ref={videoRef}
+        src={`${mediaUrl}#t=0.1`}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        className={`${className} pointer-events-none object-cover w-full h-full`}
+      />
+    );
+  }
+
+  // Default fallback image
+  return (
+    <img
+      src={thumbnailUrl || mediaUrl || ''}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      loading="eager"
       className={className}
     />
   );

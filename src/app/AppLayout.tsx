@@ -46,6 +46,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   // Selected product detail modal
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [storePickerTargetProduct, setStorePickerTargetProduct] = useState<Product | null>(null);
+  const [pendingStoreProductAdd, setPendingStoreProductAdd] = useState<{ storeId: string; product: Product } | null>(null);
 
   // Deliverect Deal modal & filter states
   const [activeDealForModal, setActiveDealForModal] = useState<DeliverectDeal | null>(null);
@@ -114,25 +115,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     }
   }, [showSplash, entryStage, hasLocation, setIsLocationModalOpen]);
 
-  // Auto-launch Story index 0 exactly once upon reaching READY state
-  React.useEffect(() => {
-    if (entryStage === 'READY' && stories.length > 0) {
-      const alreadyLaunched = sessionStorage.getItem('__retail_entry_story_shown');
-      if (!alreadyLaunched) {
-        sessionStorage.setItem('__retail_entry_story_shown', 'true');
-        openStory(0);
-        defaultAnalyticsClient.track({
-          type: AnalyticsEventType.ENTRY_STORIES_STARTED,
-          properties: {
-            storyCount: stories.length,
-            storyId: stories[0]?.id,
-            storyTitle: stories[0]?.title,
-          },
-        });
-      }
-    }
-  }, [entryStage, stories, openStory]);
-
   // Catalog hook (root vs store, arbitrary nested categories)
   const {
     catalog,
@@ -176,6 +158,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     addBundleToBasket,
   } = useBasket(selectedStore);
 
+  React.useEffect(() => {
+    if (!pendingStoreProductAdd || selectedStore?.id !== pendingStoreProductAdd.storeId) return;
+    const product = pendingStoreProductAdd.product;
+    setPendingStoreProductAdd(null);
+    setIsStorePickerOpen(false);
+    setStorePickerTargetProduct(null);
+    void updateQuantity(product, 1);
+  }, [pendingStoreProductAdd, selectedStore?.id, updateQuantity, setIsStorePickerOpen]);
+
   // Product search hook
   const {
     query: searchQuery,
@@ -188,6 +179,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   // Handle adding all items for an 'AND' deal or meal deal
   const handleAddAllToBasket = async (plus: string[], dealTitle?: string) => {
     if (!plus || plus.length === 0) return;
+
+    if (!selectedStore) {
+      setIsStorePickerOpen(true);
+      return;
+    }
 
     const itemsToAdd: Array<{ product: Product; quantity?: number }> = [];
     for (const plu of plus) {
@@ -339,7 +335,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               catalogError={catalogError}
               onRetryCatalog={refreshCatalog}
               selectedStore={selectedStore}
-              onOpenStorePicker={() => setIsStorePickerOpen(true)}
+              onOpenStorePicker={(product?: Product) => {
+                setStorePickerTargetProduct(product || null);
+                setIsStorePickerOpen(true);
+              }}
               categories={currentSubcategories}
               breadcrumbs={breadcrumbs}
               selectedCategoryId={selectedCategoryId}
@@ -376,7 +375,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               onSelectProduct={(p) => setSelectedProduct(p)}
               onUpdateQuantity={updateQuantity}
               isStoreSelected={selectedStore !== null}
-              onPromptSelectStore={() => setIsStorePickerOpen(true)}
+              onPromptSelectStore={(product?: Product) => {
+                setStorePickerTargetProduct(product || null);
+                setIsStorePickerOpen(true);
+              }}
               getBasketQuantity={getItemQuantity}
               basketItems={basket?.items || []}
             />
@@ -558,6 +560,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         }}
         loading={storesLoading}
         targetProduct={storePickerTargetProduct}
+        onAddProductFromStore={(store, product) => {
+          setPendingStoreProductAdd({ storeId: store.id, product });
+          selectStore(store);
+        }}
       />
 
       {/* Store Switch Reconciliation Diff Modal */}
