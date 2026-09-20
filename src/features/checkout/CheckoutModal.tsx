@@ -15,8 +15,6 @@ import {
 import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
-
-const defaultCommerceClient = getCommerceClient() as any;
 import { defaultPaymentClient } from '../../commerce/PaymentClient';
 import { useCatalog } from '../../hooks/useCatalog';
 import { CheckoutRecommendations } from './CheckoutRecommendations';
@@ -52,6 +50,8 @@ import {
   Check,
   Repeat,
 } from 'lucide-react';
+
+const defaultCommerceClient = getCommerceClient() as any;
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -252,17 +252,90 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  // Revalidate Delivery function
+  const handleRevalidateDelivery = useCallback(async () => {
+    if (!basket) return;
+    setIsRevalidating(true);
+    setRevalidationError(null);
+    setAlternativeStores([]);
+
+    try {
+      const result = await defaultCommerceClient.revalidateDelivery(
+        basket.id,
+        deliveryAddress
+      );
+
+      if (result.available) {
+        const updated = await defaultCommerceClient.getBasket(basket.id);
+        if (result.dispatchValidationId) {
+          updated.dispatchValidationId = result.dispatchValidationId;
+        }
+        if (result.dispatchValidationExpiresAt) {
+          updated.dispatchValidationExpiresAt = result.dispatchValidationExpiresAt;
+        }
+        setBasket(updated);
+        onBasketUpdated?.(updated);
+        setRevalidationError(null);
+      } else {
+        setRevalidationError(
+          result.reason || 'Delivery quote expired or unavailable. No couriers available.'
+        );
+        if (result.alternativeStores) {
+          setAlternativeStores(result.alternativeStores);
+        }
+        setCollectionEligible(result.collectionEligible ?? false);
+      }
+    } catch (err: any) {
+      setRevalidationError(err.message || 'Failed to revalidate delivery');
+    } finally {
+      setIsRevalidating(false);
+    }
+  }, [basket, deliveryAddress, onBasketUpdated]);
+
   const handleDirectAuthorizeCheckout = async () => {
     if (snoozeAudit.hasSnoozedOrUnavailableItems) {
       setRevalidationError('Please swap or remove out-of-stock items before placing your order.');
       return;
     }
 
+    if (!basket) return;
+
+    // Authoritative check before payment pre-authorisation: never silently assume availability
+    if (basket.fulfillmentType !== 'pickup') {
+      setIsAuthorizingDirect(true);
+      setRevalidationError(null);
+      try {
+        const quoteCheck = await defaultCommerceClient.revalidateDelivery(
+          basket.id,
+          deliveryAddress
+        );
+        if (!quoteCheck.available) {
+          setRevalidationError(
+            quoteCheck.reason ||
+              'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
+          );
+          if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
+          setCollectionEligible(quoteCheck.collectionEligible ?? true);
+          setIsAuthorizingDirect(false);
+          return;
+        }
+        if (quoteCheck.dispatchValidationId) {
+          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
+          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+        }
+      } catch (err: any) {
+        setRevalidationError(
+          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+        );
+        setIsAuthorizingDirect(false);
+        return;
+      }
+    }
+
     setIsAuthorizingDirect(true);
     setRevalidationError(null);
 
     try {
-      if (!basket) return;
       const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(basket.storeId);
       const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
       const { authorizationMaximum } = calculateAuthorizationMaximum(
@@ -318,40 +391,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, basket?.dispatchValidationExpiresAt, isRevalidating, phase]);
+  }, [isOpen, basket?.dispatchValidationExpiresAt, isRevalidating, phase, handleRevalidateDelivery]);
 
-  // Revalidate Delivery function
-  const handleRevalidateDelivery = useCallback(async () => {
-    if (!basket) return;
-    setIsRevalidating(true);
-    setRevalidationError(null);
-    setAlternativeStores([]);
-
-    try {
-      const result = await defaultCommerceClient.revalidateDelivery(
-        basket.id,
-        deliveryAddress
-      );
-
-      if (result.available) {
-        // Updated basket
-        const updated = await defaultCommerceClient.getBasket(basket.id);
-        setBasket(updated);
-        onBasketUpdated?.(updated);
-        setRevalidationError(null);
-      } else {
-        setRevalidationError(result.reason || 'Delivery quote expired. No couriers available.');
-        if (result.alternativeStores) {
-          setAlternativeStores(result.alternativeStores);
-        }
-        setCollectionEligible(result.collectionEligible ?? false);
+  // Review phase availability check: Check delivery availability/quotes when the basket is reviewed
+  useEffect(() => {
+    if (isOpen && phase === 'review' && basket && basket.fulfillmentType !== 'pickup') {
+      const isExpired =
+        !basket.dispatchValidationExpiresAt ||
+        new Date(basket.dispatchValidationExpiresAt).getTime() <= Date.now();
+      if (isExpired || !basket.dispatchValidationId) {
+        handleRevalidateDelivery();
       }
-    } catch (err: any) {
-      setRevalidationError(err.message || 'Failed to revalidate delivery');
-    } finally {
-      setIsRevalidating(false);
     }
-  }, [basket, deliveryAddress, onBasketUpdated]);
+  }, [isOpen, phase, basket?.id, basket?.fulfillmentType, handleRevalidateDelivery]);
 
   // Handle Tip selection
   const handleSelectTip = async (amount: number) => {
@@ -402,9 +454,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleInitiatePayment = async () => {
     if (!basket) return;
 
-    // Check delivery revalidation if dispatch is expired
-    if (secondsRemaining <= 0) {
-      await handleRevalidateDelivery();
+    if (snoozeAudit.hasSnoozedOrUnavailableItems) {
+      setRevalidationError('Please swap or remove out-of-stock items before proceeding to payment.');
+      return;
+    }
+
+    // Authoritative check before payment pre-authorisation: never silently assume availability
+    if (basket.fulfillmentType !== 'pickup') {
+      setIsRevalidating(true);
+      setRevalidationError(null);
+      try {
+        const quoteCheck = await defaultCommerceClient.revalidateDelivery(
+          basket.id,
+          deliveryAddress
+        );
+        if (!quoteCheck.available) {
+          setRevalidationError(
+            quoteCheck.reason ||
+              'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
+          );
+          if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
+          setCollectionEligible(quoteCheck.collectionEligible ?? true);
+          setIsRevalidating(false);
+          return;
+        }
+        if (quoteCheck.dispatchValidationId) {
+          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
+          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+        }
+      } catch (err: any) {
+        setRevalidationError(
+          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+        );
+        setIsRevalidating(false);
+        return;
+      } finally {
+        setIsRevalidating(false);
+      }
     }
 
     try {
@@ -923,6 +1009,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
 
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleRevalidateDelivery}
+                    disabled={isRevalidating}
+                    className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRevalidating ? 'animate-spin' : ''}`} />
+                    <span>{isRevalidating ? 'Checking Availability...' : 'Retry Availability Check'}</span>
+                  </button>
+                  {collectionEligible && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchToCollection}
+                      className="flex-1 py-2 rounded-xl bg-gray-900 text-white font-bold text-xs shadow-xs hover:bg-gray-800 cursor-pointer"
+                    >
+                      Switch to Pickup
+                    </button>
+                  )}
+                </div>
+
                 {alternativeStores.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-red-200/70 space-y-1">
                     <span className="font-semibold text-red-900 block text-[11px]">
@@ -933,23 +1040,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         key={alt.id}
                         type="button"
                         onClick={() => handleSwitchStore(alt.id)}
-                        className="w-full text-left p-2 rounded-xl bg-white border border-red-200 hover:bg-red-50/50 flex justify-between items-center text-xs text-gray-800 font-medium"
+                        className="w-full text-left p-2 rounded-xl bg-white border border-red-200 hover:bg-red-50/50 flex justify-between items-center text-xs text-gray-800 font-medium cursor-pointer"
                       >
                         <span>{alt?.name || 'Partner Store'}</span>
                         <span className="text-emerald-700 font-bold text-[11px]">Switch & Order</span>
                       </button>
                     ))}
                   </div>
-                )}
-
-                {collectionEligible && (
-                  <button
-                    type="button"
-                    onClick={handleSwitchToCollection}
-                    className="w-full py-2 rounded-xl bg-gray-900 text-white font-bold text-xs shadow-xs hover:bg-gray-800"
-                  >
-                    Switch to Free In-Store Pickup
-                  </button>
                 )}
               </div>
             )}
@@ -1122,7 +1219,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 type="button"
                 id="direct-auth-pay-btn"
                 onClick={handleDirectAuthorizeCheckout}
-                disabled={isAuthorizingDirect || Boolean(revalidationError && alternativeStores.length > 0) || snoozeAudit.hasSnoozedOrUnavailableItems || isSwapping}
+                disabled={
+                  isAuthorizingDirect ||
+                  isRevalidating ||
+                  Boolean(revalidationError) ||
+                  (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0) ||
+                  snoozeAudit.hasSnoozedOrUnavailableItems ||
+                  isSwapping
+                }
                 style={primaryBtnStyle}
                 className="w-full py-4 rounded-2xl font-bold text-sm shadow-md active:scale-98 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
@@ -1137,6 +1241,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>
                       {snoozeAudit.hasSnoozedOrUnavailableItems
                         ? 'Resolve Out of Stock Items Above'
+                        : revalidationError || (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0)
+                        ? 'Courier Dispatch Unavailable - Retry Above'
                         : `Authorize & Place Order (up to ${formatCurrency(
                             calculateAuthorizationMaximum(
                               basket.total,
@@ -1156,8 +1262,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 type="button"
                 id="initiate-pay-btn"
                 onClick={handleInitiatePayment}
-                disabled={Boolean(revalidationError && alternativeStores.length > 0) || snoozeAudit.hasSnoozedOrUnavailableItems || isSwapping}
-                className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                disabled={
+                  isAuthorizingDirect ||
+                  isRevalidating ||
+                  Boolean(revalidationError) ||
+                  (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0) ||
+                  snoozeAudit.hasSnoozedOrUnavailableItems ||
+                  isSwapping
+                }
+                className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <span>Or use Deliverect Pay Hosted Session</span>
                 <ChevronRight className="w-3.5 h-3.5" />

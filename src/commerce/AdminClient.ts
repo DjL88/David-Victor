@@ -9,6 +9,7 @@ import {
   Store,
   TenantFeatureFlags,
 } from './models';
+import { TenantDispatchRules } from '../rules/types';
 
 export interface AdminClient {
   /**
@@ -116,6 +117,12 @@ export interface AdminClient {
   getProductRules?(tenantId?: string): Promise<VisualRule[]>;
   saveProductRule?(tenantId: string, rule: VisualRule, user?: AdminUser): Promise<VisualRule[]>;
   deleteProductRule?(tenantId: string, ruleId: string, user?: AdminUser): Promise<boolean>;
+
+  /**
+   * Search merchandising and ranking optimization configuration.
+   */
+  getSearchConfig?(tenantId?: string): Promise<any>;
+  updateSearchConfig?(tenantId: string, config: any): Promise<any>;
 
   /**
    * Retrieves tenant feature flags.
@@ -330,6 +337,31 @@ export interface AdminClient {
    * Deletes a domain mapping.
    */
   deleteDomain?(domainId: string): Promise<any>;
+
+  /**
+   * Compact, admin-only Connection Health reporting.
+   */
+  getConnectionHealth?(tenantId?: string): Promise<any>;
+
+  /**
+   * Retrieves tenant dispatch orchestration rules.
+   */
+  getDispatchRules?(tenantId?: string): Promise<TenantDispatchRules>;
+
+  /**
+   * Saves tenant dispatch orchestration rules.
+   */
+  saveDispatchRules?(tenantId: string, rules: TenantDispatchRules, user?: AdminUser): Promise<TenantDispatchRules>;
+
+  /**
+   * Traces a real request through Upstream -> BFF -> HTTP Client -> Hook -> Visible Cards.
+   */
+  traceRequest?(params: {
+    tenantId?: string;
+    storeId?: string;
+    fulfillmentType?: 'delivery' | 'pickup';
+    forceFailureType?: any;
+  }): Promise<any>;
 }
 
 import { defaultHttpAdminClient } from './HttpAdminClient';

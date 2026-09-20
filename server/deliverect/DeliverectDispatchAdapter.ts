@@ -1,6 +1,18 @@
-import { DispatchAdapter, DispatchValidateParams, DispatchValidationResult } from './DispatchAdapter';
+import {
+  DispatchAdapter,
+  DispatchValidateParams,
+  DispatchValidationResult,
+  DispatchQuoteParams,
+  DispatchQuoteResult,
+  CourierQuote,
+  DispatchAssignParams,
+  DispatchAssignmentResult,
+  DispatchCancelParams,
+  DispatchCancelResult,
+} from './DispatchAdapter';
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { Money } from '../../src/commerce/models';
+import { BFFError } from '../errors';
 
 /**
  * Deliverect Dispatch Adapter (Server-side)
@@ -13,6 +25,7 @@ import { Money } from '../../src/commerce/models';
  * - Exact schema of /fulfillment/validate request & response
  * - Validation token expiration duration
  * - Delivery quote and ETA field names
+ * - Live courier assignment endpoint and payload (DV-02, DV-08)
  */
 export class DeliverectDispatchAdapter implements DispatchAdapter {
   readonly adapterName = 'DeliverectDispatchAdapter';
@@ -143,5 +156,63 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
       }
       throw err;
     }
+  }
+
+  async getQuotes(params: DispatchQuoteParams): Promise<DispatchQuoteResult> {
+    const valResult = await this.validateAvailability(params);
+    if (!valResult.available) {
+      return {
+        available: false,
+        quotes: [],
+        failureReason: valResult.failureReason || 'Address outside courier dispatch delivery zone',
+      };
+    }
+
+    const fee = valResult.fee || { amount: valResult.deliveryPrice || 0, currency: params.currency || 'GBP' };
+    const expiresAt = valResult.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const quote: CourierQuote = {
+      quoteId: valResult.validationId || `quote_deliverect_${Date.now()}`,
+      providerId: 'deliverect-dispatch',
+      providerDisplayName: valResult.provider || 'Deliverect Dispatch',
+      fee,
+      pickupEtaMinutes: valResult.pickupEtaMinutes,
+      deliveryEtaMinutes: valResult.deliveryEtaMinutes,
+      estimatedPickupTime: valResult.estimatedPickupTime,
+      estimatedDeliveryTime: valResult.estimatedDeliveryTime,
+      expiresAt,
+      supportsScheduledAssignment: false, // Live staging Deliverect contract pending verification (DV-02)
+      supportsAgeVerification: false,
+      supportsPin: false,
+    };
+
+    return {
+      available: true,
+      quotes: [quote],
+      selectedQuote: quote,
+      validationId: valResult.validationId,
+      expiresAt,
+    };
+  }
+
+  async assignCourier(_params: DispatchAssignParams): Promise<DispatchAssignmentResult> {
+    // Deliverect staging live assignment contract is unverified (DELIVERECT_VERIFICATION.md DV-02/DV-08).
+    // Explicitly reject rather than fabricating live success.
+    throw new BFFError(
+      'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED',
+      'Deliverect live courier assignment is pending partner staging verification (DV-02). Use Demo mode for end-to-end simulated driver dispatch.',
+      501,
+      false
+    );
+  }
+
+  async cancelDispatch(_params: DispatchCancelParams): Promise<DispatchCancelResult> {
+    // Deliverect staging live cancellation contract is unverified.
+    throw new BFFError(
+      'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED',
+      'Deliverect live courier cancellation is pending partner staging verification.',
+      501,
+      false
+    );
   }
 }

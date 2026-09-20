@@ -15,6 +15,7 @@
 
 import { Basket, Product, StoreProductAvailability, isStoreProductSnoozed, isStoreProductAvailable, Money } from '../commerce/models';
 import { catalogStore, normalizeStoreId } from '../commerce/catalogStore';
+import { isDemoMode } from '../domain/runtime';
 
 export interface SnoozeEvaluationResult {
   isSnoozed: boolean;
@@ -53,6 +54,12 @@ export interface BasketSnoozeAuditResult {
  * Checks whether a specific product is currently snoozed or unavailable at a specific store.
  */
 export function checkProductSnooze(storeId: string, plu: string): SnoozeEvaluationResult {
+  if (!isDemoMode()) {
+    // In staging/production, availability and snoozing are verified authoritatively
+    // through the BFF Commerce API during basket reconcile / validate calls, not local mock store.
+    return { isSnoozed: false, isAvailable: true };
+  }
+
   const normStoreId = normalizeStoreId(storeId);
   const avail = catalogStore.getProductAvailability(normStoreId, plu);
 

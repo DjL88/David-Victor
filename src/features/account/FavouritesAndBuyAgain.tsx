@@ -13,6 +13,7 @@ import {
   Plus,
   Loader2,
 } from 'lucide-react';
+import { isDemoMode } from '../../domain/runtime';
 
 interface FavouritesAndBuyAgainProps {
   products: Product[];
@@ -35,19 +36,31 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
   const [justAddedPlu, setJustAddedPlu] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Initial favorites / purchase history mock (stored locally per anonymous device, no PII)
-  const [favouritePlus, setFavouritePlus] = useState<string[]>([
-    'PLU-SOURDOUGH-01',
-    'PLU-ORGANIC-EGGS-6PK',
-    'PLU-ORGANIC-MILK-2L',
-  ]);
+  // Initial favorites / purchase history (only seeded in demo mode)
+  const [favouritePlus, setFavouritePlus] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dl_guest_favourites');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback
+    }
+    return isDemoMode()
+      ? [
+          'PLU-SOURDOUGH-01',
+          'PLU-ORGANIC-EGGS-6PK',
+          'PLU-ORGANIC-MILK-2L',
+        ]
+      : [];
+  });
 
-  const recentPurchasesPlus = [
-    'PLU-SOURDOUGH-01',
-    'PLU-COLDPRESS-ORANGE',
-    'PLU-ORGANIC-MILK-2L',
-    'PLU-ART-001',
-  ];
+  const recentPurchasesPlus = isDemoMode()
+    ? [
+        'PLU-SOURDOUGH-01',
+        'PLU-COLDPRESS-ORANGE',
+        'PLU-ORGANIC-MILK-2L',
+        'PLU-ART-001',
+      ]
+    : [];
 
   const currentPluList =
     activeSubTab === 'favourites'

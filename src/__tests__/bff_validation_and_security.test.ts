@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 import { BFFError } from '../../server/errors';
 import { SecretManager } from '../../server/secrets';
 import {
@@ -174,6 +175,11 @@ describe('Typed Errors and Secret Manager (Phase 2)', () => {
 });
 
 describe('Firebase Auth & Tenant RBAC (Phase 3)', () => {
+  beforeEach(() => {
+    process.env.APP_MODE = 'demo';
+    setServerRuntimeMode('demo');
+  });
+
   it('rejects unauthenticated requests without authorization header', async () => {
     const user = await verifyAdminSession(undefined, 'brand-alpha');
     expect(user).toBeNull();

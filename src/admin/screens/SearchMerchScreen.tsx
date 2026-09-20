@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SearchOptimisationConfig,
   TypoAlias,
@@ -8,6 +8,7 @@ import {
   ProductBoostRule,
 } from '../../commerce/searchMerchModels';
 import { DEFAULT_SEARCH_CONFIG, getActiveSearchConfig, setActiveSearchConfig } from '../../commerce/searchMerchEngine';
+import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import {
   Search,
   ArrowRight,
@@ -20,6 +21,7 @@ import {
   AlertCircle,
   ShieldCheck,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 
 interface SearchMerchScreenProps {
@@ -30,6 +32,23 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   const [config, setConfig] = useState<SearchOptimisationConfig>(() => getActiveSearchConfig());
   const [activeTab, setActiveTab] = useState<'typos' | 'synonyms' | 'rewrites' | 'pins' | 'boosts' | 'exclusions'>('typos');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    defaultAdminClient.getSearchConfig?.(tenantId).then((remote: any) => {
+      if (isMounted && remote) {
+        setConfig(remote);
+        setActiveSearchConfig(remote);
+      }
+    }).catch((err: any) => {
+      console.warn('Could not load remote search config:', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [tenantId]);
 
   // New item draft states
   const [newTypo, setNewTypo] = useState({ typo: '', resolvesTo: '' });
@@ -44,10 +63,21 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   });
   const [newExclusionPlu, setNewExclusionPlu] = useState('');
 
-  const handleSave = () => {
-    setActiveSearchConfig(config);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      setActiveSearchConfig(config);
+      if (defaultAdminClient.updateSearchConfig) {
+        await defaultAdminClient.updateSearchConfig(tenantId, config);
+      }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save search config to BFF');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Add typo alias
@@ -214,19 +244,26 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         </div>
 
         <div className="flex items-center gap-3">
+          {saveError && (
+            <span className="text-xs font-bold text-red-700 flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-xl border border-red-200">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {saveError}
+            </span>
+          )}
           {saveSuccess && (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
               <Check className="w-3.5 h-3.5" />
-              Ranking rules published
+              Ranking rules published & saved
             </span>
           )}
           <button
             type="button"
+            disabled={isSaving}
             onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50"
           >
-            <Check className="w-4 h-4" />
-            <span>Deploy Search Rules</span>
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            <span>{isSaving ? 'Deploying...' : 'Deploy Search Rules'}</span>
           </button>
         </div>
       </div>

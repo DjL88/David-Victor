@@ -168,19 +168,17 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
         </div>
 
         <div className="flex items-center gap-3">
-          {saveSuccess && (
-            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-              <Check className="w-3.5 h-3.5" />
-              Page published to CDN
-            </span>
-          )}
+          <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-300">
+            <span>Persistence: Not Connected (Deferred to Phase 5)</span>
+          </span>
           <button
             type="button"
-            onClick={handleSavePage}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5"
+            disabled
+            className="px-4 py-2 rounded-xl bg-gray-200 text-gray-400 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
+            title="CMS persistence is deferred per architecture specification Phase 5"
           >
             <Check className="w-4 h-4" />
-            <span>Save & Publish</span>
+            <span>Save Disabled</span>
           </button>
         </div>
       </div>

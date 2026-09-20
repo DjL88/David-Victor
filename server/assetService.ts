@@ -1,7 +1,7 @@
 import { getFirestoreDb, getFirebaseStorage } from './firebase';
 import { handleFirestoreError, OperationType } from './firestoreService';
 import { BFFError } from './errors';
-import { isDemoMode, isLiveMode } from './runtimeMode';
+import { isDemoMode, isLiveMode, isTestMode } from './runtimeMode';
 import crypto from 'crypto';
 
 export type AssetType =

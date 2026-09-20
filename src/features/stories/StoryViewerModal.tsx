@@ -140,11 +140,27 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       >
         {/* Story Background Media */}
         <div className="absolute inset-0 z-0">
-          <img
-            src={currentStory.mediaUrl}
-            alt={currentStory.title}
-            className="w-full h-full object-cover"
-          />
+          {currentStory.mediaType === 'video' ? (
+            <video
+              key={currentStory.id}
+              src={currentStory.mediaUrl}
+              poster={currentStory.thumbnailUrl}
+              aria-label={currentStory.title}
+              autoPlay
+              muted
+              playsInline
+              preload="metadata"
+              className="w-full h-full object-cover"
+              onPlay={() => setIsPaused(false)}
+              onPause={() => setIsPaused(true)}
+            />
+          ) : (
+            <img
+              src={currentStory.mediaUrl}
+              alt={currentStory.title}
+              className="w-full h-full object-cover"
+            />
+          )}
           {/* Subtle Top & Bottom Gradients for readable text */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
         </div>

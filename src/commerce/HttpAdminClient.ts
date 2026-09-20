@@ -14,6 +14,7 @@ import { DEFAULT_SCHEDULING_POLICY } from './slotEngine';
 import { DEFAULT_SUBSTITUTION_POLICY } from './substitutionPricing';
 import { auth } from '../firebase';
 import { getRuntimeMode } from '../domain/runtime';
+import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../rules/types';
 
 let cachedRealToken: string | null = null;
 
@@ -622,6 +623,25 @@ export class HttpAdminClient implements AdminClient {
     return [];
   }
 
+  async getSearchConfig(tenantId?: string): Promise<any> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/search-config`, { headers });
+    if (res.ok) return res.json();
+    return null;
+  }
+
+  async updateSearchConfig(tenantId: string, config: any): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}/search-config`, {
+      method: 'PUT',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (res.ok) return res.json();
+    throw new Error(`Failed to save search config: ${res.statusText}`);
+  }
+
   async updateStore(
     arg1: string,
     arg2: string | Partial<Store> | Store,
@@ -766,6 +786,37 @@ export class HttpAdminClient implements AdminClient {
     _user?: AdminUser
   ): Promise<any[]> {
     return rules;
+  }
+
+  // Tenant Dispatch Rules (Orchestration & Timing)
+  async getDispatchRules(tenantId?: string): Promise<TenantDispatchRules> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    try {
+      const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/dispatch-rules`, { headers });
+      if (res.ok) return res.json();
+    } catch (err) {
+      console.warn('[HttpAdminClient] Failed to fetch dispatch rules:', err);
+    }
+    return { ...DEFAULT_DISPATCH_RULES };
+  }
+
+  async saveDispatchRules(
+    tenantId: string,
+    rules: Partial<TenantDispatchRules>,
+    _user?: AdminUser
+  ): Promise<TenantDispatchRules> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}/dispatch-rules`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rules),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to save dispatch rules');
+    }
+    return res.json();
   }
 
   async getSchedulingConfig(_tenantId?: string, _scope?: any): Promise<any> {
@@ -917,6 +968,54 @@ export class HttpAdminClient implements AdminClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `Failed to delete domain: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  // ==========================================
+  // CONNECTION HEALTH & REQUEST TRACE
+  // ==========================================
+  async getConnectionHealth(tenantId?: string): Promise<any> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/connection/health`, {
+      method: 'GET',
+      headers: {
+        ...headers,
+        'x-tenant-id': tId,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to fetch connection health: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async traceRequest(params: {
+    tenantId?: string;
+    storeId?: string;
+    fulfillmentType?: 'delivery' | 'pickup';
+    forceFailureType?: any;
+  }): Promise<any> {
+    const tId = params.tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/connection/trace`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+        'x-tenant-id': tId,
+      },
+      body: JSON.stringify({
+        storeId: params.storeId,
+        fulfillmentType: params.fulfillmentType || 'delivery',
+        forceFailureType: params.forceFailureType,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Trace request failed: ${res.statusText}`);
     }
     return res.json();
   }

@@ -12,8 +12,9 @@ import {
   Package,
 } from 'lucide-react';
 import { DeliverectDeal, getProductsForDeal } from '../../commerce/dealModels';
-import { Product, Store } from '../../commerce/models';
+import { Product, Store, moneyToMinor } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { formatCurrency } from '../../utils/formatters';
 
 interface MealDealDialogProps {
   deal: DeliverectDeal | null;
@@ -58,29 +59,14 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
   const dealProducts = getProductsForDeal(deal, products);
   const isAndMode = deal.stockMatchMode === 'AND';
 
-  // Format price safely in pounds (£), handling integer minor units (500 -> £5.00)
-  const formatPounds = (rawVal?: number): string => {
-    if (rawVal === undefined || rawVal === null || isNaN(rawVal)) return '£0.00';
-    // If rawVal >= 100, it is minor units (e.g. 500 minor units = £5.00)
-    const major = rawVal >= 100 ? rawVal / 100 : rawVal;
-    return `£${major.toFixed(2)}`;
-  };
-
-  // Calculate regular sum of items
-  const itemizedTotal = dealProducts.reduce((sum, p) => {
-    const num =
-      typeof p.price === 'object' && p.price !== null && 'amount' in p.price
-        ? p.price.amount / 100
-        : typeof p.price === 'number'
-        ? p.price >= 100
-          ? p.price / 100
-          : p.price
-        : 0;
-    return sum + num;
+  // Calculate regular sum of items in integer minor units
+  const itemizedTotalMinor = dealProducts.reduce((sum, p) => {
+    return sum + moneyToMinor(p.price);
   }, 0);
 
-  const dealPriceInMajor = deal.dealPrice >= 100 ? deal.dealPrice / 100 : deal.dealPrice;
-  const rawSavings = deal.savings > 0 ? (deal.savings >= 100 ? deal.savings / 100 : deal.savings) : Math.max(0, itemizedTotal - dealPriceInMajor);
+  const dealPriceMinor = moneyToMinor(deal.dealPrice);
+  const rawSavingsMinor =
+    deal.savings > 0 ? moneyToMinor(deal.savings) : Math.max(0, itemizedTotalMinor - dealPriceMinor);
 
   const handleAddAll = () => {
     onAddAllToBasket(deal.linkedProductPlus, deal.title);
@@ -173,24 +159,24 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
                 </span>
                 <div className="flex items-baseline gap-2 mt-0.5">
                   <span className="text-2xl font-black text-gray-950 tracking-tight">
-                    {formatPounds(deal.dealPrice)}
+                    {formatCurrency(deal.dealPrice)}
                   </span>
                   {(deal.originalPrice ?? 0) > (deal.dealPrice ?? 0) && (
                     <span className="text-sm font-semibold text-gray-400 line-through">
-                      {formatPounds(deal.originalPrice)}
+                      {formatCurrency(deal.originalPrice)}
                     </span>
                   )}
                 </div>
               </div>
 
-              {rawSavings > 0 && (
+              {rawSavingsMinor > 0 && (
                 <div className="text-right">
                   <span
                     style={primaryBtnStyle}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-white text-xs font-black shadow-2xs"
                   >
                     <BadgePercent className="w-3.5 h-3.5" />
-                    Save £{rawSavings.toFixed(2)}
+                    Save {formatCurrency(rawSavingsMinor)}
                   </span>
                   <span className="text-[10px] text-gray-500 font-medium block mt-1">
                     Deliverect POS combo discount
@@ -275,11 +261,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
                             </p>
                           )}
                           <span className="text-xs font-bold text-gray-700">
-                            {typeof product.price === 'number'
-                              ? formatPounds(product.price)
-                              : typeof product.price === 'object' && product.price !== null
-                              ? formatPounds((product.price as any).amount)
-                              : '£0.00'}
+                            {formatCurrency(product.price)}
                           </span>
                         </div>
                       </div>
@@ -323,8 +305,8 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
               <ShoppingBag className="w-4 h-4" />
               <span>
                 {isAndMode
-                  ? `Add All ${dealProducts.length} Items • ${formatPounds(deal.dealPrice)}`
-                  : `Add Deal Items • From ${formatPounds(deal.dealPrice)}`}
+                  ? `Add All ${dealProducts.length} Items • ${formatCurrency(deal.dealPrice)}`
+                  : `Add Deal Items • From ${formatCurrency(deal.dealPrice)}`}
               </span>
             </button>
 

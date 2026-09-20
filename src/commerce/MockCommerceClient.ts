@@ -93,7 +93,11 @@ export class MockCommerceClient implements CommerceClient {
   private currentTenantId: string = 'brand-alpha';
 
   private get currentProducts(): Product[] {
-    return catalogStore.getProducts();
+    const fromStore = catalogStore.getProducts();
+    if (fromStore && fromStore.length > 0) {
+      return fromStore;
+    }
+    return MOCK_PRODUCTS;
   }
 
   // In-memory orders for tracking
@@ -1117,6 +1121,67 @@ export class MockCommerceClient implements CommerceClient {
       paymentMethods: ['Apple Pay', 'Google Pay', 'Credit / Debit Card', 'Deliverect Pay'],
       canProceed: validation.valid,
       warnings: validation.issues,
+    };
+  }
+
+  async getDispatchQuotes(params: {
+    channelLinkId?: string;
+    storeId?: string;
+    deliveryAddress: Address;
+    itemsCount?: number;
+    orderValueMinorUnits?: number;
+    currency?: string;
+    requiresAgeCheck?: boolean;
+    minimumAge?: number;
+    policy?: string;
+    allowedProviders?: string[];
+  }): Promise<{
+    available: boolean;
+    quotes: any[];
+    selectedQuote?: any;
+    policyApplied: string;
+    rejectionReason?: string;
+  }> {
+    await this.simulateLatency(200);
+    if (this.simulationFlags.simulateDispatchUnavailable) {
+      return {
+        available: false,
+        quotes: [],
+        policyApplied: params.policy || 'CHEAPEST',
+        rejectionReason: 'No couriers currently available for this delivery destination',
+      };
+    }
+
+    const quotes = [
+      {
+        quoteId: `quote_uber_${Date.now()}`,
+        providerId: 'uber_direct',
+        providerName: 'Uber Direct',
+        fee: { amount: 399, currency: params.currency || 'GBP' },
+        estimatedPickupTime: new Date(Date.now() + 15 * 60000).toISOString(),
+        estimatedDeliveryTime: new Date(Date.now() + 35 * 60000).toISOString(),
+        expiresAt: new Date(Date.now() + 180 * 1000).toISOString(),
+        supportsTracking: true,
+        vehicleType: 'BICYCLE',
+      },
+      {
+        quoteId: `quote_stuart_${Date.now()}`,
+        providerId: 'stuart',
+        providerName: 'Stuart Courier',
+        fee: { amount: 449, currency: params.currency || 'GBP' },
+        estimatedPickupTime: new Date(Date.now() + 12 * 60000).toISOString(),
+        estimatedDeliveryTime: new Date(Date.now() + 30 * 60000).toISOString(),
+        expiresAt: new Date(Date.now() + 180 * 1000).toISOString(),
+        supportsTracking: true,
+        vehicleType: 'MOTORCYCLE',
+      },
+    ];
+
+    return {
+      available: true,
+      quotes,
+      selectedQuote: quotes[0],
+      policyApplied: params.policy || 'CHEAPEST',
     };
   }
 

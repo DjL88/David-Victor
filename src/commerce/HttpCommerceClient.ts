@@ -61,7 +61,7 @@ export class HttpCommerceClient implements CommerceClient {
       const res = await fetch(`${this.baseUrl}/platform/mode`);
       if (res.ok) {
         const data = await res.json();
-        this.appMode = data.appMode || 'demo';
+        this.appMode = data.appMode || 'unknown';
         return this.appMode;
       }
     } catch {
@@ -106,7 +106,7 @@ export class HttpCommerceClient implements CommerceClient {
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}));
       const error: any = new Error(
-        errorBody.error || `HTTP ${res.status}: ${res.statusText}`
+        errorBody.safeMessage || errorBody.message || errorBody.error || `HTTP ${res.status}: ${res.statusText}`
       );
       error.status = res.status;
       error.code = errorBody.code || `HTTP_${res.status}`;
@@ -448,6 +448,36 @@ export class HttpCommerceClient implements CommerceClient {
     itemsCount?: number;
   }): Promise<DispatchAvailability> {
     return this.request<DispatchAvailability>('/dispatch/validate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async getDispatchQuotes(params: {
+    channelLinkId?: string;
+    storeId?: string;
+    deliveryAddress: Address;
+    itemsCount?: number;
+    orderValueMinorUnits?: number;
+    currency?: string;
+    requiresAgeCheck?: boolean;
+    minimumAge?: number;
+    policy?: string;
+    allowedProviders?: string[];
+  }): Promise<{
+    available: boolean;
+    quotes: any[];
+    selectedQuote?: any;
+    policyApplied: string;
+    rejectionReason?: string;
+  }> {
+    return this.request<{
+      available: boolean;
+      quotes: any[];
+      selectedQuote?: any;
+      policyApplied: string;
+      rejectionReason?: string;
+    }>('/dispatch/quotes', {
       method: 'POST',
       body: JSON.stringify(params),
     });

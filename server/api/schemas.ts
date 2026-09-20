@@ -175,10 +175,65 @@ export const CheckoutBasketOptionsSchema = z
     paymentId: z.string().optional(),
     dispatchValidationId: z.string().optional(),
     dispatchValidationExpiresAt: z.string().optional(),
+    selectedQuoteId: z.string().optional(),
+    selectedProviderId: z.string().optional(),
+    selectedProviderDisplayName: z.string().optional(),
+    requiresAgeCheck: z.boolean().optional(),
+    minimumAge: z.number().optional(),
+    requiresPin: z.boolean().optional(),
     idempotencyKey: z.string().optional(),
     channelOrderReference: z.string().optional(),
   })
   .passthrough();
+
+export const GetDispatchQuotesSchema = z.object({
+  storeId: z.string().optional(),
+  channelLinkId: z.string().optional(),
+  deliveryAddress: z.object({
+    postalCode: z.string().optional(),
+    postcode: z.string().optional(),
+    street: z.string().optional(),
+    city: z.string().optional(),
+    country: z.string().optional(),
+    formattedAddress: z.string().optional(),
+    coordinates: z
+      .object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+      })
+      .optional(),
+  }),
+  itemsCount: z.number().optional(),
+  orderValueMinorUnits: z.number().optional(),
+  currency: z.string().optional(),
+  requiresAgeCheck: z.boolean().optional(),
+  minimumAge: z.number().optional(),
+  policy: z.enum(['CUSTOMER_CHOICE', 'CHEAPEST', 'FASTEST', 'TENANT_PRIORITY']).optional(),
+  allowedProviders: z.array(z.string()).optional(),
+});
+
+export const AssignDispatchSchema = z.object({
+  orderId: z.string().min(1, 'orderId is required'),
+  idempotencyKey: z.string().optional(),
+  force: z.boolean().optional(),
+});
+
+export const CancelDispatchSchema = z.object({
+  orderId: z.string().min(1, 'orderId is required'),
+  reason: z.string().optional(),
+});
+
+export const UpdateTenantDispatchRulesSchema = z.object({
+  assignmentEvent: z.enum(['START_PICKING', 'CHECKOUT_PAID', 'ORDER_FINALISED']).optional(),
+  dynamicTiming: z.boolean().optional(),
+  itemsPickedPerMinute: z.number().min(0.5).max(30).optional(),
+  readyBufferMinutes: z.number().min(0).max(120).optional(),
+  retryIntervalSeconds: z.number().min(10).max(600).optional(),
+  maxRetryAttempts: z.number().min(1).max(10).optional(),
+  unacceptedTimeoutMinutes: z.number().min(1).max(120).optional(),
+  selectionPolicy: z.enum(['CUSTOMER_CHOICE', 'CHEAPEST', 'FASTEST', 'TENANT_PRIORITY']).optional(),
+  allowedProviders: z.array(z.string()).optional(),
+});
 
 export const PaymentGatewaysQuerySchema = z.object({
   channelLinkId: z.string().min(1, 'channelLinkId is required'),

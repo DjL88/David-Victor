@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { VisualRule, AdminUser } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
-import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle } from 'lucide-react';
+import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
+import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw } from 'lucide-react';
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -12,10 +13,14 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   tenantId,
   currentUser,
 }) => {
+  const [activeTab, setActiveTab] = useState<'product' | 'dispatch'>('product');
   const [rules, setRules] = useState<VisualRule[]>([]);
+  const [dispatchRules, setDispatchRules] = useState<TenantDispatchRules>(DEFAULT_DISPATCH_RULES);
   const [loading, setLoading] = useState<boolean>(true);
   const [editingRule, setEditingRule] = useState<VisualRule | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [dispatchSaving, setDispatchSaving] = useState<boolean>(false);
+  const [dispatchSuccessMsg, setDispatchSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -24,10 +29,32 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const loadRules = async () => {
     setLoading(true);
     try {
-      const data = await defaultAdminClient.getProductRules(tenantId);
-      setRules(data);
+      const [pRules, dRules] = await Promise.all([
+        defaultAdminClient.getProductRules(tenantId),
+        defaultAdminClient.getDispatchRules(tenantId),
+      ]);
+      setRules(pRules);
+      setDispatchRules(dRules);
+    } catch (err) {
+      console.warn('[ProductRulesScreen] Error loading rules:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveDispatchRules = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDispatchSaving(true);
+    setDispatchSuccessMsg(null);
+    try {
+      const updated = await defaultAdminClient.saveDispatchRules(tenantId, dispatchRules, currentUser);
+      setDispatchRules(updated);
+      setDispatchSuccessMsg('Dispatch orchestration rules saved and active.');
+      setTimeout(() => setDispatchSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save dispatch rules');
+    } finally {
+      setDispatchSaving(false);
     }
   };
 
@@ -85,27 +112,350 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-600" />
-            <span>Product Rules & Retail Availability Engine</span>
+            <span>Rules Engine & Orchestration Policies</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Declarative rule definitions evaluated by the BFF. Match on tags, PLU, categories to enforce age gates, max quantities, and badges.
+            Configure declarative product compliance, merchandising triggers, and automated courier dispatch timing.
           </p>
         </div>
 
+        {activeTab === 'product' && (
+          <button
+            type="button"
+            onClick={handleCreateNew}
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Declarative Rule</span>
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-3 border-b border-gray-200">
         <button
           type="button"
-          onClick={handleCreateNew}
-          className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs"
+          onClick={() => setActiveTab('product')}
+          className={`pb-3 px-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'product'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>New Declarative Rule</span>
+          <ShieldCheck className="w-4 h-4" />
+          <span>Product & Compliance Rules</span>
+          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600 font-semibold">
+            {rules.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('dispatch')}
+          className={`pb-3 px-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'dispatch'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Truck className="w-4 h-4" />
+          <span>Courier Dispatch Orchestration Rules</span>
+          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-mono font-semibold">
+            {dispatchRules.assignmentEvent}
+          </span>
         </button>
       </div>
 
+      {activeTab === 'dispatch' && (
+        <form onSubmit={handleSaveDispatchRules} className="space-y-6">
+          {dispatchSuccessMsg && (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{dispatchSuccessMsg}</span>
+            </div>
+          )}
+
+          {/* Trigger & Timing Card */}
+          <div className="p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-6">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-indigo-600" />
+                  <span>Dispatch Assignment & Timing Strategy</span>
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Controls when couriers are requested and how pickup ETA is calculated relative to picking speed.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Courier Assignment Event Trigger
+                </label>
+                <select
+                  value={dispatchRules.assignmentEvent}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      assignmentEvent: e.target.value as any,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="START_PICKING">START_PICKING (Assign courier when picking begins - recommended)</option>
+                  <option value="CHECKOUT_PAID">CHECKOUT_PAID (Assign courier immediately on payment pre-authorisation)</option>
+                  <option value="ORDER_FINALISED">ORDER_FINALISED (Assign courier when Deliverect reports order finalised)</option>
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Recommended: <code className="text-indigo-600 font-mono">START_PICKING</code> ensures couriers arrive exactly when staff bag the order.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Courier Selection Policy
+                </label>
+                <select
+                  value={dispatchRules.selectionPolicy}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      selectionPolicy: e.target.value as any,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="CUSTOMER_CHOICE">CUSTOMER_CHOICE (Honour customer quote selection from checkout)</option>
+                  <option value="CHEAPEST">CHEAPEST (Automatically assign lowest price quote)</option>
+                  <option value="FASTEST">FASTEST (Automatically assign earliest courier pickup ETA)</option>
+                  <option value="TENANT_PRIORITY">TENANT_PRIORITY (Strictly honour allowed provider priority order)</option>
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  How the best quote is selected when multiple couriers respond to availability requests.
+                </p>
+              </div>
+            </div>
+
+            {/* Dynamic Timing Toggle & Metrics */}
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200/80 space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dispatchRules.dynamicTiming}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      dynamicTiming: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-xs font-bold text-gray-900 block">
+                    Dynamic Picking Time Estimation
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    Calculate courier pickup ETA dynamically from order item count and store picking capacity.
+                  </span>
+                </div>
+              </label>
+
+              {dispatchRules.dynamicTiming && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-200/60">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      Items Picked Per Minute (default: 3)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="20"
+                      value={dispatchRules.itemsPickedPerMinute}
+                      onChange={(e) =>
+                        setDispatchRules({
+                          ...dispatchRules,
+                          itemsPickedPerMinute: Math.max(0.5, parseFloat(e.target.value) || 3),
+                        })
+                      }
+                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      Ready Buffer Minutes (default: 1)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={dispatchRules.readyBufferMinutes}
+                      onChange={(e) =>
+                        setDispatchRules({
+                          ...dispatchRules,
+                          readyBufferMinutes: Math.max(0, parseInt(e.target.value, 10) || 1),
+                        })
+                      }
+                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Pick Preview Card */}
+              <div className="p-3 bg-white rounded-lg border border-indigo-100 text-xs text-indigo-950 space-y-1">
+                <span className="font-bold text-indigo-900 block text-[11px] uppercase tracking-wide">
+                  Live Pick Window Calculation Preview
+                </span>
+                <p className="text-gray-600 text-[11px]">
+                  For a <strong>6-item</strong> customer order:
+                  {' '}
+                  {dispatchRules.dynamicTiming ? (
+                    <>
+                      Picking takes <strong>{(6 / (dispatchRules.itemsPickedPerMinute || 3)).toFixed(1)} minutes</strong> (at {dispatchRules.itemsPickedPerMinute} items/min) + <strong>{dispatchRules.readyBufferMinutes} minute</strong> staging buffer.
+                      Target courier pickup is scheduled for <strong>+{((6 / (dispatchRules.itemsPickedPerMinute || 3)) + Number(dispatchRules.readyBufferMinutes || 1)).toFixed(1)} minutes</strong> after picking begins.
+                    </>
+                  ) : (
+                    <>
+                      Static timing disabled. Courier pickup requested immediately upon trigger event.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Resiliency & Timeout Limits */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Retry Interval (Seconds)
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="300"
+                  value={dispatchRules.retryIntervalSeconds}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      retryIntervalSeconds: Math.max(10, parseInt(e.target.value, 10) || 60),
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-mono"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Default 60s between assignment attempts</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Max Retry Attempts
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={dispatchRules.maxRetryAttempts}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      maxRetryAttempts: Math.max(1, parseInt(e.target.value, 10) || 3),
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-mono"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Attempts before escalating</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Unaccepted Courier Timeout
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={dispatchRules.unacceptedTimeoutMinutes}
+                  onChange={(e) =>
+                    setDispatchRules({
+                      ...dispatchRules,
+                      unacceptedTimeoutMinutes: Math.max(1, parseInt(e.target.value, 10) || 15),
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-mono"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Minutes before pending assignment times out</p>
+              </div>
+            </div>
+
+            {/* Allowed Providers */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-gray-700">
+                Allowed Courier Providers Whitelist
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                {['deliverect-dispatch', 'stuart', 'uber', 'gophr', 'relay', 'demo-dispatch'].map((prov) => {
+                  const isChecked = dispatchRules.allowedProviders.includes(prov);
+                  return (
+                    <label
+                      key={prov}
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer flex items-center justify-between transition-colors ${
+                        isChecked
+                          ? 'border-indigo-600 bg-indigo-50/60 text-indigo-900'
+                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="truncate">{prov}</span>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setDispatchRules({
+                              ...dispatchRules,
+                              allowedProviders: [...dispatchRules.allowedProviders, prov],
+                            });
+                          } else {
+                            setDispatchRules({
+                              ...dispatchRules,
+                              allowedProviders: dispatchRules.allowedProviders.filter((p) => p !== prov),
+                            });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      {isChecked && <Check className="w-3.5 h-3.5 text-indigo-600 ml-1 shrink-0" />}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Only quotes from these selected courier networks will be requested and eligible for dispatch.
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-end">
+              <button
+                type="submit"
+                disabled={dispatchSaving}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-xs disabled:opacity-50"
+              >
+                {dispatchSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
+                <span>{dispatchSaving ? 'Saving Rules...' : 'Save Dispatch Rules'}</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {activeTab === 'product' && (
       <div className="grid grid-cols-1 gap-4">
         {rules.map((r) => (
           <div
@@ -183,6 +533,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           </div>
         ))}
       </div>
+      )}
 
       {/* EDIT MODAL */}
       {editingRule && (

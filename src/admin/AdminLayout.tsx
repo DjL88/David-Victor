@@ -22,6 +22,7 @@ import { DomainsScreen } from './screens/DomainsScreen';
 import { NotificationsAdminScreen } from './screens/NotificationsAdminScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
+import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
 import { BwydiLogo } from '../components/BwydiLogo';
 const bwydiFullLogo = '/bwydi-green.png';
@@ -50,11 +51,13 @@ import {
   ChevronRight,
   Building2,
   Sparkles,
+  Activity,
 } from 'lucide-react';
 
 export type AdminTab =
   | 'brands'
   | 'memberships'
+  | 'connection_health'
   | 'catalog'
   | 'integrations'
   | 'insights'
@@ -198,6 +201,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     {
       title: 'Technical Settings',
       items: [
+        { id: 'connection_health', label: 'Connection Health', icon: Activity, badge: 'Live' },
         { id: 'integrations', label: 'POS & API Sync', icon: Link2 },
         { id: 'domains', label: 'Domains & Routing', icon: Globe },
         { id: 'notifications', label: 'Notifications & Live', icon: Bell },
@@ -346,6 +350,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               />
             )}
             {activeTab === 'catalog' && <CatalogAdminScreen tenantId={currentTenantId} />}
+            {activeTab === 'connection_health' && <ConnectionHealthScreen tenantId={currentTenantId} />}
             {activeTab === 'integrations' && <IntegrationsAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'insights' && <InsightsScreen tenantId={currentTenantId} />}
             {activeTab === 'branding' && (

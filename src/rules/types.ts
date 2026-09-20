@@ -95,6 +95,13 @@ export interface RuleActions {
   /** Visual badge text to render on product card (e.g. "18+", "Limit 2") */
   badge?: string;
 
+  /** Exclude matching products from all basket and campaign discounts */
+  excludeFromDiscounts?: boolean;
+
+  /** Exclude matching products from story and carousel placements */
+  preventStoryPlacement?: boolean;
+  preventCarouselPlacement?: boolean;
+
   /** Explicit requirement to render allergens prominently */
   requiresAllergenDisplay?: boolean;
 }
@@ -172,6 +179,10 @@ export interface ProductRuleDecision {
   /** Whether allergen section must be displayed */
   requiresAllergenDisplay: boolean;
 
+  discountEligible: boolean;
+  preventStoryPlacement: boolean;
+  preventCarouselPlacement: boolean;
+
   /** List of rule IDs that matched this product */
   appliedRuleIds: string[];
 
@@ -241,3 +252,39 @@ export interface StoreSwitchReconciliation {
     reason: string;
   }>;
 }
+
+// ==========================================
+// DISPATCH & COURIER ORCHESTRATION RULES
+// ==========================================
+
+export type DispatchAssignmentEvent = 'START_PICKING' | 'CHECKOUT_PAID' | 'ORDER_FINALISED';
+export type CourierSelectionPolicy = 'CUSTOMER_CHOICE' | 'CHEAPEST' | 'FASTEST' | 'TENANT_PRIORITY';
+
+export interface TenantDispatchRules {
+  assignmentEvent: DispatchAssignmentEvent;
+  dynamicTiming: boolean;
+  itemsPickedPerMinute: number; // default 3
+  readyBufferMinutes: number; // default 1
+  retryIntervalSeconds: number; // default 60
+  maxRetryAttempts: number; // default 3
+  unacceptedTimeoutMinutes: number; // default 15
+  selectionPolicy: CourierSelectionPolicy;
+  allowedProviders?: string[];
+  tenantPriorityOrder?: string[];
+  courierTransitMinutes?: number;
+  minimumPickupLeadMinutes?: number;
+  defaultLeadTimeMinutes?: number;
+}
+
+export const DEFAULT_DISPATCH_RULES: TenantDispatchRules = {
+  assignmentEvent: 'START_PICKING',
+  dynamicTiming: true,
+  itemsPickedPerMinute: 3,
+  readyBufferMinutes: 1,
+  retryIntervalSeconds: 60,
+  maxRetryAttempts: 3,
+  unacceptedTimeoutMinutes: 15,
+  selectionPolicy: 'CUSTOMER_CHOICE',
+  allowedProviders: ['deliverect-dispatch', 'just-eat', 'stuart', 'uber'],
+  tenantPriorityOrder: ['deliverect-dispatch', 'just-eat', 'stuart', 'uber'],
+};

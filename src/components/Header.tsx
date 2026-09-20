@@ -140,32 +140,39 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* Delivery / Pickup Toggle */}
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-xl text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => onFulfillmentChange('delivery')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                fulfillmentType === 'delivery'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <Truck className="w-3 h-3" />
-              <span>Delivery</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onFulfillmentChange('pickup')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                fulfillmentType === 'pickup'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <Package className="w-3 h-3" />
-              <span>Collect</span>
-            </button>
-          </div>
+          {tenant?.featureFlags?.enableCollection !== false ? (
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => onFulfillmentChange('delivery')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  fulfillmentType === 'delivery'
+                    ? 'bg-white text-gray-900 shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Truck className="w-3 h-3" />
+                <span>Delivery</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onFulfillmentChange('pickup')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  fulfillmentType === 'pickup'
+                    ? 'bg-white text-gray-900 shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Package className="w-3 h-3" />
+                <span>Collect</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center bg-gray-100 px-2.5 py-1 rounded-xl text-xs font-bold text-gray-700">
+              <Truck className="w-3 h-3 mr-1 text-gray-600" />
+              <span>Delivery Only</span>
+            </div>
+          )}
         </div>
 
         {/* Right Actions: Account Menu + Basket */}

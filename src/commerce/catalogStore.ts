@@ -13,6 +13,7 @@
 import { Product, Category, StoreProductAvailability, moneyToMajor } from './models';
 import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mockData';
 import { MARKET_LANE_STORE_AVAILABILITY } from './marketLaneData';
+import { isDemoMode } from '../domain/runtime';
 
 const STORAGE_KEY_PRODUCTS = 'deliverect_commerce_real_products';
 const STORAGE_KEY_CATEGORIES = 'deliverect_commerce_real_categories';
@@ -63,7 +64,7 @@ export class CatalogueProjectionCache {
   private loadFromStorage() {
     try {
       if (typeof window === 'undefined' || !window.localStorage) {
-        this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS));
+        this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS)).filter((p: Product) => !p.plu?.includes('#'));
         this.categories = JSON.parse(JSON.stringify(MOCK_CATEGORIES));
         this.storeAvailability = JSON.parse(JSON.stringify(MARKET_LANE_STORE_AVAILABILITY));
         return;
@@ -71,12 +72,12 @@ export class CatalogueProjectionCache {
 
       const storedProducts = window.localStorage.getItem(STORAGE_KEY_PRODUCTS);
       if (storedProducts) {
-        const parsed: Product[] = JSON.parse(storedProducts);
+        const parsed: Product[] = JSON.parse(storedProducts).filter((p: Product) => !p.plu?.includes('#'));
         const existingPluSet = new Set(parsed.map((p) => p.plu));
-        const missingCore = MOCK_PRODUCTS.filter((p) => !existingPluSet.has(p.plu));
+        const missingCore = MOCK_PRODUCTS.filter((p) => !p.plu?.includes('#') && !existingPluSet.has(p.plu));
         this.products = missingCore.length > 0 && parsed.length > 0 ? [...parsed, ...missingCore] : parsed;
       } else {
-        this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS));
+        this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS)).filter((p: Product) => !p.plu?.includes('#'));
       }
 
       const storedCategories = window.localStorage.getItem(STORAGE_KEY_CATEGORIES);
@@ -135,14 +136,23 @@ export class CatalogueProjectionCache {
   }
 
   public getProducts(): Product[] {
+    if (!isDemoMode()) {
+      return [];
+    }
     return [...this.products];
   }
 
   public getProductByPlu(plu: string): Product | undefined {
+    if (!isDemoMode()) {
+      return undefined;
+    }
     return this.products.find((p) => p.plu === plu);
   }
 
   public getCategories(): Category[] {
+    if (!isDemoMode()) {
+      return [];
+    }
     return [...this.categories];
   }
 
@@ -156,6 +166,9 @@ export class CatalogueProjectionCache {
   }
 
   public addProduct(product: Product) {
+    if (product.plu?.includes('#')) {
+      return;
+    }
     const existingIndex = this.products.findIndex((p) => p.plu === product.plu);
     if (existingIndex >= 0) {
       this.products[existingIndex] = product;
@@ -166,6 +179,9 @@ export class CatalogueProjectionCache {
   }
 
   public updateProduct(plu: string, updates: Partial<Product>) {
+    if (plu.includes('#')) {
+      return;
+    }
     const idx = this.products.findIndex((p) => p.plu === plu);
     if (idx >= 0) {
       this.products[idx] = { ...this.products[idx], ...updates };
@@ -179,7 +195,7 @@ export class CatalogueProjectionCache {
   }
 
   public bulkReplaceProducts(newProducts: Product[]) {
-    this.products = newProducts;
+    this.products = newProducts.filter((p) => !p.plu?.includes('#'));
     this.saveToStorage();
   }
 
@@ -189,13 +205,16 @@ export class CatalogueProjectionCache {
   }
 
   public resetToDefaultDemo() {
-    this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS));
+    this.products = JSON.parse(JSON.stringify(MOCK_PRODUCTS)).filter((p: Product) => !p.plu?.includes('#'));
     this.categories = JSON.parse(JSON.stringify(MOCK_CATEGORIES));
     this.storeAvailability = JSON.parse(JSON.stringify(MARKET_LANE_STORE_AVAILABILITY));
     this.saveToStorage();
   }
 
   public getStoreAvailability(storeId: string): Record<string, StoreProductAvailability> {
+    if (!isDemoMode()) {
+      return {};
+    }
     const norm = normalizeStoreId(storeId);
     if (!this.storeAvailability[norm]) {
       this.storeAvailability[norm] = {};
@@ -204,6 +223,9 @@ export class CatalogueProjectionCache {
   }
 
   public getProductAvailability(storeId: string, plu: string): StoreProductAvailability | undefined {
+    if (!isDemoMode()) {
+      return undefined;
+    }
     const norm = normalizeStoreId(storeId);
     const storeMap = this.storeAvailability[norm];
     if (storeMap && storeMap[plu]) {

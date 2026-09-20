@@ -585,6 +585,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isOpen={isAislesModalOpen}
         onClose={() => setIsAislesModalOpen(false)}
         categories={catalog?.categories || []}
+        products={products}
         selectedCategoryId={selectedCategoryId}
         onSelectCategory={(catId) => {
           navigateToCategory(catId);

@@ -11,46 +11,216 @@
   ],
   "locations": [
     {
-      "physicalLocationId": "loc_undefined",
+      "physicalLocationId": "loc_68518012a666af2e7849bf04",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
-      "statusProjection": "ACTIVE"
+      "deliverectLocationId": "68518012a666af2e7849bf04",
+      "name": "Victor's Vapes",
+      "statusProjection": "ACTIVE",
+      "services": [
+        {
+          "id": "68518012a666af2e7849bf08",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae58da8596ac8a7730c048",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ]
     },
     {
-      "physicalLocationId": "loc_undefined",
+      "physicalLocationId": "loc_68518030d3bc95d3b96579d5",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
-      "statusProjection": "ACTIVE"
+      "deliverectLocationId": "68518030d3bc95d3b96579d5",
+      "name": "Ewan's Corner Shop",
+      "statusProjection": "ACTIVE",
+      "services": [
+        {
+          "id": "68518031d3bc95d3b96579d8",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae5c418596ac8a7730c052",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ]
     },
     {
-      "physicalLocationId": "loc_undefined",
+      "physicalLocationId": "loc_685180551c3ddaa7f6d02a71",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
-      "statusProjection": "ACTIVE"
+      "deliverectLocationId": "685180551c3ddaa7f6d02a71",
+      "name": "Joe's Juice Bar",
+      "statusProjection": "ACTIVE",
+      "services": [
+        {
+          "id": "685180561c3ddaa7f6d02a74",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae5c0885ccd3ab9ac0adec",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ]
     },
     {
-      "physicalLocationId": "loc_undefined",
+      "physicalLocationId": "loc_685180831c3ddaa7f6d02a8f",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
-      "statusProjection": "ACTIVE"
+      "deliverectLocationId": "685180831c3ddaa7f6d02a8f",
+      "name": "Dave's Deli 1",
+      "addressProjection": {
+        "street": "Bradnor View Close",
+        "city": "Kington",
+        "postcode": "HR5 3UA"
+      },
+      "statusProjection": "ACTIVE",
+      "phone": "+447923171553",
+      "email": "dleitch22@gmail.com",
+      "services": [
+        {
+          "id": "685180831c3ddaa7f6d02a92",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "685180983fdf8a9ec76d87c6",
+          "name": "Deliveroo Retail",
+          "channel": 6002,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "685180a43c7cf393e8fd37cf",
+          "name": "Uber Eats Retail",
+          "channel": 6007,
+          "url": "https://www.ubereats.com/store/asda-express-ballymena/",
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aadaa0cb3aef90f42ab345d",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ]
     }
   ],
   "stores": [
     {
+      "commerceStoreId": "cstore_6aae58da8596ac8a7730c048",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "physicalLocationId": "loc_68518012a666af2e7849bf04",
+      "channelLinkId": "6aae58da8596ac8a7730c048",
+      "name": "Victor's Vapes",
+      "stateProjection": "closed",
+      "openingHours": {
+        "timezone": "Europe/London",
+        "dayTimeRanges": [],
+        "specialHours": []
+      },
+      "services": [
+        {
+          "id": "68518012a666af2e7849bf08",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae58da8596ac8a7730c048",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ],
+      "currency": "EUR",
+      "status": "closed",
+      "lastSeenAt": "2026-09-20T10:59:35.913Z"
+    },
+    {
+      "commerceStoreId": "cstore_6aae5c418596ac8a7730c052",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "physicalLocationId": "loc_68518030d3bc95d3b96579d5",
+      "channelLinkId": "6aae5c418596ac8a7730c052",
+      "name": "Ewan's Corner Shop",
+      "stateProjection": "closed",
+      "openingHours": {
+        "timezone": "Europe/London",
+        "dayTimeRanges": [],
+        "specialHours": []
+      },
+      "services": [
+        {
+          "id": "68518031d3bc95d3b96579d8",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae5c418596ac8a7730c052",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ],
+      "currency": "EUR",
+      "status": "closed",
+      "lastSeenAt": "2026-09-20T10:59:35.913Z"
+    },
+    {
+      "commerceStoreId": "cstore_6aae5c0885ccd3ab9ac0adec",
+      "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
+      "physicalLocationId": "loc_685180551c3ddaa7f6d02a71",
+      "channelLinkId": "6aae5c0885ccd3ab9ac0adec",
+      "name": "Joe's Juice Bar",
+      "stateProjection": "closed",
+      "openingHours": {
+        "timezone": "Europe/London",
+        "dayTimeRanges": [],
+        "specialHours": []
+      },
+      "services": [
+        {
+          "id": "685180561c3ddaa7f6d02a74",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aae5c0885ccd3ab9ac0adec",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ],
+      "currency": "EUR",
+      "status": "closed",
+      "lastSeenAt": "2026-09-20T10:59:35.913Z"
+    },
+    {
       "commerceStoreId": "cstore_6aadaa0cb3aef90f42ab345d",
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
-      "physicalLocationId": null,
+      "physicalLocationId": "loc_685180831c3ddaa7f6d02a8f",
       "channelLinkId": "6aadaa0cb3aef90f42ab345d",
       "name": "Dave's Delicatessen",
       "stateProjection": "open",
-      "address": {
-        "line1": "High Street",
-        "street": "High Street",
-        "city": "Kington",
-        "postcode": "HR5 3UA",
-        "postalCode": "HR5 3UA",
-        "country": "GB",
-        "formattedAddress": "High Street, Kington, HR5 3UA, GB"
-      },
       "coordinates": {
-        "latitude": 52.205398,
-        "longitude": -3.034417
+        "latitude": 52.2056289,
+        "longitude": -3.0350248
+      },
+      "address": {
+        "street": "24 Bradnor View Close HR5 3UA Kington",
+        "city": "Kington",
+        "postcode": "HR5 3UA"
       },
       "openingHours": {
         "timezone": "Europe/London",
@@ -93,10 +263,43 @@
         ],
         "specialHours": []
       },
+      "phone": "+447923171553",
+      "email": "dleitch22@gmail.com",
+      "services": [
+        {
+          "id": "685180831c3ddaa7f6d02a92",
+          "name": "Test channel",
+          "channel": 1,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "685180983fdf8a9ec76d87c6",
+          "name": "Deliveroo Retail",
+          "channel": 6002,
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "685180a43c7cf393e8fd37cf",
+          "name": "Uber Eats Retail",
+          "channel": 6007,
+          "url": "https://www.ubereats.com/store/asda-express-ballymena/",
+          "source": "DELIVERECT"
+        },
+        {
+          "id": "6aadaa0cb3aef90f42ab345d",
+          "name": "Generic Commerce",
+          "channel": 20000,
+          "source": "DELIVERECT"
+        }
+      ],
       "currency": "EUR",
       "status": "open",
-      "lastSeenAt": "2026-09-19T06:00:35.168Z"
+      "lastSeenAt": "2026-09-20T10:59:35.913Z"
     }
   ],
-  "syncedAt": "2026-09-19T06:00:35.118Z"
+  "syncedAt": "2026-09-20T10:59:35.914Z",
+  "status": "DISCOVERY_SUCCEEDED_PERSISTENCE_FAILED",
+  "persistenceStatus": "FAILED",
+  "persistenceCode": "DATABASE_PERMISSION_DENIED",
+  "persistenceError": "Firestore database is not initialized or IAM permissions are missing."
 }

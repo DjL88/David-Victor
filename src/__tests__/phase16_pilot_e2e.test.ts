@@ -2,9 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { PilotValidationRunner } from '../../server/pilot/PilotValidationRunner';
 import { MetricsService } from '../../server/metricsService';
 import { circuitBreakers } from '../../server/circuitBreaker';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 
 describe('Phase 16: Pilot Execution & Live Staging Dry Run', () => {
   beforeEach(() => {
+    process.env.APP_MODE = 'demo';
+    setServerRuntimeMode('demo');
     MetricsService.reset();
   });
 

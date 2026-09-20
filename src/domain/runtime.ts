@@ -34,7 +34,14 @@ export function isMockPermitted(): boolean {
 }
 
 export function isDemoMode(): boolean {
-  return (process.env.APP_MODE || '').toLowerCase() === 'demo' || activeRuntimeMode === 'DEMO';
+  if (activeRuntimeMode !== 'UNKNOWN') {
+    return activeRuntimeMode === 'DEMO';
+  }
+  const env = (process.env.APP_MODE || '').toLowerCase();
+  if (env) {
+    return env === 'demo';
+  }
+  return false;
 }
 
 export function assertNoMockAllowed(operation: string): void {
@@ -61,9 +68,6 @@ export function resolveServerRuntimeMode(): RuntimeMode {
   if (envMode) {
     return parseRuntimeMode(envMode);
   }
-  // Default on server when APP_MODE is not explicitly set is UNKNOWN or DEMO in dev
-  if (process.env.NODE_ENV === 'production') {
-    return 'PRODUCTION';
-  }
-  return 'DEMO';
+  // Missing or invalid runtime configuration must fail closed to UNKNOWN
+  return 'UNKNOWN';
 }

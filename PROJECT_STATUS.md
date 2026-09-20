@@ -88,7 +88,21 @@ The platform is now connected directly to the live Deliverect Staging environmen
    - **All-Shops Pricing & Store Count Resolution**:
      - Audited and corrected pricing calculations across pre-store aggregate browsing: eliminated an artificial 5% markup on Moulsham stores, aligned store overrides, and guarded against including closed or snoozed stores in pricing bounds.
      - Updated `ProductCard` and `ProductDetailModal` to present clean single prices (or "From £X.XX" where legitimate variance exists) and accurate store availability counts (e.g. "Available at all 8 shops" or "Available at X of 8 shops").
-11. **GLOBAL 100% SCREEN WIDTH LOCK, OVERFLOW-X ELIMINATION & MOBILE SCROLLBAR HIDING (Completed)**:
+11. **PHYSICAL LOCATION CORRELATION & DISK PERSISTENCE RESILIENCE (Resolved & Verified)**:
+    - **Deliverect Location Resolution**: Handled Deliverect Eve payload nuances where `rawAcc.locations` returns an array of location IDs (e.g. `["68518..."]`) rather than populated objects; ensured `fetchLocationsForAccount` is invoked to retrieve full location records (`_id`, name, address, coordinates).
+    - **Sanitized `physicalLocationId` Normalization**: Hardened `normalizeDeliverectPayload` and `getCommerceStores` to construct `physicalLocationId` only from valid non-undefined location IDs (`rawLoc._id || rawLoc.id`), eliminating `loc_undefined` corruption.
+    - **Safe Store-to-Location Correlation**: Commerce stores correlate with their physical locations via `channelLocations` map populated from fresh locations and existing channel links, gracefully preserving addresses and coordinates without guessing IDs.
+    - **Disk Snapshot Fallback & Sanitization**: Strengthened disk persistence in `LinkedAccountsAdapter` so that synchronization results are recorded to `.data/tenant_mappings_{tenantId}.json` even when Firestore returns `PERMISSION_DENIED`, and legacy `loc_undefined` records are filtered during disk restore.
+    - **Staging Verification**: Successfully ran upstream synchronization against live staging Deliverect: all 4 accounts, 4 physical locations, and 4 commerce stores are correlated with valid IDs.
+12. **STRICT TENANT RESOLUTION & ADMIN CONTROLS AUDIT (Completed)**:
+   - **Strict Tenant Resolution (No Implicit Fallbacks)**: Completely eliminated live fallbacks to `brand-alpha` or `MOCK_TENANTS` when domain resolution fails or Firestore is unreachable. Unknown hostnames return 404 `TENANT_NOT_FOUND` / null rather than quietly masquerading as brand-alpha.
+   - **Authorized Overrides Only**: Unauthenticated public callers are strictly forbidden from passing `x-tenant-id` headers or `?tenantId=` query parameters to switch tenants. Preview tenant selection requires an explicit `x-preview-auth-token`, while authenticated admins are strictly locked to their assigned tenant boundary (enforcing RBAC Rule 27: Tenant A admin cannot access Tenant B).
+   - **Admin Controls Audit & Persistence**:
+     - Audited all admin screens: Logo, Colours, Fonts, Navigation/Feature Flags, Stories, and Hero Banners persist authoritatively to BFF endpoints and Firestore, survive page reloads, and update the intended storefront components.
+     - Merchandising and Search Synonyms/Typo Rules connected to BFF `/api/v1/admin/tenants/:id/search-config` with end-to-end reload verification.
+     - CMS Pages screen explicitly disabled with an honest "Not Connected" banner to prevent false success feedback without backend support.
+   - **Comprehensive Automated Test Coverage**: All 29 Vitest test suites (271 tests) passing 100% green, including security tests for forged tenant headers, unknown domains, and database connection failures.
+13. **GLOBAL 100% SCREEN WIDTH LOCK, OVERFLOW-X ELIMINATION & MOBILE SCROLLBAR HIDING (Completed)**:
    - **Global Width Lock**:
      - Enforced strict `w-full max-w-full overflow-x-hidden` on `html`, `body`, `#root`, and `#app-root-layout`, guaranteeing zero unwanted horizontal scrolling across the entire application on all viewports, especially mobile.
      - Locked main content containers, `HomeScreen`, `CategoryNav`, and `Header` to `w-full max-w-full overflow-x-hidden`.
@@ -100,6 +114,22 @@ The platform is now connected directly to the live Deliverect Staging environmen
      - Applied `.no-scrollbar` cross-browser utilities to all swipeable horizontal tracks so in-page carousels remain fully touch-scrollable without exposing visible scrollbars.
    - **Modal & Backdrop Overflow Guard**:
      - Applied `overflow-x-hidden` to all backdrop and card wrappers across `CartDrawerModal`, `CheckoutModal`, `StorePickerModal`, `ProductDetailModal`, `MealDealDialog`, and `StoryViewerModal`, preventing modal entrance animations from triggering viewport overflow.
+13. **FULL TEST SUITE PASSING 100% GREEN (29/29 Test Files, 271/271 Tests Passing)**:
+    - **Adapter Runtime Mode Isolation**: Keyed all adapter instances (`deliverectAdapters`, `dPayAdapters`, `dispatchAdapters`) by `${tenantId}:${environment}:${deliverectAccountId}:${appMode}` to prevent runtime mode leakage between demo and staging test contexts.
+    - **Firestore Test Resilience**: Enhanced `server/firestoreService.ts` in-memory fallback checks to verify `isTestMode()` (`NODE_ENV === 'test' || VITEST === 'true'`), preventing `DATABASE_UNAVAILABLE` errors when individual tests set staging/production mode.
+    - **Commerce Discovery Isolation**: Guaranteed `DemoDispatchAdapter` is selected when `effectiveMode === 'demo'` in `CommerceDiscoveryService.ts`, and ensured test state resets in `beforeEach` (`process.env.APP_MODE = 'demo'`, `setServerRuntimeMode('demo')`, `setRuntimeMode('DEMO')`).
+    - **Clean Compilation & Linting**: Verified zero TypeScript or lint errors with `tsc --noEmit` and full applet compilation. All 29 Vitest suites pass cleanly with 271 tests green.
+14. **RENDER FAILURE / WHITE SCREEN RESTORATION (Investigated & Fixed)**:
+    - **Root Cause**: The application suffered a white screen crash due to unresolvable identifier references across three key storefront components:
+      - `src/components/ProductCard.tsx`: `moneyToMajor` was referenced but omitted from named imports.
+      - `src/components/deals/MealDealDialog.tsx`: Attempted to invoke undefined `formatPounds(deal.dealPrice)` instead of `formatCurrency`.
+      - `src/features/product/ProductDetailModal.tsx`: Called undefined `toMajorPrice` and omitted `moneyToMajor` from named imports.
+    - **Surgical Fixes**:
+      - `src/components/ProductCard.tsx`: Added `moneyToMajor` to named imports from `../commerce/models`.
+      - `src/components/deals/MealDealDialog.tsx`: Replaced `formatPounds` with canonical `formatCurrency`.
+      - `src/features/product/ProductDetailModal.tsx`: Imported `moneyToMajor` and converted minimum/maximum price calculations using `moneyToMajor`.
+      - Corrected TypeScript type annotations for `requestedChannelLinkIds` in `server/api/v1Router.ts` and `cl.status` mapping in `server/deliverect/LinkedAccountsAdapter.ts`.
+    - **Verification**: `lint_applet` (`tsc --noEmit`) and `compile_applet` both succeeded with 0 errors. All test suites pass. Storefront rendering is restored.
 
 ### A. DOMAIN / SIMULATION LAYER (Substantially Complete & Verified)
 - **Phase 0 (Audit & Preservation):** Preserved existing high-quality React 19 / Vite / Tailwind UI, 17+ Admin screens, Express Cloud Run BFF, and comprehensive Vitest test suite.
@@ -370,6 +400,34 @@ The platform is now connected directly to the live Deliverect Staging environmen
   - **Menu Fetch Resilience**: Hardened `getStoreCatalog` in `DeliverectApiClient.ts` with fallback route resolution and store `physicalLocationId` mapping to prevent 404s when store-specific menu endpoints differ.
   - **Combo & Bundle Pricing / Formatting**: Fixed bundle pricing minor unit formatting (£5.00 instead of £500), changed currency display to standard "£", renamed combo badge to clean "Combo Deal", removed extraneous icons, and ensured auto-applied modifier items (e.g. drinks) are correctly pre-ticked.
   - **Home Screen "Shop our range" & Pagination**: Replaced "Popular Near You" with "Shop our range" in `HomeScreen.tsx`, implementing 25-item pagination with a "Load more products" button that automatically resets on filter or category changes.
+
+- **Connection Health & 5-Stage Request Tracing View (Completed & Verified)**:
+  - **Compact Admin-Only Health Dashboard**: Created a dedicated `ConnectionHealthScreen` in the Admin console (`AdminLayout` tab `connection_health`) reporting live connection and catalog metrics:
+    - Runtime Mode: `staging` / `demo` / `production`
+    - Resolved Tenant & Hostname: `brand-alpha` (`brand-alpha.bwydi.co.uk`)
+    - Deliverect Account: `68517fde1c3ddaa7f6d0275c` ("DELIVERECT-TEST / Daves Deli") on `staging`
+    - Physical Location Count: 4 physical locations mapped
+    - Commerce Store / Channel-Link Count: 4 active stores
+    - Chosen Menus: Root Menu and Store Menu ("Market Lane" - `6aad703bb3aef90f42ab33d6`)
+    - Product Counts: Raw upstream products: 57, BFF parsed products: 56, Renderable products: 56
+    - Last Successful Sync: ISO timestamp tracked live
+    - Security Guarantee: Zero client secrets, bearer tokens, or customer PII exposed in telemetry
+  - **5-Stage End-to-End Request Tracing**:
+    - Traces a real request through: `Upstream Response` -> `BFF Normalization` -> `HTTP Client Transport` -> `React Hook State (useCatalog)` -> `Visible Storefront Cards`.
+    - Captures stage-by-stage counts, latencies, HTTP statuses, and breakdown of active vs inactive vs snoozed vs rule-filtered items.
+    - Eliminates false positives: Never reports success for an HTTP 200 response when zero renderable cards can be displayed.
+  - **Explicit Error & Anomaly Differentiation**:
+    - Accurately identifies and isolates:
+      1. `NOT_CONFIGURED` (Missing client ID or client secret)
+      2. `PERMISSION_DENIED` (OAuth token rejection or insufficient scope - HTTP 403)
+      3. `UPSTREAM_ERROR` (Bad Gateway / 502 / Upstream timeout)
+      4. `EMPTY_VALID_RESPONSE` (HTTP 200 returned with empty product array)
+      5. `UNMAPPED_LOCATION` (Store channel link not mapped to physical location)
+      6. `RENDER_FILTERED` (Items returned by upstream but dropped by availability/snooze rules)
+  - **Automated Verification Test Suite**:
+    - Added comprehensive unit and integration suite in `src/__tests__/connection_health_and_tracing.test.ts` testing all 8 scenarios (healthy real trace + 6 forced failure types + health data verification). All 8 tests passing cleanly.
+  - **Full Build & Type Safety**:
+    - Zero TypeScript errors in `tsc --noEmit` and clean build in `compile_applet`.
 
 ---
 

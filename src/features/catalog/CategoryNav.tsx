@@ -160,7 +160,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               type="button"
               id="filter-allergens-dietary-btn"
               onClick={onOpenFiltersModal}
-              className={`relative p-2 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs ${
+              className={`relative z-20 overflow-visible w-9 h-9 p-0 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs flex items-center justify-center ${
                 activeFiltersCount > 0 || filterState?.onlyFavourites
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-400/20'
                   : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700 active:scale-95'
@@ -170,7 +170,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-gray-700" />
               {(activeFiltersCount > 0 || (filterState?.onlyFavourites && 1)) && (
-                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                <span className="absolute z-30 -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
                   {activeFiltersCount + (filterState?.onlyFavourites ? 1 : 0)}
                 </span>
               )}

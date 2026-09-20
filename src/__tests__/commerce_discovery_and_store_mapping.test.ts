@@ -8,6 +8,8 @@ import {
 } from '../../server/deliverect/CommerceDiscoveryService';
 import { DemoDiscoveryDataProvider } from '../../server/deliverect/DemoDiscoveryDataProvider';
 import { IntegrationUnavailableAdapter } from '../../server/deliverect/IntegrationUnavailableAdapter';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { setRuntimeMode } from '../domain/runtime';
 import {
   Store,
   Coordinates,
@@ -19,6 +21,9 @@ describe('Phase 7: Commerce Discovery & Store Mapping', () => {
   const centralCoords: Coordinates = { latitude: 51.5074, longitude: -0.1278 }; // Central London
 
   beforeEach(() => {
+    process.env.APP_MODE = 'demo';
+    setServerRuntimeMode('demo');
+    setRuntimeMode('DEMO');
     CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
     discoveryService = CommerceDiscoveryService.getInstance();
     discoveryService.clearCache();

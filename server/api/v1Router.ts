@@ -1,10 +1,12 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { getDeliverectAdapter, getDispatchAdapter, PaymentService } from '../deliverect';
+import { getDeliverectAdapterAsync, getDispatchAdapter, PaymentService, DispatchOrchestrationService } from '../deliverect';
 import { setStoreOverride } from '../deliverect/DeliverectApiClient';
 import { CommerceDiscoveryService } from '../deliverect/CommerceDiscoveryService';
 import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
+import { connectionHealthService } from '../deliverect/ConnectionHealthService';
 import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
+import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { FirestorePlatformService, FirestoreService } from '../firestoreService';
 import { getFirestoreDb, getFirebaseStorage, getFirebaseAuth, getFirebaseAdminAuth, verifyAdminSession, verifyAdminSessionWithStatus, AuthenticatedAdmin } from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
@@ -27,7 +29,7 @@ import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLi
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { validateBody } from './validation';
 
-if (isDemoMode() || isTestMode()) {
+if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
 }
 import {
@@ -56,6 +58,10 @@ import {
   CalculateCeilingSchema,
   CheckoutBasketSchema,
   ValidateDispatchSchema,
+  GetDispatchQuotesSchema,
+  AssignDispatchSchema,
+  CancelDispatchSchema,
+  UpdateTenantDispatchRulesSchema,
   CreateTenantSchema,
   UpdateTenantConfigSchema,
   UpdateFeePolicySchema,
@@ -110,52 +116,52 @@ export function resolveTenant(req: Request): string {
   if ((req as any).resolvedTenantId) {
     return (req as any).resolvedTenantId;
   }
-  const isTestOrDemo = isDemoMode() || isTestMode();
-  const override = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
   const authAdmin = (req as any).adminUser;
+  const isSuperAdmin = authAdmin?.role === 'platformSuperAdmin';
+  const requestedOverride = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
+  const authorizedPreviewToken = req.headers['x-preview-auth-token'] as string;
+  const isAuthorizedPreview =
+    Boolean(authorizedPreviewToken && process.env.PREVIEW_AUTH_TOKEN && authorizedPreviewToken === process.env.PREVIEW_AUTH_TOKEN);
 
-  // In production/staging, only authenticated platform super admins can override tenant ID
-  if (authAdmin?.role === 'platformSuperAdmin' && override) {
-    return override;
-  }
-  if (isTestOrDemo && override) {
-    return override;
-  }
-  if (authAdmin?.tenantId) {
+  // 1. Authenticated tenant admin is strictly locked to their assigned tenant (Tenant A cannot access Tenant B)
+  if (authAdmin && !isSuperAdmin && authAdmin.tenantId) {
     return authAdmin.tenantId;
   }
+
+  // 2. Authorized mechanism: Platform Super Admin or Authorized Preview Token
+  if ((isSuperAdmin || isAuthorizedPreview) && requestedOverride) {
+    return requestedOverride;
+  }
+
+  // 3. In test mode, allow test suites to target specific tenants (unless simulating public request)
+  if (isTestMode() && requestedOverride && !(req as any).simulatePublicRequest) {
+    return requestedOverride;
+  }
+
+  // 4. Admin routes fallback
   if (req.path?.startsWith('/admin')) {
-    if (isTestOrDemo) return override || 'brand-alpha';
-    throw new BFFError('TENANT_NOT_FOUND', 'Tenant not found for admin request.', 404);
-  }
-
-  const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
-
-  const isContainerOrPreviewHost =
-    host.endsWith('.run.app') ||
-    host.endsWith('.google.com') ||
-    host.endsWith('.googleusercontent.com') ||
-    host.endsWith('.ai.studio') ||
-    host === 'localhost' ||
-    host === '127.0.0.1';
-
-  if (isContainerOrPreviewHost) {
-    return override || 'brand-alpha';
-  }
-
-  if (isTestOrDemo) {
-    const hostParts = host.split('.');
-    if (hostParts.length > 2 && !['www', 'localhost', 'run', 'app'].includes(hostParts[0])) {
-      const candidateSlug = hostParts[0].toLowerCase();
-      if (candidateSlug.startsWith('brand-') || candidateSlug === 'marketlane') {
-        return candidateSlug;
-      }
-    }
-    if (host.includes('brand-beta')) return 'brand-beta';
-    if (host.includes('brand-alpha') || host.includes('marketlane')) return 'brand-alpha';
+    if (requestedOverride) return requestedOverride;
+    if (authAdmin?.tenantId) return authAdmin.tenantId;
     return 'brand-alpha';
   }
 
+  // 5. Server environment variable for authorized preview tenant
+  if (process.env.PREVIEW_TENANT_ID) {
+    const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
+    const isContainerOrPreviewHost =
+      host.endsWith('.run.app') ||
+      host.endsWith('.google.com') ||
+      host.endsWith('.googleusercontent.com') ||
+      host.endsWith('.ai.studio') ||
+      host.includes('aistudio') ||
+      host === 'localhost' ||
+      host === '127.0.0.1';
+    if (isContainerOrPreviewHost) {
+      return process.env.PREVIEW_TENANT_ID;
+    }
+  }
+
+  const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
   throw new BFFError('TENANT_NOT_FOUND', `Tenant not found for domain "${host}".`, 404);
 }
 
@@ -212,29 +218,41 @@ v1Router.use(async (req: Request, res: Response, next) => {
       return next();
     }
 
-    const isTestOrDemo = isDemoMode() || isTestMode();
-
-    // In demo or test mode, resolve demo tenant immediately before any Firestore lookup
-    if (isTestOrDemo) {
-      const override = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-      (req as any).resolvedTenantId = override || 'brand-alpha';
-      return next();
-    }
-
     const authAdmin = (req as any).adminUser;
     const isSuperAdmin = authAdmin?.role === 'platformSuperAdmin';
     const requestedOverride = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
+    const authorizedPreviewToken = req.headers['x-preview-auth-token'] as string;
+    const isAuthorizedPreview =
+      Boolean(authorizedPreviewToken && process.env.PREVIEW_AUTH_TOKEN && authorizedPreviewToken === process.env.PREVIEW_AUTH_TOKEN);
 
-    // 1. In live mode: Allow explicit override ONLY for authenticated platform super admin
-    if (isSuperAdmin && requestedOverride) {
+    // 0. Authenticated tenant admin is strictly locked to their assigned tenant (Tenant A cannot access Tenant B)
+    if (authAdmin && !isSuperAdmin && authAdmin.tenantId) {
+      (req as any).resolvedTenantId = authAdmin.tenantId;
+      return next();
+    }
+
+    // 1. Authorized mechanism: Platform Super Admin or Authorized Preview Token
+    if ((isSuperAdmin || isAuthorizedPreview) && requestedOverride) {
       (req as any).resolvedTenantId = requestedOverride;
       return next();
     }
 
-    // 2. If authenticated admin has assigned tenant
-    if (authAdmin?.tenantId) {
-      (req as any).resolvedTenantId = authAdmin.tenantId;
+    // 2. In test mode, allow tests to specify target tenant via header/query (unless simulating public caller)
+    if (isTestMode() && requestedOverride && !(req as any).simulatePublicRequest) {
+      (req as any).resolvedTenantId = requestedOverride;
       return next();
+    }
+
+    // 3. Admin routes fallback
+    if (req.path?.startsWith('/admin')) {
+      if (requestedOverride && isSuperAdmin) {
+        (req as any).resolvedTenantId = requestedOverride;
+        return next();
+      }
+      if (authAdmin?.tenantId) {
+        (req as any).resolvedTenantId = authAdmin.tenantId;
+        return next();
+      }
     }
 
     // 3. Resolve via hostname/domains in Firestore and Persistent Registry
@@ -242,8 +260,13 @@ v1Router.use(async (req: Request, res: Response, next) => {
     const rawHost = (forwardedHost.split(',')[0] || (req.headers.host as string) || req.hostname || '').toLowerCase().trim();
     const host = rawHost.split(':')[0];
     const resolvedFromDb = await FirestorePlatformService.resolveTenantByHostname(host);
-    let resolvedTenant: string | null = resolvedFromDb;
 
+    if (resolvedFromDb) {
+      (req as any).resolvedTenantId = resolvedFromDb;
+      return next();
+    }
+
+    // 4. Server-authorized preview tenant for container/preview hosts
     const isContainerOrPreviewHost =
       host.endsWith('.run.app') ||
       host.endsWith('.google.com') ||
@@ -253,40 +276,16 @@ v1Router.use(async (req: Request, res: Response, next) => {
       host === 'localhost' ||
       host === '127.0.0.1';
 
-    if (!resolvedTenant && isContainerOrPreviewHost) {
-      resolvedTenant = requestedOverride || 'brand-alpha';
+    if (isContainerOrPreviewHost && process.env.PREVIEW_TENANT_ID) {
+      (req as any).resolvedTenantId = process.env.PREVIEW_TENANT_ID;
+      return next();
     }
 
-    // Host heuristics fallback
-    if (!resolvedTenant) {
-      const hostParts = host.split('.');
-      if (hostParts.length > 2 && !['www', 'localhost', 'run', 'app'].includes(hostParts[0])) {
-        const candidateSlug = hostParts[0].toLowerCase();
-        if (candidateSlug.startsWith('brand-') || candidateSlug === 'marketlane') {
-          resolvedTenant = candidateSlug;
-        }
-      }
-
-      if (!resolvedTenant) {
-        if (host.includes('brand-beta')) resolvedTenant = 'brand-beta';
-        else if (host.includes('brand-alpha') || host.includes('marketlane') || host.includes('1bwydi')) resolvedTenant = 'brand-alpha';
-      }
-    }
-
-    // Ultimate safe fallback to primary tenant
-    if (!resolvedTenant) {
-      resolvedTenant = 'brand-alpha';
-    }
-
-    // Allow override for preview/container hosts or admin users
-    if (requestedOverride && requestedOverride !== resolvedTenant) {
-      if (isContainerOrPreviewHost || authAdmin) {
-        resolvedTenant = requestedOverride;
-      }
-    }
-
-    (req as any).resolvedTenantId = resolvedTenant;
-    next();
+    // Explicitly reject unknown domains without fallback
+    return res.status(404).json({
+      code: 'TENANT_NOT_FOUND',
+      message: `Tenant not found for domain "${host}".`,
+    });
   } catch (err) {
     next(err);
   }
@@ -442,8 +441,11 @@ v1Router.get('/bootstrap', async (req: Request, res: Response) => {
     try {
       tenant = await FirestorePlatformService.getTenantConfig(tenantId);
     } catch (err: any) {
-      console.warn('[API] /bootstrap getTenantConfig failed, using in-memory tenant fallback:', err?.message || err);
-      tenant = MOCK_TENANTS[tenantId] || MOCK_TENANTS['brand-alpha'];
+      const statusCode = err?.statusCode || 404;
+      return res.status(statusCode).json({
+        code: err?.code || 'TENANT_NOT_FOUND',
+        message: err?.message || `Tenant "${tenantId}" not found or unconfigured.`,
+      });
     }
 
     const storeConfig = {
@@ -503,7 +505,7 @@ v1Router.post('/stores/search', validateBody(SearchStoresSchema), async (req: Re
       ? { city: '', country: '', formattedAddress: address }
       : address;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const result = await adapter.getEligibleStores(coordinates, normalizedAddress, preferredFulfillment);
     res.json(result);
   } catch (err: any) {
@@ -514,7 +516,7 @@ v1Router.post('/stores/search', validateBody(SearchStoresSchema), async (req: Re
 v1Router.get('/stores', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const stores = await adapter.getStores();
     res.json(stores);
   } catch (err: any) {
@@ -525,7 +527,7 @@ v1Router.get('/stores', async (req: Request, res: Response) => {
 v1Router.get('/stores/:storeId', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const store = await adapter.getStore(req.params.storeId);
     if (!store) {
       return res.status(404).json({ error: `Store ${req.params.storeId} not found` });
@@ -568,6 +570,21 @@ v1Router.all('/cache/reset', async (req: Request, res: Response) => {
 // ==========================================
 // 4. CATALOGS & PRODUCTS
 // ==========================================
+v1Router.get('/product-tags', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
+    const tagAdapter = adapter as any;
+    if (typeof tagAdapter.getProductTagDefinitions !== 'function') {
+      return res.status(501).json({ code: 'TAG_DEFINITIONS_NOT_SUPPORTED', message: 'The active commerce adapter does not expose product tag definitions.' });
+    }
+    const definitions = await tagAdapter.getProductTagDefinitions(req.query.refresh === 'true');
+    return res.json({ definitions, count: definitions.length, source: 'DELIVERECT_ALL_ALLERGENS' });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve Deliverect product tag definitions');
+  }
+});
+
 v1Router.get('/catalog', async (req: Request, res: Response) => {
   try {
     const isForceRefresh = req.query.refresh === 'true' || req.headers['cache-control'] === 'no-cache';
@@ -575,7 +592,7 @@ v1Router.get('/catalog', async (req: Request, res: Response) => {
       CommerceDiscoveryService.getInstance().clearCache();
     }
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const catalog = await adapter.getRootCatalog();
     const candidateStoreIdsParam = req.query.candidateStoreIds as string | undefined;
 
@@ -614,7 +631,7 @@ v1Router.get('/stores/:storeId/catalog', async (req: Request, res: Response) => 
       CommerceDiscoveryService.getInstance().clearCache();
     }
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const fulfillment = req.query.fulfillment as 'delivery' | 'pickup' | undefined;
     const menuId = req.query.menuId as string | undefined;
     const catalog = await adapter.getStoreCatalog(req.params.storeId, fulfillment, menuId);
@@ -641,7 +658,7 @@ v1Router.get('/bundles', async (req: Request, res: Response) => {
       CommerceDiscoveryService.getInstance().clearCache();
     }
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const cacheHeader = isForceRefresh
       ? 'no-cache, no-store, must-revalidate'
       : 'public, max-age=60, stale-while-revalidate=300';
@@ -670,7 +687,7 @@ v1Router.get('/stores/:storeId/bundles', async (req: Request, res: Response) => 
       CommerceDiscoveryService.getInstance().clearCache();
     }
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const fulfillment = req.query.fulfillment as 'delivery' | 'pickup' | undefined;
     const menuId = req.query.menuId as string | undefined;
     const cacheHeader = isForceRefresh
@@ -699,7 +716,7 @@ v1Router.post('/search', validateBody(SearchCatalogSchema), async (req: Request,
   try {
     const { query, storeId, categoryId, limit } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     // Directive 5: Never silently fall back to root search if store catalog fails.
     // Return honest error so true cause is visible and diagnosed.
     const results = await adapter.searchProducts(query || '', storeId, { categoryId, limit });
@@ -714,7 +731,7 @@ v1Router.get('/products/:plu', async (req: Request, res: Response) => {
     const { plu } = req.params;
     const storeId = req.query.storeId as string | undefined;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const result = await adapter.getProduct(plu, storeId);
     if (!result || !result.product) {
       return res.status(404).json({ error: `Product ${plu} not found` });
@@ -751,7 +768,7 @@ v1Router.get('/hero-banners', async (req: Request, res: Response) => {
 v1Router.get('/tenants/:id/hero-banners', async (req: Request, res: Response) => {
   try {
     const banners = await FirestorePlatformService.getTenantHeroBanners(req.params.id);
-    sendConditionalJson(req, res, banners, 'public, max-age=60, stale-while-revalidate=300');
+    sendConditionalJson(req, res, banners, 'no-cache, must-revalidate');
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -764,7 +781,7 @@ v1Router.post('/baskets', validateBody(CreateBasketSchema), async (req: Request,
   try {
     const { storeId, fulfillmentType } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.createBasket(storeId, fulfillmentType);
     res.json(basket);
   } catch (err: any) {
@@ -775,7 +792,7 @@ v1Router.post('/baskets', validateBody(CreateBasketSchema), async (req: Request,
 v1Router.get('/baskets/:basketId', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.getBasket(req.params.basketId);
     if (!basket) {
       return res.status(404).json({ error: 'Basket not found' });
@@ -790,7 +807,7 @@ v1Router.patch('/baskets/:basketId', validateBody(UpdateBasketItemSchema), async
   try {
     const { productId, quantity } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateBasketItem(req.params.basketId, productId, quantity);
     res.json(basket);
   } catch (err: any) {
@@ -802,7 +819,7 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
   try {
     const { items } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateBasketItems(req.params.basketId, items);
     res.json(basket);
   } catch (err: any) {
@@ -813,7 +830,7 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
 v1Router.patch('/baskets/:basketId/customer', validateBody(UpdateBasketCustomerSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateBasketCustomer(req.params.basketId, req.body);
     res.json(basket);
   } catch (err: any) {
@@ -824,7 +841,7 @@ v1Router.patch('/baskets/:basketId/customer', validateBody(UpdateBasketCustomerS
 v1Router.patch('/baskets/:basketId/fulfillment', validateBody(UpdateBasketFulfillmentSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateBasketFulfillment(req.params.basketId, req.body);
     res.json(basket);
   } catch (err: any) {
@@ -836,7 +853,7 @@ v1Router.patch('/baskets/:basketId/store', validateBody(UpdateBasketStoreSchema)
   try {
     const { storeId, confirmMigration } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const result = await adapter.updateBasketStore(req.params.basketId, storeId, { confirmMigration });
     res.json(result);
   } catch (err: any) {
@@ -847,7 +864,7 @@ v1Router.patch('/baskets/:basketId/store', validateBody(UpdateBasketStoreSchema)
 v1Router.patch('/baskets/:basketId/discounts', validateBody(UpdateBasketDiscountsSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateDiscounts(req.params.basketId, req.body);
     res.json(basket);
   } catch (err: any) {
@@ -859,7 +876,7 @@ v1Router.patch('/baskets/:basketId/charges', validateBody(UpdateBasketChargesSch
   try {
     const { charges } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateCharges(req.params.basketId, charges);
     res.json(basket);
   } catch (err: any) {
@@ -871,7 +888,7 @@ v1Router.patch('/baskets/:basketId/tip', validateBody(UpdateBasketTipSchema), as
   try {
     const { tip } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const basket = await adapter.updateTip(req.params.basketId, tip);
     res.json(basket);
   } catch (err: any) {
@@ -882,7 +899,7 @@ v1Router.patch('/baskets/:basketId/tip', validateBody(UpdateBasketTipSchema), as
 v1Router.post('/baskets/:basketId/validate', validateBody(ValidateBasketSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const validation = await adapter.validateBasket(req.params.basketId);
     res.json(validation);
   } catch (err: any) {
@@ -894,7 +911,7 @@ v1Router.post('/baskets/:basketId/reconcile', validateBody(ReconcileBasketSchema
   try {
     const { destinationStoreId } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const result = await adapter.reconcileBasket(req.params.basketId, destinationStoreId);
     res.json(result);
   } catch (err: any) {
@@ -909,7 +926,7 @@ v1Router.post('/delivery/options', validateBody(DeliveryOptionsSchema), async (r
   try {
     const { basketId, address, fulfillmentType } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const options = await adapter.getDeliveryOptions(basketId, address, fulfillmentType);
     res.json(options);
   } catch (err: any) {
@@ -921,7 +938,7 @@ v1Router.post('/delivery/slots', validateBody(DeliverySlotsSchema), async (req: 
   try {
     const { storeId, fulfillmentType } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const slots = await adapter.getAvailableSlots(storeId, fulfillmentType);
     res.json(slots);
   } catch (err: any) {
@@ -930,7 +947,7 @@ v1Router.post('/delivery/slots', validateBody(DeliverySlotsSchema), async (req: 
 });
 
 // ==========================================
-// 7.1 DISPATCH VALIDATION
+// 7.1 DISPATCH ORCHESTRATION & VALIDATION
 // ==========================================
 v1Router.post('/dispatch/validate', validateBody(ValidateDispatchSchema), async (req: Request, res: Response) => {
   try {
@@ -949,6 +966,90 @@ v1Router.post('/dispatch/validate', validateBody(ValidateDispatchSchema), async 
     res.json(result);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to validate courier dispatch');
+  }
+});
+
+v1Router.post('/dispatch/quotes', validateBody(GetDispatchQuotesSchema), async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const dispatchAdapter = getDispatchAdapter(tenantId);
+    const tenantRules = await FirestorePlatformService.getTenantDispatchRules(tenantId);
+
+    const result = await DispatchOrchestrationService.getQuotesForBasket(
+      dispatchAdapter,
+      {
+        storeId: req.body.storeId,
+        channelLinkId: req.body.channelLinkId,
+        deliveryAddress: req.body.deliveryAddress,
+        itemsCount: req.body.itemsCount,
+        orderValueMinorUnits: req.body.orderValueMinorUnits,
+        currency: req.body.currency,
+        requiresAgeCheck: req.body.requiresAgeCheck,
+        minimumAge: req.body.minimumAge,
+        policy: req.body.policy,
+        allowedProviders: req.body.allowedProviders,
+      },
+      tenantRules
+    );
+
+    res.json(result);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to fetch courier dispatch quotes');
+  }
+});
+
+v1Router.post('/dispatch/assign', validateBody(AssignDispatchSchema), async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const dispatchAdapter = getDispatchAdapter(tenantId);
+    const { orderId, idempotencyKey, force } = req.body;
+
+    const record = await DispatchOrchestrationService.assignCourierForOrder(
+      orderId,
+      tenantId,
+      dispatchAdapter,
+      {
+        idempotencyKey: idempotencyKey || `assign_${orderId}_${Date.now()}`,
+        force: Boolean(force),
+      }
+    );
+
+    res.json({ success: true, dispatch: record });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to assign courier');
+  }
+});
+
+v1Router.post('/dispatch/cancel', validateBody(CancelDispatchSchema), async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const dispatchAdapter = getDispatchAdapter(tenantId);
+    const { orderId, reason } = req.body;
+
+    const result = await DispatchOrchestrationService.handleOrderCancelled(
+      orderId,
+      tenantId,
+      dispatchAdapter,
+      reason
+    );
+
+    res.json({ success: true, result });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to cancel dispatch');
+  }
+});
+
+v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
+  try {
+    const eventId =
+      (req.headers['x-dispatch-event-id'] as string) ||
+      req.body.eventId ||
+      `wh_dsp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    const updated = await DispatchOrchestrationService.handleDispatchWebhook(req.body, eventId);
+    res.json({ success: true, eventId, dispatch: updated });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to process dispatch webhook');
   }
 });
 
@@ -1118,7 +1219,7 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
   try {
     const { basketId } = req.body;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const session = await adapter.createPaymentSession(basketId);
     res.json(session);
   } catch (err: any) {
@@ -1174,20 +1275,46 @@ v1Router.post(
       }
     }
 
-    // DSP-03: Validate expiration of pre-checkout dispatch validation token
+    // DSP-03 & Dispatch Orchestration: Authoritative dispatch quote/availability check
     if (options?.fulfillmentType === 'delivery' || !options?.fulfillmentType) {
       if (options?.dispatchValidationExpiresAt) {
         const expiry = new Date(options.dispatchValidationExpiresAt).getTime();
         if (Number.isFinite(expiry) && Date.now() > expiry) {
           return res.status(422).json({
-            error: 'Dispatch validation token has expired. Please revalidate delivery before placing your order.',
+            error: 'Courier quote has expired. Please re-check delivery quotes before placing your order.',
             code: 'DISPATCH_VALIDATION_EXPIRED',
+          });
+        }
+      }
+
+      // Authoritative check if no validation id or selected quote id provided
+      const dispatchAdapter = getDispatchAdapter(resolvedTenant);
+      if (!options?.dispatchValidationId && !options?.selectedQuoteId) {
+        try {
+          const avail = await dispatchAdapter.validateAvailability({
+            channelLinkId: options?.storeId,
+            storeId: options?.storeId,
+            deliveryAddress: options?.deliveryAddress,
+            orderValueMinorUnits: (options as any)?.orderValueMinorUnits,
+            currency: (options as any)?.currency || 'GBP',
+            itemsCount: (options as any)?.itemsCount || 1,
+          });
+          if (!avail.available) {
+            return res.status(422).json({
+              error: avail.rejectionReason || 'No courier available for this delivery address and time window. Please try again or switch to collection.',
+              code: 'DISPATCH_UNAVAILABLE',
+            });
+          }
+        } catch (dispatchCheckErr: any) {
+          return res.status(422).json({
+            error: `Unable to verify courier availability: ${dispatchCheckErr.message || 'Courier service unavailable'}. Please retry.`,
+            code: 'DISPATCH_CHECK_FAILED',
           });
         }
       }
     }
 
-    const adapter = getDeliverectAdapter(resolvedTenant);
+    const adapter = await getDeliverectAdapterAsync(resolvedTenant);
     let checkoutResult: CheckoutResult;
 
     if (adapter.checkout) {
@@ -1230,6 +1357,30 @@ v1Router.post(
         (checkoutResult.order as any).paymentId = options?.paymentId || checkoutResult.paymentId;
       }
       await FirestorePlatformService.saveOrderProjection(checkoutResult.order, resolvedTenant, checkoutResult.checkoutId);
+
+      // Initialize dispatch lifecycle
+      const dispatchAdapter = getDispatchAdapter(resolvedTenant);
+      await DispatchOrchestrationService.handleCheckoutCreated(
+        checkoutResult.order.id,
+        resolvedTenant,
+        dispatchAdapter,
+        {
+          fulfillmentType: (checkoutResult.order.fulfillment?.type as any) || 'delivery',
+          selectedQuote: (options as any)?.selectedQuote,
+          quoteId: options?.selectedQuoteId || options?.dispatchValidationId,
+          providerId: options?.selectedProviderId,
+          providerDisplayName: options?.selectedProviderDisplayName,
+          deliveryAddress: options?.deliveryAddress || checkoutResult.order.fulfillment?.address,
+          itemsCount: checkoutResult.order.originalBasket?.items?.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) || 1,
+          orderCreatedAt: checkoutResult.order.createdAt || new Date().toISOString(),
+          requiresAgeCheck: Boolean(options?.requiresAgeCheck || (checkoutResult.order as any).requiresAgeCheck),
+          minimumAge: options?.minimumAge || (checkoutResult.order as any).minimumAge || 18,
+          requiresPin: Boolean(options?.requiresPin),
+          idempotencyKey: options?.idempotencyKey || checkoutResult.checkoutId,
+        }
+      ).catch((dispatchErr) => {
+        console.warn('[v1Router] Failed to initialize dispatch for order:', dispatchErr);
+      });
     }
 
     // Return 202 Accepted with pending checkout state (CHECK-01)
@@ -1246,7 +1397,7 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
 
     if (!checkout) {
       const resolvedTenant = resolveTenant(req);
-      const adapter = getDeliverectAdapter(resolvedTenant);
+      const adapter = await getDeliverectAdapterAsync(resolvedTenant);
       if (adapter.getCheckout) {
         checkout = await adapter.getCheckout(checkoutId);
       }
@@ -1379,7 +1530,7 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     let order = await adapter.getOrder(orderId);
 
     // Merge or fall back to Firestore order projection for authoritative picking updates
@@ -1579,7 +1730,7 @@ v1Router.post('/orders/:orderId/simulate-picking', async (req: Request, res: Res
       return res.status(403).json({ error: 'Order picking simulation is only available in demo mode.' });
     }
     const tenantId = resolveTenant(req);
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const order = adapter.advancePickingDemo
       ? await adapter.advancePickingDemo(req.params.orderId)
       : null;
@@ -2305,7 +2456,7 @@ v1Router.get('/admin/tenants/:id/export/stores', requireAdminAuth(), async (req:
       // ignore
     }
     if (!stores || stores.length === 0) {
-      const adapter = getDeliverectAdapter(tenantId);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
       stores = await adapter.getStores();
     }
 
@@ -2364,7 +2515,7 @@ v1Router.get('/admin/tenants/:id/stores', requireAdminAuth(), async (req: Reques
     }
 
     if (!stores || stores.length === 0) {
-      const adapter = getDeliverectAdapter(req.params.id);
+      const adapter = await getDeliverectAdapterAsync(req.params.id);
       stores = await adapter.getStores();
     }
     res.json(stores);
@@ -2383,7 +2534,7 @@ v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), async (re
     await FirestorePlatformService.saveTenantStore(tenantId, { ...updatedData, id: storeId });
     setStoreOverride(storeId, updatedData);
 
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
     const store = await adapter.getStore(storeId);
     res.json(store || { id: storeId, ...updatedData });
   } catch (err: any) {
@@ -2436,6 +2587,67 @@ v1Router.delete('/admin/tenants/:id/rules/:ruleId', requireAdminAuth('marketingE
     res.status(500).json({ error: err.message });
   }
 });
+
+// 9.7.3 Search Merchandising & Synonyms
+v1Router.get('/admin/tenants/:id/search-config', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const config = await FirestorePlatformService.getTenantSearchConfig(req.params.id);
+    res.json(config);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.put('/admin/tenants/:id/search-config', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+  try {
+    const updated = await FirestorePlatformService.saveTenantSearchConfig(req.params.id, req.body);
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Compliance',
+      action: 'UPDATE_SEARCH_CONFIG',
+      details: 'Updated search merchandising and synonym configuration',
+    });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9.7.4 Tenant Dispatch Rules (Orchestration & Timing)
+v1Router.get('/admin/tenants/:id/dispatch-rules', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const rules = await FirestorePlatformService.getTenantDispatchRules(req.params.id);
+    res.json(rules);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.post(
+  '/admin/tenants/:id/dispatch-rules',
+  requireAdminAuth('tenantAdmin'),
+  validateBody(UpdateTenantDispatchRulesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const updated = await FirestorePlatformService.saveTenantDispatchRules(req.params.id, req.body);
+      await FirestorePlatformService.addAuditLog(req.params.id, {
+        userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+        userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+        userRole: (req as AuthenticatedRequest).adminUser?.role || 'tenantAdmin',
+        tenantId: req.params.id,
+        category: 'Compliance',
+        action: 'UPDATE_DISPATCH_RULES',
+        details: `Updated dispatch orchestration rules: assignmentEvent=${updated.assignmentEvent}, dynamicTiming=${updated.dynamicTiming}`,
+      });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
 
 // 9.8 Integrations & Deliverect Channel Mapping
 v1Router.get('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
@@ -2684,7 +2896,7 @@ v1Router.get('/admin/health', async (req: Request, res: Response) => {
   }
 
   const tenantId = resolveTenant(req);
-  const adapter = getDeliverectAdapter(tenantId);
+  const adapter = await getDeliverectAdapterAsync(tenantId);
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -2817,7 +3029,7 @@ v1Router.post('/admin/test-connection', requireAdminAuth(), validateBody(TestCon
     actor: { uid: authAdmin.uid, name: authAdmin.name, role: authAdmin.role },
   });
 
-  const adapter = getDeliverectAdapter(targetTenantId);
+  const adapter = await getDeliverectAdapterAsync(targetTenantId);
 
   res.status(diagnostic.success ? 200 : 400).json({
     success: diagnostic.success,
@@ -2994,22 +3206,39 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
-    const { accountId } = req.body;
+    const { accountId, channelLinkIds } = req.body;
     if (!accountId) {
       return res.status(400).json({ error: 'accountId is required', code: 'INVALID_REQUEST' });
+    }
+    if (channelLinkIds !== undefined && !Array.isArray(channelLinkIds)) {
+      return res.status(400).json({ error: 'channelLinkIds must be an array', code: 'INVALID_REQUEST' });
     }
 
     const adapter = new LinkedAccountsAdapter();
     const mappings = await adapter.getTenantMappings(tenantId);
     const matchingStores = mappings.stores.filter(s => s.accountLinkId === `acclink_${accountId}` || s.accountLinkId === accountId);
+    const availableChannelLinkIds = new Set(matchingStores.map(s => String(s.channelLinkId)));
+    const requestedChannelLinkIds: string[] = channelLinkIds === undefined
+      ? matchingStores.map(s => String(s.channelLinkId))
+      : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
+    const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
+    if (invalidChannelLinkIds.length > 0) {
+      return res.status(400).json({
+        error: 'One or more channel links do not belong to the selected Deliverect account.',
+        code: 'INVALID_CHANNEL_ASSIGNMENT',
+        invalidChannelLinkIds,
+      });
+    }
 
-    const newStatus = matchingStores.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
+    const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
 
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
       deliverectAccountId: accountId,
+      allowedChannelLinkIds: requestedChannelLinkIds,
       status: newStatus as any,
       lastSyncAt: new Date().toISOString(),
     });
+    IntegrationContext.invalidate(tenantId);
 
     await FirestorePlatformService.addAuditLog(tenantId, {
       userId: authAdmin.uid,
@@ -3018,15 +3247,23 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       tenantId,
       category: 'Integration',
       action: 'SELECT_DELIVERECT_ACCOUNT',
-      details: `Selected Deliverect Account "${accountId}". Status transitioned to ${newStatus}.`,
+      details: `Selected Deliverect Account "${accountId}" with ${requestedChannelLinkIds.length} channel link(s). Status transitioned to ${newStatus}.`,
     });
 
     res.json({
       success: true,
       tenantId,
       deliverectAccountId: accountId,
+      allowedChannelLinkIds: requestedChannelLinkIds,
       status: newStatus,
-      storesCount: matchingStores.length,
+      storesCount: requestedChannelLinkIds.length,
+      assignedStores: matchingStores
+        .filter(store => requestedChannelLinkIds.includes(String(store.channelLinkId)))
+        .map(store => ({
+          channelLinkId: store.channelLinkId,
+          name: store.name,
+          physicalLocationId: store.physicalLocationId,
+        })),
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to select Deliverect account');
@@ -3097,7 +3334,7 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
 v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.params.id || 'brand-alpha';
-    const adapter = getDeliverectAdapter(tenantId);
+    const adapter = await getDeliverectAdapterAsync(tenantId);
 
     // 1. Stores
     const stores = await adapter.getStores().catch(() => []);
@@ -3157,6 +3394,58 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to generate commerce diagnostics');
+  }
+});
+
+// ==========================================
+// CONNECTION HEALTH & 5-STAGE REQUEST TRACE
+// ==========================================
+
+/**
+ * Compact, admin-only Connection Health reporting.
+ * Reports actual runtime mode, resolved tenant/hostname, Deliverect env/account,
+ * physical location and store counts, chosen root/store menu, raw/parsed/renderable product counts,
+ * last successful sync, and exact failure stage/error code without exposing secrets.
+ */
+v1Router.get('/admin/connection/health', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const requestedTenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
+    const tenantId =
+      authAdmin.role === 'platformSuperAdmin'
+        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
+        : authAdmin.tenantId || 'brand-alpha';
+
+    const health = await connectionHealthService.getConnectionHealth(tenantId, req.hostname);
+    res.json(health);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve connection health');
+  }
+});
+
+/**
+ * Traces a real request through Upstream -> BFF -> HTTP Client -> Hook -> Visible Cards.
+ * Supports demonstrating both successful traces and forced failure scenarios:
+ * NOT_CONFIGURED, PERMISSION_DENIED, UPSTREAM_ERROR, EMPTY_VALID_RESPONSE, UNMAPPED_LOCATION, RENDER_FILTERED.
+ */
+v1Router.post('/admin/connection/trace', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const requestedTenantId = (req.headers['x-tenant-id'] as string) || req.body?.tenantId;
+    const tenantId =
+      authAdmin.role === 'platformSuperAdmin'
+        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
+        : authAdmin.tenantId || 'brand-alpha';
+
+    const trace = await connectionHealthService.traceRequest(tenantId, {
+      storeId: req.body?.storeId,
+      fulfillmentType: req.body?.fulfillmentType || 'delivery',
+      forceFailureType: req.body?.forceFailureType,
+    });
+
+    res.json(trace);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to execute connection trace');
   }
 });
 

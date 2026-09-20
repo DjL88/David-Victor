@@ -299,12 +299,35 @@ export interface CommerceClient {
     address?: Address
   ): Promise<{
     available: boolean;
+    dispatchValidationId?: string;
     dispatchValidationExpiresAt: string;
     deliveryFee: number;
     deliveryEta: string;
     reason?: string;
     alternativeStores?: Store[];
     collectionEligible?: boolean;
+  }>;
+
+  /**
+   * Retrieves courier delivery quotes according to tenant policy.
+   */
+  getDispatchQuotes?(params: {
+    channelLinkId?: string;
+    storeId?: string;
+    deliveryAddress: Address;
+    itemsCount?: number;
+    orderValueMinorUnits?: number;
+    currency?: string;
+    requiresAgeCheck?: boolean;
+    minimumAge?: number;
+    policy?: string;
+    allowedProviders?: string[];
+  }): Promise<{
+    available: boolean;
+    quotes: any[];
+    selectedQuote?: any;
+    policyApplied: string;
+    rejectionReason?: string;
   }>;
 
   /**

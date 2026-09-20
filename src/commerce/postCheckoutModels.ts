@@ -258,6 +258,69 @@ export interface OrderDeliveryInfo {
 }
 
 // ==========================================
+// 4.1 DISPATCH STATE MACHINE
+// ==========================================
+
+export type DispatchState =
+  | 'NOT_REQUESTED'
+  | 'QUOTED'
+  | 'SCHEDULED'
+  | 'ASSIGNING'
+  | 'ASSIGNED'
+  | 'PICKUP_EN_ROUTE'
+  | 'PICKED_UP'
+  | 'DELIVERED'
+  | 'CANCEL_PENDING'
+  | 'CANCELLED'
+  | 'FAILED';
+
+export interface DispatchPinRequirement {
+  required: boolean;
+  instruction: string; // Customer-safe instructions only! Never plaintext secret PIN
+  status: 'PENDING' | 'VERIFIED';
+}
+
+export interface DispatchAgeVerificationRequirement {
+  required: boolean;
+  minimumAge?: number;
+  status: 'NOT_REQUIRED' | 'PENDING_COURIER_CHECK' | 'VERIFIED' | 'FAILED';
+  instruction?: string;
+}
+
+export interface DispatchTimestamps {
+  quotedAt?: string;
+  scheduledAt?: string;
+  assignedAt?: string;
+  pickupEnRouteAt?: string;
+  pickedUpAt?: string;
+  deliveredAt?: string;
+  cancelledAt?: string;
+  failedAt?: string;
+  updatedAt: string;
+}
+
+export interface DispatchStateRecord {
+  state: DispatchState;
+  providerId: string;
+  providerDisplayName: string;
+  quoteId?: string;
+  deliveryJobId?: string;
+  eta?: string;
+  etaMinutes?: number;
+  trackingUrl?: string;
+  proofOfDeliveryUrl?: string;
+  pinRequirement?: DispatchPinRequirement;
+  ageVerificationRequirement?: DispatchAgeVerificationRequirement;
+  attemptCount: number;
+  lastError?: string;
+  idempotencyKeys: string[];
+  timestamps: DispatchTimestamps;
+  scheduledFor?: string;
+  targetPickupTime?: string;
+  createdAt: string;
+}
+
+// ==========================================
 // 5. FULFILLMENT SCHEDULING & SLOTS
 // ==========================================
 
@@ -384,6 +447,7 @@ export interface Order {
   };
   picking: PickingState;
   delivery?: OrderDeliveryInfo;
+  dispatch?: DispatchStateRecord;
   events: OrderEvent[];
   createdAt: string;
   updatedAt: string;

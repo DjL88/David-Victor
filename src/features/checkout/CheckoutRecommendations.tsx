@@ -8,6 +8,7 @@ import { ShoppingBag, Plus, Check, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { isHfssTagged } from '../../commerce/reverseDealEngine';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
+import { isDemoMode } from '../../domain/runtime';
 
 export interface CheckoutRecommendationsProps {
   // Supports legacy prop naming
@@ -82,8 +83,11 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
     // HFSS Statutory Compliance check
     if (isHfssTagged(product)) return false;
 
-    return candidatePlus.includes(product.plu);
-  });
+    if (isDemoMode()) {
+      return candidatePlus.includes(product.plu);
+    }
+    return true;
+  }).slice(0, 4);
 
   if (eligibleRecommendations.length === 0) {
     return null;

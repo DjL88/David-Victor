@@ -13,6 +13,7 @@ import { OAuthTokenManager, DeliverectEnvironmentName } from './OAuthTokenManage
 import { FirestorePlatformService } from '../firestoreService';
 import { BFFError } from '../errors';
 import { isDemoMode } from '../runtimeMode';
+import { linkedAccountsAdapter } from './LinkedAccountsAdapter';
 
 export interface TenantIntegrationConfig {
   tenantId: string;
@@ -21,6 +22,7 @@ export interface TenantIntegrationConfig {
   clientSecret: string;
   webhookSecret: string;
   deliverectAccountId?: string;
+  allowedChannelLinkIds?: string[];
   tokenManager: OAuthTokenManager;
   isConfigured: boolean;
 }
@@ -117,13 +119,27 @@ export class IntegrationContext {
       clientSecret,
     });
 
+    let deliverectAccountId = integrationRecord?.deliverectAccountId;
+    if (!deliverectAccountId) {
+      try {
+        const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId);
+        deliverectAccountId = (mappings as any)?.integration?.deliverectAccountId || (mappings?.accounts?.[0] as any)?.deliverectAccountId;
+      } catch {}
+    }
+    if (!deliverectAccountId && process.env.DELIVERECT_ACCOUNT_ID) {
+      deliverectAccountId = process.env.DELIVERECT_ACCOUNT_ID;
+    }
+
     const context: TenantIntegrationConfig = {
       tenantId,
       environment,
       clientId,
       clientSecret,
       webhookSecret,
-      deliverectAccountId: integrationRecord?.deliverectAccountId,
+      deliverectAccountId,
+      allowedChannelLinkIds: Array.isArray(integrationRecord?.allowedChannelLinkIds)
+        ? integrationRecord.allowedChannelLinkIds.map(String)
+        : undefined,
       tokenManager,
       isConfigured,
     };

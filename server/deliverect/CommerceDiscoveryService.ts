@@ -19,6 +19,7 @@ export { calculateHaversineDistanceMeters } from '../../src/services/mapsDistanc
 import { calculateHaversineDistanceMeters } from '../../src/services/mapsDistanceService';
 import { DispatchAdapter, DispatchValidationResult } from './DispatchAdapter';
 import { getDispatchAdapter } from './index';
+import { DemoDispatchAdapter } from './DemoDispatchAdapter';
 import { LRUCache, CacheStats } from '../utils/lruCache';
 
 /**
@@ -182,9 +183,10 @@ export class CommerceDiscoveryService {
     const discoveryPromise = (async () => {
       // 1. Source stores
       let rawStores: Store[] = [];
+      const effectiveMode = appMode || 'unknown';
       if (customStores && customStores.length > 0) {
         rawStores = customStores;
-      } else if (CommerceDiscoveryService.dataProvider && (appMode === 'demo' || !appMode)) {
+      } else if (CommerceDiscoveryService.dataProvider && effectiveMode === 'demo') {
         rawStores = await CommerceDiscoveryService.dataProvider.getStores(tenantId);
       } else {
         // In staging/production, when no custom stores are supplied from upstream,
@@ -219,7 +221,9 @@ export class CommerceDiscoveryService {
           let dispatchResult: DispatchValidationResult | null = null;
           if (store.supportsDelivery && isOperational) {
             try {
-              const activeDispatchAdapter = dispatchAdapter || getDispatchAdapter(tenantId);
+              const activeDispatchAdapter =
+                dispatchAdapter ||
+                (effectiveMode === 'demo' ? new DemoDispatchAdapter() : getDispatchAdapter(tenantId));
               dispatchResult = await activeDispatchAdapter.validateAvailability({
                 channelLinkId: store.channelLinkId || store.id,
                 storeId: store.id,
@@ -357,13 +361,13 @@ export class CommerceDiscoveryService {
     candidateStoreIds?: string[];
     appMode?: string;
   }): Promise<{ catalog: Catalog; summaries: Record<string, ProductAvailabilitySummary> }> {
-    const { tenantId, candidateStoreIds = [], appMode = 'demo' } = params;
+    const { tenantId, candidateStoreIds = [], appMode = 'unknown' } = params;
 
     let allProducts: Product[] = [];
     let categories: Category[] = [];
     let candidateStores: Store[] = [];
 
-    if (CommerceDiscoveryService.dataProvider && (appMode === 'demo' || !appMode)) {
+    if (CommerceDiscoveryService.dataProvider && appMode === 'demo') {
       allProducts = await CommerceDiscoveryService.dataProvider.getProducts(tenantId);
       categories = await CommerceDiscoveryService.dataProvider.getCategories(tenantId);
       const allStores = await CommerceDiscoveryService.dataProvider.getStores(tenantId);
@@ -373,7 +377,8 @@ export class CommerceDiscoveryService {
         .slice(0, MAX_VISIBLE_STORES);
     }
 
-    const activeProducts = allProducts.filter((p) => p.active !== false);
+    // Phase 1: Filter out modifier/bundle sub-components or items with '#' in PLU
+    const activeProducts = allProducts.filter((p) => p.active !== false && !p.plu?.includes('#'));
 
     const rootCatalog: Catalog = {
       id: `root-catalog-${tenantId}`,
@@ -445,7 +450,7 @@ export class CommerceDiscoveryService {
     fulfillmentType?: 'delivery' | 'pickup';
     appMode?: string;
   }): Promise<Catalog> {
-    const { tenantId, storeId, fulfillmentType = 'delivery', appMode = 'demo' } = params;
+    const { tenantId, storeId, fulfillmentType = 'delivery', appMode = 'unknown' } = params;
     const cacheKey = `${tenantId}:${storeId}:${fulfillmentType}`;
 
     const cached = this.storeCatalogCache.get(cacheKey);
@@ -457,7 +462,7 @@ export class CommerceDiscoveryService {
     let storeProducts: Product[] = [];
     let categories: Category[] = [];
 
-    if (CommerceDiscoveryService.dataProvider && (appMode === 'demo' || !appMode)) {
+    if (CommerceDiscoveryService.dataProvider && appMode === 'demo') {
       const allStores = await CommerceDiscoveryService.dataProvider.getStores(tenantId);
       store = allStores.find((s) => s.id === storeId);
       if (store) {
@@ -470,7 +475,7 @@ export class CommerceDiscoveryService {
             active: p.active !== false,
             stockStatus: p.stockStatus || 'IN_STOCK',
           }))
-          .filter((p) => p.active !== false);
+          .filter((p) => p.active !== false && !p.plu?.includes('#'));
       }
     }
 

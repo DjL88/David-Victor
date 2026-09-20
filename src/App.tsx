@@ -27,19 +27,29 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+  const checkIsAdmin = () => {
     if (typeof window !== 'undefined') {
-      return window.location.hash === '#admin';
+      return (
+        window.location.hash === '#admin' ||
+        window.location.pathname === '/admin' ||
+        window.location.pathname.startsWith('/admin')
+      );
     }
     return false;
-  });
+  };
+
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(checkIsAdmin);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setIsAdminMode(window.location.hash === '#admin');
+    const handleRouteChange = () => {
+      setIsAdminMode(checkIsAdmin());
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('hashchange', handleRouteChange);
+    window.addEventListener('popstate', handleRouteChange);
+    return () => {
+      window.removeEventListener('hashchange', handleRouteChange);
+      window.removeEventListener('popstate', handleRouteChange);
+    };
   }, []);
 
   const handleOpenAdmin = () => {
@@ -48,6 +58,9 @@ export default function App() {
   };
 
   const handleExitAdmin = () => {
+    if (window.location.pathname.startsWith('/admin')) {
+      window.history.pushState(null, '', '/');
+    }
     window.location.hash = '';
     setIsAdminMode(false);
   };

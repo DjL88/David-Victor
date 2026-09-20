@@ -1,0 +1,23 @@
+{
+  "brand-alpha": [
+    {
+      "categoryId": "cat-fresh-produce",
+      "categorySlugMatch": "produce",
+      "targetPlu": "PLU-STRAWBERRY-400G",
+      "actionType": "PRODUCT",
+      "title": "Fragrant British Strawberries & Blueberries",
+      "id": "banner-produce-berries",
+      "linkedProductPlus": [
+        "PLU-STRAWBERRY-400G",
+        "PLU-RASPBERRY-150G",
+        "DAV1007",
+        "JOE1007"
+      ],
+      "badge": "Farm Direct Harvest",
+      "buttonLabel": "Grab Fresh Berries • £2.50",
+      "backgroundImageUrl": "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=1600&auto=format&fit=crop&q=85",
+      "subtitle": "Picked this morning from local Essex & Kent fruit growers. Sweet, vibrant, and packed with vitamins.",
+      "stockMatchMode": "OR"
+    }
+  ]
+}

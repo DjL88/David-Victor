@@ -14,6 +14,8 @@ import { IntegrationUnavailableDPayAdapter } from './IntegrationUnavailableDPayA
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { FirestorePlatformService, OrderProjection } from '../firestoreService';
 import { getServerRuntimeMode } from '../runtimeMode';
+import { getDispatchAdapter } from './index';
+import { DispatchOrchestrationService } from './DispatchOrchestrationService';
 
 const dPayAdapters = new Map<string, DPayAdapter>();
 
@@ -23,10 +25,10 @@ export function getDPayAdapter(
   deliverectAccountId: string = 'default'
 ): DPayAdapter {
   const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
-  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  const appMode = getServerRuntimeMode();
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = dPayAdapters.get(key);
   if (!adapter) {
-    const appMode = getServerRuntimeMode();
     const tokenManager = OAuthTokenManager.getInstance(normalizedTenantId);
     const hasCredentials = tokenManager.isConfigured;
 
@@ -53,7 +55,8 @@ export function setDPayAdapter(
   deliverectAccountId: string = 'default'
 ): void {
   const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
-  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  const appMode = getServerRuntimeMode();
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   dPayAdapters.set(key, adapter);
 }
 
@@ -510,6 +513,12 @@ export class PaymentService {
           category: 'Payment',
           details: `Successfully settled payment ${paymentId} for order ${orderId}. Captured £${(finalAmount / 100).toFixed(2)}, released residual hold of £${(residualHold / 100).toFixed(2)}.`,
         });
+
+        // Trigger dispatch courier assignment if rule is set to ORDER_FINALISED
+        const dispatchAdapter = getDispatchAdapter(tenantId);
+        DispatchOrchestrationService.handleOrderSettled(orderId, tenantId, dispatchAdapter, paymentId).catch(
+          (dErr) => console.warn('[PaymentService] Dispatch finalisation warning:', dErr)
+        );
 
         return settlementResult;
       } catch (err: any) {

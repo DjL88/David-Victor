@@ -13,6 +13,7 @@ import {
   Truck,
   Flame,
 } from 'lucide-react';
+import { isDemoMode } from '../../domain/runtime';
 
 interface FavouritesCarouselProps {
   products: Product[];
@@ -35,7 +36,7 @@ export const FavouritesCarousel: React.FC<FavouritesCarouselProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | 'buyAgain' | 'favourites'>('all');
   const [justAddedPlu, setJustAddedPlu] = useState<string | null>(null);
 
-  // Local state for favourites (pre-seeded with popular essentials)
+  // Local state for favourites (pre-seeded with popular essentials only in demo mode)
   const [favouritePlus, setFavouritePlus] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('dl_guest_favourites');
@@ -43,23 +44,27 @@ export const FavouritesCarousel: React.FC<FavouritesCarouselProps> = ({
     } catch {
       // fallback
     }
-    return [
-      'PLU-SOURDOUGH-01',
-      'PLU-ORGANIC-EGGS-6PK',
-      'PLU-ORGANIC-MILK-2L',
-      'PLU-COLDPRESS-ORANGE',
-      'PLU-ART-001',
-    ];
+    return isDemoMode()
+      ? [
+          'PLU-SOURDOUGH-01',
+          'PLU-ORGANIC-EGGS-6PK',
+          'PLU-ORGANIC-MILK-2L',
+          'PLU-COLDPRESS-ORANGE',
+          'PLU-ART-001',
+        ]
+      : [];
   });
 
-  // Recent purchases / buy again list
-  const buyAgainPlus = [
-    'PLU-SOURDOUGH-01',
-    'PLU-COLDPRESS-ORANGE',
-    'PLU-ORGANIC-MILK-2L',
-    'PLU-ART-001',
-    'PLU-CRISP-01',
-  ];
+  // Recent purchases / buy again list (only seeded in demo mode)
+  const buyAgainPlus = isDemoMode()
+    ? [
+        'PLU-SOURDOUGH-01',
+        'PLU-COLDPRESS-ORANGE',
+        'PLU-ORGANIC-MILK-2L',
+        'PLU-ART-001',
+        'PLU-CRISP-01',
+      ]
+    : [];
 
   const toggleFavourite = (plu: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -106,9 +111,13 @@ export const FavouritesCarousel: React.FC<FavouritesCarouselProps> = ({
     return isFav || isBuyAgain;
   });
 
-  // Fallback to top products if user un-favourites everything
+  // Fallback to top products only in demo mode if user un-favourites everything
   const carouselProducts =
-    eligibleProducts.length > 0 ? eligibleProducts : products.slice(0, 6);
+    eligibleProducts.length > 0 ? eligibleProducts : isDemoMode() ? products.slice(0, 6) : [];
+
+  if (carouselProducts.length === 0) {
+    return null;
+  }
 
   return (
     <section id="favourites-buy-again-carousel" className="px-4 py-1 w-full max-w-full overflow-hidden">

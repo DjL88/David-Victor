@@ -19,10 +19,10 @@ export function getDeliverectAdapter(
   deliverectAccountId: string = 'default'
 ): DeliverectAdapter {
   const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
-  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  const appMode = getServerRuntimeMode();
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = deliverectAdapters.get(key);
   if (!adapter) {
-    const appMode = getServerRuntimeMode();
     const cachedContext = IntegrationContext.getCachedContext(normalizedTenantId);
     const tokenManager = cachedContext?.tokenManager || OAuthTokenManager.getInstance(normalizedTenantId);
     const hasCredentials = cachedContext ? cachedContext.isConfigured : tokenManager.isConfigured;
@@ -56,18 +56,20 @@ export async function getDeliverectAdapterAsync(
   const context = await IntegrationContext.getContext(normalizedTenantId);
   const env = environment || context.environment;
   const accId = deliverectAccountId || context.deliverectAccountId || 'default';
-  const key = `${normalizedTenantId}:${env}:${accId}`;
+  const appMode = getServerRuntimeMode();
+  const storeScopeKey = (context.allowedChannelLinkIds || []).slice().sort().join(',') || 'all';
+  const key = `${normalizedTenantId}:${env}:${accId}:${storeScopeKey}:${appMode}`;
 
   let adapter = deliverectAdapters.get(key);
   if (!adapter) {
-    const appMode = getServerRuntimeMode();
     if (appMode === 'demo') {
       adapter = new MockDeliverectAdapter();
     } else if (context.isConfigured) {
       adapter = new DeliverectApiClient(
         context.tokenManager,
         normalizedTenantId,
-        accId !== 'default' ? accId : undefined
+        accId !== 'default' ? accId : undefined,
+        context.allowedChannelLinkIds
       );
     } else {
       adapter = new IntegrationUnavailableAdapter();
@@ -88,7 +90,8 @@ export function setDeliverectAdapter(
   deliverectAccountId: string = 'default'
 ): void {
   const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
-  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  const appMode = getServerRuntimeMode();
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   deliverectAdapters.set(key, adapter);
 }
 
@@ -98,10 +101,10 @@ export function getDispatchAdapter(
   deliverectAccountId: string = 'default'
 ): DispatchAdapter {
   const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
-  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
+  const appMode = getServerRuntimeMode();
+  const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = dispatchAdapters.get(key);
   if (!adapter) {
-    const appMode = getServerRuntimeMode();
     const cachedContext = IntegrationContext.getCachedContext(normalizedTenantId);
     const tokenManager = cachedContext?.tokenManager || OAuthTokenManager.getInstance(normalizedTenantId);
     const hasCredentials = cachedContext ? cachedContext.isConfigured : tokenManager.isConfigured;
@@ -176,4 +179,6 @@ export * from './DeliverectDPayAdapter';
 export * from './DemoPaymentAdapter';
 export * from './IntegrationUnavailableDPayAdapter';
 export * from './PaymentService';
+export * from './DispatchOrchestrationService';
+export * from './dispatchTiming';
 

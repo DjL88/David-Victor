@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Category } from '../../commerce/models';
+import { Category, Product } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
 import {
   Search,
@@ -16,6 +16,7 @@ interface AislesModalProps {
   isOpen: boolean;
   onClose: () => void;
   categories: Category[];
+  products: Product[];
   selectedCategoryId: string | null;
   onSelectCategory: (categoryId: string | null) => void;
   storeName?: string;
@@ -25,6 +26,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
   isOpen,
   onClose,
   categories = [],
+  products = [],
   selectedCategoryId,
   onSelectCategory,
   storeName,
@@ -69,6 +71,19 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     }
     return results;
   }, [rootCategories, searchQuery]);
+
+  const categoryFallbackImages = useMemo(() => {
+    const result = new Map<string, string>();
+    const collectIds = (category: Category): string[] => [category.id, ...(category.subcategories || []).flatMap(collectIds)];
+    const visit = (category: Category) => {
+      const ids = new Set(collectIds(category));
+      const product = products.find((candidate) => candidate.active !== false && candidate.stockStatus !== 'OUT_OF_STOCK' && Boolean(candidate.imageUrl) && (candidate.categoryIds || []).some((id) => ids.has(id)));
+      if (product?.imageUrl) result.set(category.id, product.imageUrl);
+      (category.subcategories || []).forEach(visit);
+    };
+    categories.forEach(visit);
+    return result;
+  }, [categories, products]);
 
   if (!isOpen) return null;
 
@@ -201,6 +216,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               {filteredCategories.map((cat) => {
                 const isSelected = selectedCategoryId === cat.id;
                 const hasSubs = cat.subcategories && cat.subcategories.length > 0;
+                const categoryImage = cat.imageUrl || categoryFallbackImages.get(cat.id);
 
                 return (
                   <div
@@ -218,9 +234,9 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                         onClick={() => handleSelect(cat.id)}
                         className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
                       >
-                        {cat.imageUrl ? (
+                        {categoryImage ? (
                           <img
-                            src={cat.imageUrl}
+                            src={categoryImage}
                             alt={cat.name}
                             className="w-11 h-11 rounded-xl object-cover border border-gray-100 shadow-2xs shrink-0 group-hover:scale-105 transition-transform"
                           />

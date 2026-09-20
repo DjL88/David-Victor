@@ -22,7 +22,7 @@ import {
 
 function formatProductPrice(product: Product): string {
   const price = product.price ?? (product.priceMinor != null ? { amount: product.priceMinor, currency: 'GBP' } : undefined);
-  return price == null ? 'Not supplied' : formatMoney(price);
+  return price == null ? 'Price unavailable' : formatMoney(price);
 }
 
 interface CatalogAdminScreenProps {

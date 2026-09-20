@@ -1,12 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { getFirestoreDb, getWebFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { FirestoreRestService } from './firestoreRest';
 import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
-import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted } from './runtimeMode';
+import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
 import { BFFError } from './errors';
 
 export enum OperationType {
@@ -60,6 +60,8 @@ export interface IntegrationConfig {
   tenantId: string;
   deliverectAccountId?: string;
   channelLinkId?: string;
+  /** Explicit tenant storefront allowlist; absent means all stores in the assigned account. */
+  allowedChannelLinkIds?: string[];
   environment: 'staging' | 'production';
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';
@@ -70,7 +72,8 @@ export interface IntegrationConfig {
 
 import { CheckoutResult, CheckoutStatus, WebhookEvent, DomainPaymentProjection, SettlementResult, DomainNotification, NotificationSubscription } from '../src/domain/models';
 import { AnalyticsEvent } from '../src/analytics/analyticsModels';
-import { PickingState, PickingItem } from '../src/commerce/postCheckoutModels';
+import { PickingState, PickingItem, DispatchStateRecord } from '../src/commerce/postCheckoutModels';
+import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../src/rules/types';
 
 // GDPR-safe, de-identified read projection for order tracking
 export interface OrderProjection {
@@ -90,6 +93,7 @@ export interface OrderProjection {
   orderReference?: string;
   channelOrderReference?: string;
   picking?: PickingState;
+  dispatch?: DispatchStateRecord;
   paymentState?: string;
   paymentId?: string;
   authorizedMaximum?: number;
@@ -201,6 +205,8 @@ const inMemoryOrderProjections: Record<string, OrderProjection> = {};
 const inMemoryWebhookEvents: Record<string, WebhookEvent> = {};
 const inMemoryWebhookClaims: Record<string, string> = {};
 const inMemoryPaymentProjections: Record<string, DomainPaymentProjection> = {};
+const inMemorySearchConfigs: Record<string, any> = {};
+const inMemoryDispatchRules: Record<string, TenantDispatchRules> = {};
 
 export interface DomainRecord {
   domainId: string;
@@ -351,16 +357,19 @@ export class FirestoreService {
    * Retrieves tenant configuration by tenantId.
    */
   static async getTenantConfig(tenantId: string = 'brand-alpha'): Promise<TenantConfig> {
-    const isTestOrDemo = isDemoMode() || process.env.NODE_ENV === 'test';
+    const isDemo = isDemoMode();
 
-    // In demo, test mode, or when permission is denied, check in-memory cache directly
-    if ((isTestOrDemo || isFirestorePermissionDenied()) && inMemoryTenants[tenantId]) {
+    // In demo mode or when permission is denied, check in-memory cache directly
+    if ((isDemo || isFirestorePermissionDenied()) && inMemoryTenants[tenantId]) {
       return inMemoryTenants[tenantId];
     }
 
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
-      return inMemoryTenants[tenantId] || inMemoryTenants['brand-alpha'];
+      if (inMemoryTenants[tenantId]) {
+        return inMemoryTenants[tenantId];
+      }
+      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
     }
 
     try {
@@ -376,26 +385,18 @@ export class FirestoreService {
         return inMemoryTenants[tenantId];
       }
 
-      if (isTestOrDemo) {
-        const initialConfig = inMemoryTenants[tenantId] || inMemoryTenants['brand-alpha'];
-        try {
-          await db.collection('tenants').doc(tenantId).set({
-            ...initialConfig,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
-        } catch {
-          // Ignore write failure in demo mode
-        }
-        return initialConfig;
-      }
-
       throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
     } catch (err: any) {
+      if (err instanceof BFFError) {
+        throw err;
+      }
       if (isFirestorePermissionDeniedError(err)) {
         markFirestorePermissionDenied(err);
       }
-      return inMemoryTenants[tenantId] || inMemoryTenants['brand-alpha'];
+      if (inMemoryTenants[tenantId]) {
+        return inMemoryTenants[tenantId];
+      }
+      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
     }
   }
 
@@ -632,18 +633,16 @@ export class FirestoreService {
       }
     }
 
-    // 6. Preview and container environments (.ai.studio, .run.app, localhost, 127.0.0.1)
-    if (
+    // 6. Explicit authorized preview environment variable (if authorized by server configuration)
+    if (process.env.PREVIEW_TENANT_ID && (
       cleanHost.includes('ai.studio') ||
       cleanHost.includes('aistudio') ||
       cleanHost.includes('run.app') ||
       cleanHost.includes('localhost') ||
       cleanHost.includes('127.0.0.1') ||
       cleanHost.includes('googleusercontent.com')
-    ) {
-      // Return the primary tenant or first available
-      const tenantsList = Object.values(inMemoryTenants);
-      return tenantsList.length > 0 ? tenantsList[0].tenantId : 'brand-alpha';
+    )) {
+      return process.env.PREVIEW_TENANT_ID;
     }
 
     return null;
@@ -1122,7 +1121,11 @@ export class FirestoreService {
       return inMemoryHeroBanners[tenantId];
     }
 
-    // Fallback to defaults
+    if (!isDemoMode()) {
+      return [];
+    }
+
+    // Fallback to defaults in demo mode only
     const defaults = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
     inMemoryHeroBanners[tenantId] = defaults;
     return defaults;
@@ -1162,6 +1165,14 @@ export class FirestoreService {
         console.error(`[Firestore Admin] Failed to save hero banner:`, err);
       }
     }
+    const webDb = getWebFirestoreDb();
+    if (webDb) {
+      try {
+        await setDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', banner.id), cleanUndefined(banner), { merge: true });
+      } catch (err) {
+        console.error(`[Firestore Web] Failed to save hero banner:`, err);
+      }
+    }
     return banner;
   }
 
@@ -1183,12 +1194,29 @@ export class FirestoreService {
       try {
         const batch = db.batch();
         const collRef = db.collection('tenants').doc(tenantId).collection('heroBanners');
+        const existingDocs = await collRef.get();
+        const newIds = new Set(banners.map((b) => b.id));
+        existingDocs.forEach((doc) => {
+          if (!newIds.has(doc.id)) {
+            batch.delete(doc.ref);
+          }
+        });
         for (const banner of banners) {
           batch.set(collRef.doc(banner.id), cleanUndefined(banner), { merge: true });
         }
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to save hero banners batch:`, err);
+      }
+    }
+    const webDb = getWebFirestoreDb();
+    if (webDb) {
+      try {
+        for (const banner of banners) {
+          await setDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', banner.id), cleanUndefined(banner), { merge: true });
+        }
+      } catch (err) {
+        console.error(`[Firestore Web] Failed to save hero banners batch:`, err);
       }
     }
     return banners;
@@ -1219,6 +1247,14 @@ export class FirestoreService {
           .delete();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to delete hero banner:`, err);
+      }
+    }
+    const webDb = getWebFirestoreDb();
+    if (webDb) {
+      try {
+        await deleteDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', bannerId));
+      } catch (err) {
+        console.error(`[Firestore Web] Failed to delete hero banner:`, err);
       }
     }
     return true;
@@ -1260,7 +1296,7 @@ export class FirestoreService {
     const db = getFirestoreDb();
     const fallback = MOCK_FEE_POLICIES[tenantId] || MOCK_FEE_POLICIES['brand-alpha'];
     if (!db) {
-      if (isDemoMode() || process.env.NODE_ENV === 'test') return fallback;
+      if (isDemoMode()) return fallback;
       throw new BFFError('DATABASE_UNAVAILABLE', 'Database connection unavailable.', 503);
     }
 
@@ -1269,13 +1305,13 @@ export class FirestoreService {
       if (snap.exists) {
         return snap.data() as TenantFeePolicy;
       }
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      if (isDemoMode()) {
         await db.collection('tenants').doc(tenantId).collection('feePolicies').doc('default').set(fallback);
         return fallback;
       }
       throw new BFFError('POLICY_NOT_FOUND', `Fee policy not found for tenant "${tenantId}". Status: UNCONFIGURED.`, 404);
     } catch (err) {
-      if (isDemoMode() || process.env.NODE_ENV === 'test') return fallback;
+      if (isDemoMode()) return fallback;
       throw err;
     }
   }
@@ -1314,7 +1350,7 @@ export class FirestoreService {
   static async getAuditLogs(tenantId: string = 'brand-alpha'): Promise<AuditLogEntry[]> {
     const db = getFirestoreDb();
     if (!db) {
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
         if (inMemoryAuditLogs[tenantId]?.length) {
           return inMemoryAuditLogs[tenantId];
         }
@@ -1344,7 +1380,7 @@ export class FirestoreService {
       return logs;
     } catch (err: any) {
       handleFirestoreError(err, OperationType.LIST, `tenants/${tenantId}/auditLogs`);
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
         if (inMemoryAuditLogs[tenantId]?.length) {
           return inMemoryAuditLogs[tenantId];
         }
@@ -1416,7 +1452,7 @@ export class FirestoreService {
 
     const db = getFirestoreDb();
     if (!db) {
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
         inMemoryIntegrations[tenantId] = defaultIntegration;
         return defaultIntegration;
       }
@@ -1432,7 +1468,7 @@ export class FirestoreService {
         return data;
       }
 
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
         await db.collection('integrations').doc(tenantId).set(cleanUndefined(defaultIntegration));
         inMemoryIntegrations[tenantId] = defaultIntegration;
         return defaultIntegration;
@@ -1451,7 +1487,7 @@ export class FirestoreService {
       if (isPerm) {
         markFirestorePermissionDenied(err);
       }
-      if (isDemoMode() || process.env.NODE_ENV === 'test' || isPerm) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode() || isPerm) {
         if (!isPerm) {
           console.warn(`[Firestore Admin] Error fetching integration for ${tenantId}:`, err);
         }
@@ -1507,7 +1543,7 @@ export class FirestoreService {
       } else {
         console.error(`[Firestore Admin] Failed to update integration for ${tenantId}:`, err);
       }
-      if (isDemoMode() || process.env.NODE_ENV === 'test' || isPerm) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode() || isPerm) {
         return updated;
       }
       throw err;
@@ -2002,6 +2038,36 @@ export class FirestoreService {
   }
 
   /**
+   * Updates dispatch state record on an existing order projection.
+   */
+  static async updateOrderDispatchState(
+    orderId: string,
+    dispatch: DispatchStateRecord
+  ): Promise<OrderProjection | null> {
+    const existing = await this.getOrderProjection(orderId);
+    if (!existing) return null;
+
+    const updated: OrderProjection = {
+      ...existing,
+      dispatch,
+      updatedAt: new Date().toISOString(),
+    };
+
+    inMemoryOrderProjections[orderId] = updated;
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db.collection('orderProjections').doc(orderId).set(cleanUndefined(updated), { merge: true });
+      } catch (err) {
+        console.warn('[Firestore Admin] Failed to update order dispatch state:', err);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
    * Inbound webhook event journaling (WH-01, WH-02).
    */
   static async recordWebhookEvent(event: WebhookEvent): Promise<void> {
@@ -2471,6 +2537,85 @@ export class FirestoreService {
       }
     }
     return true;
+  }
+
+  static async getTenantSearchConfig(tenantId: string = 'brand-alpha'): Promise<any> {
+    if (inMemorySearchConfigs[tenantId]) {
+      return inMemorySearchConfigs[tenantId];
+    }
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const doc = await db.collection('tenants').doc(tenantId).collection('searchConfig').doc('default').get();
+        if (doc.exists) {
+          const data = doc.data();
+          inMemorySearchConfigs[tenantId] = data;
+          return data;
+        }
+      } catch (err) {
+        console.warn('[Firestore Admin] Failed to get search config from Firestore:', err);
+      }
+    }
+    return inMemorySearchConfigs[tenantId] || null;
+  }
+
+  static async saveTenantSearchConfig(tenantId: string, config: any): Promise<any> {
+    const item = {
+      ...config,
+      tenantId,
+      updatedAt: new Date().toISOString(),
+    };
+    inMemorySearchConfigs[tenantId] = item;
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db.collection('tenants').doc(tenantId).collection('searchConfig').doc('default').set(item, { merge: true });
+      } catch (err) {
+        console.warn('[Firestore Admin] Failed to save search config to Firestore:', err);
+      }
+    }
+    return item;
+  }
+
+  static async getTenantDispatchRules(tenantId: string = 'brand-alpha'): Promise<TenantDispatchRules> {
+    if (inMemoryDispatchRules[tenantId]) {
+      return inMemoryDispatchRules[tenantId];
+    }
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const doc = await db.collection('tenants').doc(tenantId).collection('dispatchRules').doc('default').get();
+        if (doc.exists) {
+          const data = doc.data() as TenantDispatchRules;
+          inMemoryDispatchRules[tenantId] = { ...DEFAULT_DISPATCH_RULES, ...data };
+          return inMemoryDispatchRules[tenantId];
+        }
+      } catch (err) {
+        console.warn('[Firestore Admin] Failed to get tenant dispatch rules from Firestore:', err);
+      }
+    }
+    return { ...DEFAULT_DISPATCH_RULES };
+  }
+
+  static async saveTenantDispatchRules(
+    tenantId: string = 'brand-alpha',
+    rules: Partial<TenantDispatchRules>
+  ): Promise<TenantDispatchRules> {
+    const existing = await this.getTenantDispatchRules(tenantId);
+    const updated: TenantDispatchRules = {
+      ...existing,
+      ...rules,
+    };
+    inMemoryDispatchRules[tenantId] = updated;
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db.collection('tenants').doc(tenantId).collection('dispatchRules').doc('default').set(cleanUndefined(updated), { merge: true });
+      } catch (err) {
+        console.warn('[Firestore Admin] Failed to save tenant dispatch rules to Firestore:', err);
+      }
+    }
+    return updated;
   }
 }
 

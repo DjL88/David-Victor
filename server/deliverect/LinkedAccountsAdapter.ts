@@ -37,12 +37,17 @@ export interface RawDeliverectLocation {
     postalCode?: string;
     postcode?: string;
     country?: string;
+    phoneNumber?: string;
   };
   coordinates?: [number, number] | { latitude: number; longitude: number; lat?: number; lng?: number };
   phone?: string;
   email?: string;
   contact?: any;
   channelLinks?: Array<RawDeliverectChannelLink | string>;
+  posSettings?: any;
+  posLocationId?: string;
+  timezone?: string;
+  openingHours?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
 }
 
 export interface RawDeliverectChannelLink {
@@ -51,8 +56,11 @@ export interface RawDeliverectChannelLink {
   locationId?: string;
   accountId?: string;
   name?: string;
-  channel?: string;
-  status?: string; // 'ONLINE' | 'OFFLINE' | 'PAUSED' | 'BUSY'
+  channel?: string | number;
+  status?: string | number; // 'ONLINE' | 'OFFLINE' | 'PAUSED' | 'BUSY'
+  menuUrl?: string;
+  channelSettings?: { storeUrl?: string; [key: string]: any };
+  application?: string;
   fulfillmentCapabilities?:
     | {
         delivery?: boolean;
@@ -165,8 +173,10 @@ export class LinkedAccountsAdapter {
 
     // 2. Process Physical Locations & Child Commerce Stores
     for (const rawLoc of rawLocations) {
+      const locId = rawLoc._id || (rawLoc as any).id || (rawLoc as any).deliverectLocationId;
+      if (!locId || locId === 'undefined') continue;
       const locAccountId = rawLoc.accountId ? `acclink_${rawLoc.accountId}` : primaryAccountId;
-      const physicalLocationId = `loc_${rawLoc._id}`;
+      const physicalLocationId = String(locId).startsWith('loc_') ? String(locId) : `loc_${locId}`;
 
       // Extract coordinates (GeoJSON [lng, lat] or object) - NEVER fabricate coordinates if missing
       let coordinates: { latitude: number; longitude: number } | undefined = undefined;
@@ -210,8 +220,8 @@ export class LinkedAccountsAdapter {
       locations.push({
         physicalLocationId,
         accountLinkId: locAccountId,
-        deliverectLocationId: rawLoc._id,
-        name: rawLoc.name,
+        deliverectLocationId: rawLoc._id || (rawLoc as any).id || (rawLoc as any).deliverectLocationId,
+        name: rawLoc.name || 'Deliverect Location',
         addressProjection,
         coordinates,
         ...{ phone: rawLoc.phone, email: rawLoc.email, contact: rawLoc.contact },
@@ -231,7 +241,7 @@ export class LinkedAccountsAdapter {
             physicalLocationId,
             channelLinkId: chLinkId,
             name: cl.name || `${rawLoc.name} (${cl.channel || 'Online'})`,
-            stateProjection: this.mapStoreState(cl.status),
+            stateProjection: this.mapStoreState(cl.status !== undefined ? String(cl.status) : undefined),
             fulfillmentCapabilitiesProjection: cl.fulfillmentCapabilities
               ? Array.isArray(cl.fulfillmentCapabilities)
                 ? {
@@ -499,10 +509,21 @@ export class LinkedAccountsAdapter {
     const rawLocations: RawDeliverectLocation[] = [];
     for (const rawAcc of rawAccounts) {
       const accId = rawAcc._id || rawAcc.id;
-      if (Array.isArray(rawAcc.locations) && rawAcc.locations.length > 0) {
+      // In Deliverect Eve/REST API, rawAcc.locations is an array of location IDs (strings, e.g. ["68518..."])
+      // or may be full location objects. Check if they are full objects with name and _id:
+      const hasFullLocationObjects =
+        Array.isArray(rawAcc.locations) &&
+        rawAcc.locations.length > 0 &&
+        typeof rawAcc.locations[0] === 'object' &&
+        rawAcc.locations[0] !== null &&
+        Boolean(rawAcc.locations[0]._id || rawAcc.locations[0].id) &&
+        Boolean(rawAcc.locations[0].name);
+
+      if (hasFullLocationObjects) {
         for (const loc of rawAcc.locations) {
           rawLocations.push({
             ...loc,
+            _id: loc._id || loc.id,
             accountId: loc.accountId || accId,
           });
         }
@@ -706,6 +727,28 @@ export class LinkedAccountsAdapter {
       console.warn(`[LinkedAccountsAdapter] Fresh physical locations fetch for account ${accountId} warning:`, locErr?.message || locErr);
     }
 
+    const channelDetails = new Map<string, any>();
+    const channelIds = Array.from(new Set(freshLocations.flatMap(loc =>
+      (Array.isArray(loc.channelLinks) ? loc.channelLinks : []).map(link =>
+        String(typeof link === 'string' ? link : (link.channelLinkId || link._id || ''))
+      ).filter(Boolean)
+    )));
+    await Promise.all(channelIds.map(async channelLinkId => {
+      try {
+        const response = await fetch(`${baseUrl}/channelLinks/${encodeURIComponent(channelLinkId)}`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (response.ok) {
+          const detail = await response.json();
+          channelDetails.set(channelLinkId, detail);
+        } else {
+          console.warn(`[LinkedAccountsAdapter] Channel link ${channelLinkId} returned HTTP ${response.status}`);
+        }
+      } catch (channelErr: any) {
+        console.warn(`[LinkedAccountsAdapter] Channel link ${channelLinkId} fetch warning:`, channelErr?.message || channelErr);
+      }
+    }));
+
     const channelLocations = new Map<string, string>();
     const channelToLocationMap = new Map<string, RawDeliverectLocation>();
 
@@ -724,7 +767,12 @@ export class LinkedAccountsAdapter {
     // Fallback correlation from cachedStores if present and not already mapped
     const cachedStores = inMemoryMappings.get(tenantId)?.stores || [];
     for (const store of cachedStores) {
-      if (store.channelLinkId && store.physicalLocationId && !channelLocations.has(store.channelLinkId)) {
+      if (
+        store.channelLinkId &&
+        store.physicalLocationId &&
+        store.physicalLocationId !== 'loc_undefined' &&
+        !channelLocations.has(store.channelLinkId)
+      ) {
         channelLocations.set(store.channelLinkId, store.physicalLocationId);
       }
     }
@@ -756,9 +804,10 @@ export class LinkedAccountsAdapter {
         rawStore.location?._id ||
         rawStore.location?.id ||
         (correlatedLoc ? correlatedLoc._id : null);
-      const physicalLocationId = rawPhysicalId
-        ? (String(rawPhysicalId).startsWith('loc_') ? String(rawPhysicalId) : `loc_${rawPhysicalId}`)
-        : null;
+      const physicalLocationId =
+        rawPhysicalId && rawPhysicalId !== 'loc_undefined' && rawPhysicalId !== 'undefined'
+          ? (String(rawPhysicalId).startsWith('loc_') ? String(rawPhysicalId) : `loc_${rawPhysicalId}`)
+          : null;
 
       let fulfillmentCapabilitiesProjection: { delivery: boolean; pickup: boolean; scheduling: boolean } | undefined = undefined;
       if (rawStore.fulfillmentCapabilities && typeof rawStore.fulfillmentCapabilities === 'object') {
@@ -847,6 +896,17 @@ export class LinkedAccountsAdapter {
         ...(deliveryRadiusKm !== undefined ? { deliveryRadiusKm } : {}),
         ...(deliveryEta ? { deliveryEta } : {}),
         ...(openingHours ? { openingHours } : {}),
+        ...(correlatedLoc?.posSettings?.dma?.locationId || correlatedLoc?.posLocationId ? { brandStoreId: String(correlatedLoc?.posSettings?.dma?.locationId || correlatedLoc?.posLocationId) } : {}),
+        ...(correlatedLoc?.address?.phoneNumber || correlatedLoc?.contact?.phoneNumber ? { phone: correlatedLoc?.address?.phoneNumber || correlatedLoc?.contact?.phoneNumber } : {}),
+        ...(correlatedLoc?.contact?.email ? { email: correlatedLoc.contact.email } : {}),
+        ...(correlatedLoc?.timezone ? { timezone: correlatedLoc.timezone } : {}),
+        services: (Array.isArray(correlatedLoc?.channelLinks) ? correlatedLoc.channelLinks : []).map((link: any) => {
+          const id = String(typeof link === 'string' ? link : (link.channelLinkId || link._id || ''));
+          const detail = channelDetails.get(id) || (typeof link === 'object' ? link : {});
+          const candidateUrl = detail.menuUrl || detail.channelSettings?.storeUrl;
+          const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
+          return { id, name: String(detail.name || detail.application || detail.channel || 'Ordering channel'), channel: detail.channel, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+        }).filter((service: any) => service.id),
         ...(rawStore.currency ? { currency: rawStore.currency } : {}),
         ...(rawStore.status ? { status: rawStore.status } : {}),
         lastSeenAt: new Date().toISOString(),
@@ -896,23 +956,46 @@ export class LinkedAccountsAdapter {
             };
           }
         }
+        const locId = rawLoc._id || (rawLoc as any).id || (rawLoc as any).deliverectLocationId;
+        const physicalLocationId =
+          locId && locId !== 'undefined'
+            ? (String(locId).startsWith('loc_') ? String(locId) : `loc_${locId}`)
+            : `loc_${accountId}_${Math.random().toString(36).substring(2, 7)}`;
         return {
-          physicalLocationId: `loc_${rawLoc._id}`,
+          physicalLocationId,
           accountLinkId: `acclink_${accountId}`,
-          deliverectLocationId: rawLoc._id,
-          name: rawLoc.name,
+          deliverectLocationId: rawLoc._id || (rawLoc as any).id || (rawLoc as any).deliverectLocationId,
+          name: rawLoc.name || 'Deliverect Location',
           addressProjection: addrProj,
           coordinates: coords,
           statusProjection: (rawLoc.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE') as any,
+          brandStoreId: rawLoc.posSettings?.dma?.locationId || rawLoc.posLocationId || undefined,
+          phone: rawLoc.address?.phoneNumber || rawLoc.contact?.phoneNumber || undefined,
+          email: rawLoc.contact?.email || undefined,
+          timezone: rawLoc.timezone || undefined,
+          openingHours: Array.isArray(rawLoc.openingHours) ? rawLoc.openingHours : undefined,
+          services: (Array.isArray(rawLoc.channelLinks) ? rawLoc.channelLinks : []).map((link: any) => {
+            const id = String(typeof link === 'string' ? link : (link.channelLinkId || link._id || ''));
+            const detail = channelDetails.get(id) || (typeof link === 'object' ? link : {});
+            const candidateUrl = detail.menuUrl || detail.channelSettings?.storeUrl;
+            const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
+            return { id, name: String(detail.name || detail.application || detail.channel || 'Ordering channel'), channel: detail.channel, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+          }).filter((service: any) => service.id),
         };
       });
       existing.locations = [
-        ...existing.locations.filter(loc => loc.accountLinkId !== 'acclink_' + accountId),
+        ...existing.locations.filter(loc => loc.accountLinkId !== 'acclink_' + accountId && loc.physicalLocationId !== 'loc_undefined'),
         ...normalizedFreshLocs,
       ];
     }
     existing.stores = [...existing.stores.filter(store => store.accountLinkId !== 'acclink_' + accountId), ...stores];
     inMemoryMappings.set(tenantId, existing);
+
+    // Keep local disk snapshot synchronized
+    try {
+      const filePath = getLocalMappingPath(tenantId);
+      fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
+    } catch {}
 
     // Persist discovered stores to Firestore: unified path tenants/{tenantId}/commerceStores/{channelLinkId}
     let firestorePersisted = false;
@@ -1131,6 +1214,12 @@ export class LinkedAccountsAdapter {
     tenantId: string,
     result: LinkedAccountsSyncResult
   ): Promise<{ success: boolean; code?: string; error?: string }> {
+    // Always write to local disk snapshot for offline/dev resilience
+    try {
+      const filePath = getLocalMappingPath(tenantId);
+      fs.writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf8');
+    } catch {}
+
     const db = getFirestoreDb();
     if (!db) {
       return {
@@ -1259,6 +1348,18 @@ export class LinkedAccountsAdapter {
         const raw = fs.readFileSync(filePath, 'utf8');
         const parsed = JSON.parse(raw) as LinkedAccountsSyncResult;
         if (parsed && Array.isArray(parsed.accounts) && (parsed.accounts.length > 0 || parsed.stores?.length > 0)) {
+          // Sanitize any legacy corrupted entries from older builds
+          if (Array.isArray(parsed.locations)) {
+            parsed.locations = parsed.locations.filter(
+              loc => loc && loc.physicalLocationId && loc.physicalLocationId !== 'loc_undefined'
+            );
+          }
+          if (Array.isArray(parsed.stores)) {
+            parsed.stores = parsed.stores.map(st => ({
+              ...st,
+              physicalLocationId: st.physicalLocationId === 'loc_undefined' ? null : st.physicalLocationId,
+            }));
+          }
           console.info(`[LinkedAccountsAdapter] Restored ${parsed.accounts.length} accounts and ${parsed.stores?.length || 0} stores from local disk snapshot for ${tenantId}.`);
           return parsed;
         }
@@ -1270,3 +1371,5 @@ export class LinkedAccountsAdapter {
     return null;
   }
 }
+
+export const linkedAccountsAdapter = new LinkedAccountsAdapter();

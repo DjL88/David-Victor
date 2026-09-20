@@ -61,12 +61,23 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
               <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 shadow-xs group-hover:scale-105 transition-transform duration-200">
                 <div className="p-0.5 rounded-full bg-white">
                   <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
-                    <img
-                      src={story.thumbnailUrl || story.mediaUrl}
-                      alt={story.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
-                    />
+                    {story.mediaType === 'video' && !story.thumbnailUrl ? (
+                      <video
+                        src={story.mediaUrl}
+                        aria-label={story.title}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
+                      />
+                    ) : (
+                      <img
+                        src={story.thumbnailUrl || story.mediaUrl}
+                        alt={story.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
+                      />
+                    )}
                   </div>
                 </div>
 

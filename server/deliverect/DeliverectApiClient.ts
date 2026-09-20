@@ -1,6 +1,7 @@
 import { DeliverectAdapter } from './DeliverectAdapter';
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
+import { IntegrationContext } from './IntegrationContext';
 import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
@@ -13,6 +14,7 @@ import {
   CatalogDiagnostics,
   Category,
   Product,
+  ProductTagDefinition,
   ProductAvailabilitySummary,
   Basket,
   Coordinates,
@@ -203,11 +205,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
   private baseUrl: string;
   private tenantId: string = 'brand-alpha';
   private deliverectAccountId?: string;
+  private allowedChannelLinkIds?: Set<string>;
+  private tagDefinitionsCache?: { definitions: ProductTagDefinition[]; loadedAt: number };
+  private static readonly TAG_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
   constructor(
     tokenManagerOrTenant?: OAuthTokenManager | string,
     tenantId?: string,
-    deliverectAccountId?: string
+    deliverectAccountId?: string,
+    allowedChannelLinkIds?: string[]
   ) {
     if (tokenManagerOrTenant instanceof OAuthTokenManager) {
       this.tokenManager = tokenManagerOrTenant;
@@ -220,6 +226,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
       this.tenantId = tenantId || 'brand-alpha';
     }
     this.deliverectAccountId = deliverectAccountId;
+    this.allowedChannelLinkIds = allowedChannelLinkIds?.length
+      ? new Set(allowedChannelLinkIds.map(String))
+      : undefined;
     this.baseUrl = this.tokenManager.config.baseUrl;
   }
 
@@ -245,31 +254,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
    * Resolves the authoritative Deliverect account ID for this tenant.
    */
   async resolveAccountId(): Promise<string> {
-    if (this.deliverectAccountId && this.deliverectAccountId !== 'default') {
-      return this.deliverectAccountId;
+    if (this.deliverectAccountId && this.deliverectAccountId !== 'default') return this.deliverectAccountId;
+    const context = await IntegrationContext.getContext(this.tenantId);
+    if (!context.deliverectAccountId) {
+      const error: any = new Error(`Tenant "${this.tenantId}" has no Deliverect account assigned. A platform super admin must assign an account before live commerce data can be read.`);
+      error.statusCode = 503;
+      error.code = 'DELIVERECT_ACCOUNT_NOT_ASSIGNED';
+      throw error;
     }
-
-    const adapter = new LinkedAccountsAdapter({ tokenManager: this.tokenManager });
-    const mappings = await adapter.getTenantMappings(this.tenantId || 'brand-alpha');
-    if (mappings.accounts.length > 0 && mappings.accounts[0].deliverectAccountId) {
-      this.deliverectAccountId = mappings.accounts[0].deliverectAccountId;
-      return this.deliverectAccountId;
-    }
-
-    const token = await this.tokenManager.getAccessToken();
-    const res = await fetch(`${this.baseUrl}/accounts`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const items = data._items || (Array.isArray(data) ? data : []);
-      if (items.length > 0 && items[0]._id) {
-        this.deliverectAccountId = items[0]._id;
-        return items[0]._id;
-      }
-    }
-
-    throw new Error(`No Deliverect linked account found for tenant "${this.tenantId}".`);
+    this.deliverectAccountId = context.deliverectAccountId;
+    return context.deliverectAccountId;
   }
 
   /**
@@ -277,19 +271,14 @@ export class DeliverectApiClient implements DeliverectAdapter {
    */
   async resolveStoreChannelLinkId(storeId: string): Promise<{ channelLinkId: string; store: Store | null }> {
     const stores = await this.getStores();
-    let store = stores.find(
-      (s) => s.id === storeId || s.channelLinkId === storeId || s.id === `cstore_${storeId}`
-    );
-    if (store && store.channelLinkId) {
-      return { channelLinkId: store.channelLinkId, store };
+    const store = stores.find(s => s.id === storeId || s.channelLinkId === storeId || s.id === `cstore_${storeId}`) || null;
+    if (!store?.channelLinkId) {
+      const error: any = new Error(`Store "${storeId}" is not assigned to tenant "${this.tenantId}".`);
+      error.statusCode = 404;
+      error.code = 'STORE_NOT_ASSIGNED_TO_TENANT';
+      throw error;
     }
-    // If storeId is an unknown mock id (like store_001) and real stores exist, gracefully resolve to the first available store
-    if (!store && (storeId.startsWith('store_') || storeId === 'mock_store' || storeId === 'default') && stores.length > 0) {
-      store = stores[0];
-      return { channelLinkId: store.channelLinkId || store.id.replace(/^cstore_/, ''), store };
-    }
-    const fallback = storeId.replace(/^cstore_/, '');
-    return { channelLinkId: fallback, store: store || null };
+    return { channelLinkId: store.channelLinkId, store };
   }
 
   async testConnection(accountId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
@@ -335,7 +324,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const sync = await adapter.getTenantMappings(this.tenantId || 'brand-alpha');
     const locMap = new Map(sync.locations.map((l) => [l.physicalLocationId, l]));
 
-    return sync.stores.map((s) => {
+    const accountId = await this.resolveAccountId();
+    const accountLinkIds = new Set(sync.accounts.filter(account => account.deliverectAccountId === accountId).map(account => account.accountLinkId));
+    const scopedStores = sync.stores
+      .filter(store => accountLinkIds.has(store.accountLinkId))
+      .filter(store => !this.allowedChannelLinkIds || this.allowedChannelLinkIds.has(store.channelLinkId));
+    if (accountLinkIds.size === 0) {
+      const error: any = new Error(`Assigned Deliverect account "${accountId}" is not mapped to tenant "${this.tenantId}".`);
+      error.statusCode = 503;
+      error.code = 'TENANT_ACCOUNT_MAPPING_MISSING';
+      throw error;
+    }
+
+    return scopedStores.map((s) => {
       const loc = s.physicalLocationId ? locMap.get(s.physicalLocationId) : undefined;
       // Do NOT fabricate central London coordinates. Retain exact store/location coordinates or keep undefined.
       let storeCoords: Coordinates | undefined = s.coordinates
@@ -417,11 +418,24 @@ export class DeliverectApiClient implements DeliverectAdapter {
     });
   }
 
-  parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
-    return DeliverectApiClient.parseDeliverectMenu(rawMenu, isStoreCatalog);
+  async getProductTagDefinitions(forceRefresh = false): Promise<ProductTagDefinition[]> {
+    if (!forceRefresh && this.tagDefinitionsCache && Date.now() - this.tagDefinitionsCache.loadedAt < DeliverectApiClient.TAG_CACHE_TTL_MS) return this.tagDefinitionsCache.definitions;
+    const token = await this.tokenManager.getAccessToken();
+    const response = await fetch(`${this.baseUrl}/allAllergens`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
+    const raw = await response.json() as any;
+    const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?._items) ? raw._items : Object.entries(raw || {}).map(([id, value]) => typeof value === 'string' ? { id, name: value } : { ...(value as any), id: (value as any)?.id ?? id });
+    const definitions = items.map((item: any) => { const id = String(item.id ?? item._id ?? item.value ?? item.tagId ?? ''); const name = String(item.name ?? item.label ?? item.title ?? item.code ?? id); const type = item.type ?? item.category ?? item.group; const typeText = String(type ?? '').toLowerCase(); return { id, name, ...(type ? { type: String(type) } : {}), isAllergen: item.isAllergen === true || typeText.includes('allergen') }; }).filter((definition: ProductTagDefinition) => definition.id && definition.name);
+    this.tagDefinitionsCache = { definitions, loadedAt: Date.now() };
+    return definitions;
   }
 
-  static parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
+  parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean, tagDefinitions: ProductTagDefinition[] = []): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
+    return DeliverectApiClient.parseDeliverectMenu(rawMenu, isStoreCatalog, tagDefinitions);
+  }
+
+  static parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean, tagDefinitions: ProductTagDefinition[] = []): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
+    const tagDefinitionMap = new Map(tagDefinitions.map(definition => [String(definition.id), definition]));
     const productCategoryMap = new Map<string, string[]>();
 
     // 1. Pass 1: Build raw category map and associate products
@@ -572,6 +586,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
     for (const p of rawProducts) {
       const prodId = String(p.id || p._id || '');
       const plu = String(p.plu || prodId);
+
+      // Phase 1: Filter out modifier/bundle sub-components or items with '#' in PLU at ingestion layer
+      if (plu.includes('#')) {
+        continue;
+      }
+
       const assignedCatIds = productCategoryMap.get(prodId) || [];
       const imageUrl = p.imageUrl || p.image || undefined;
 
@@ -758,8 +778,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           productTags: Array.isArray(p.productTags)
             ? p.productTags.filter((tag: unknown) => typeof tag === 'string' || (typeof tag === 'number' && Number.isFinite(tag))).map((tag: string | number) => String(tag))
             : [],
-          displayLabels: [],
-          allergens: Array.isArray(p.allergens) ? p.allergens : [],
+          displayLabels: Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))).filter((definition): definition is ProductTagDefinition => Boolean(definition) && !definition!.isAllergen).map(definition => definition.name) : [],
+          productTagLabels: Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))?.name).filter((name): name is string => Boolean(name)) : [],
+          unmappedProductTags: Array.isArray(p.productTags) ? p.productTags.map(String).filter((tagId: string) => !tagDefinitionMap.has(tagId)) : [],
+          allergens: [...(Array.isArray(p.allergens) ? p.allergens.map(String) : []), ...(Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))).filter((definition): definition is ProductTagDefinition => Boolean(definition?.isAllergen)).map(definition => definition.name) : [])],
           modifierGroups: p.modifierGroups || (rawMenu.modifierGroups ? Object.values(rawMenu.modifierGroups) : undefined),
         };
 
@@ -866,7 +888,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
       // Select primary root menu
       const primaryMenu = rawMenus[0];
-      const { categories, products, bundleCatalog } = this.parseDeliverectMenu(primaryMenu, false);
+      const tagDefinitions = await this.getProductTagDefinitions();
+      const { categories, products, bundleCatalog } = this.parseDeliverectMenu(primaryMenu, false, tagDefinitions);
 
       return {
         id: String(primaryMenu.menuId || `root_catalog_${accountId}`),
@@ -903,7 +926,6 @@ export class DeliverectApiClient implements DeliverectAdapter {
         const altUrls = [
           `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/channelLinks/${encodeURIComponent(channelLinkId)}/menus`,
           store?.physicalLocationId ? `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(store.physicalLocationId)}/menus` : null,
-          `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/menus`,
         ].filter(Boolean) as string[];
 
         for (const altUrl of altUrls) {
@@ -983,7 +1005,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
         ? Object.values(selectedMenu.products)
         : [];
 
-      const { categories, products, bundleCatalog } = this.parseDeliverectMenu(selectedMenu, true);
+      const tagDefinitions = await this.getProductTagDefinitions();
+      const { categories, products, bundleCatalog } = this.parseDeliverectMenu(selectedMenu, true, tagDefinitions);
 
       // Directive 1: Compute structured staging diagnostics
       const rawProductCount = rawProductsList.length;
@@ -1006,6 +1029,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         inactiveCount,
         snoozedCount,
         renderableCount,
+        unmappedProductTagIds: Array.from(new Set(products.flatMap(product => product.unmappedProductTags || []))),
         hiddenByRuleCount: 0,
         timestamp: new Date().toISOString(),
       };

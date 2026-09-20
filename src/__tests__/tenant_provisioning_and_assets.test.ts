@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FirestorePlatformService } from '../../server/firestoreService';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 import {
   AssetService,
   AssetType,
@@ -11,6 +12,9 @@ import {
 import { BFFError } from '../../server/errors';
 
 describe('Phase 4: Tenant Provisioning Engine', () => {
+  beforeEach(() => {
+    setServerRuntimeMode('demo');
+  });
   it('provisions a new tenant with UNCONFIGURED integration, default domains, and policies', async () => {
     const newBrandId = `brand-test-${Date.now()}`;
     const provisioned = await FirestorePlatformService.createTenant({
@@ -217,6 +221,7 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     const origMode = process.env.APP_MODE;
     try {
       process.env.APP_MODE = 'staging';
+      setServerRuntimeMode('staging');
       // In tests, live Cloud Storage signed URLs cannot be generated without proper credentials/bucket, so staging strictly fails rather than falling back to demo
       await expect(
         AssetService.createUploadUrl({
@@ -228,6 +233,7 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
       ).rejects.toThrow(/(Failed to generate signed upload URL|Cloud Storage is not configured)/);
     } finally {
       process.env.APP_MODE = origMode;
+      setServerRuntimeMode((origMode as any) || 'demo');
     }
   });
 });

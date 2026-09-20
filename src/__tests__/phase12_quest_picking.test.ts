@@ -4,6 +4,7 @@ import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/Web
 import { SubstitutionCallbackService } from '../../server/deliverect/SubstitutionCallbackService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 
 describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01 to QST-05, WH-04)', () => {
   const testTenant = 'brand-alpha';
@@ -11,8 +12,9 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
   let adapter: MockDeliverectAdapter;
 
   beforeEach(() => {
-    adapter = new MockDeliverectAdapter();
     process.env.APP_MODE = 'demo';
+    setServerRuntimeMode('demo');
+    adapter = new MockDeliverectAdapter();
   });
 
   // Helper to build Deliverect signed HMAC headers
@@ -554,8 +556,7 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
     });
 
     it('rejects unsigned GET callback requests in staging/production mode', () => {
-      const prevMode = process.env.APP_MODE;
-      process.env.APP_MODE = 'staging';
+      setServerRuntimeMode('staging');
 
       try {
         const path = '/api/v1/orders/ord-123/substitute/PLU-001';
@@ -572,7 +573,7 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
 
         expect(isValid).toBe(false);
       } finally {
-        process.env.APP_MODE = prevMode;
+        setServerRuntimeMode('demo');
       }
     });
   });

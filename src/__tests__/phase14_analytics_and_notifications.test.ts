@@ -2,12 +2,17 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { AnalyticsService } from '../../server/analyticsService';
 import { NotificationService } from '../../server/notificationService';
 import { FirestorePlatformService } from '../../server/firestoreService';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 import { v1Router } from '../../server/api/v1Router';
 import express from 'express';
 import http from 'http';
 
 describe('Phase 14: Analytics & Notifications Engine', () => {
   const tenantId = 'tenant_phase14_test';
+
+  beforeAll(() => {
+    setServerRuntimeMode('demo');
+  });
 
   beforeEach(() => {
     // Reset in-memory Firestore stores

@@ -5,13 +5,20 @@ import {
   X,
   Heart,
   RotateCcw,
-  Sparkles,
   Check,
   ShieldCheck,
   Wheat,
+  Shell,
+  Fish,
+  Nut,
   Milk,
+  Egg,
+  Bean,
+  Sprout,
+  Flame,
+  Flower2,
   Leaf,
-  Apple,
+  FlaskConical,
   SlidersHorizontal,
 } from 'lucide-react';
 
@@ -43,16 +50,31 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
 
+  const allergenIcon = (id: string): React.ElementType => {
+    const value = id.toUpperCase();
+    if (/(WHEAT|GLUTEN|BARLEY|OATS|RYE|SPELT|KAMUT)/.test(value)) return Wheat;
+    if (/(CRUSTACEAN|MOLLUSC|SHELLFISH)/.test(value)) return Shell;
+    if (value.includes('FISH')) return Fish;
+    if (/(PEANUT|NUT|ALMOND|CASHEW|HAZELNUT|PISTACHIO|PECAN|WALNUT|MACADAMIA)/.test(value)) return Nut;
+    if (/(MILK|DAIRY|LAC)/.test(value)) return Milk;
+    if (value.includes('EGG')) return Egg;
+    if (/(SOY|SOYA)/.test(value)) return Bean;
+    if (value.includes('SESAME')) return Sprout;
+    if (value.includes('MUSTARD')) return Flame;
+    if (value.includes('LUPIN')) return Flower2;
+    if (value.includes('CELERY')) return Leaf;
+    if (/(SULPH|SULFIT)/.test(value)) return FlaskConical;
+    return ShieldCheck;
+  };
+
   // Extract all unique dietary tags dynamically from the available products
   const dynamicDietaryTags = useMemo(() => {
     const tagSet = new Map<string, { label: string; count: number }>();
 
     products.forEach((p) => {
       const candidates: string[] = [
-        ...(p.productTags || []),
         ...(p.displayLabels || []),
-        ...(p.allergens || []),
-        ...((p as any).tags || []),
+        ...(p.productTagLabels || []).filter((label) => !(p.allergens || []).includes(label)),
       ];
 
       candidates.forEach((raw) => {
@@ -85,16 +107,6 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
       });
     });
 
-    // Provide sensible defaults if sparse
-    if (!tagSet.has('VEGAN')) tagSet.set('VEGAN', { label: 'Vegan', count: 12 });
-    if (!tagSet.has('VEGETARIAN')) tagSet.set('VEGETARIAN', { label: 'Vegetarian', count: 24 });
-    if (!tagSet.has('ORGANIC')) tagSet.set('ORGANIC', { label: 'Organic', count: 18 });
-    if (!tagSet.has('GLUTEN-FREE') && !tagSet.has('GLUTEN FREE')) {
-      tagSet.set('GLUTEN-FREE', { label: 'Gluten-Free', count: 15 });
-    }
-    if (!tagSet.has('DAIRY-FREE') && !tagSet.has('DAIRY FREE')) {
-      tagSet.set('DAIRY-FREE', { label: 'Dairy-Free', count: 9 });
-    }
 
     return Array.from(tagSet.entries()).map(([tag, data]) => ({
       tag,
@@ -103,14 +115,18 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
     }));
   }, [products]);
 
-  // Standard major allergens that can be excluded
-  const allergenOptions = [
-    { id: 'GLUTEN', label: 'Gluten / Wheat', icon: Wheat },
-    { id: 'DAIRY', label: 'Milk / Dairy', icon: Milk },
-    { id: 'NUTS', label: 'Tree Nuts & Peanuts', icon: Apple },
-    { id: 'EGGS', label: 'Eggs', icon: Leaf },
-    { id: 'SOYA', label: 'Soya', icon: Sparkles },
-  ];
+  const allergenOptions = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    products.forEach((product) => (product.allergens || []).forEach((raw) => {
+      const label = String(raw).trim();
+      if (!label) return;
+      const id = label.toUpperCase();
+      const existing = counts.get(id);
+      if (existing) existing.count += 1;
+      else counts.set(id, { label: label.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()), count: 1 });
+    }));
+    return Array.from(counts.entries()).map(([id, value]) => ({ id, ...value, icon: allergenIcon(id) }));
+  }, [products]);
 
   if (!isOpen) return null;
 
@@ -256,7 +272,7 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
                   <div>
                     <span className="text-xs font-bold block">Buy Again</span>
                     <span className="text-[10px] text-gray-500">
-                      Past orders
+                      {buyAgainCount} previous items
                     </span>
                   </div>
                 </div>
@@ -316,7 +332,9 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
               </h3>
             </div>
             <div className="space-y-1.5">
-              {allergenOptions.map(({ id, label, icon: Icon }) => {
+              {allergenOptions.length === 0 ? (
+                <p className="text-xs text-gray-500 bg-gray-50 rounded-xl p-3">No verified allergen tags are present in the current catalog.</p>
+              ) : allergenOptions.map(({ id, label, count, icon: Icon }) => {
                 const isExcluded = filterState.excludedAllergens.includes(id);
                 return (
                   <button
@@ -331,8 +349,8 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <Icon className={`w-4 h-4 ${isExcluded ? 'text-amber-600' : 'text-gray-400'}`} />
-                      <span>Exclude {label}</span>
+                      <Icon className={`w-4 h-4 ${isExcluded ? 'text-amber-600' : 'text-gray-400'}`} aria-hidden="true" />
+                      <span>Exclude {label} ({count})</span>
                     </div>
                     <span
                       className={`text-[11px] px-2 py-0.5 rounded-lg font-bold ${

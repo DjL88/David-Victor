@@ -61,6 +61,12 @@ export interface PhysicalLocation {
     longitude: number;
   };
   statusProjection: 'ACTIVE' | 'INACTIVE' | 'UNKNOWN';
+  brandStoreId?: string;
+  phone?: string;
+  email?: string;
+  timezone?: string;
+  openingHours?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  services?: Array<{ id: string; name: string; channel?: string | number; url?: string; source: 'DELIVERECT' | 'MANUAL' }>;
 }
 
 export interface CommerceStore {
@@ -89,6 +95,11 @@ export interface CommerceStore {
   deliveryRadiusKm?: number;
   deliveryEta?: string;
   openingHours?: any;
+  brandStoreId?: string;
+  phone?: string;
+  email?: string;
+  timezone?: string;
+  services?: Array<{ id: string; name: string; channel?: string | number; url?: string; source: 'DELIVERECT' | 'MANUAL' }>;
   currency?: string;
   status?: string;
   lastSeenAt: string;

@@ -21,9 +21,14 @@ import {
   List,
   Search,
   Tag,
+  Info,
+  Phone,
+  ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import { catalogueProjectionCache } from '../../commerce/catalogStore';
 import { Product, Money, moneyToMajor } from '../../commerce/models';
+import { isDemoMode } from '../../domain/runtime';
 
 function toMajorPrice(val?: Money | number | null): number | null {
   if (val === undefined || val === null) return null;
@@ -66,6 +71,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [filterMode, setFilterMode] = useState<'active' | 'all'>('active');
   const [storeSearch, setStoreSearch] = useState<string>('');
+  const [detailsStore, setDetailsStore] = useState<Store | null>(null);
 
   const coords = useMemo(() => {
     if (userCoordinates && typeof userCoordinates.latitude === 'number') {
@@ -132,7 +138,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
     >
       <div
         id="store-picker-card"
-        className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col overflow-x-hidden"
+        className="relative w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col overflow-x-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
@@ -157,6 +163,50 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
             </button>
           )}
         </div>
+
+        {detailsStore && (
+          <div className="absolute inset-0 z-20 bg-white rounded-3xl p-6 overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-xl font-black text-gray-900">{detailsStore.name}</h2>
+                {detailsStore.brandStoreId && <p className="text-sm font-bold text-emerald-700 mt-1">Store ID: {detailsStore.brandStoreId}</p>}
+              </div>
+              <button type="button" aria-label="Close location details" onClick={() => setDetailsStore(null)} className="w-9 h-9 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center"><X className="w-5 h-5" /></button>
+            </div>
+            {detailsStore.coordinates && (
+              <div className="h-48 rounded-2xl overflow-hidden mb-4 border border-gray-200">
+                <StoreLocationMap userCoordinates={detailsStore.coordinates} stores={[detailsStore]} selectedStore={detailsStore} onSelectStore={() => {}} height="192px" className="w-full h-full" />
+              </div>
+            )}
+            <div className="space-y-3 text-sm">
+              <div className="flex gap-3"><MapPin className="w-5 h-5 text-gray-500 shrink-0" /><span>{[detailsStore.address?.line1, detailsStore.address?.city, detailsStore.address?.postcode].filter(Boolean).join(', ') || 'Address unavailable'}</span></div>
+              {detailsStore.phone && <a href={`tel:${detailsStore.phone}`} className="flex gap-3 text-emerald-700 font-semibold"><Phone className="w-5 h-5 shrink-0" />{detailsStore.phone}</a>}
+            </div>
+            {detailsStore.openingHours && (
+              <section className="mt-6 pt-5 border-t border-gray-200">
+                <h3 className="text-base font-black text-gray-900 mb-3">Opening hours</h3>
+                <div className="space-y-2 text-sm">
+                  {Array.isArray(detailsStore.openingHours) ? detailsStore.openingHours.map((hours) => {
+                    const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                    return <div key={`${hours.dayOfWeek}-${hours.startTime}`} className="flex justify-between"><span className="font-semibold">{days[hours.dayOfWeek] || `Day ${hours.dayOfWeek}`}</span><span>{hours.startTime}–{hours.endTime}</span></div>;
+                  }) : Object.entries(detailsStore.openingHours).map(([day, hours]) => <div key={day} className="flex justify-between"><span className="font-semibold capitalize">{day}</span><span>{hours.open}–{hours.close}</span></div>)}
+                </div>
+              </section>
+            )}
+            {(detailsStore.services?.length || 0) > 0 && (
+              <section className="mt-6 pt-5 border-t border-gray-200">
+                <h3 className="text-base font-black text-gray-900 mb-3">Services</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {detailsStore.services!.map((service) => service.url ? (
+                    <a key={service.id} href={service.url} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800 flex items-center justify-between gap-2">{service.name}<ExternalLink className="w-4 h-4 shrink-0" /></a>
+                  ) : (
+                    <div key={service.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold text-gray-700">{service.name}</div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
 
         {/* View Switcher: List vs Map */}
         <div className="flex items-center justify-between mb-3 p-1 rounded-2xl bg-gray-100/80">
@@ -395,11 +445,14 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
                         </p>
                       </div>
 
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button type="button" aria-label={`View ${store.name} location information`} onClick={(event) => { event.stopPropagation(); setDetailsStore(store); }} className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-emerald-100 hover:text-emerald-700 flex items-center justify-center"><Info className="w-4 h-4" /></button>
                       {isSelected && (
                         <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
                           <Check className="w-3 h-3 stroke-[3]" />
                         </div>
                       )}
+                      </div>
                     </div>
 
                     {/* Badges for delivery & collection */}
@@ -430,7 +483,9 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
                     {/* Item and Price per store to inform store choice */}
                     {targetProduct ? (
                       (() => {
-                        const avail = catalogueProjectionCache.getProductAvailability(store.id, targetProduct.plu);
+                        const avail = isDemoMode()
+                          ? catalogueProjectionCache.getProductAvailability(store.id, targetProduct.plu)
+                          : undefined;
                         const storePriceRaw = avail?.storePrice ?? avail?.price ?? targetProduct.price;
                         const storePrice = toMajorPrice(storePriceRaw) ?? storePriceRaw;
                         const isOutOfStock = avail?.stockStatus === 'OUT_OF_STOCK' || avail?.stockQuantity === 0;
@@ -458,8 +513,9 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
                         );
                       })()
                     ) : (
-                      /* When opened from header, show staple benchmark item and price per store */
+                      /* When opened from header, show staple benchmark item and price per store (demo mode only) */
                       (() => {
+                        if (!isDemoMode()) return null;
                         const staplePlu = 'PLU-SOURDOUGH-01';
                         const avail = catalogueProjectionCache.getProductAvailability(store.id, staplePlu);
                         if (!avail || (avail.storePrice == null && avail.price == null)) return null;

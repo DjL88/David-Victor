@@ -32,6 +32,7 @@ import { resolveSearchQueryInfo, applySearchMerchandising, getActiveSearchConfig
 import { getCategoryAndAllDescendantIds, findCategoryById } from '../../commerce/categoryHierarchy';
 import { useFavourites } from '../../hooks/useFavourites';
 import { DietaryPreferencesModal, CatalogFilterState } from '../catalog/DietaryPreferencesModal';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
 interface HomeScreenProps {
   stories: Story[];
@@ -118,6 +119,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     selectedDietaryTags: [],
     excludedAllergens: [],
   });
+  const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let active = true;
+    const client = getCommerceClient() as any;
+    if (typeof client.getOrderHistory !== 'function') {
+      setBuyAgainPlus(new Set());
+      return () => { active = false; };
+    }
+    Promise.resolve(client.getOrderHistory()).then((orders: any[]) => {
+      if (!active) return;
+      const plus = new Set<string>();
+      (orders || []).forEach((order: any) => {
+        if (String(order.status || '').toUpperCase().includes('CANCEL')) return;
+        (order.items || order.lineItems || []).forEach((item: any) => {
+          const plu = item.plu || item.product?.plu;
+          if (plu) plus.add(String(plu));
+        });
+      });
+      setBuyAgainPlus(plus);
+    }).catch(() => { if (active) setBuyAgainPlus(new Set()); });
+    return () => { active = false; };
+  }, []);
 
   // If a deal filter becomes active, ensure the carousel shows the deals view
   React.useEffect(() => {
@@ -156,19 +180,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       if (filterState.onlyFavourites && !isFavourite(product.plu)) {
         return false;
       }
+      if (filterState.onlyBuyAgain && !buyAgainPlus.has(product.plu)) {
+        return false;
+      }
 
-      const allProductTags = [
-        ...(product.productTags || []),
+      const dietaryLabels = [
         ...(product.displayLabels || []),
-        ...(product.allergens || []),
-        ...((product as any).tags || []),
-      ].map((t) => (typeof t === 'string' ? t.trim().toUpperCase() : ''));
+        ...(product.productTagLabels || []),
+      ].map((value) => String(value).trim().toUpperCase());
+      const verifiedAllergens = (product.allergens || []).map((value) => String(value).trim().toUpperCase());
 
       // Excluded allergens: if product has any excluded allergen, filter it out
       if (filterState.excludedAllergens.length > 0) {
         const hasExcludedAllergen = filterState.excludedAllergens.some((allergen) => {
           const target = allergen.toUpperCase();
-          return allProductTags.some((tag) => tag.includes(target));
+          return verifiedAllergens.includes(target);
         });
         if (hasExcludedAllergen) return false;
       }
@@ -177,14 +203,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       if (filterState.selectedDietaryTags.length > 0) {
         const matchesAllTags = filterState.selectedDietaryTags.every((dietTag) => {
           const target = dietTag.toUpperCase();
-          return allProductTags.some((tag) => tag.includes(target));
+          return dietaryLabels.includes(target);
         });
         if (!matchesAllTags) return false;
       }
 
       return true;
     },
-    [filterState, isFavourite]
+    [filterState, isFavourite, buyAgainPlus]
   );
 
   // Canonical renderable products adhering strictly to identical availability & rule evaluations as ProductCard
@@ -291,7 +317,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   return (
     <div id="home-screen-container" className="w-full max-w-7xl mx-auto pb-20 space-y-4">
       {/* Instagram-style horizontal Stories */}
-      {!searchQuery && (
+      {!searchQuery && tenant?.featureFlags?.enableStories !== false && (
         <StoriesRow
           stories={stories}
           loading={storiesLoading}
@@ -635,13 +661,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
                   <AlertCircle className="w-6 h-6" />
                 </div>
-                <h3 className="text-sm font-bold text-gray-900 mb-1">Catalog Unavailable</h3>
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <h3 className="text-sm font-bold text-gray-900">Catalog Unavailable</h3>
+                  {catalogError.includes('NOT_CONFIGURED') ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">
+                      NOT_CONFIGURED
+                    </span>
+                  ) : catalogError.includes('PERMISSION_DENIED') ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">
+                      PERMISSION_DENIED
+                    </span>
+                  ) : catalogError.includes('UPSTREAM_ERROR') ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">
+                      UPSTREAM_ERROR
+                    </span>
+                  ) : catalogError.includes('UNMAPPED_LOCATION') ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">
+                      UNMAPPED_LOCATION
+                    </span>
+                  ) : null}
+                </div>
                 <p className="text-xs text-gray-600 mb-4">{catalogError}</p>
                 {onRetryCatalog && (
                   <button
                     type="button"
                     onClick={onRetryCatalog}
-                    className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors shadow-xs"
+                    className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors shadow-xs cursor-pointer"
                   >
                     Retry Loading Catalog
                   </button>
@@ -689,12 +734,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 )}
               </>
             ) : (
-              <div className="text-center py-12 text-gray-400">
-                <p className="text-sm font-semibold">
+              <div className="text-center py-12 px-4 max-w-md mx-auto">
+                <p className="text-sm font-semibold text-gray-600 mb-1">
                   {searchQuery
                     ? `No products found matching "${searchQuery}".`
-                    : 'No products currently available in this section.'}
+                    : products.length > 0
+                    ? `Items in this section are currently snoozed or out of stock.`
+                    : 'No products currently listed in this catalog.'}
                 </p>
+                {!searchQuery && (
+                  <span className="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-semibold">
+                    {products.length > 0 ? 'STATUS: RENDER_FILTERED' : 'STATUS: EMPTY_VALID_RESPONSE'}
+                  </span>
+                )}
               </div>
             )}
           </>
@@ -709,7 +761,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         filterState={filterState}
         onChangeFilterState={setFilterState}
         favouritesCount={favourites.length}
-        buyAgainCount={0}
+        buyAgainCount={products.filter((product) => buyAgainPlus.has(product.plu)).length}
       />
     </div>
   );

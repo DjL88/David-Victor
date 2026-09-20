@@ -18,6 +18,10 @@ export interface Money {
   amount: number;
   /** ISO-4217 Currency Code (e.g. 'GBP', 'EUR', 'USD') */
   currency: string;
+  /** Number of decimal places, typically 2 */
+  fractionalDigits?: number;
+  /** Pre-formatted string representation */
+  formatted?: string;
 }
 
 export function toMoney(minorUnits: number, currency: string = 'GBP'): Money {
@@ -39,11 +43,7 @@ export function moneyToMajor(money?: Money | number | null): number {
   if (money === undefined || money === null) return 0;
   if (typeof money === 'number') {
     if (isNaN(money) || !isFinite(money)) return 0;
-    // If it's a decimal (e.g. 1.35, 2.95, 0.49, 1.99) or integer < 50 (e.g. 1, 2, 5, 10, 38 for £38), it is already in major units (pounds/dollars/euros)
-    if (!Number.isInteger(money) || (money < 50 && money >= 0)) {
-      return money;
-    }
-    // Large integers (e.g. 50, 100, 135, 285, 500, 1193) are in minor units (pence/cents)
+    // Commerce prices are integer minor units (e.g. 25 minor units = 0.25, 500 = 5.00)
     return money / 100;
   }
   if (typeof money === 'object' && typeof (money as any).amount === 'number') {
@@ -57,9 +57,6 @@ export function moneyToMinor(money?: Money | number | null): number {
   if (money === undefined || money === null) return 0;
   if (typeof money === 'number') {
     if (isNaN(money) || !isFinite(money)) return 0;
-    if (!Number.isInteger(money) || (money < 50 && money >= 0)) {
-      return Math.round(money * 100);
-    }
     return Math.round(money);
   }
   if (typeof money === 'object' && typeof (money as any).amount === 'number') {
@@ -82,11 +79,30 @@ export function subMoney(a: Money, b: Money): Money {
 }
 
 export function formatMoney(money?: Money | number | null, currencyDefault: string = 'GBP'): string {
-  if (money === undefined || money === null) return '£0.00';
-  const major = moneyToMajor(money);
-  const curr = typeof money === 'object' && money?.currency ? money.currency : currencyDefault;
-  const symbol = curr === 'GBP' ? '£' : curr === 'EUR' ? '€' : '$';
-  return `${symbol}${major.toFixed(2)}`;
+  if (money === undefined || money === null) return 'Price unavailable';
+  let minorUnits: number;
+  let curr = currencyDefault;
+
+  if (typeof money === 'object') {
+    const amt = (money as any).amount;
+    if (typeof amt !== 'number' || isNaN(amt) || !isFinite(amt)) {
+      return 'Price unavailable';
+    }
+    minorUnits = Math.round(amt);
+    if ((money as any).currency) {
+      curr = (money as any).currency;
+    }
+  } else if (typeof money === 'number') {
+    if (isNaN(money) || !isFinite(money)) {
+      return 'Price unavailable';
+    }
+    minorUnits = Math.round(money);
+  } else {
+    return 'Price unavailable';
+  }
+
+  const symbol = curr === 'GBP' || curr === '£' ? '£' : curr === 'EUR' || curr === '€' ? '€' : '$';
+  return `${symbol}${(minorUnits / 100).toFixed(2)}`;
 }
 
 export interface TenantSupportDetails {
@@ -283,9 +299,12 @@ export interface Store {
   locationGroup?: string;
   phone?: string;
   email?: string;
-  openingHours?: Record<string, { open: string; close: string }>;
+  openingHours?: Record<string, { open: string; close: string }> | Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
   channelLinkId?: string;
   physicalLocationId?: string;
+  brandStoreId?: string;
+  timezone?: string;
+  services?: Array<{ id: string; name: string; channel?: string | number; url?: string; source: 'DELIVERECT' | 'MANUAL' }>;
 }
 
 /**
@@ -440,6 +459,13 @@ export type ProductMetadata = Record<string, unknown>;
  * Brand-wide authoritative Root Product definition (Deliverect Root Menu item).
  * Store-agnostic and explicitly excludes location-specific availability and pricing.
  */
+export interface ProductTagDefinition {
+  id: string;
+  name: string;
+  type?: string;
+  isAllergen?: boolean;
+}
+
 export interface Product {
   id: string;
   plu: string;
@@ -454,6 +480,8 @@ export interface Product {
   productTags: (ProductTag | string)[];
   displayLabels: string[];
   allergens: string[];
+  productTagLabels?: string[];
+  unmappedProductTags?: string[];
   nutritionalInfo?: ProductNutritionalInfo;
   supplementalInfo?: ProductSupplementalInfo;
   multiMax?: number; // E.g. limit to 2 for paracetamol
@@ -554,6 +582,7 @@ export interface CatalogDiagnostics {
   inactiveCount?: number;
   snoozedCount?: number;
   renderableCount?: number;
+  unmappedProductTagIds?: string[];
   hiddenByRuleCount?: number;
   timestamp?: string;
 }
@@ -633,35 +662,17 @@ export interface CategoryPromoBanner {
   stockMatchMode?: StoryStockMatchMode;
 }
 
-import {
-  PaymentStateStatus,
-  OrderPaymentInfo,
-  SubstitutionPricePolicy,
-  SubstitutionPreferenceType,
-  DeliverectSubstitutionMapping,
-  ItemSubstitutionConfig,
-  TenantSubstitutionPolicy,
-  PickingItemState,
-  PickingSubstitution,
-  PickingAmendment,
-  PickingItem,
-  PickingState,
-  PickingEventType,
-  PickingEvent,
-  DeliveryOption,
-  DispatchSchedulingMode,
-  OrderDeliveryInfo,
-  FulfillmentSchedulingType,
-  SchedulingPolicy,
-  DeliverySlot,
-  CustomerOrderStatus,
-  OrderSnapshot,
-  OrderEvent,
-  Order as PostCheckoutOrder,
-  DemoScenario,
-} from './postCheckoutModels';
+export interface CourierInfo {
+  name?: string;
+  eta?: string;
+  coordinates?: Coordinates;
+  currentCoordinates?: Coordinates;
+  phone?: string;
+  vehicleType?: string;
+}
 
-export * from './postCheckoutModels';
+import type { SubstitutionPreferenceType, DeliverySlot } from './postCheckoutModels';
+
 export { calculatePreChosenAlternativeExtraBuffer } from './substitutionPricing';
 
 export interface SubstituteCandidate {
@@ -799,15 +810,6 @@ export type OrderTrackingStatus =
   | 'delivered'
   | 'cancelled';
 
-export interface CourierInfo {
-  name?: string;
-  eta?: string;
-  coordinates?: Coordinates;
-  currentCoordinates?: Coordinates;
-  phone?: string;
-  vehicleType?: string;
-}
-
 // Re-export comprehensive Order aggregate and grocery post-checkout models
 export * from './postCheckoutModels';
 
@@ -921,3 +923,185 @@ export interface BootstrapResponse {
     coordinates: Coordinates;
   };
 }
+
+// ==========================================
+// CONNECTION HEALTH & REQUEST TRACE MODELS
+// ==========================================
+
+export type ConnectionTraceFailureType =
+  | 'NOT_CONFIGURED'
+  | 'PERMISSION_DENIED'
+  | 'UPSTREAM_ERROR'
+  | 'EMPTY_VALID_RESPONSE'
+  | 'UNMAPPED_LOCATION'
+  | 'RENDER_FILTERED';
+
+export interface Stage1UpstreamTrace {
+  stage: 'UPSTREAM';
+  status: 'SUCCESS' | 'FAILED';
+  httpStatus: number;
+  latencyMs: number;
+  url: string;
+  rawMenusCount: number;
+  rawProductsCount: number;
+  payloadSizeBytes: number;
+  timestamp: string;
+  error?: { code: string; message: string };
+}
+
+export interface Stage2BffNormalizationTrace {
+  stage: 'BFF_NORMALIZATION';
+  status: 'SUCCESS' | 'FAILED';
+  latencyMs: number;
+  selectedMenuId: string;
+  selectedMenuName: string;
+  parsedProductsCount: number;
+  activeCount: number;
+  inactiveCount: number;
+  snoozedCount: number;
+  categoriesCount: number;
+  bundlesCount: number;
+  error?: { code: string; message: string };
+}
+
+export interface Stage3HttpClientTrace {
+  stage: 'HTTP_CLIENT';
+  status: 'SUCCESS' | 'FAILED';
+  httpStatus: number;
+  roundtripLatencyMs: number;
+  receivedPayloadSize: number;
+  receivedProductsCount: number;
+  error?: { code: string; message: string };
+}
+
+export interface Stage4HookTrace {
+  stage: 'HOOK';
+  status: 'SUCCESS' | 'FAILED';
+  hookName: 'useCatalog';
+  productsInState: number;
+  categoriesInState: number;
+  summariesCount: number;
+  error?: { code: string; message: string };
+}
+
+export interface Stage5VisibleCardsTrace {
+  stage: 'VISIBLE_CARDS';
+  status: 'SUCCESS' | 'FAILED' | 'ANOMALY_ZERO_RENDERABLE';
+  renderableProductsCount: number;
+  visibleCardCount: number;
+  filterDropCount: number;
+  filterDropReasons: Record<string, number>;
+  zeroRenderableWarning: boolean;
+  explanation: string;
+  error?: { code: string; message: string };
+}
+
+export interface ConnectionTraceResult {
+  traceId: string;
+  tenantId: string;
+  runtimeMode: string;
+  storeId?: string;
+  channelLinkId?: string;
+  forceFailureType?: ConnectionTraceFailureType;
+  overallStatus: 'SUCCESS' | 'FAILED' | 'ZERO_RENDERABLE_WARNING';
+  exactFailureStage?: 'UPSTREAM' | 'BFF_NORMALIZATION' | 'HTTP_CLIENT' | 'HOOK' | 'RENDER_FILTER';
+  exactErrorCode?: ConnectionTraceFailureType;
+  errorMessage?: string;
+  stage1Upstream: Stage1UpstreamTrace;
+  stage2Bff: Stage2BffNormalizationTrace;
+  stage3HttpClient: Stage3HttpClientTrace;
+  stage4Hook: Stage4HookTrace;
+  stage5Cards: Stage5VisibleCardsTrace;
+  timestamp: string;
+
+  // Convenient aliases for UI and assertions
+  status?: 'SUCCESS' | 'FAILED' | 'ZERO_RENDERABLE_WARNING';
+  failedStage?: 'UPSTREAM' | 'BFF_NORMALIZATION' | 'HTTP_CLIENT' | 'HOOK' | 'VISIBLE_CARDS';
+  errorCode?: ConnectionTraceFailureType;
+  totalDurationMs?: number;
+  stages?: Array<{
+    stage: 'UPSTREAM' | 'BFF_NORMALIZATION' | 'HTTP_CLIENT' | 'HOOK' | 'VISIBLE_CARDS';
+    name: string;
+    status: 'SUCCESS' | 'ERROR' | 'SKIPPED' | 'WARNING';
+    count: number;
+    details: any;
+    error?: { code: string; message: string };
+  }>;
+}
+
+export interface ConnectionHealthData {
+  runtimeMode: 'demo' | 'staging' | 'production' | 'unknown';
+  resolvedTenant: {
+    tenantId: string;
+    slug?: string;
+    name?: string;
+    country?: string;
+  };
+  hostname: string;
+  deliverect: {
+    environment: 'staging' | 'production';
+    accountId: string | null;
+    configured: boolean;
+    status: 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED' | 'UNCONFIGURED';
+    connectionState: 'HEALTHY' | 'DISCONNECTED';
+    apiUrl: string;
+  };
+  counts: {
+    physicalLocationsCount: number;
+    commerceStoresCount: number;
+    accountsCount: number;
+  };
+  menus: {
+    rootMenu: {
+      id: string;
+      name: string;
+      productCount: number;
+      rawCount: number;
+    } | null;
+    storeMenu: {
+      id: string;
+      name: string;
+      storeId: string;
+      channelLinkId: string;
+      fulfillmentType: string;
+      selectionReason: string;
+    } | null;
+  };
+  products: {
+    rawProductCount: number;
+    parsedProductCount: number;
+    activeCount: number;
+    inactiveCount: number;
+    snoozedCount: number;
+    renderableProductCount: number;
+    hiddenByRuleCount: number;
+  };
+  sync: {
+    lastSuccessfulSync: string | null;
+    lastCheckedAt: string;
+  };
+  lastFailure: {
+    stage: string;
+    code: ConnectionTraceFailureType;
+    message: string;
+    timestamp: string;
+  } | null;
+  security: {
+    credentialsExposed: false;
+    customerDataExposed: false;
+  };
+
+  // Top-level aliases for direct access
+  tenantId?: string;
+  deliverectEnvironment?: string;
+  deliverectAccountId?: string | null;
+  physicalLocationsCount?: number;
+  commerceStoresCount?: number;
+  rawProductCount?: number;
+  parsedProductCount?: number;
+  renderableProductCount?: number;
+  chosenRootMenu?: string | null;
+  chosenStoreMenu?: string | null;
+  lastSuccessfulSync?: string | null;
+}
+

@@ -145,6 +145,9 @@ export function evaluateProductRules(
       preventCheckoutUpsell: true,
       preventRecommendation: true,
       requiresAllergenDisplay: false,
+      discountEligible: true,
+      preventStoryPlacement: false,
+      preventCarouselPlacement: false,
       appliedRuleIds: [],
       groupLimits: [],
     };
@@ -172,6 +175,9 @@ export function evaluateProductRules(
       preventCheckoutUpsell: true,
       preventRecommendation: true,
       requiresAllergenDisplay: false,
+      discountEligible: true,
+      preventStoryPlacement: false,
+      preventCarouselPlacement: false,
       appliedRuleIds,
       groupLimits: [],
     };
@@ -344,6 +350,9 @@ export function evaluateProductRules(
   const requiresAllergenDisplay = matchingRules.some(
     (r) => r.actions.requiresAllergenDisplay === true
   );
+  const discountEligible = !matchingRules.some((r) => r.actions.excludeFromDiscounts === true);
+  const preventStoryPlacement = matchingRules.some((r) => r.actions.preventStoryPlacement === true);
+  const preventCarouselPlacement = matchingRules.some((r) => r.actions.preventCarouselPlacement === true);
 
   return {
     shouldRender: true,
@@ -358,6 +367,9 @@ export function evaluateProductRules(
     preventCheckoutUpsell,
     preventRecommendation,
     requiresAllergenDisplay,
+    discountEligible,
+    preventStoryPlacement,
+    preventCarouselPlacement,
     appliedRuleIds,
     groupLimits: groupLimitsInfo,
   };

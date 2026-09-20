@@ -37,11 +37,6 @@ export function getServerRuntimeMode(): ServerRuntimeMode {
   if (envMode === 'production') return 'production';
   if (envMode === 'demo') return 'demo';
 
-  // In test environment, default to demo mode unless APP_MODE is explicitly set
-  if (isTestMode()) {
-    return 'demo';
-  }
-
   // Support DELIVERECT_ENV as fallback if APP_MODE not explicitly defined AND live credentials exist
   const hasLiveDeliverectCredentials = Boolean(
     process.env.DELIVERECT_CLIENT_ID && process.env.DELIVERECT_CLIENT_SECRET
@@ -51,15 +46,11 @@ export function getServerRuntimeMode(): ServerRuntimeMode {
     const deliverectEnv = (process.env.DELIVERECT_ENV || '').trim().toLowerCase();
     if (deliverectEnv === 'staging') return 'staging';
     if (deliverectEnv === 'production') return 'production';
-
-    // If running in production container (Cloud Run / Firebase App Hosting)
-    if (process.env.NODE_ENV === 'production') {
-      return 'staging';
-    }
   }
 
-  // In preview containers, development, or unconfigured environments, default to demo mode
-  return 'demo';
+  // Missing or invalid runtime configuration MUST fail closed to 'unknown'
+  // Demo mode is strictly opt-in through explicit APP_MODE=demo.
+  return 'unknown';
 }
 
 export function isDemoMode(): boolean {
@@ -95,7 +86,7 @@ export function assertRuntimeConfigured(): void {
   const mode = getServerRuntimeMode();
   if (mode === 'unknown') {
     const error: any = new Error(
-      'APP_MODE environment variable is required in production (must be "staging" or "production"). Failing closed to prevent mock leakage.'
+      'APP_MODE environment variable is required (must be "demo", "staging", or "production"). Missing runtime configuration fails closed to prevent mock leakage.'
     );
     error.statusCode = 503;
     error.code = 'RUNTIME_MODE_UNCONFIGURED';

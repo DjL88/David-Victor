@@ -8,6 +8,8 @@
 export interface Money {
   readonly amount: number; // Integer minor units
   readonly currency: string; // ISO 4217 code (e.g. "GBP", "EUR")
+  readonly fractionalDigits?: number;
+  readonly formatted?: string;
 }
 
 export function createMoney(minorUnits: number, currency = 'GBP'): Money {

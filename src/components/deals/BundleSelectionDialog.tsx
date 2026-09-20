@@ -218,7 +218,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
               )}
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-base font-bold text-neutral-900">
-                  From {formatMoney(bundle.price, currency)}
+                  {bundle.price != null ? `From ${formatMoney(bundle.price, currency)}` : 'Price unavailable'}
                 </span>
               </div>
             </div>

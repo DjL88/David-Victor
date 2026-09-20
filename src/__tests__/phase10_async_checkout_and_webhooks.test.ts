@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/WebhookService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 import { CheckoutResult } from '../domain/models';
 
 describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Progression', () => {
@@ -11,8 +12,9 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
   let adapter: MockDeliverectAdapter;
 
   beforeEach(() => {
-    adapter = new MockDeliverectAdapter();
     process.env.APP_MODE = 'demo';
+    setServerRuntimeMode('demo');
+    adapter = new MockDeliverectAdapter();
   });
 
   // ========================================================

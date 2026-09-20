@@ -1,4 +1,14 @@
-import { DispatchAdapter, DispatchValidateParams, DispatchValidationResult } from './DispatchAdapter';
+import {
+  DispatchAdapter,
+  DispatchValidateParams,
+  DispatchValidationResult,
+  DispatchQuoteParams,
+  DispatchQuoteResult,
+  DispatchAssignParams,
+  DispatchAssignmentResult,
+  DispatchCancelParams,
+  DispatchCancelResult,
+} from './DispatchAdapter';
 import { BFFError } from '../errors';
 
 export class IntegrationUnavailableDispatchAdapter implements DispatchAdapter {
@@ -14,6 +24,33 @@ export class IntegrationUnavailableDispatchAdapter implements DispatchAdapter {
     throw new BFFError(
       'INTEGRATION_NOT_CONFIGURED',
       'Deliverect Dispatch integration is not configured. Missing DELIVERECT_CLIENT_ID or DELIVERECT_CLIENT_SECRET credentials in staging/production mode.',
+      503,
+      false
+    );
+  }
+
+  async getQuotes(_params: DispatchQuoteParams): Promise<DispatchQuoteResult> {
+    throw new BFFError(
+      'INTEGRATION_NOT_CONFIGURED',
+      'Deliverect Dispatch integration is not configured. Missing DELIVERECT_CLIENT_ID or DELIVERECT_CLIENT_SECRET credentials in staging/production mode.',
+      503,
+      false
+    );
+  }
+
+  async assignCourier(_params: DispatchAssignParams): Promise<DispatchAssignmentResult> {
+    throw new BFFError(
+      'INTEGRATION_NOT_CONFIGURED',
+      'Deliverect Dispatch integration is not configured. Cannot assign courier.',
+      503,
+      false
+    );
+  }
+
+  async cancelDispatch(_params: DispatchCancelParams): Promise<DispatchCancelResult> {
+    throw new BFFError(
+      'INTEGRATION_NOT_CONFIGURED',
+      'Deliverect Dispatch integration is not configured. Cannot cancel courier dispatch.',
       503,
       false
     );

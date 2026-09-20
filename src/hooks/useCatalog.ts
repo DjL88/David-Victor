@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Catalog, Category, Product, ProductAvailabilitySummary } from '../commerce/models';
 import { useTenant } from '../tenant/TenantContext';
 import { defaultAnalyticsClient } from '../analytics';
@@ -24,8 +24,17 @@ function findCategoryPath(
   return null;
 }
 
+interface LastKnownCatalogSnapshot {
+  tenantId: string;
+  storeId?: string;
+  catalog: Catalog;
+  products: Product[];
+  summaries: Record<string, ProductAvailabilitySummary>;
+}
+
 export function useCatalog(selectedStoreId?: string) {
-  const { client, appMode } = useTenant();
+  const { client, tenant, appMode } = useTenant();
+  const tenantId = tenant?.tenantId || 'brand-alpha';
 
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -33,6 +42,32 @@ export function useCatalog(selectedStoreId?: string) {
   const [summaries, setSummaries] = useState<Record<string, ProductAvailabilitySummary>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState<boolean>(false);
+
+  // Store last-known-good snapshot scoped strictly to tenantId + storeId
+  const snapshotRef = useRef<LastKnownCatalogSnapshot | null>(null);
+  const prevScopeRef = useRef<string>(`${tenantId}:${selectedStoreId || 'root'}`);
+
+  // When store or tenant changes, immediately clear catalog, products, and summaries
+  // to avoid mixing an old store's products/prices into the new store's screen.
+  useEffect(() => {
+    const currentScope = `${tenantId}:${selectedStoreId || 'root'}`;
+    if (prevScopeRef.current !== currentScope) {
+      prevScopeRef.current = currentScope;
+      setCatalog(null);
+      setProducts([]);
+      setSummaries({});
+      setError(null);
+      setIsStale(false);
+      // Invalidate snapshot if scope changed
+      if (
+        snapshotRef.current &&
+        (snapshotRef.current.tenantId !== tenantId || snapshotRef.current.storeId !== selectedStoreId)
+      ) {
+        snapshotRef.current = null;
+      }
+    }
+  }, [tenantId, selectedStoreId]);
 
   // Load catalog (Root if no storeId, Store Catalog if storeId is selected)
   const fetchCatalog = useCallback(async (forceRefresh = false) => {
@@ -46,8 +81,23 @@ export function useCatalog(selectedStoreId?: string) {
         loadedCatalog = await client.getRootCatalog({ refresh: forceRefresh });
       }
       setCatalog(loadedCatalog);
+      setIsStale(false);
+
+      // Update snapshot
+      snapshotRef.current = {
+        tenantId,
+        storeId: selectedStoreId,
+        catalog: loadedCatalog,
+        products: snapshotRef.current?.products || [],
+        summaries: snapshotRef.current?.summaries || {},
+      };
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load catalog');
+      const errMessage = err instanceof Error ? err.message : 'Failed to load catalog';
+      setError(errMessage);
+      // Fail closed on error: clear catalog, never retain stale or mismatched data
+      setCatalog(null);
+      setIsStale(false);
+      snapshotRef.current = null;
     } finally {
       setLoading(false);
     }
@@ -62,40 +112,35 @@ export function useCatalog(selectedStoreId?: string) {
       });
 
       setProducts(res.products);
-      if (res.summaries) {
-        setSummaries(res.summaries);
-      } else {
-        setSummaries({});
+      const newSummaries = res.summaries || {};
+      setSummaries(newSummaries);
+      setIsStale(false);
+
+      if (snapshotRef.current && snapshotRef.current.tenantId === tenantId && snapshotRef.current.storeId === selectedStoreId) {
+        snapshotRef.current.products = res.products;
+        snapshotRef.current.summaries = newSummaries;
       }
     } catch (err: unknown) {
-      console.warn('Network issue loading products for category, attempting local fallback:', err);
-      try {
-        const local = catalogStore.getProducts();
-        if (local && local.length > 0) {
-          const filtered = selectedCategoryId
-            ? local.filter((p) => p.categoryIds?.includes(selectedCategoryId))
-            : local;
-          setProducts(filtered);
-          setError(null);
-          return;
-        }
-      } catch {
-        // local fallback not applicable
-      }
+      const errMessage = err instanceof Error ? err.message : 'Failed to load products for category';
       console.error('Failed to load products for category:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load products for category');
+      setError(errMessage);
+
+      // In live modes and on error: strictly clear stale products, summaries, and snapshots
       setProducts([]);
+      setSummaries({});
+      setIsStale(false);
+      snapshotRef.current = null;
     } finally {
       setLoading(false);
     }
-  }, [client, selectedCategoryId, selectedStoreId]);
+  }, [client, tenantId, selectedCategoryId, selectedStoreId]);
 
   useEffect(() => {
     fetchCatalog(false);
     loadProducts();
   }, [fetchCatalog, loadProducts]);
 
-  // Restrict catalogStore subscription to demo mode only (local mock inventory / 86 toggles)
+  // Restrict catalogStore subscription strictly to demo mode only
   useEffect(() => {
     if (appMode !== 'demo') return;
     return catalogStore.subscribe(() => {
@@ -157,6 +202,7 @@ export function useCatalog(selectedStoreId?: string) {
     breadcrumbs,
     loading,
     error,
+    isStale,
     navigateToCategory,
     refreshCatalog: () => fetchCatalog(true),
     resetCache: async () => {

@@ -8,18 +8,6 @@ import { formatCurrency } from '../utils/formatters';
 import { ProductImage } from './media/Media';
 import { useFavourites } from '../hooks/useFavourites';
 
-function toMajorPrice(val?: Money | number | null): number | null {
-  if (val === undefined || val === null) return null;
-  if (typeof val === 'object' && typeof (val as any).amount === 'number') {
-    return moneyToMajor(val);
-  }
-  if (typeof val === 'number') {
-    if (isNaN(val) || !isFinite(val)) return null;
-    return val >= 50 && Number.isInteger(val) ? val / 100 : val;
-  }
-  return null;
-}
-
 interface ProductCardProps {
   product: Product;
   availabilitySummary?: ProductAvailabilitySummary;
@@ -104,7 +92,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         return formatCurrency(product.price, currencySymbol);
       }
       if (typeof product.priceMinor === 'number') {
-        return formatCurrency(product.priceMinor / 100, currencySymbol);
+        return formatCurrency(product.priceMinor, currencySymbol);
       }
       if ((product as any).basePrice != null) {
         return formatCurrency((product as any).basePrice, currencySymbol);
@@ -113,18 +101,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
 
     // When all locations selected / pre-store browsing:
-    const minP = toMajorPrice(availabilitySummary?.minimumPrice);
-    const maxP = toMajorPrice(availabilitySummary?.maximumPrice);
+    const minPrice = availabilitySummary?.minimumPrice;
+    const maxPrice = availabilitySummary?.maximumPrice;
 
-    if (minP != null && maxP != null) {
-      if (Math.abs(minP - maxP) > 0.001) {
-        return `From ${formatCurrency(minP, currencySymbol)}`;
+    if (minPrice != null && maxPrice != null) {
+      const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
+      const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
+      if (minMinor !== maxMinor) {
+        return `From ${formatCurrency(minPrice, currencySymbol)}`;
       }
-      return formatCurrency(minP, currencySymbol);
+      return formatCurrency(minPrice, currencySymbol);
     }
 
-    if (minP != null) {
-      return formatCurrency(minP, currencySymbol);
+    if (minPrice != null) {
+      return formatCurrency(minPrice, currencySymbol);
     }
 
     if (product.price != null) {
@@ -132,7 +122,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
 
     if (typeof product.priceMinor === 'number') {
-      return formatCurrency(product.priceMinor / 100, currencySymbol);
+      return formatCurrency(product.priceMinor, currencySymbol);
     }
 
     if ((product as any).basePrice != null) {
@@ -250,6 +240,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity">
             {product?.name || product?.plu || 'Product'}
           </h3>
+          {(product.displayLabels?.length || product.productTagLabels?.length) ? (
+            <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Product tags">
+              {(product.displayLabels?.length ? product.displayLabels : product.productTagLabels || []).slice(0, 3).map((label) => (
+                <span key={label} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100">{label.replace(/_/g, ' ')}</span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* Aggregate Availability (Only before store selection) */}

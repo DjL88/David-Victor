@@ -3,45 +3,64 @@ export interface MoneyLike {
   currency?: string;
 }
 
+/**
+ * Normalizes currency code / symbol
+ */
+function resolveCurrencySymbol(symbolOrCode: string = 'GBP'): string {
+  const upper = (symbolOrCode || '').toUpperCase();
+  if (upper === 'GBP' || symbolOrCode === '£') return '£';
+  if (upper === 'EUR' || symbolOrCode === '€' || upper === 'E') return '€';
+  if (upper === 'USD' || symbolOrCode === '$') return '$';
+  return symbolOrCode || '£';
+}
+
+/**
+ * Formats an authoritative commerce price in integer minor units (e.g. 25 = £0.25, 500 = £5.00).
+ * A missing price (undefined, null, NaN) returns "Price unavailable", NEVER £0.00.
+ *
+ * Specific verified test cases:
+ * - 25 minor units  -> "£0.25"
+ * - 50 minor units  -> "£0.50"
+ * - 89 minor units  -> "£0.89"
+ * - 100 minor units -> "£1.00"
+ * - 500 minor units -> "£5.00"
+ * - 2500 minor units -> "£25.00"
+ * - undefined / null / NaN -> "Price unavailable"
+ */
 export function formatCurrency(
   amount?: MoneyLike | number | null,
-  currencySymbol: string = '£',
+  currencySymbolOrCode: string = 'GBP',
   locale: string = 'en-GB'
 ): string {
-  // Normalize currency code to symbol
-  let activeSymbol = currencySymbol;
-  if (activeSymbol === 'GBP') activeSymbol = '£';
-  else if (activeSymbol === 'EUR' || activeSymbol === 'E') activeSymbol = '€';
-  else if (activeSymbol === 'USD') activeSymbol = '$';
-
-  const isEuro =
-    activeSymbol === '€' ||
-    locale.toLowerCase().includes('de') ||
-    locale.toLowerCase().includes('fr') ||
-    locale.toLowerCase().includes('es') ||
-    (typeof amount === 'object' && amount !== null && (amount.currency === 'EUR' || amount.currency === '€'));
-
-  if (isEuro) activeSymbol = '€';
-
-  let numValue = 0;
   if (amount === undefined || amount === null) {
-    numValue = 0;
-  } else if (typeof amount === 'object' && amount !== null && 'amount' in amount) {
-    const rawVal = (amount as any).amount;
-    if (typeof rawVal === 'number' && !isNaN(rawVal) && isFinite(rawVal)) {
-      numValue = rawVal / 100;
-    }
-  } else if (typeof amount === 'number' && !isNaN(amount) && isFinite(amount)) {
-    // If it's a decimal (e.g. 1.35, 2.95, 0.49, 1.99) or small integer (< 50, e.g. 1, 2, 5, 10, 38 for £38), it is in major units (pounds/euros/dollars)
-    if (!Number.isInteger(amount) || (amount < 50 && amount >= 0)) {
-      numValue = amount;
-    } else {
-      // Minor units (e.g. 50, 100, 250, 500, 1193)
-      numValue = amount / 100;
-    }
+    return 'Price unavailable';
   }
 
-  // Comma decimal separator is only used for European locales that use commas (e.g. de, fr, es, it, nl)
+  let minorUnits: number;
+  let currencyCode = currencySymbolOrCode;
+
+  if (typeof amount === 'object' && amount !== null && 'amount' in amount) {
+    const rawVal = (amount as any).amount;
+    if (typeof rawVal !== 'number' || isNaN(rawVal) || !isFinite(rawVal)) {
+      return 'Price unavailable';
+    }
+    minorUnits = !Number.isInteger(rawVal) ? Math.round(rawVal * 100) : Math.round(rawVal);
+    if ((amount as any).currency) {
+      currencyCode = (amount as any).currency;
+    }
+  } else if (typeof amount === 'number') {
+    if (isNaN(amount) || !isFinite(amount)) {
+      return 'Price unavailable';
+    }
+    minorUnits = !Number.isInteger(amount) ? Math.round(amount * 100) : Math.round(amount);
+  } else {
+    return 'Price unavailable';
+  }
+
+  const symbol = resolveCurrencySymbol(currencyCode);
+  const majorValue = minorUnits / 100;
+
+  const isEuro = symbol === '€' || currencyCode.toUpperCase() === 'EUR';
   const isCommaDecimalLocale =
     locale.toLowerCase().startsWith('de') ||
     locale.toLowerCase().startsWith('fr') ||
@@ -50,18 +69,49 @@ export function formatCurrency(
     locale.toLowerCase().startsWith('nl');
 
   if (isEuro && isCommaDecimalLocale) {
-    const formattedNum = numValue.toFixed(2).replace('.', ',');
-    return `${activeSymbol}${formattedNum}`;
+    const formattedNum = majorValue.toFixed(2).replace('.', ',');
+    return `${symbol}${formattedNum}`;
   }
 
-  return `${activeSymbol}${numValue.toFixed(2)}`;
+  return `${symbol}${majorValue.toFixed(2)}`;
 }
 
 export function formatMoney(
   amount?: MoneyLike | number | null,
-  currencySymbol: string = '£'
+  currency: string = 'GBP'
 ): string {
-  return formatCurrency(amount, currencySymbol);
+  return formatCurrency(amount, currency);
+}
+
+export function formatPrice(
+  price?: MoneyLike | number | null,
+  currency: string = 'GBP'
+): string {
+  return formatCurrency(price, currency);
+}
+
+/**
+ * Separate explicit converter for legacy major-unit fields (e.g. £2.50 represented as floating number 2.50).
+ * DO NOT use for commerce prices (which are integer minor units).
+ * A missing value returns "Price unavailable", NEVER £0.00.
+ */
+export function formatLegacyMajorUnits(
+  majorUnits?: number | null,
+  currencySymbolOrCode: string = 'GBP'
+): string {
+  if (majorUnits === undefined || majorUnits === null || isNaN(majorUnits) || !isFinite(majorUnits)) {
+    return 'Price unavailable';
+  }
+  const symbol = resolveCurrencySymbol(currencySymbolOrCode);
+  return `${symbol}${majorUnits.toFixed(2)}`;
+}
+
+/**
+ * Separate explicit converter for legacy pounds values.
+ * A missing value returns "Price unavailable", NEVER £0.00.
+ */
+export function formatPounds(pounds?: number | null): string {
+  return formatLegacyMajorUnits(pounds, 'GBP');
 }
 
 export function formatDistance(meters?: number | null): string {

@@ -1,0 +1,73 @@
+{
+  "tenantId": "tenant_retailer",
+  "accounts": [],
+  "locations": [
+    {
+      "physicalLocationId": "loc_physical_covent",
+      "accountLinkId": "acclink_acc_del_777",
+      "deliverectLocationId": "loc_physical_covent",
+      "name": "Covent Garden Physical Depot",
+      "addressProjection": {
+        "street": "14 Floral Street",
+        "city": "London",
+        "postcode": "WC2E 9DH",
+        "country": "GB"
+      },
+      "coordinates": {
+        "latitude": 51.5121,
+        "longitude": -0.1245
+      },
+      "statusProjection": "ACTIVE",
+      "services": [
+        {
+          "id": "cl_channel_01",
+          "name": "Ordering channel",
+          "source": "DELIVERECT"
+        }
+      ]
+    }
+  ],
+  "stores": [
+    {
+      "commerceStoreId": "cstore_cl_channel_01",
+      "accountLinkId": "acclink_acc_del_777",
+      "physicalLocationId": "loc_physical_covent",
+      "channelLinkId": "cl_channel_01",
+      "name": "Covent Garden Express",
+      "stateProjection": "open",
+      "coordinates": {
+        "latitude": 51.5121,
+        "longitude": -0.1245
+      },
+      "address": {
+        "street": "14 Floral Street",
+        "city": "London",
+        "postcode": "WC2E 9DH",
+        "country": "GB"
+      },
+      "services": [
+        {
+          "id": "cl_channel_01",
+          "name": "Ordering channel",
+          "source": "DELIVERECT"
+        }
+      ],
+      "currency": "GBP",
+      "status": "ONLINE",
+      "lastSeenAt": "2026-09-20T10:42:55.218Z"
+    },
+    {
+      "commerceStoreId": "cstore_cl_channel_unlinked",
+      "accountLinkId": "acclink_acc_del_777",
+      "physicalLocationId": null,
+      "channelLinkId": "cl_channel_unlinked",
+      "name": "Standalone Virtual Store",
+      "stateProjection": "open",
+      "services": [],
+      "currency": "GBP",
+      "status": "ONLINE",
+      "lastSeenAt": "2026-09-20T10:42:55.218Z"
+    }
+  ],
+  "syncedAt": "2026-09-20T10:42:55.218Z"
+}

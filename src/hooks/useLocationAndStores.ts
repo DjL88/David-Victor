@@ -88,6 +88,27 @@ export function useLocationAndStores() {
         setCollectionStores(result.collectionStores);
         setHasDeliveryCoverage(result.hasDeliveryCoverage);
 
+        // Check delivery availability/quotes when customer resolves a postcode
+        if (mode === 'delivery' && address && result.deliveryStores.length > 0) {
+          try {
+            const firstStore = result.deliveryStores[0];
+            const courierCheck = await client.revalidateDelivery(
+              'postcode_preview',
+              firstStore.id,
+              address
+            );
+            if (!courierCheck.available) {
+              setHasDeliveryCoverage(false);
+              setError(
+                courierCheck.reason ||
+                  'Courier delivery is currently unavailable for this postcode. In-store collection is available.'
+              );
+            }
+          } catch (courierErr: any) {
+            console.warn('Courier delivery check at postcode resolution:', courierErr);
+          }
+        }
+
         defaultAnalyticsClient.track({
           type: AnalyticsEventType.ELIGIBLE_STORES_RETURNED,
           properties: {

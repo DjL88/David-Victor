@@ -1,5 +1,6 @@
 import { CategoryPromoBanner, Category, Product } from './models';
 import { defaultAdminClient } from './HttpAdminClient';
+import { isDemoMode } from '../domain/runtime';
 
 export const DEFAULT_PROMO_BANNERS: CategoryPromoBanner[] = [
   // GLOBAL / HOME BANNERS (When on All Categories / Home)
@@ -219,7 +220,7 @@ function loadInitialBannersForTenant(tenantId: string = 'brand-alpha'): Category
       console.warn(`Failed to load promo banners from storage for tenant ${tenantId}:`, e);
     }
   }
-  return [...DEFAULT_PROMO_BANNERS];
+  return isDemoMode() ? [...DEFAULT_PROMO_BANNERS] : [];
 }
 
 // In-memory tenant banner store keyed by tenantId
@@ -417,9 +418,9 @@ export function getBannersForCategory(
         (b) => b.categoryId && b.categorySlugMatch !== 'all'
       );
       const combined = [...homeBanners, ...otherBanners];
-      return combined.length > 0 ? combined : [...DEFAULT_PROMO_BANNERS];
+      return combined.length > 0 ? combined : isDemoMode() ? [...DEFAULT_PROMO_BANNERS] : [];
     }
-    return [...DEFAULT_PROMO_BANNERS];
+    return isDemoMode() ? [...DEFAULT_PROMO_BANNERS] : [];
   }
 
   // Find target category name and details

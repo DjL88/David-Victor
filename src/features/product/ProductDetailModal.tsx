@@ -22,18 +22,6 @@ import {
   Layers,
 } from 'lucide-react';
 
-function toMajorPrice(val?: Money | number | null): number | null {
-  if (val === undefined || val === null) return null;
-  if (typeof val === 'object' && typeof (val as any).amount === 'number') {
-    return moneyToMajor(val);
-  }
-  if (typeof val === 'number') {
-    if (isNaN(val) || !isFinite(val)) return null;
-    return val >= 50 && Number.isInteger(val) ? val / 100 : val;
-  }
-  return null;
-}
-
 interface ProductDetailModalProps {
   product: Product | null;
   availabilitySummary?: ProductAvailabilitySummary;
@@ -244,34 +232,42 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       return formatCurrency(product.price, currencySymbol);
                     }
                     if (typeof product.priceMinor === 'number') {
-                      return formatCurrency(product.priceMinor / 100, currencySymbol);
+                      return formatCurrency(product.priceMinor, currencySymbol);
                     }
-                    return formatCurrency((product as any).basePrice ?? 0, currencySymbol);
-                  }
-                  const minP = toMajorPrice(activeSummary?.minimumPrice);
-                  const maxP = toMajorPrice(activeSummary?.maximumPrice);
-                  if (minP != null && maxP != null) {
-                    if (Math.abs(minP - maxP) > 0.001) {
-                      return `From ${formatCurrency(minP, currencySymbol)}`;
+                    if ((product as any).basePrice != null) {
+                      return formatCurrency((product as any).basePrice, currencySymbol);
                     }
-                    return formatCurrency(minP, currencySymbol);
+                    return 'Price unavailable';
                   }
-                  if (minP != null) {
-                    return formatCurrency(minP, currencySymbol);
+                  const minPrice = activeSummary?.minimumPrice;
+                  const maxPrice = activeSummary?.maximumPrice;
+                  if (minPrice != null && maxPrice != null) {
+                    const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
+                    const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
+                    if (minMinor !== maxMinor) {
+                      return `From ${formatCurrency(minPrice, currencySymbol)}`;
+                    }
+                    return formatCurrency(minPrice, currencySymbol);
+                  }
+                  if (minPrice != null) {
+                    return formatCurrency(minPrice, currencySymbol);
                   }
                   if (product.price != null) {
                     return formatCurrency(product.price, currencySymbol);
                   }
                   if (typeof product.priceMinor === 'number') {
-                    return formatCurrency(product.priceMinor / 100, currencySymbol);
+                    return formatCurrency(product.priceMinor, currencySymbol);
                   }
-                  return formatCurrency((product as any).basePrice ?? 0, currencySymbol);
+                  if ((product as any).basePrice != null) {
+                    return formatCurrency((product as any).basePrice, currencySymbol);
+                  }
+                  return 'Price unavailable';
                 })()}
               </span>
 
-              {hasDiscount && (
+              {hasDiscount && product.originalPrice != null && (
                 <span className="text-sm text-gray-400 line-through">
-                  {formatCurrency(product.originalPrice || 0, currencySymbol)}
+                  {formatCurrency(product.originalPrice, currencySymbol)}
                 </span>
               )}
 
@@ -561,8 +557,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   if (isStoreSelected) {
                     return formatCurrency(priceNum * qty, currencySymbol);
                   }
-                  const minP = toMajorPrice(activeSummary?.minimumPrice);
-                  const maxP = toMajorPrice(activeSummary?.maximumPrice);
+                  const minP = activeSummary?.minimumPrice != null ? moneyToMajor(activeSummary.minimumPrice) : null;
+                  const maxP = activeSummary?.maximumPrice != null ? moneyToMajor(activeSummary.maximumPrice) : null;
                   if (minP != null && maxP != null) {
                     if (Math.abs(minP - maxP) > 0.001) {
                       return `${formatCurrency(minP * qty, currencySymbol)} – ${formatCurrency(maxP * qty, currencySymbol)}`;
