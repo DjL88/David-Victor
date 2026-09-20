@@ -17,6 +17,7 @@ import {
   Mail,
   Layers,
   Store,
+  Trash2,
 } from 'lucide-react';
 
 interface BrandsScreenProps {
@@ -105,6 +106,19 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       setError(err.message || 'Brand provisioning failed.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBrand = async (targetTenantId: string, brandTitle: string) => {
+    if (!window.confirm(`Are you sure you want to delete brand "${brandTitle}" (${targetTenantId})? This action cannot be undone.`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await defaultAdminClient.deleteBrand(targetTenantId);
+      await loadTenants();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete brand.');
     }
   };
 
@@ -249,6 +263,16 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                 >
                   <ExternalLink className="w-4 h-4" />
                 </a>
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBrand(t.tenantId, t.brandName || t.tenantId)}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    title="Delete Brand"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

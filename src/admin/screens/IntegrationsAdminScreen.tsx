@@ -481,9 +481,30 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 </div>
               </div>
 
-              <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-gray-800 text-emerald-400 border border-gray-700">
-                {config.environment || 'staging'}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfig((prev: any) => ({ ...prev, environment: 'staging' }))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                    (config.environment || 'staging') === 'staging'
+                      ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  STAGING
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfig((prev: any) => ({ ...prev, environment: 'production' }))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                    config.environment === 'production'
+                      ? 'bg-amber-950 border-amber-600 text-amber-300'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  PRODUCTION
+                </button>
+              </div>
             </div>
 
             <div className="p-3.5 bg-gray-950 border border-gray-800 rounded-xl text-xs space-y-2">

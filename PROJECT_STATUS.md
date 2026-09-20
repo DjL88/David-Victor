@@ -429,6 +429,21 @@ The platform is now connected directly to the live Deliverect Staging environmen
   - **Full Build & Type Safety**:
     - Zero TypeScript errors in `tsc --noEmit` and clean build in `compile_applet`.
 
+13. **STABILIZATION & SYSTEM REFINEMENTS (Phases 1-6 Completed & Verified)**:
+    - **Data & Ingestion Purge (Phase 1)**: Executed `purgeTestData.js` to strip synthetic noise while strictly preserving canonical testing foundations (`brand-alpha`, `brand-beta`, `onestop-express`, `greengrocer-co`, `urban-pantry`, `bwydi-deliverect-test`). Ingestion parser filters out sub-component PLUs containing `#`.
+    - **Navigation & Discovery (Phase 2)**: Re-architected map canvas handling with Leaflet `ResizeObserver` and `invalidateSize()`. Abstracted location selection modal into `LocationContext`. Integrated `postcodes.io` geocoding fallback. Embedded Info button on store cards. Video stories loop infinitely.
+    - **Catalog & Merchandising (Phase 3)**: Isolated sticky search/filter controls in `HomeScreen`. Mapped 14 allergens dynamically on `ProductCard` with standard UK badges. Standardized pagination label to "Showing 1–X of Y products".
+    - **Basket & Checkout Mechanics (Phase 4)**: Replaced Toast implementation with subtle inline state indicators. Header cart button features dynamic `framer-motion` scale animation. Cart drawer and substitution preferences use `ArrowRightLeft` substitution icon. Active store name is bound to header title.
+    - **Admin Command Center Modernization (Phase 5)**: Domains module connects to `/api/v1/admin/domains`. Merged Stories & Hero Banners into "Marketing Campaigns" with cron-style schedule metadata. Bound `--tenant-font-family` CSS variable dynamically. Built Zod-validated rule builder for Product Rules (`HIDE`, `EXCLUDE_DISCOUNT`, `AGE_RESTRICTED`). Added Delete Brand action for Super Admins and Staging/Production environment selector in Step 1.
+    - **Customer Routes & Empty States (Phase 6)**: Created clean, elegant empty state components for `/orders`, `/favourites`, `/buy-again`, and `/addresses`, wired directly to `v1Router` endpoints.
+    - **Zero Build Errors**: 100% clean `lint_applet` and `compile_applet` build outputs.
+
+14. **BATCH 1: STOREFRONT CORE DISCOVERY (Issues 1, 2, 3 & Video Stories Verified)**:
+    - **Location Prompt Throttling**: Dismissal is persisted to `localStorage` (`location_prompt_dismissed` & `location_prompted`); auto-prompt on page load suppressed unless explicitly triggered by customer delivery flow.
+    - **Keyless Geolocation & Leaflet Canvas**: Bound Leaflet `invalidateSize()` to a `ResizeObserver` on map container; gracefully route failed GPS to `postcodes.io` API.
+    - **Store Selector Accuracy**: Reconciled store status logic (`useLocationAndStores`, `StorePickerModal`) to show only genuinely open, unsnoozed shops. Embedded Info `(i)` button on store cards with opening hours and external channel links.
+    - **Video Stories (HTTP 400 Fix)**: Detected `.mp4`, `.mov`, `.webm` URLs and rendered HTML5 `<video>` elements with `autoPlay`, `muted`, `playsInline`, and `loop` across `StoryViewerModal` and `StoriesRow`.
+
 ---
 
 ## 4. Next Tasks

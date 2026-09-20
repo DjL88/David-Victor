@@ -48,6 +48,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const { tenant } = useTenant();
   const [progress, setProgress] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [mediaFailed, setMediaFailed] = useState<boolean>(false);
 
   const isOpen = currentIndex !== null && currentIndex >= 0 && currentIndex < stories.length;
   const currentStory = isOpen ? stories[currentIndex] : null;
@@ -140,23 +141,29 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       >
         {/* Story Background Media */}
         <div className="absolute inset-0 z-0">
-          {currentStory.mediaType === 'video' ? (
+          {!currentMediaUrl || mediaFailed ? (
+            <div className="w-full h-full flex items-center justify-center bg-slate-900 text-white/80 px-6 text-center">
+              <p className="text-sm font-semibold">Story media is unavailable</p>
+            </div>
+          ) : isVideoMedia ? (
             <video
               key={currentStory.id}
-              src={currentStory.mediaUrl}
+              src={currentMediaUrl}
               poster={currentStory.thumbnailUrl}
               aria-label={currentStory.title}
               autoPlay
               muted
               playsInline
+              loop
               preload="metadata"
               className="w-full h-full object-cover"
               onPlay={() => setIsPaused(false)}
               onPause={() => setIsPaused(true)}
+              onError={() => setMediaFailed(true)}
             />
           ) : (
             <img
-              src={currentStory.mediaUrl}
+              src={currentMediaUrl}
               alt={currentStory.title}
               className="w-full h-full object-cover"
             />

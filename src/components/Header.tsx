@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { Address, Store } from '../commerce/models';
 import { useTenant } from '../tenant/TenantContext';
 import { useTenantStyles } from '../tenant/useTenant';
@@ -92,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
             <img
               src={tenant?.iconUrl || tenant?.logoUrl}
               alt={tenant?.brandName}
-              className="w-full h-full object-cover rounded-xl"
+              className="w-full h-full object-contain p-0.5 rounded-xl"
             />
           </div>
           <div>
@@ -290,21 +291,30 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Cart Action Button */}
-          <button
+          <motion.button
+            key={`cart-btn-${cartItemCount}`}
             type="button"
             id="header-cart-btn"
             onClick={onOpenCart}
             style={primaryBtnStyle}
-            className="relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs active:scale-95 transition-transform cursor-pointer"
+            initial={{ scale: 1 }}
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ duration: 0.25 }}
+            className="relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
           >
             <ShoppingBag className="w-4 h-4" />
             <span className="hidden sm:inline">Basket</span>
             {cartItemCount > 0 && (
-              <span className="w-5 h-5 rounded-full bg-white text-gray-900 font-extrabold text-[11px] flex items-center justify-center shadow-2xs">
+              <motion.span
+                key={`cart-badge-${cartItemCount}`}
+                initial={{ scale: 0.6 }}
+                animate={{ scale: 1 }}
+                className="w-5 h-5 rounded-full bg-white text-gray-900 font-extrabold text-[11px] flex items-center justify-center shadow-2xs"
+              >
                 {cartItemCount}
-              </span>
+              </motion.span>
             )}
-          </button>
+          </motion.button>
         </div>
       </div>
 

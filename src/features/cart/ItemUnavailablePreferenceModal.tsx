@@ -7,7 +7,7 @@ import {
   Trash2,
   Minus,
   Plus,
-  ShieldCheck,
+  ArrowRightLeft,
   Sparkles,
   Search,
   Check,
@@ -357,7 +357,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                   {/* High Value Buffer Notice */}
                   {priceDifferenceMajor > 0 && (
                     <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
-                      <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <ArrowRightLeft className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                       <p className="leading-snug">
                         <strong>Pre-auth buffer update:</strong> Extra{' '}
                         <strong>£{(priceDifferenceMajor * quantity).toFixed(2)}</strong> (

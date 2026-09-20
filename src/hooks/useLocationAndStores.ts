@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Store, Coordinates, Address, EligibleStore } from '../commerce/models';
+import { evaluateStoreOpenNow } from '../services/storeOpeningHoursService';
 import { useTenant } from '../tenant/TenantContext';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../analytics';
 
@@ -64,12 +65,18 @@ export function useLocationAndStores() {
     return eligibleStores.map((item) => item.store);
   }, [eligibleStores]);
 
-  // Filter for only active/open stores
+  // Filter for only active/open stores (status === ONLINE && stateProjection === open && unsnoozed && open per hours)
   const activeStores: Store[] = useMemo(() => {
     const list = allStores.length > 0 ? allStores : nearbyStores;
     return list.filter((s) => {
       const statusUpper = String(s.status || '').toUpperCase();
-      return statusUpper !== 'CLOSED' && statusUpper !== 'INACTIVE';
+      const stateProj = String(s.stateProjection || '').toLowerCase();
+      const isOnline = statusUpper === 'ONLINE' || statusUpper === 'OPEN' || statusUpper === 'ACTIVE';
+      const isOpenState = stateProj === 'open' || stateProj === '' || statusUpper === 'ONLINE';
+      const isClosedOrInactive = statusUpper === 'CLOSED' || statusUpper === 'INACTIVE' || statusUpper === 'PAUSED' || statusUpper === 'SNOOZED';
+      const isSnoozed = s.snoozed === true || stateProj === 'snoozed' || stateProj === 'paused';
+      const openEval = evaluateStoreOpenNow(s);
+      return isOnline && isOpenState && openEval.isOpen && !isClosedOrInactive && !isSnoozed;
     });
   }, [allStores, nearbyStores]);
 

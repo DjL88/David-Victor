@@ -24,7 +24,7 @@ export function useBasket(selectedStore: Store | null) {
     quantityAdjusted: Array<{ plu: string; name?: string; requested: number; adjustedTo: number; reason?: string }>;
   } | null>(null);
 
-  const activeStoreId = selectedStore?.id || 'store-chelmsford-central';
+  const activeStoreId = selectedStore?.id ?? '';
 
   // Backwards-compatible single basket array (no multi-store split)
   const allBaskets = useMemo(() => {
@@ -92,6 +92,9 @@ export function useBasket(selectedStore: Store | null) {
 
         let currentBasket = basket;
         if (!currentBasket) {
+          if (!activeStoreId) {
+            throw new Error('A store must be selected before creating a basket.');
+          }
           currentBasket = await client.createBasket(activeStoreId);
         }
 
@@ -158,6 +161,9 @@ export function useBasket(selectedStore: Store | null) {
       try {
         let currentBasket = basket;
         if (!currentBasket) {
+          if (!activeStoreId) {
+            throw new Error('A store must be selected before creating a basket.');
+          }
           currentBasket = await client.createBasket(activeStoreId);
         }
 
@@ -295,6 +301,9 @@ export function useBasket(selectedStore: Store | null) {
 
         let currentBasket = basket;
         if (!currentBasket) {
+          if (!activeStoreId) {
+            throw new Error('A store must be selected before creating a basket.');
+          }
           currentBasket = await client.createBasket(activeStoreId);
         }
 

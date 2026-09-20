@@ -188,7 +188,14 @@ export function useCatalog(selectedStoreId?: string) {
 
   // Canonical renderableProducts adhering to identical availability & rule evaluations as ProductCard
   const renderableProducts = useMemo(() => {
-    return getRenderableProducts(products);
+    const list = getRenderableProducts(products);
+    // Exclude combo / bundle sub-components from main catalog feed
+    return list.filter((p) => {
+      if ((p as any).isCombo) return false;
+      if (p.plu && p.plu.includes('#')) return false;
+      if (p.canonicalPlu && p.canonicalPlu.includes('#')) return false;
+      return true;
+    });
   }, [products]);
 
   return {

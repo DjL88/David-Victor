@@ -143,7 +143,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   // Check which sections have data
-  const hasAllergens = Boolean(product.allergens && product.allergens.length > 0);
+  const allergenLabels = Array.from(new Set((product.allergens || []).filter((label) => label && !/^\d+$/.test(String(label)))));
+  const friendlyProductTags = Array.from(new Set([
+    ...(product.productTagLabels || []),
+    ...(product.displayLabels || []),
+    ...(product.productTags || []).filter((tag) => !/^\d+$/.test(String(tag))).map(String),
+  ]));
+  const hasAllergens = allergenLabels.length > 0;
   const hasIngredients = Boolean(product.supplementalInfo?.ingredients);
   const hasNutrition = Boolean(product.nutritionalInfo);
   const hasCalories = Boolean(product.nutritionalInfo?.energyKcal !== undefined);
@@ -158,7 +164,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         product.beverageInfo.alcoholByVolume > 0)
   );
   const hasDeposit = Boolean(depositAmount && depositAmount > 0);
-  const hasTags = Boolean(product.productTags && product.productTags.length > 0);
+  const unmappedTagIds = Array.from(new Set([
+    ...(product.unmappedProductTags || []),
+    ...(product.productTags || []).filter((tag) => /^\d+$/.test(String(tag))).map(String),
+  ]));
+  const hasTags = friendlyProductTags.length > 0 || unmappedTagIds.length > 0;
 
   return (
     <>
@@ -245,7 +255,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
                     const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
                     if (minMinor !== maxMinor) {
-                      return `From ${formatCurrency(minPrice, currencySymbol)}`;
+                      return `${formatCurrency(minPrice, currencySymbol)} – ${formatCurrency(maxPrice, currencySymbol)}`;
                     }
                     return formatCurrency(minPrice, currencySymbol);
                   }
@@ -357,7 +367,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   Allergen Information
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
-                  {product.allergens!.map((allergen) => (
+                  {allergenLabels.map((allergen) => (
                     <span
                       key={allergen}
                       className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-200/60 text-amber-950"
@@ -526,7 +536,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   Product Tags
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
-                  {product.productTags!.map((tag, idx) => (
+                  {friendlyProductTags.map((tag, idx) => (
                     <span
                       key={idx}
                       className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700"

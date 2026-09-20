@@ -280,6 +280,8 @@ export interface Store {
   coordinates: Coordinates;
   distanceMeters: number;
   status: StoreStatus;
+  stateProjection?: 'open' | 'closed' | 'busy' | 'paused' | string;
+  snoozed?: boolean;
   preparationTimeDelay?: number; // Delay in minutes
   supportsDelivery: boolean;
   supportsPickup: boolean;
@@ -469,6 +471,7 @@ export interface ProductTagDefinition {
 export interface Product {
   id: string;
   plu: string;
+  canonicalPlu?: string;
   gtin: string[];
   gtins?: string[];
   name: string;
@@ -478,6 +481,7 @@ export interface Product {
   brand?: string;
   categoryIds: string[];
   productTags: (ProductTag | string)[];
+  tags?: string[];
   displayLabels: string[];
   allergens: string[];
   productTagLabels?: string[];

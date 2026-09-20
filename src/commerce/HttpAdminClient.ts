@@ -225,6 +225,19 @@ export class HttpAdminClient implements AdminClient {
     return result.tenant || result;
   }
 
+  async deleteBrand(tenantId: string): Promise<boolean> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to delete brand: ${res.statusText}`);
+    }
+    return true;
+  }
+
   // ==========================================
   // INTEGRATIONS (DELIVERECT & CHANNELS)
   // ==========================================

@@ -357,11 +357,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const sAddr = s.address as any;
       const locAddr = loc?.addressProjection as any;
       const street = sAddr?.street || sAddr?.line1 || locAddr?.street || locAddr?.line1 || '';
-      const city = sAddr?.city || locAddr?.city || 'Kington';
+      const city = sAddr?.city || locAddr?.city || '';
       const postcode = sAddr?.postcode || sAddr?.postalCode || locAddr?.postcode || locAddr?.postalCode || '';
-      const country = sAddr?.country || locAddr?.country || 'GB';
+      const country = sAddr?.country || locAddr?.country || '';
       const formattedAddress = sAddr?.formattedAddress || [street, city, postcode, country].filter(Boolean).join(', ');
-      const line1 = street || sAddr?.line1 || (city && postcode ? `${city}, ${postcode}` : city) || formattedAddress || 'Store Address';
+      const line1 = street || sAddr?.line1 || formattedAddress || '';
 
       // If storeCoords are missing and UK postcode is present, map known store postcodes accurately
       if (!storeCoords && postcode) {
@@ -413,7 +413,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       coordinates: coords,
       address,
       preferredFulfillment,
-      customStores: stores,
+      customStores: stores.filter((store) => this.isUsableStore(store)),
       appMode: 'staging',
     });
   }
@@ -1082,23 +1082,100 @@ export class DeliverectApiClient implements DeliverectAdapter {
     );
   }
 
+  private isUsableStore(store: Store): boolean {
+    const address = store.address;
+    const coordinates = store.coordinates;
+    const hasAddress = Boolean(
+      address &&
+      (address.postalCode || address.postcode || address.formattedAddress || address.line1 || address.street) &&
+      address.city
+    );
+    const hasCoordinates = Boolean(
+      coordinates &&
+      Number.isFinite(coordinates.latitude) &&
+      Number.isFinite(coordinates.longitude)
+    );
+    const status = String(store.status || '').toUpperCase();
+    const projection = String(store.stateProjection || '').toLowerCase();
+    const operational = !['CLOSED', 'INACTIVE', 'PAUSED'].includes(status) && !['closed', 'inactive', 'paused'].includes(projection);
+    return hasAddress && hasCoordinates && operational;
+  }
+
+  private isAvailableProduct(product: Product): boolean {
+    const snoozeEnd = product.snoozeEndTime ? new Date(product.snoozeEndTime).getTime() : 0;
+    return product.active !== false &&
+      product.stockStatus !== 'OUT_OF_STOCK' &&
+      product.snoozed !== true &&
+      product.isSnoozed !== true &&
+      !(snoozeEnd > Date.now()) &&
+      !(typeof product.stockQuantity === 'number' && product.stockQuantity <= 0);
+  }
+
+  private async buildAvailabilitySummaries(
+    products: Product[],
+    stores: Store[]
+  ): Promise<Record<string, ProductAvailabilitySummary>> {
+    const eligibleStores = stores.filter((store) => this.isUsableStore(store));
+    const settled = await Promise.allSettled(
+      eligibleStores.map(async (store) => ({ store, catalog: await this.getStoreCatalog(store.id) }))
+    );
+    const storeCatalogs = settled
+      .filter((result): result is PromiseFulfilledResult<{ store: Store; catalog: Catalog }> => result.status === 'fulfilled')
+      .map((result) => result.value);
+    const summaries: Record<string, ProductAvailabilitySummary> = {};
+
+    for (const product of products) {
+      const records = storeCatalogs.flatMap(({ store, catalog }) =>
+        (catalog.products || [])
+          .filter((candidate) => candidate.plu === product.plu && this.isAvailableProduct(candidate) && candidate.price != null)
+          .map((candidate) => ({ store, product: candidate }))
+      );
+      const prices = records.map(({ product: candidate }) => candidate.price!).filter(Boolean);
+      const amounts = prices.map((price) => typeof price === 'number' ? price : price.amount);
+      const minimumAmount = amounts.length ? Math.min(...amounts) : undefined;
+      const maximumAmount = amounts.length ? Math.max(...amounts) : undefined;
+      const currency = prices.find((price) => typeof price !== 'number') as Money | undefined;
+      summaries[product.plu] = {
+        plu: product.plu,
+        productId: product.id,
+        availableStoreCount: records.length,
+        eligibleStoreCount: storeCatalogs.length,
+        minimumPrice: minimumAmount == null ? undefined : toMoney(minimumAmount, currency?.currency || 'GBP'),
+        maximumPrice: maximumAmount == null ? undefined : toMoney(maximumAmount, currency?.currency || 'GBP'),
+        nearestAvailableStoreId: records[0]?.store.id,
+        deliveryAvailable: records.some(({ store }) => store.supportsDelivery),
+        collectionAvailable: records.some(({ store }) => store.supportsPickup),
+      };
+    }
+    return summaries;
+  }
+
   async getProduct(productId: string, storeId?: string): Promise<{ product: Product; summary?: ProductAvailabilitySummary } | null> {
     const catalog = storeId ? await this.getStoreCatalog(storeId) : await this.getRootCatalog();
     const product = (catalog.products || []).find((p) => p.id === productId || p.plu === productId);
     if (!product) return null;
 
+    if (storeId) {
+      const available = this.isAvailableProduct(product) && product.price != null;
+      return {
+        product,
+        summary: {
+          plu: product.plu,
+          productId: product.id,
+          availableStoreCount: available ? 1 : 0,
+          eligibleStoreCount: 1,
+          minimumPrice: available ? product.price : undefined,
+          maximumPrice: available ? product.price : undefined,
+          nearestAvailableStoreId: available ? storeId : undefined,
+          deliveryAvailable: available,
+          collectionAvailable: available,
+        },
+      };
+    }
+
     const stores = await this.getStores();
-    return {
-      product,
-      summary: {
-        plu: product.plu,
-        productId: product.id,
-        availableStoreCount: stores.length,
-        eligibleStoreCount: stores.length,
-        deliveryAvailable: true,
-        collectionAvailable: true,
-      },
-    };
+    const summaries = await this.buildAvailabilitySummaries([product], stores);
+    return { product, summary: summaries[product.plu] };
   }
 
   async searchProducts(
@@ -1111,45 +1188,50 @@ export class DeliverectApiClient implements DeliverectAdapter {
     diagnostics?: CatalogDiagnostics;
   }> {
     const catalog = storeId ? await this.getStoreCatalog(storeId) : await this.getRootCatalog();
-    const products = catalog.products || [];
     const q = query.toLowerCase().trim();
-
-    let filtered = products;
+    let filtered = catalog.products || [];
     if (q) {
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          (p.description && p.description.toLowerCase().includes(q)) ||
-          p.plu.toLowerCase().includes(q)
+      filtered = filtered.filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        Boolean(p.description?.toLowerCase().includes(q)) ||
+        p.plu.toLowerCase().includes(q)
       );
     }
-
     if (options?.categoryId) {
       filtered = filtered.filter((p) => (p.categoryIds || []).includes(options.categoryId!));
     }
+    if (options?.limit && options.limit > 0) filtered = filtered.slice(0, options.limit);
 
-    if (options?.limit && options.limit > 0) {
-      filtered = filtered.slice(0, options.limit);
+    if (storeId) {
+      const summaries: Record<string, ProductAvailabilitySummary> = {};
+      for (const product of filtered) {
+        const available = this.isAvailableProduct(product) && product.price != null;
+        summaries[product.plu] = {
+          plu: product.plu,
+          productId: product.id,
+          availableStoreCount: available ? 1 : 0,
+          eligibleStoreCount: 1,
+          minimumPrice: available ? product.price : undefined,
+          maximumPrice: available ? product.price : undefined,
+          nearestAvailableStoreId: available ? storeId : undefined,
+          deliveryAvailable: available,
+          collectionAvailable: available,
+        };
+      }
+      return { products: filtered, summaries, diagnostics: catalog.diagnostics };
     }
 
     const stores = await this.getStores();
-    const summaries: Record<string, ProductAvailabilitySummary> = {};
-    for (const p of filtered) {
-      summaries[p.plu] = {
-        plu: p.plu,
-        productId: p.id,
-        availableStoreCount: stores.length,
-        eligibleStoreCount: stores.length,
-        deliveryAvailable: true,
-        collectionAvailable: true,
-      };
-    }
-
+    const summaries = await this.buildAvailabilitySummaries(filtered, stores);
     return { products: filtered, summaries, diagnostics: catalog.diagnostics };
   }
 
   async createBasket(storeId?: string, fulfillmentType?: 'delivery' | 'pickup'): Promise<Basket> {
-    return defaultBasketService.createBasket(storeId || 'store-01', fulfillmentType);
+    if (!storeId) throw new Error('storeId is required to create a basket');
+    const store = await this.getStore(storeId);
+    if (!store) throw new Error(`Store ${storeId} was not found in the tenant's assigned Deliverect locations`);
+    if (!store.currency) throw new Error(`Currency was not supplied for Deliverect store ${storeId}`);
+    return defaultBasketService.createBasket(store.id, fulfillmentType, store.currency, store.name);
   }
 
   async getBasket(basketId: string): Promise<Basket | null> {

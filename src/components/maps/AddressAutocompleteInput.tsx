@@ -260,55 +260,88 @@ export const AddressAutocompleteInput: React.FC<AddressAutocompleteInputProps> =
     }
   };
 
-  // Handle GPS Device Location with Reverse Geocoding & Local Fallback
+  // Handle GPS Device Location with Reverse Geocoding & postcodes.io / Manual Input Fallback
   const handleUseDeviceLocation = () => {
     setErrorMsg(null);
     if (!navigator.geolocation) {
-      setErrorMsg('Geolocation is not supported by your browser');
+      setErrorMsg('Geolocation is not supported by your browser. Please enter a postcode manually.');
       return;
     }
 
     setIsGpsLocating(true);
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const coords: Coordinates = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        };
+    try {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const coords: Coordinates = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
 
-        // Try Google Geocoder reverse geocode if active
-        if (geocoderRef.current && window.google?.maps?.Geocoder) {
-          try {
-            const response = await geocoderRef.current.geocode({
-              location: { lat: coords.latitude, lng: coords.longitude },
-            });
+          // Try Google Geocoder reverse geocode if active
+          if (geocoderRef.current && window.google?.maps?.Geocoder) {
+            try {
+              const response = await geocoderRef.current.geocode({
+                location: { lat: coords.latitude, lng: coords.longitude },
+              });
 
-            if (response.results && response.results.length > 0) {
-              const parsed = parseGoogleGeocoderResult(response.results[0]);
-              setIsGpsLocating(false);
-              if (onAddressResolved) {
-                onAddressResolved(parsed);
+              if (response.results && response.results.length > 0) {
+                const parsed = parseGoogleGeocoderResult(response.results[0]);
+                setIsGpsLocating(false);
+                if (onAddressResolved) {
+                  onAddressResolved(parsed);
+                }
+                await onSelectAddress(parsed);
+                return;
               }
-              await onSelectAddress(parsed);
-              return;
+            } catch (geoErr) {
+              console.warn('GPS Google reverse geocoding failed, trying postcodes.io:', geoErr);
             }
-          } catch (geoErr) {
-            console.warn('GPS Google reverse geocoding failed:', geoErr);
           }
-        }
 
-        // Without authoritative reverse geocoding, do not fabricate a fake address
-        setIsGpsLocating(false);
-        setErrorMsg('Unable to reverse-geocode your GPS location into a postal address. Please type your street address or postal code above.');
-      },
-      (err) => {
-        console.warn('Geolocation error:', err);
-        setIsGpsLocating(false);
-        setErrorMsg('Unable to retrieve your location. Please check browser permissions.');
-      },
-      { enableHighAccuracy: true, timeout: 9000, maximumAge: 30000 }
-    );
+          // Fallback to postcodes.io reverse geocoding for UK
+          try {
+            const pRes = await fetch(`https://api.postcodes.io/postcodes?lat=${coords.latitude}&lon=${coords.longitude}&limit=1`);
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              if (pData.status === 200 && Array.isArray(pData.result) && pData.result.length > 0) {
+                const top = pData.result[0];
+                const parsedAddr: Address = {
+                  line1: top.parish || top.admin_district || top.postcode,
+                  city: top.admin_district || top.parish || 'London',
+                  postalCode: top.postcode,
+                  postcode: top.postcode,
+                  country: 'GB',
+                  formattedAddress: `${top.postcode}, ${top.admin_district || ''}`,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                };
+                setIsGpsLocating(false);
+                if (onAddressResolved) {
+                  onAddressResolved({ address: parsedAddr, coordinates: coords });
+                }
+                await onSelectAddress({ address: parsedAddr, coordinates: coords });
+                return;
+              }
+            }
+          } catch (postcodeErr) {
+            console.warn('postcodes.io lookup failed:', postcodeErr);
+          }
+
+          setIsGpsLocating(false);
+          setErrorMsg('Unable to resolve GPS coordinates to a postcode. Please type your postcode manually.');
+        },
+        (err) => {
+          console.warn('Geolocation error:', err);
+          setIsGpsLocating(false);
+          setErrorMsg('Location access denied or unavailable. Please enter your postcode manually.');
+        },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
+      );
+    } catch (e) {
+      setIsGpsLocating(false);
+      setErrorMsg('Geolocation failed. Please enter your postcode manually.');
+    }
   };
 
   return (
@@ -387,26 +420,7 @@ export const AddressAutocompleteInput: React.FC<AddressAutocompleteInputProps> =
         )}
       </form>
 
-      {/* GPS Location Button */}
-      <button
-        type="button"
-        id="device-location-btn"
-        onClick={handleUseDeviceLocation}
-        disabled={loading || isGpsLocating}
-        className="w-full py-2.5 px-4 rounded-2xl border border-gray-200 hover:border-emerald-300 bg-white hover:bg-emerald-50/40 flex items-center justify-center gap-2 text-xs font-bold text-gray-800 shadow-2xs active:scale-[0.99] transition-all"
-      >
-        {isGpsLocating ? (
-          <>
-            <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
-            <span>Finding exact GPS location & distance...</span>
-          </>
-        ) : (
-          <>
-            <Navigation className="w-4 h-4 text-emerald-600" />
-            <span>Use current device location (GPS)</span>
-          </>
-        )}
-      </button>
+
 
       {errorMsg && (
         <p className="text-xs text-red-600 text-center font-medium">{errorMsg}</p>

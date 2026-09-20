@@ -6,7 +6,6 @@ import {
   BasketRuleDecision,
   StoreSwitchReconciliation,
 } from './types';
-import { DEFAULT_MOCK_RULES } from './mockRules';
 import { evaluateProductRules } from './ProductRuleEvaluator';
 import { evaluateBasketRules } from './BasketRuleEvaluator';
 
@@ -20,7 +19,7 @@ import { evaluateBasketRules } from './BasketRuleEvaluator';
 export class RuleEngine {
   private rules: RetailRule[] = [];
 
-  constructor(initialRules: RetailRule[] = DEFAULT_MOCK_RULES) {
+  constructor(initialRules: RetailRule[] = []) {
     this.rules = [...initialRules];
   }
 

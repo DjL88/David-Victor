@@ -6,7 +6,7 @@ import { MOCK_TENANTS } from '../commerce/mockData';
 import { injectGoogleFontLink, GOOGLE_FONTS_CATALOG } from '../commerce/googleFonts';
 
 import { defaultPaymentClient } from '../commerce/PaymentClient';
-import { setRuntimeMode, parseRuntimeMode } from '../domain/runtime';
+import { setRuntimeMode, parseRuntimeMode, isDemoMode } from '../domain/runtime';
 
 export type PlatformAppMode = 'unknown' | 'demo' | 'staging' | 'production';
 
@@ -28,7 +28,7 @@ function detectInitialTenant(): string | undefined {
 
   // 1. Check URL query param (e.g. ?tenantId=brand-beta) in demo or admin contexts
   const urlParams = new URLSearchParams(window.location.search);
-  const queryTenant = urlParams.get('tenantId');
+  const queryTenant = urlParams.get('tenantId') || urlParams.get('brand');
   if (queryTenant) return queryTenant;
 
   // 2. Check Hostname / Subdomain (e.g. brand-beta.yourhost.com -> 'brand-beta')
@@ -150,6 +150,7 @@ export const TenantProvider: React.FC<{
     root.style.setProperty('--brand-text', tenant.textColour);
     root.style.setProperty('--brand-radius', tenant.borderRadius);
     root.style.setProperty('--brand-font', tenant.fontFamily);
+    root.style.setProperty('--tenant-font-family', tenant.fontFamily);
 
     // Auto-inject Google Font link if matched
     const matchedFamily = GOOGLE_FONTS_CATALOG.find((f) =>

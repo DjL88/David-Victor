@@ -728,7 +728,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
                     </button>
                     <p className="text-[11px] text-gray-400 mt-2">
-                      Showing {paginatedProducts.length} of {filteredProducts.length} items
+                      Showing 1–{Math.min(visibleCount, filteredProducts.length)} of {filteredProducts.length} products
                     </p>
                   </div>
                 )}

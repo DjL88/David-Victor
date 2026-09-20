@@ -25,6 +25,7 @@ import {
   Truck,
   ArrowRight,
   ShieldCheck,
+  ArrowRightLeft,
   Package,
   Store as StoreIcon,
   BadgePercent,
@@ -475,7 +476,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               ) : item.substitutionPreference === 'CANCEL_ORDER_IF_UNAVAILABLE' ? (
                                 <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                               ) : (
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               )}
                               <div className="min-w-0 truncate">
                                 <span className="text-[11px] font-bold text-gray-800 group-hover:text-emerald-950 block truncate">

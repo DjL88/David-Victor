@@ -7,6 +7,7 @@ import { Plus, Store as StoreIcon, ShieldAlert, Heart } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 import { ProductImage } from './media/Media';
 import { useFavourites } from '../hooks/useFavourites';
+import { resolveAllergenTags } from '../domain/allergens';
 
 interface ProductCardProps {
   product: Product;
@@ -108,7 +109,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
       const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
       if (minMinor !== maxMinor) {
-        return `From ${formatCurrency(minPrice, currencySymbol)}`;
+        return `${formatCurrency(minPrice, currencySymbol)} – ${formatCurrency(maxPrice, currencySymbol)}`;
       }
       return formatCurrency(minPrice, currencySymbol);
     }
@@ -240,11 +241,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity">
             {product?.name || product?.plu || 'Product'}
           </h3>
-          {(product.displayLabels?.length || product.productTagLabels?.length) ? (
+          {(product.displayLabels?.length || product.productTagLabels?.length || product.tags?.length) ? (
             <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Product tags">
-              {(product.displayLabels?.length ? product.displayLabels : product.productTagLabels || []).slice(0, 3).map((label) => (
+              {(product.displayLabels?.length ? product.displayLabels : product.productTagLabels || []).slice(0, 2).map((label) => (
                 <span key={label} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100">{label.replace(/_/g, ' ')}</span>
               ))}
+              {resolveAllergenTags(product.tags || []).slice(0, 3).map((a) => {
+                const IconComponent = a.icon;
+                return (
+                  <span
+                    key={a.key}
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex items-center gap-0.5 ${a.badgeColor}`}
+                  >
+                    <IconComponent className="w-2.5 h-2.5 shrink-0" />
+                    <span>{a.label}</span>
+                  </span>
+                );
+              })}
             </div>
           ) : null}
         </div>

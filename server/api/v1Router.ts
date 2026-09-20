@@ -2019,6 +2019,25 @@ v1Router.patch('/admin/tenants/:id', requireAdminAuth('marketingEditor'), valida
   }
 });
 
+// 9.4a Delete Tenant
+v1Router.delete('/admin/tenants/:id', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
+  try {
+    await FirestorePlatformService.deleteTenantConfig(req.params.id);
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'platformSuperAdmin',
+      tenantId: req.params.id,
+      category: 'Tenant',
+      action: 'DELETE_TENANT',
+      details: `Deleted tenant config: ${req.params.id}`,
+    });
+    res.json({ success: true, tenantId: req.params.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 9.4b List all configured domain mappings
 v1Router.get('/admin/domains', requireAdminAuth(), async (req: Request, res: Response) => {
   try {

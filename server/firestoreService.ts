@@ -932,6 +932,29 @@ export class FirestoreService {
   }
 
   /**
+   * Deletes tenant configuration from Firestore and memory.
+   */
+  static async deleteTenantConfig(tenantId: string): Promise<boolean> {
+    delete inMemoryTenants[tenantId];
+    savePersistedTenants(inMemoryTenants);
+
+    const db = getFirestoreDb();
+    if (db && !isFirestorePermissionDenied()) {
+      try {
+        await db.collection('tenants').doc(tenantId).delete();
+        console.log(`[Firestore Admin] Deleted tenant config for ${tenantId}`);
+      } catch (err: any) {
+        if (isFirestorePermissionDeniedError(err)) {
+          markFirestorePermissionDenied(err);
+        } else {
+          console.error(`[Firestore Admin] Failed to delete tenant config for ${tenantId}:`, err);
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
    * Retrieves stories for a tenant from Firestore or memory.
    */
   static async getTenantStories(tenantId: string = 'brand-alpha'): Promise<Story[]> {

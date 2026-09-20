@@ -49,7 +49,16 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
 
       <div className="overflow-x-auto no-scrollbar scroll-smooth scroll-px-4 px-4 py-1.5 w-full max-w-full">
         <div className="flex items-center gap-4 px-4 min-w-max pt-2 pb-3 pr-8">
-          {stories.map((story, index) => (
+          {stories.map((story, index) => {
+            const firstFrame = story.items?.[0];
+            const mediaUrl = firstFrame?.mediaUrl || story.mediaUrl || '';
+            const mediaType = firstFrame?.mediaType || story.mediaType;
+            let decodedMediaUrl = mediaUrl;
+            try { decodedMediaUrl = decodeURIComponent(mediaUrl); } catch {}
+            const isVideo = mediaType?.toLowerCase() === 'video' ||
+              /\.(mp4|mov|m4v|webm)(?=$|[?#])/i.test(decodedMediaUrl) ||
+              /(?:story-video|video%2f|contenttype=video)/i.test(mediaUrl);
+            return (
             <button
               key={story.id}
               id={`story-bubble-${story.id}`}
@@ -61,9 +70,9 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
               <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 shadow-xs group-hover:scale-105 transition-transform duration-200">
                 <div className="p-0.5 rounded-full bg-white">
                   <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
-                    {story.mediaType === 'video' && !story.thumbnailUrl ? (
+                    {isVideo && !story.thumbnailUrl ? (
                       <video
-                        src={story.mediaUrl}
+                        src={mediaUrl}
                         aria-label={story.title}
                         muted
                         playsInline
@@ -72,7 +81,7 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
                       />
                     ) : (
                       <img
-                        src={story.thumbnailUrl || story.mediaUrl}
+                        src={story.thumbnailUrl || mediaUrl}
                         alt={story.title}
                         loading="lazy"
                         className="w-full h-full object-cover group-hover:rotate-1 transition-transform"
@@ -92,7 +101,8 @@ export const StoriesRow: React.FC<StoriesRowProps> = ({
                 {story.title}
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

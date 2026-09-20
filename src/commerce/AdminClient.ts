@@ -169,6 +169,11 @@ export interface AdminClient {
   provisionBrand?(brandData: any): Promise<TenantConfig>;
 
   /**
+   * Delete a brand/tenant.
+   */
+  deleteBrand?(tenantId: string): Promise<boolean>;
+
+  /**
    * Upload asset file.
    */
   uploadAssetFile?(file: File, type: string, tenantId?: string): Promise<any>;

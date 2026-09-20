@@ -102,10 +102,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     prevStory,
   } = useStories(selectedStore?.id);
 
-  // Auto-prompt location picker when initial splash completes and customer has no location yet
+  // Auto-prompt location picker when initial splash completes and customer has no location yet (guarded by location_prompted and location_prompt_dismissed)
   React.useEffect(() => {
     if (!showSplash && entryStage === 'LOCATION' && !hasLocation) {
-      setIsLocationModalOpen(true);
+      const prompted = localStorage.getItem('location_prompted');
+      const dismissed = localStorage.getItem('location_prompt_dismissed');
+      if (!prompted && !dismissed) {
+        localStorage.setItem('location_prompted', 'true');
+        setIsLocationModalOpen(true);
+      }
     }
   }, [showSplash, entryStage, hasLocation, setIsLocationModalOpen]);
 
@@ -516,7 +521,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         currentAddress={currentAddress}
         coordinates={coordinates}
         stores={nearbyStores.length > 0 ? nearbyStores : allStores}
-        onClose={() => setIsLocationModalOpen(false)}
+        onClose={() => {
+          localStorage.setItem('location_prompt_dismissed', 'true');
+          localStorage.setItem('location_prompted', 'true');
+          setIsLocationModalOpen(false);
+        }}
         onSelectAddress={async (q) => {
           await resolveAndSetLocation(q);
         }}

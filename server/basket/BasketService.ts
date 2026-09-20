@@ -25,15 +25,17 @@ export class BasketService {
   }
 
   async createBasket(
-    storeId: string = 'store-01',
+    storeId: string,
     fulfillmentType: 'delivery' | 'pickup' = 'delivery',
-    currency: string = 'GBP'
+    currency: string = 'GBP',
+    storeName?: string
   ): Promise<Basket> {
+    if (!storeId) throw new Error('storeId is required to create a basket');
     const id = `bsk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const basket: Basket = {
       id,
       storeId,
-      storeName: storeId === 'store-02' ? 'Market Lane Artisan Provisions' : 'Chelmsford Flagship Superstore',
+      storeName: storeName || storeId,
       fulfillmentType,
       items: [],
       subtotal: toMoney(0, currency),
@@ -62,10 +64,8 @@ export class BasketService {
   }
 
   async updateBasketItem(basketId: string, plu: string, quantity: number): Promise<Basket> {
-    let basket = this.baskets.get(basketId);
-    if (!basket) {
-      basket = await this.createBasket('store-01', 'delivery');
-    }
+    const basket = this.baskets.get(basketId);
+    if (!basket) throw new Error(`Basket ${basketId} not found`);
 
     const existingIndex = basket.items.findIndex((item) => item.plu === plu || item.id === plu);
 
@@ -80,16 +80,7 @@ export class BasketService {
         basket.items[existingIndex].price.currency
       );
     } else {
-      const defaultPrice = toMoney(350, basket.subtotal.currency);
-      basket.items.push({
-        id: `item_${Date.now()}_${plu}`,
-        plu,
-        name: `Product ${plu}`,
-        quantity,
-        price: defaultPrice,
-        unitPrice: defaultPrice,
-        totalPrice: toMoney(moneyToMinor(defaultPrice) * quantity, defaultPrice.currency),
-      });
+      throw new Error(`Product ${plu} must be resolved from the selected store catalogue before it can be added`);
     }
 
     this.recalculateBasket(basket);
@@ -116,10 +107,8 @@ export class BasketService {
       price?: Money;
     }>
   ): Promise<Basket> {
-    let basket = this.baskets.get(basketId);
-    if (!basket) {
-      basket = await this.createBasket('store-01', 'delivery');
-    }
+    const basket = this.baskets.get(basketId);
+    if (!basket) throw new Error(`Basket ${basketId} not found`);
 
     for (const incoming of items) {
       const existingIndex = basket.items.findIndex(
@@ -138,11 +127,14 @@ export class BasketService {
         if (incoming.subItems) item.subItems = incoming.subItems;
         item.totalPrice = toMoney(moneyToMinor(item.price) * item.quantity, item.price.currency);
       } else {
-        const price = incoming.price || toMoney(450, basket.subtotal.currency);
+        if (!incoming.name || !incoming.price) {
+          throw new Error(`Product ${incoming.plu} requires authoritative name and price`);
+        }
+        const price = incoming.price;
         basket.items.push({
           id: `item_${Date.now()}_${incoming.plu}`,
           plu: incoming.plu,
-          name: incoming.name || incoming.bundleName || `Product ${incoming.plu}`,
+          name: incoming.name,
           quantity: incoming.quantity,
           price,
           unitPrice: price,
@@ -212,7 +204,7 @@ export class BasketService {
     if (!basket) throw new Error(`Basket ${basketId} not found`);
 
     basket.storeId = storeId;
-    basket.storeName = storeId === 'store-02' ? 'Market Lane Artisan Provisions' : 'Chelmsford Flagship Superstore';
+    basket.storeName = basket.storeName || storeId;
     this.recalculateBasket(basket);
 
     return {
