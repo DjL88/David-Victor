@@ -193,7 +193,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         { id: 'branding', label: 'Branding & Fonts', icon: Palette },
         { id: 'hero_banners', label: 'Hero Banners & Content', icon: Sparkles, badge: 'Live' },
         { id: 'stories', label: 'Stories Drops', icon: Film },
-        { id: 'pages', label: 'Pages (CMS)', icon: FileText, badge: 'Demo' },
+        { id: 'pages', label: 'Pages (CMS)', icon: FileText, badge: 'Live' },
         { id: 'search_merch', label: 'Search Merchandising', icon: Search },
         { id: 'insights', label: 'Insights & Funnel', icon: BarChart3, badge: 'Demo' },
       ],

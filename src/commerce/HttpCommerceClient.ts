@@ -114,6 +114,8 @@ export class HttpCommerceClient implements CommerceClient {
       );
       error.status = res.status;
       error.code = errorBody.code || `HTTP_${res.status}`;
+      error.retryable = Boolean(errorBody.retryable);
+      error.details = errorBody.details;
       throw error;
     }
 
@@ -279,8 +281,8 @@ export class HttpCommerceClient implements CommerceClient {
     store: Store;
     basket?: Basket;
     storeSwitchDiff?: {
-      availableUnchanged?: Array<{ plu: string; name: string; quantity: number; price: number }>;
-      priceChanges: Array<{ plu: string; name?: string; oldPrice: number; newPrice: number }>;
+      availableUnchanged?: Array<{ plu: string; name: string; quantity: number; price: Money | number }>;
+      priceChanges: Array<{ plu: string; name?: string; oldPrice: Money | number; newPrice: Money | number }>;
       unavailableItems: Array<{ plu: string; name: string; reason?: string }>;
       quantityAdjusted: Array<{ plu: string; name?: string; requested: number; adjustedTo: number; reason?: string }>;
     };
@@ -293,10 +295,20 @@ export class HttpCommerceClient implements CommerceClient {
     let basket: Basket | undefined;
     if (existingBasketId) {
       try {
-        basket = await this.getBasket(existingBasketId);
-      } catch {
-        // Create new basket for the selected store
-        basket = await this.createBasket(storeId, 'delivery');
+        const reconciled = await this.reconcileBasket(existingBasketId, storeId);
+        basket = reconciled.basket;
+        return {
+          store,
+          basket,
+          storeSwitchDiff: {
+            availableUnchanged: [],
+            priceChanges: reconciled.changes.filter((c) => c.type === 'PRICE_CHANGED').map((c) => ({ plu: c.plu, name: c.name, oldPrice: c.oldPrice!, newPrice: c.newPrice! })),
+            unavailableItems: reconciled.changes.filter((c) => c.type === 'OUT_OF_STOCK').map((c) => ({ plu: c.plu, name: c.name, reason: c.message })),
+            quantityAdjusted: reconciled.changes.filter((c) => c.type === 'QUANTITY_ADJUSTED').map((c) => ({ plu: c.plu, name: c.name, requested: c.oldQuantity || 0, adjustedTo: c.newQuantity || 0, reason: c.message })),
+          },
+        };
+      } catch (error: any) {
+        throw new Error(error?.message || 'The basket could not be reconciled with the selected store. Please retry.');
       }
     } else {
       basket = await this.createBasket(storeId, 'delivery');

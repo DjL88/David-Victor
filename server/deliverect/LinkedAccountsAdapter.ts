@@ -1346,22 +1346,24 @@ export class LinkedAccountsAdapter {
       const filePath = getLocalMappingPath(tenantId);
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf8');
-        const parsed = JSON.parse(raw) as LinkedAccountsSyncResult;
-        if (parsed && Array.isArray(parsed.accounts) && (parsed.accounts.length > 0 || parsed.stores?.length > 0)) {
-          // Sanitize any legacy corrupted entries from older builds
-          if (Array.isArray(parsed.locations)) {
-            parsed.locations = parsed.locations.filter(
-              loc => loc && loc.physicalLocationId && loc.physicalLocationId !== 'loc_undefined'
-            );
+        if (raw && raw.trim().length > 0) {
+          const parsed = JSON.parse(raw) as LinkedAccountsSyncResult;
+          if (parsed && Array.isArray(parsed.accounts) && (parsed.accounts.length > 0 || parsed.stores?.length > 0)) {
+            // Sanitize any legacy corrupted entries from older builds
+            if (Array.isArray(parsed.locations)) {
+              parsed.locations = parsed.locations.filter(
+                loc => loc && loc.physicalLocationId && loc.physicalLocationId !== 'loc_undefined'
+              );
+            }
+            if (Array.isArray(parsed.stores)) {
+              parsed.stores = parsed.stores.map(st => ({
+                ...st,
+                physicalLocationId: st.physicalLocationId === 'loc_undefined' ? null : st.physicalLocationId,
+              }));
+            }
+            console.info(`[LinkedAccountsAdapter] Restored ${parsed.accounts.length} accounts and ${parsed.stores?.length || 0} stores from local disk snapshot for ${tenantId}.`);
+            return parsed;
           }
-          if (Array.isArray(parsed.stores)) {
-            parsed.stores = parsed.stores.map(st => ({
-              ...st,
-              physicalLocationId: st.physicalLocationId === 'loc_undefined' ? null : st.physicalLocationId,
-            }));
-          }
-          console.info(`[LinkedAccountsAdapter] Restored ${parsed.accounts.length} accounts and ${parsed.stores?.length || 0} stores from local disk snapshot for ${tenantId}.`);
-          return parsed;
         }
       }
     } catch (diskErr) {

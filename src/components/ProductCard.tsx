@@ -246,12 +246,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity">
             {product?.name || product?.plu || 'Product'}
           </h3>
-          {(product.displayLabels?.length || product.productTagLabels?.length || product.tags?.length) ? (
+          {(product.displayLabels?.length || product.productTagLabels?.length || product.allergens?.length) ? (
             <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Product tags">
               {(product.displayLabels?.length ? product.displayLabels : product.productTagLabels || []).slice(0, 2).map((label) => (
                 <span key={label} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100">{label.replace(/_/g, ' ')}</span>
               ))}
-              {resolveAllergenTags(product.tags || []).slice(0, 3).map((a) => {
+              {resolveAllergenTags(product.allergens || []).slice(0, 3).map((a) => {
                 const IconComponent = a.icon;
                 return (
                   <span

@@ -25,6 +25,14 @@ export function useBasket(selectedStore: Store | null) {
   } | null>(null);
 
   const activeStoreId = selectedStore?.id ?? '';
+  const basketStorageKey = activeStoreId ? `bwydi:basket:${activeStoreId}` : '';
+
+  const rememberBasket = useCallback((nextBasket: Basket | null) => {
+    setBasket(nextBasket);
+    if (!basketStorageKey) return;
+    if (nextBasket?.id) localStorage.setItem(basketStorageKey, nextBasket.id);
+    else localStorage.removeItem(basketStorageKey);
+  }, [basketStorageKey]);
 
   // Backwards-compatible single basket array (no multi-store split)
   const allBaskets = useMemo(() => {
@@ -49,6 +57,16 @@ export function useBasket(selectedStore: Store | null) {
     }
   }, [isCartOpen, selectedStore?.id]);
 
+  // Opening a stale drawer always refreshes prices and availability from the server.
+  useEffect(() => {
+    if (!isCartOpen || !basket) return;
+    const age = Date.now() - Date.parse(basket.updatedAt || '');
+    if (Number.isFinite(age) && age < 30_000) return;
+    client.reconcileBasket(basket.id, selectedStore?.id)
+      .then((result) => rememberBasket(result.basket))
+      .catch((err) => console.error('Failed to refresh basket availability:', err));
+  }, [isCartOpen, basket?.id, basket?.updatedAt, selectedStore?.id, client, rememberBasket]);
+
   // Synchronize basket with selected store:
   // If customer changes store, revalidate basket items against the new store
   useEffect(() => {
@@ -59,17 +77,24 @@ export function useBasket(selectedStore: Store | null) {
 
       try {
         setLoading(true);
-        if (basket && basket.items.length > 0 && basket.storeId !== selectedStore.id) {
-          const switchResult = await client.selectStore(selectedStore.id, basket.id);
+        let currentBasket = basket;
+        if (!currentBasket && basketStorageKey) {
+          const rememberedId = localStorage.getItem(basketStorageKey);
+          if (rememberedId) currentBasket = await client.getBasket(rememberedId).catch(() => null);
+        }
+        if (currentBasket && currentBasket.items.length > 0 && currentBasket.storeId !== selectedStore.id) {
+          const switchResult = await client.selectStore(selectedStore.id, currentBasket.id);
           if (isMounted) {
-            if (switchResult.basket) setBasket(switchResult.basket);
+            if (switchResult.basket) rememberBasket(switchResult.basket);
             if (switchResult.storeSwitchDiff) setStoreSwitchDiff(switchResult.storeSwitchDiff);
           }
-        } else if (!basket || basket.storeId !== selectedStore.id) {
+        } else if (!currentBasket || currentBasket.storeId !== selectedStore.id) {
           const newBasket = await client.createBasket(selectedStore.id);
           if (isMounted && newBasket) {
-            setBasket(newBasket);
+            rememberBasket(newBasket);
           }
+        } else if (isMounted) {
+          rememberBasket(currentBasket);
         }
       } catch (err) {
         console.error('Failed to sync basket with store:', err);
@@ -83,7 +108,7 @@ export function useBasket(selectedStore: Store | null) {
     return () => {
       isMounted = false;
     };
-  }, [selectedStore?.id, client]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStore?.id, client, basketStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateQuantity = useCallback(
     async (product: Product, newQuantity: number, _targetStoreId?: string) => {
@@ -120,7 +145,7 @@ export function useBasket(selectedStore: Store | null) {
           newQuantity
         );
 
-        setBasket(updatedBasket);
+        rememberBasket(updatedBasket);
 
         // Track privacy-sanitized analytics event
         if (newQuantity > previousQty) {
@@ -150,7 +175,7 @@ export function useBasket(selectedStore: Store | null) {
         return { success: false };
       }
     },
-    [basket, activeStoreId, client]
+    [basket, activeStoreId, client, rememberBasket]
   );
 
   const addMultipleItems = useCallback(
@@ -183,12 +208,12 @@ export function useBasket(selectedStore: Store | null) {
             previousQty + qtyToAdd
           );
         }
-        setBasket(updatedBasket);
+        rememberBasket(updatedBasket);
       } catch (err) {
         console.error('Failed to add multiple items to basket:', err);
       }
     },
-    [basket, activeStoreId, client]
+    [basket, activeStoreId, client, rememberBasket]
   );
 
   const removeItem = useCallback(
@@ -196,7 +221,7 @@ export function useBasket(selectedStore: Store | null) {
       if (!basket) return;
       try {
         const updated = await client.removeBasketItem(basket.id, plu);
-        setBasket(updated);
+        rememberBasket(updated);
 
         defaultAnalyticsClient.track({
           type: 'REMOVE_FROM_BASKET',
@@ -207,7 +232,7 @@ export function useBasket(selectedStore: Store | null) {
         console.error('Failed to remove item:', err);
       }
     },
-    [basket, activeStoreId, client]
+    [basket, activeStoreId, client, rememberBasket]
   );
 
   /**

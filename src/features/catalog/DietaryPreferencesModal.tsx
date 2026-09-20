@@ -6,21 +6,16 @@ import {
   Heart,
   RotateCcw,
   Check,
-  ShieldCheck,
-  Wheat,
-  Shell,
-  Fish,
-  Nut,
-  Milk,
-  Egg,
-  Bean,
-  Sprout,
-  Flame,
-  Flower2,
-  Leaf,
-  FlaskConical,
   SlidersHorizontal,
+  ShieldCheck,
 } from 'lucide-react';
+import {
+  normalizeAllergenKey,
+  getAllergenIcon,
+  normalizeDietaryTag,
+  getCanonicalDietaryLabel,
+  CANONICAL_ALLERGENS,
+} from '../../domain/allergens';
 
 export interface CatalogFilterState {
   onlyFavourites: boolean;
@@ -50,23 +45,6 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
 
-  const allergenIcon = (id: string): React.ElementType => {
-    const value = id.toUpperCase();
-    if (/(WHEAT|GLUTEN|BARLEY|OATS|RYE|SPELT|KAMUT)/.test(value)) return Wheat;
-    if (/(CRUSTACEAN|MOLLUSC|SHELLFISH)/.test(value)) return Shell;
-    if (value.includes('FISH')) return Fish;
-    if (/(PEANUT|NUT|ALMOND|CASHEW|HAZELNUT|PISTACHIO|PECAN|WALNUT|MACADAMIA)/.test(value)) return Nut;
-    if (/(MILK|DAIRY|LAC)/.test(value)) return Milk;
-    if (value.includes('EGG')) return Egg;
-    if (/(SOY|SOYA)/.test(value)) return Bean;
-    if (value.includes('SESAME')) return Sprout;
-    if (value.includes('MUSTARD')) return Flame;
-    if (value.includes('LUPIN')) return Flower2;
-    if (value.includes('CELERY')) return Leaf;
-    if (/(SULPH|SULFIT)/.test(value)) return FlaskConical;
-    return ShieldCheck;
-  };
-
   // Extract all unique dietary tags dynamically from the available products
   const dynamicDietaryTags = useMemo(() => {
     const tagSet = new Map<string, { label: string; count: number }>();
@@ -74,39 +52,24 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
     products.forEach((p) => {
       const candidates: string[] = [
         ...(p.displayLabels || []),
-        ...(p.productTagLabels || []).filter((label) => !(p.allergens || []).includes(label)),
+        ...(p.productTagLabels || []),
+        ...(p.productTags || []),
       ];
 
       candidates.forEach((raw) => {
         if (!raw || typeof raw !== 'string') return;
-        const normalized = raw.trim().toUpperCase();
+        const norm = normalizeDietaryTag(raw);
+        if (!norm) return;
 
-        // Focus on lifestyle and dietary tags
-        const isDietTag =
-          normalized.includes('VEGAN') ||
-          normalized.includes('VEGETARIAN') ||
-          normalized.includes('ORGANIC') ||
-          normalized.includes('GLUTEN') ||
-          normalized.includes('DAIRY') ||
-          normalized.includes('HALAL') ||
-          normalized.includes('KOSHER') ||
-          normalized.includes('SUGAR') ||
-          normalized.includes('PROTEIN') ||
-          normalized.includes('FAIRTRADE');
-
-        if (isDietTag) {
-          const displayLabel =
-            raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
-          const existing = tagSet.get(normalized);
-          if (existing) {
-            existing.count += 1;
-          } else {
-            tagSet.set(normalized, { label: displayLabel, count: 1 });
-          }
+        const label = getCanonicalDietaryLabel(raw);
+        const existing = tagSet.get(norm);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          tagSet.set(norm, { label, count: 1 });
         }
       });
     });
-
 
     return Array.from(tagSet.entries()).map(([tag, data]) => ({
       tag,
@@ -117,15 +80,29 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
 
   const allergenOptions = useMemo(() => {
     const counts = new Map<string, { label: string; count: number }>();
-    products.forEach((product) => (product.allergens || []).forEach((raw) => {
-      const label = String(raw).trim();
-      if (!label) return;
-      const id = label.toUpperCase();
-      const existing = counts.get(id);
-      if (existing) existing.count += 1;
-      else counts.set(id, { label: label.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()), count: 1 });
+    products.forEach((product) =>
+      (product.allergens || []).forEach((raw) => {
+        const label = String(raw).trim();
+        if (!label) return;
+        const canonicalKey = normalizeAllergenKey(label);
+        const canonicalConfig = CANONICAL_ALLERGENS[canonicalKey];
+        const displayLabel = canonicalConfig
+          ? canonicalConfig.label
+          : label.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
+
+        const existing = counts.get(canonicalKey);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(canonicalKey, { label: displayLabel, count: 1 });
+        }
+      })
+    );
+    return Array.from(counts.entries()).map(([id, value]) => ({
+      id,
+      ...value,
+      icon: getAllergenIcon(id),
     }));
-    return Array.from(counts.entries()).map(([id, value]) => ({ id, ...value, icon: allergenIcon(id) }));
   }, [products]);
 
   if (!isOpen) return null;

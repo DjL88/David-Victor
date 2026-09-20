@@ -56,17 +56,27 @@ export function purgeDeals(): void {
 }
 
 /**
- * Find or create a Deliverect deal matching a story
+ * Find a genuine Deliverect deal matching a story.
+ * Only returns a deal if explicitly linked to an authoritative Deliverect Combo / Bundle ID
+ * or an explicit catalog deal. Returns null for ordinary shopping list stories/promotions.
  */
 export function getDealForStory(
   story: Story,
   _products: Product[]
 ): DeliverectDeal | null {
+  const linkedBundleId = (story as any).linkedBundleId;
+  if (linkedBundleId) {
+    const existing = DELIVERECT_CATALOG_DEALS.find((deal) => {
+      return deal.id === linkedBundleId || deal.externalDeliverectId === linkedBundleId;
+    });
+    if (existing) return existing;
+  }
+
   if (!story.linkedProductPlus || story.linkedProductPlus.length === 0) {
     return null;
   }
 
-  // 1. Exact match with a catalog deal
+  // Check if an explicit catalog deal matches the linked PLUs
   const existing = DELIVERECT_CATALOG_DEALS.find((deal) => {
     return (
       deal.linkedProductPlus.length === story.linkedProductPlus?.length &&
@@ -75,36 +85,32 @@ export function getDealForStory(
   });
   if (existing) return existing;
 
-  // 2. Synthesize Deliverect deal from Story metadata
-  const isAnd = story.stockMatchMode === 'AND';
-  return {
-    id: `deal-story-${story.id}`,
-    type: isAnd ? 'MEAL_DEAL' : 'MULTIBUY',
-    title: story.title,
-    subtitle: story.caption || 'Special Deliverect offer',
-    badge: story.tag || (isAnd ? 'Meal Deal (AND)' : 'Multi-Buy (OR)'),
-    description: story.caption || 'Selected participating items from Deliverect catalog.',
-    imageUrl: story.mediaUrl || story.thumbnailUrl || '',
-    dealPrice: isAnd ? 9.95 : 3.00,
-    originalPrice: isAnd ? 13.45 : 3.80,
-    savings: isAnd ? 3.50 : 0.80,
-    stockMatchMode: story.stockMatchMode || (isAnd ? 'AND' : 'OR'),
-    linkedProductPlus: story.linkedProductPlus,
-    deliverectTags: isAnd ? ['meal_deal', 'story_bundle'] : ['multibuy', 'story_promo'],
-  };
+  // Do NOT synthesize fake deals for ordinary stories with linked products
+  return null;
 }
 
 /**
- * Find or create a Deliverect deal matching a promotional banner
+ * Find a genuine Deliverect deal matching a promotional banner.
+ * Only returns a deal if explicitly linked to an authoritative Deliverect Combo / Bundle ID
+ * or an explicit catalog deal. Returns null for ordinary shopping list promotions.
  */
 export function getDealForBanner(
   banner: CategoryPromoBanner,
   _products: Product[]
 ): DeliverectDeal | null {
+  const linkedBundleId = (banner as any).linkedBundleId;
+  if (linkedBundleId) {
+    const existing = DELIVERECT_CATALOG_DEALS.find((deal) => {
+      return deal.id === linkedBundleId || deal.externalDeliverectId === linkedBundleId;
+    });
+    if (existing) return existing;
+  }
+
   if (!banner.linkedProductPlus || banner.linkedProductPlus.length === 0) {
     return null;
   }
 
+  // Check if an explicit catalog deal matches the linked PLUs
   const existing = DELIVERECT_CATALOG_DEALS.find((deal) => {
     return (
       deal.linkedProductPlus.length === banner.linkedProductPlus?.length &&
@@ -113,22 +119,8 @@ export function getDealForBanner(
   });
   if (existing) return existing;
 
-  const isAnd = banner.stockMatchMode === 'AND';
-  return {
-    id: `deal-banner-${banner.id}`,
-    type: isAnd ? 'MEAL_DEAL' : 'MULTIBUY',
-    title: banner.title,
-    subtitle: banner.subtitle,
-    badge: banner.badge || (isAnd ? 'Meal Deal (AND)' : 'Multi-Buy (OR)'),
-    description: banner.subtitle,
-    imageUrl: banner.backgroundImageUrl,
-    dealPrice: isAnd ? 9.95 : 3.00,
-    originalPrice: isAnd ? 13.45 : 3.80,
-    savings: isAnd ? 3.50 : 0.80,
-    stockMatchMode: banner.stockMatchMode || (isAnd ? 'AND' : 'OR'),
-    linkedProductPlus: banner.linkedProductPlus,
-    deliverectTags: isAnd ? ['meal_deal', 'banner_combo'] : ['multibuy', 'banner_promo'],
-  };
+  // Do NOT synthesize fake deals for ordinary banners with linked products
+  return null;
 }
 
 /**

@@ -4,6 +4,7 @@ import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
 import { StoryThumbnailMedia } from '../../components/media/Media';
+import { MarketingScheduleEditor } from '../components/MarketingScheduleEditor';
 import {
   Film,
   Plus,
@@ -172,6 +173,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
       eligibleStoreIds: selectedLocationId !== 'all' ? [selectedLocationId] : [],
       linkedProductPlus: [],
       stockMatchMode: 'OR',
+      schedule: { weekdays: [1, 2, 3, 4, 5, 6, 7], timezone: 'Europe/London' },
       items: [
         {
           id: `item-1`,
@@ -615,6 +617,8 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                   />
                 </div>
               </div>
+
+              <MarketingScheduleEditor value={editingStory.schedule} onChange={(schedule) => setEditingStory({ ...editingStory, schedule })} />
 
               {/* THUMBNAIL COVER */}
               <div>

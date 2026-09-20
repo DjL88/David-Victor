@@ -330,7 +330,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 <div className="space-y-2.5">
                   {effectiveBasket.items.map((item) => {
                     const itemName = item?.name || item?.plu || 'Item';
-                    const affected = snoozeAudit.affectedItems.find((a) => a.plu === item.plu);
+                    const reconciledUnavailable = item.availabilityState === 'UNAVAILABLE_AT_STORE' || item.availabilityState === 'QUANTITY_UNAVAILABLE';
+                    const affected = snoozeAudit.affectedItems.find((a) => a.plu === item.plu) || (reconciledUnavailable ? { plu: item.plu, reason: 'unavailable' as const } : undefined);
                     const swap = snoozeAudit.availableSwaps.find((s) => s.originalPlu === item.plu);
 
                     const pseudoProduct: Product = {
@@ -385,7 +386,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               )}
                               {affected && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
-                                  {affected.reason === 'snoozed' ? 'Snoozed by store' : 'Out of stock'}
+                                  {item.availabilityState === 'QUANTITY_UNAVAILABLE' ? 'Quantity unavailable' : affected.reason === 'snoozed' ? 'Snoozed by store' : 'Unavailable at this store'}
                                 </span>
                               )}
                             </div>
@@ -650,8 +651,9 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               type="button"
               id="checkout-proceed-btn"
               onClick={onProceedToCheckout}
+              disabled={(effectiveBasket?.items || []).some((item) => item.availabilityState === 'UNAVAILABLE_AT_STORE' || item.availabilityState === 'QUANTITY_UNAVAILABLE')}
               style={primaryBtnStyle}
-              className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-98 transition-transform cursor-pointer"
+              className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-98 transition-transform cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>{snoozeAudit.hasSnoozedOrUnavailableItems ? 'Review & Resolve Items at Checkout' : 'Go to Checkout'}</span>
               <ArrowRight className="w-4 h-4 stroke-[2.5]" />

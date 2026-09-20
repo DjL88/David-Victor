@@ -364,6 +364,14 @@ export const CreateTenantSchema = z.object({
 
 export const UpdateTenantConfigSchema = z.record(z.string(), z.any());
 
+const MarketingScheduleSchema = z.object({
+  startsAt: z.string().optional(), endsAt: z.string().optional(),
+  weekdays: z.array(z.number().int().min(1).max(7)).optional(),
+  dailyStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  dailyEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  timezone: z.string().optional(),
+}).optional();
+
 export const UpdateFeePolicySchema = z
   .object({
     deliveryFee: z.number().min(0, 'deliveryFee must be non-negative').optional(),
@@ -395,6 +403,7 @@ export const SaveStorySchema = z
     orderIndex: z.number().optional(),
     isActive: z.boolean().optional(),
     published: z.boolean().optional(),
+    schedule: MarketingScheduleSchema,
     linkedCategory: z.string().optional(),
     linkedProducts: z.array(z.string()).optional(),
     linkedProductPlus: z.array(z.string()).optional(),
@@ -435,6 +444,7 @@ export const SaveHeroBannerSchema = z
     stockMatchMode: z.enum(['AND', 'OR']).optional(),
     searchQuery: z.string().optional(),
     orderIndex: z.number().optional(),
+    schedule: MarketingScheduleSchema,
   })
   .passthrough();
 

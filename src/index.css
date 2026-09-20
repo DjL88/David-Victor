@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+:root {
+  --brand-primary: #059669;
+  --brand-secondary: #f59e0b;
+  --brand-background: #f8fafc;
+  --brand-surface: #ffffff;
+  --brand-text: #0f172a;
+  --brand-muted: #64748b;
+  --brand-border: #e2e8f0;
+  --font-body: system-ui, sans-serif;
+  --font-heading: var(--font-body);
+  --font-carousel-title: var(--font-heading);
+}
+
+body { background: var(--brand-background); color: var(--brand-text); font-family: var(--font-body); }
+h1, h2, h3, h4, h5, h6, .font-heading { font-family: var(--font-heading); }
+#main-promotional-super-carousel h1,
+#main-promotional-super-carousel h2,
+#main-promotional-super-carousel h3,
+.font-carousel-title { font-family: var(--font-carousel-title); }
+.brand-surface { background-color: var(--brand-surface); }
+.brand-border { border-color: var(--brand-border); }
+.brand-muted { color: var(--brand-muted); }
+
 /* 
  * Global 100% Screen Width Lock & Zero Left-to-Right Scrolling
  */

@@ -74,6 +74,7 @@ export const ProductImage: React.FC<
         key={src}
         src={src}
         alt={alt}
+        loading="lazy"
         referrerPolicy="no-referrer"
         onLoad={handleLoad}
         onError={handleError}
@@ -129,6 +130,7 @@ export const CategoryImage: React.FC<
         key={src}
         src={src}
         alt={alt}
+        loading="lazy"
         referrerPolicy="no-referrer"
         onLoad={() => onStatusChange?.('loaded')}
         onError={handleError}

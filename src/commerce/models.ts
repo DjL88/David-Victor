@@ -134,6 +134,8 @@ export interface TenantConfig {
   logoUrl: string;
   iconUrl: string;
   faviconUrl?: string;
+  headerLogoMode?: 'ICON_WITH_TEXT' | 'WIDE_LOGO' | 'LOGO_ONLY';
+  headerLogoMaxWidth?: number;
   status?: string;
   defaultDomain?: string;
   primaryColour: string;
@@ -141,6 +143,14 @@ export interface TenantConfig {
   backgroundColour: string;
   textColour: string;
   fontFamily: string;
+  headingFontFamily?: string;
+  carouselTitleFontFamily?: string;
+  surfaceColour?: string;
+  mutedTextColour?: string;
+  borderColour?: string;
+  successColour?: string;
+  warningColour?: string;
+  errorColour?: string;
   borderRadius: string; // e.g. '12px'
   country: string; // e.g. 'GB'
   currency: string; // e.g. 'GBP'
@@ -620,6 +630,15 @@ export interface StoryAction {
 
 export type StoryStockMatchMode = 'AND' | 'OR';
 
+export interface MarketingSchedule {
+  startsAt?: string;
+  endsAt?: string;
+  weekdays?: number[]; // 1 Monday ... 7 Sunday
+  dailyStartTime?: string; // HH:mm in timezone
+  dailyEndTime?: string;
+  timezone?: string;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -631,6 +650,7 @@ export interface Story {
   thumbnailUrl?: string;
   startsAt?: string;
   endsAt?: string;
+  schedule?: MarketingSchedule;
   countryCodes?: string[];
   storeIds?: string[];
   eligibleStoreIds?: string[];
@@ -640,6 +660,8 @@ export interface Story {
   // Multiple products linked for location stock verification
   linkedProductPlus?: string[];
   stockMatchMode?: StoryStockMatchMode; // 'AND' = all items must be in stock (e.g. meal deal), 'OR' = at least 1 in stock (e.g. crisps range)
+  linkedBundleId?: string; // Explicitly link to a catalog DeliverectDeal / bundle
+  sortOrder?: number;
   items?: Array<{
     id: string;
     mediaUrl: string;
@@ -665,6 +687,9 @@ export interface CategoryPromoBanner {
   searchQuery?: string;
   linkedProductPlus?: string[];
   stockMatchMode?: StoryStockMatchMode;
+  linkedBundleId?: string; // Explicitly link to a catalog DeliverectDeal / bundle
+  sortOrder?: number;
+  schedule?: MarketingSchedule;
 }
 
 export interface CourierInfo {
@@ -727,6 +752,13 @@ export interface BasketItem {
   bundlePlu?: string;
   bundleName?: string;
   subItems?: BasketItemSubItem[];
+  availabilityState?:
+    | 'AVAILABLE'
+    | 'UNAVAILABLE_AT_STORE'
+    | 'PRICE_CHANGED'
+    | 'QUANTITY_UNAVAILABLE';
+  availabilityMessage?: string;
+  previousPrice?: Money;
 }
 
 export type BasketChargeType =
@@ -1109,4 +1141,3 @@ export interface ConnectionHealthData {
   chosenStoreMenu?: string | null;
   lastSuccessfulSync?: string | null;
 }
-

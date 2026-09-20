@@ -143,9 +143,11 @@ export interface CmsPage {
   seoTitle: string;
   seoDescription: string;
   locale: string; // e.g. "en-GB"
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'archived';
   publishDate?: string;
   navigationVisibility: NavigationVisibility;
+  navigationLabel?: string;
+  navigationOrder?: number;
   blocks: CmsBlock[];
   createdAt: string;
   updatedAt: string;

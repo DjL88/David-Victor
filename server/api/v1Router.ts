@@ -25,6 +25,8 @@ import { MOCK_TENANTS } from '../../src/commerce/mockData';
 import { GOOGLE_FONTS_CATALOG } from '../../src/commerce/googleFonts';
 import { BFFError } from '../errors';
 import { SecretManager } from '../secrets';
+import { CmsService } from '../cmsService';
+import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { validateBody } from './validation';
@@ -746,7 +748,7 @@ v1Router.get('/stories', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
     const stories = await FirestorePlatformService.getTenantStories(tenantId);
-    sendConditionalJson(req, res, stories, 'public, max-age=60, stale-while-revalidate=300');
+    sendConditionalJson(req, res, stories.filter((story) => isMarketingContentVisible(story)), 'public, max-age=60, stale-while-revalidate=300');
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -756,7 +758,7 @@ v1Router.get('/hero-banners', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
     const banners = await FirestorePlatformService.getTenantHeroBanners(tenantId);
-    sendConditionalJson(req, res, banners, 'public, max-age=60, stale-while-revalidate=300');
+    sendConditionalJson(req, res, banners.filter((banner) => isMarketingContentVisible(banner)), 'public, max-age=60, stale-while-revalidate=300');
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2888,12 +2890,69 @@ v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), async (r
 });
 
 // 9.10 Google Fonts Catalogue API
-v1Router.get('/admin/fonts/catalog', (_req: Request, res: Response) => {
-  res.json({
-    fonts: GOOGLE_FONTS_CATALOG,
-    count: GOOGLE_FONTS_CATALOG.length,
-    license: 'Open Source (SIL Open Font License / Apache 2.0)',
-  });
+v1Router.get('/cms/pages', (req: Request, res: Response) => res.json({ pages: CmsService.list(resolveTenant(req), true) }));
+v1Router.get('/admin/tenants/:id/pages', requireAdminAuth(), (req: Request, res: Response) => {
+  const admin = (req as AuthenticatedRequest).adminUser;
+  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+  res.json({ pages: CmsService.list(req.params.id) });
+});
+v1Router.put('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), (req: Request, res: Response) => {
+  const admin = (req as AuthenticatedRequest).adminUser;
+  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+  if (!req.body || req.body.id !== req.params.pageId) return res.status(400).json({ error: 'Page identity mismatch' });
+  res.json(CmsService.save(req.params.id, req.body));
+});
+v1Router.delete('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), (req: Request, res: Response) => {
+  const admin = (req as AuthenticatedRequest).adminUser;
+  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+  const deleted = CmsService.delete(req.params.id, req.params.pageId);
+  res.status(deleted ? 200 : 404).json({ success: deleted });
+});
+
+let googleFontsCache: { expiresAt: number; fonts: any[] } | null = null;
+v1Router.get('/admin/fonts/catalog', async (_req: Request, res: Response) => {
+  const apiKey = process.env.GOOGLE_FONTS_API_KEY;
+  if (googleFontsCache && googleFontsCache.expiresAt > Date.now()) {
+    return res.json({ fonts: googleFontsCache.fonts, count: googleFontsCache.fonts.length, source: 'google-cache' });
+  }
+  if (apiKey) {
+    try {
+      const response = await fetch(`https://www.googleapis.com/webfonts/v1/webfonts?sort=alpha&capability=WOFF2&key=${encodeURIComponent(apiKey)}`);
+      if (!response.ok) throw new Error(`Google Fonts returned HTTP ${response.status}`);
+      const payload = await response.json() as { items?: any[] };
+      const fonts = (payload.items || []).map((font) => ({
+        family: font.family,
+        category: font.category,
+        weights: (font.variants || []).map((v: string) => v === 'regular' ? '400' : v.replace('italic', '')).filter((v: string) => /^\d+$/.test(v)),
+        popularPairing: '',
+        previewText: 'The quick brown fox jumps over the lazy dog',
+        recommendedFor: 'both',
+      }));
+      googleFontsCache = { fonts, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+      return res.json({ fonts, count: fonts.length, source: 'google-fonts-api' });
+    } catch (error) {
+      console.warn('[Google Fonts] Live catalogue unavailable; using curated fallback.', error);
+    }
+  }
+  try {
+    const response = await fetch('https://fonts.google.com/metadata/fonts');
+    if (!response.ok) throw new Error(`Google Fonts metadata returned HTTP ${response.status}`);
+    const raw = await response.text();
+    const payload = JSON.parse(raw.replace(/^\)\]\}'\s*/, '')) as { familyMetadataList?: any[] };
+    const fonts = (payload.familyMetadataList || []).map((font) => ({
+      family: font.family,
+      category: String(font.category || 'sans-serif').toLowerCase().replace('_', '-'),
+      weights: Object.keys(font.fonts || {}).map((key) => key.split('i')[0]).filter((v) => /^\d+$/.test(v)),
+      popularPairing: '', previewText: 'The quick brown fox jumps over the lazy dog', recommendedFor: 'both',
+    }));
+    if (fonts.length) {
+      googleFontsCache = { fonts, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+      return res.json({ fonts, count: fonts.length, source: 'google-fonts-metadata' });
+    }
+  } catch (error) {
+    console.warn('[Google Fonts] Metadata catalogue unavailable; using curated fallback.', error);
+  }
+  return res.json({ fonts: GOOGLE_FONTS_CATALOG, count: GOOGLE_FONTS_CATALOG.length, source: 'curated-fallback', requiresApiKey: !apiKey });
 });
 
 // 9.11 Health & Diagnostics Handshake
@@ -3636,5 +3695,3 @@ v1Router.post('/internal/tasks/cancellation', async (req: Request, res: Response
     res.status(statusCode).json({ error: err.message, code: err.code || 'TASK_EXECUTION_FAILED' });
   }
 });
-
-

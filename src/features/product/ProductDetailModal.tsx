@@ -6,6 +6,7 @@ import { AgeGateModal } from '../compliance/AgeGateModal';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { resolveAllergenTags } from '../../domain/allergens';
 import {
   X,
   Plus,
@@ -367,14 +368,28 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   Allergen Information
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
-                  {allergenLabels.map((allergen) => (
-                    <span
-                      key={allergen}
-                      className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-200/60 text-amber-950"
-                    >
-                      {allergen}
-                    </span>
-                  ))}
+                  {resolveAllergenTags(allergenLabels).map((a) => {
+                    const IconComp = a.icon;
+                    return (
+                      <span
+                        key={a.key}
+                        className={`text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${a.badgeColor}`}
+                      >
+                        <IconComp className="w-3.5 h-3.5 shrink-0" />
+                        {a.label}
+                      </span>
+                    );
+                  })}
+                  {allergenLabels
+                    .filter((label) => !resolveAllergenTags([label]).length)
+                    .map((allergen) => (
+                      <span
+                        key={allergen}
+                        className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-200/60 text-amber-950"
+                      >
+                        {allergen}
+                      </span>
+                    ))}
                 </div>
               </div>
             )}

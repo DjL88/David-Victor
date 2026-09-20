@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getFirestoreDb, getWebFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
-import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
 import { FirestoreRestService } from './firestoreRest';
 import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
@@ -129,7 +128,9 @@ function loadPersistedHeroBanners(): Record<string, CategoryPromoBanner[]> {
   try {
     if (fs.existsSync(HERO_BANNERS_STORAGE_PATH)) {
       const raw = fs.readFileSync(HERO_BANNERS_STORAGE_PATH, 'utf-8');
-      return JSON.parse(raw);
+      if (raw && raw.trim().length > 0) {
+        return JSON.parse(raw);
+      }
     }
   } catch (e) {
     console.warn('[FirestoreService] Could not read persisted hero banners file:', e);
@@ -153,7 +154,9 @@ function loadPersistedTenants(): Record<string, TenantConfig> {
   try {
     if (fs.existsSync(TENANTS_STORAGE_PATH)) {
       const raw = fs.readFileSync(TENANTS_STORAGE_PATH, 'utf-8');
-      return JSON.parse(raw);
+      if (raw && raw.trim().length > 0) {
+        return JSON.parse(raw);
+      }
     }
   } catch (e) {
     console.warn('[FirestoreService] Could not read persisted tenants file:', e);
@@ -177,7 +180,9 @@ function loadPersistedIntegrations(): Record<string, IntegrationConfig> {
   try {
     if (fs.existsSync(INTEGRATIONS_STORAGE_PATH)) {
       const raw = fs.readFileSync(INTEGRATIONS_STORAGE_PATH, 'utf-8');
-      return JSON.parse(raw);
+      if (raw && raw.trim().length > 0) {
+        return JSON.parse(raw);
+      }
     }
   } catch (e) {
     console.warn('[FirestoreService] Could not read persisted integrations file:', e);
@@ -222,7 +227,9 @@ function loadPersistedDomains(): Record<string, DomainRecord> {
   try {
     if (fs.existsSync(DOMAINS_STORAGE_PATH)) {
       const raw = fs.readFileSync(DOMAINS_STORAGE_PATH, 'utf-8');
-      return JSON.parse(raw);
+      if (raw && raw.trim().length > 0) {
+        return JSON.parse(raw);
+      }
     }
   } catch (e) {
     console.warn('[FirestoreService] Could not read persisted domains file:', e);
@@ -975,21 +982,6 @@ export class FirestoreService {
       return [];
     }
 
-    try {
-      const webDb = getWebFirestoreDb();
-      if (webDb) {
-        const snap = await getDocs(collection(webDb, 'tenants', tenantId, 'stories'));
-        if (!snap.empty) {
-          const stories: Story[] = [];
-          snap.forEach((d) => stories.push(d.data() as Story));
-          inMemoryStories[tenantId] = stories;
-          return stories;
-        }
-      }
-    } catch {
-      // Fall through to Admin SDK or demo fallback
-    }
-
     const db = getFirestoreDb();
     if (!db) {
       if (isDemoMode() && !inMemoryStoriesPurged[tenantId]) {
@@ -1116,23 +1108,6 @@ export class FirestoreService {
       inMemoryHeroBanners[tenantId] = diskMap[tenantId];
     }
 
-    try {
-      const webDb = getWebFirestoreDb();
-      if (webDb) {
-        const snap = await getDocs(collection(webDb, 'tenants', tenantId, 'heroBanners'));
-        if (!snap.empty) {
-          const banners: CategoryPromoBanner[] = [];
-          snap.forEach((d) => banners.push(d.data() as CategoryPromoBanner));
-          inMemoryHeroBanners[tenantId] = banners;
-          diskMap[tenantId] = banners;
-          savePersistedHeroBanners(diskMap);
-          return banners;
-        }
-      }
-    } catch {
-      // Fall through to Admin SDK
-    }
-
     const db = getFirestoreDb();
     if (db) {
       try {
@@ -1198,14 +1173,6 @@ export class FirestoreService {
         console.error(`[Firestore Admin] Failed to save hero banner:`, err);
       }
     }
-    const webDb = getWebFirestoreDb();
-    if (webDb) {
-      try {
-        await setDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', banner.id), cleanUndefined(banner), { merge: true });
-      } catch (err) {
-        console.error(`[Firestore Web] Failed to save hero banner:`, err);
-      }
-    }
     return banner;
   }
 
@@ -1242,16 +1209,6 @@ export class FirestoreService {
         console.error(`[Firestore Admin] Failed to save hero banners batch:`, err);
       }
     }
-    const webDb = getWebFirestoreDb();
-    if (webDb) {
-      try {
-        for (const banner of banners) {
-          await setDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', banner.id), cleanUndefined(banner), { merge: true });
-        }
-      } catch (err) {
-        console.error(`[Firestore Web] Failed to save hero banners batch:`, err);
-      }
-    }
     return banners;
   }
 
@@ -1280,14 +1237,6 @@ export class FirestoreService {
           .delete();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to delete hero banner:`, err);
-      }
-    }
-    const webDb = getWebFirestoreDb();
-    if (webDb) {
-      try {
-        await deleteDoc(doc(webDb, 'tenants', tenantId, 'heroBanners', bannerId));
-      } catch (err) {
-        console.error(`[Firestore Web] Failed to delete hero banner:`, err);
       }
     }
     return true;

@@ -115,6 +115,25 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     }
   }, [showSplash, entryStage, hasLocation, setIsLocationModalOpen]);
 
+  // Auto-launch Story index 0 exactly once upon reaching READY state
+  React.useEffect(() => {
+    if (entryStage === 'READY' && stories.length > 0) {
+      const alreadyLaunched = sessionStorage.getItem('__retail_entry_story_shown');
+      if (!alreadyLaunched) {
+        sessionStorage.setItem('__retail_entry_story_shown', 'true');
+        openStory(0);
+        defaultAnalyticsClient.track({
+          type: AnalyticsEventType.ENTRY_STORIES_STARTED,
+          properties: {
+            storyCount: stories.length,
+            storyId: stories[0]?.id,
+            storyTitle: stories[0]?.title,
+          },
+        });
+      }
+    }
+  }, [entryStage, stories, openStory]);
+
   // Catalog hook (root vs store, arbitrary nested categories)
   const {
     catalog,

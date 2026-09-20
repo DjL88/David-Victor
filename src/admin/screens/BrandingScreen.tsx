@@ -8,6 +8,9 @@ import {
   FontProcessingState,
 } from '../../commerce/fontModels';
 import { applyTenantFonts, simulateBackendFontPipeline } from '../../tenant/fontManager';
+import { GOOGLE_FONTS_CATALOG } from '../../commerce/googleFonts';
+import { GoogleFontFamily } from '../../commerce/googleFonts';
+import { FontPicker } from '../components/FontPicker';
 import {
   Palette,
   Check,
@@ -42,9 +45,19 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [tagline, setTagline] = useState<string>('');
   const [logoUrl, setLogoUrl] = useState<string>('');
   const [faviconUrl, setFaviconUrl] = useState<string>('');
+  const [headerLogoMode, setHeaderLogoMode] = useState<'ICON_WITH_TEXT' | 'WIDE_LOGO' | 'LOGO_ONLY'>('ICON_WITH_TEXT');
+  const [headerLogoMaxWidth, setHeaderLogoMaxWidth] = useState<number>(160);
   const [uploadingAsset, setUploadingAsset] = useState<'logo' | 'favicon' | null>(null);
   const [primaryColour, setPrimaryColour] = useState<string>('#059669');
   const [secondaryColour, setSecondaryColour] = useState<string>('#f59e0b');
+  const [backgroundColour, setBackgroundColour] = useState<string>('#f8fafc');
+  const [surfaceColour, setSurfaceColour] = useState<string>('#ffffff');
+  const [textColour, setTextColour] = useState<string>('#0f172a');
+  const [mutedTextColour, setMutedTextColour] = useState<string>('#64748b');
+  const [borderColour, setBorderColour] = useState<string>('#e2e8f0');
+  const [successColour, setSuccessColour] = useState<string>('#059669');
+  const [warningColour, setWarningColour] = useState<string>('#d97706');
+  const [errorColour, setErrorColour] = useState<string>('#dc2626');
   const [borderRadius, setBorderRadius] = useState<string>('16px');
   const [supportEmail, setSupportEmail] = useState<string>('');
   const [supportPhone, setSupportPhone] = useState<string>('');
@@ -53,6 +66,8 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [headingFamily, setHeadingFamily] = useState<string>('Plus Jakarta Sans');
   const [headingFallback, setHeadingFallback] = useState<string>(DEFAULT_FALLBACK_CHAINS.modernSans);
   const [bodyFamily, setBodyFamily] = useState<string>('Plus Jakarta Sans');
+  const [carouselTitleFamily, setCarouselTitleFamily] = useState<string>('Plus Jakarta Sans');
+  const [googleFonts, setGoogleFonts] = useState<GoogleFontFamily[]>(GOOGLE_FONTS_CATALOG);
   const [bodyFallback, setBodyFallback] = useState<string>(DEFAULT_FALLBACK_CHAINS.modernSans);
 
   const [fontsList, setFontsList] = useState<CustomFont[]>([
@@ -104,6 +119,13 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
     loadData();
   }, [tenantId]);
 
+  useEffect(() => {
+    fetch('/api/v1/admin/fonts/catalog')
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Font catalogue unavailable')))
+      .then((data) => Array.isArray(data.fonts) && data.fonts.length && setGoogleFonts(data.fonts))
+      .catch(() => setGoogleFonts(GOOGLE_FONTS_CATALOG));
+  }, []);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -113,8 +135,21 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
       setTagline(data.tagline || '');
       setLogoUrl(data.logoUrl || '');
       setFaviconUrl(data.faviconUrl || '');
+      setHeaderLogoMode(data.headerLogoMode || 'ICON_WITH_TEXT');
+      setHeaderLogoMaxWidth(data.headerLogoMaxWidth || 160);
       setPrimaryColour(data.primaryColour);
       setSecondaryColour(data.secondaryColour);
+      setBackgroundColour(data.backgroundColour || '#f8fafc');
+      setSurfaceColour(data.surfaceColour || '#ffffff');
+      setTextColour(data.textColour || '#0f172a');
+      setMutedTextColour(data.mutedTextColour || '#64748b');
+      setBorderColour(data.borderColour || '#e2e8f0');
+      setSuccessColour(data.successColour || '#059669');
+      setWarningColour(data.warningColour || '#d97706');
+      setErrorColour(data.errorColour || '#dc2626');
+      setHeadingFamily(data.headingFontFamily || 'Plus Jakarta Sans');
+      setBodyFamily(data.fontFamily?.split(',')[0].replace(/["']/g, '').trim() || 'Plus Jakarta Sans');
+      setCarouselTitleFamily(data.carouselTitleFontFamily || data.headingFontFamily || 'Plus Jakarta Sans');
       setBorderRadius(data.borderRadius);
       setSupportEmail(data.supportDetails?.email || '');
       setSupportPhone(data.supportDetails?.phone || '');
@@ -189,10 +224,22 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           tagline,
           logoUrl,
           faviconUrl,
+          headerLogoMode,
+          headerLogoMaxWidth,
           primaryColour,
           secondaryColour,
+          backgroundColour,
+          surfaceColour,
+          textColour,
+          mutedTextColour,
+          borderColour,
+          successColour,
+          warningColour,
+          errorColour,
           borderRadius,
           fontFamily: `'${bodyFamily}', ${bodyFallback}`,
+          headingFontFamily: `'${headingFamily}', ${headingFallback}`,
+          carouselTitleFontFamily: `'${carouselTitleFamily}', ${headingFallback}`,
           supportDetails: {
             ...config.supportDetails,
             email: supportEmail,
@@ -476,6 +523,40 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+              <label className="text-xs font-bold text-gray-700">Header logo layout
+                <select value={headerLogoMode} onChange={(e) => setHeaderLogoMode(e.target.value as typeof headerLogoMode)} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white">
+                  <option value="ICON_WITH_TEXT">Square icon + brand text</option>
+                  <option value="WIDE_LOGO">Wide logo + brand text hidden</option>
+                  <option value="LOGO_ONLY">Logo only</option>
+                </select>
+              </label>
+              <label className="text-xs font-bold text-gray-700">Header logo width: {headerLogoMaxWidth}px
+                <input type="range" min="80" max="240" step="4" value={headerLogoMaxWidth} onChange={(e) => setHeaderLogoMaxWidth(Number(e.target.value))} className="mt-3 w-full" />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-2 border-t border-gray-100">
+              {[
+                ['Background', backgroundColour, setBackgroundColour],
+                ['Surface', surfaceColour, setSurfaceColour],
+                ['Text', textColour, setTextColour],
+                ['Muted text', mutedTextColour, setMutedTextColour],
+                ['Borders', borderColour, setBorderColour],
+                ['Success', successColour, setSuccessColour],
+                ['Warning', warningColour, setWarningColour],
+                ['Error', errorColour, setErrorColour],
+              ].map(([label, value, setter]) => (
+                <label key={label as string} className="text-[11px] font-bold text-gray-700">
+                  {label as string}
+                  <div className="mt-1 flex items-center gap-2">
+                    <input type="color" value={value as string} onChange={(e) => (setter as React.Dispatch<React.SetStateAction<string>>)(e.target.value)} className="w-9 h-9 rounded-lg border border-gray-200" />
+                    <input value={value as string} onChange={(e) => (setter as React.Dispatch<React.SetStateAction<string>>)(e.target.value)} className="min-w-0 w-full px-2 py-1.5 border border-gray-200 rounded-lg font-mono text-[10px]" />
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">Primary Brand Colour</label>
                 <div className="flex items-center gap-2">
@@ -554,20 +635,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Heading Font (H1-H4)
                   </label>
-                  <select
-                    value={headingFamily}
-                    onChange={(e) => setHeadingFamily(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold bg-white"
-                  >
-                    <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
-                    {fontsList
-                      .filter((f) => f.state === 'READY')
-                      .map((f) => (
-                        <option key={f.id} value={f.family}>
-                          {f.family} ({f.weight})
-                        </option>
-                      ))}
-                  </select>
+                  <FontPicker label="" value={headingFamily} fonts={googleFonts} onChange={setHeadingFamily} />
                 </div>
 
                 <div>
@@ -591,21 +659,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Body Font (Paragraphs & Buttons)
                   </label>
-                  <select
-                    value={bodyFamily}
-                    onChange={(e) => setBodyFamily(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold bg-white"
-                  >
-                    <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
-                    <option value="Inter">Inter (System Clean)</option>
-                    {fontsList
-                      .filter((f) => f.state === 'READY')
-                      .map((f) => (
-                        <option key={f.id} value={f.family}>
-                          {f.family} ({f.weight})
-                        </option>
-                      ))}
-                  </select>
+                  <FontPicker label="" value={bodyFamily} fonts={googleFonts} onChange={setBodyFamily} />
                 </div>
 
                 <div>
@@ -621,6 +675,11 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                     <option value={DEFAULT_FALLBACK_CHAINS.editorialSerif}>Editorial Serif (Georgia, Times)</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Carousel / Banner Title Font</label>
+                <FontPicker label="" value={carouselTitleFamily} fonts={googleFonts} onChange={setCarouselTitleFamily} />
               </div>
             </div>
 

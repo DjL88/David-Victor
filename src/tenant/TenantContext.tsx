@@ -152,18 +152,26 @@ export const TenantProvider: React.FC<{
     root.style.setProperty('--brand-primary', tenant.primaryColour);
     root.style.setProperty('--brand-secondary', tenant.secondaryColour);
     root.style.setProperty('--brand-bg', tenant.backgroundColour);
+    root.style.setProperty('--brand-background', tenant.backgroundColour);
+    root.style.setProperty('--brand-surface', tenant.surfaceColour || '#ffffff');
     root.style.setProperty('--brand-text', tenant.textColour);
+    root.style.setProperty('--brand-muted', tenant.mutedTextColour || '#64748b');
+    root.style.setProperty('--brand-border', tenant.borderColour || '#e2e8f0');
+    root.style.setProperty('--brand-success', tenant.successColour || '#059669');
+    root.style.setProperty('--brand-warning', tenant.warningColour || '#d97706');
+    root.style.setProperty('--brand-error', tenant.errorColour || '#dc2626');
     root.style.setProperty('--brand-radius', tenant.borderRadius);
     root.style.setProperty('--brand-font', tenant.fontFamily);
     root.style.setProperty('--tenant-font-family', tenant.fontFamily);
+    root.style.setProperty('--font-body', tenant.fontFamily);
+    root.style.setProperty('--font-heading', tenant.headingFontFamily || tenant.fontFamily);
+    root.style.setProperty('--font-carousel-title', tenant.carouselTitleFontFamily || tenant.headingFontFamily || tenant.fontFamily);
 
     // Auto-inject Google Font link if matched
-    const matchedFamily = GOOGLE_FONTS_CATALOG.find((f) =>
-      tenant.fontFamily.toLowerCase().includes(f.family.toLowerCase())
-    );
-    if (matchedFamily) {
-      injectGoogleFontLink(matchedFamily.family, matchedFamily.weights);
-    }
+    [tenant.fontFamily, tenant.headingFontFamily, tenant.carouselTitleFontFamily].filter(Boolean).forEach((configured) => {
+      const matchedFamily = GOOGLE_FONTS_CATALOG.find((f) => configured!.toLowerCase().includes(f.family.toLowerCase()));
+      if (matchedFamily) injectGoogleFontLink(matchedFamily.family, matchedFamily.weights);
+    });
 
     // Update document title and OpenGraph metadata with brand name
     document.title = `${tenant.brandName} • On-Demand Grocery Delivery`;

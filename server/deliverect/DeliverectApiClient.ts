@@ -6,6 +6,7 @@ import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { defaultBasketService } from '../basket/BasketService';
+import { CommerceError } from '../errors';
 import {
   Store,
   StoreStatus,
@@ -759,7 +760,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           sections,
           modifierGroups: sections,
           categoryIds: assignedCatIds.length > 0 ? assignedCatIds : p.categoryIds || [],
-          allergens: Array.isArray(p.allergens) ? p.allergens : [],
+          allergens: Array.isArray(p.allergens) ? p.allergens.map((value: string | number) => tagDefinitionMap.get(String(value))?.name || String(value)).filter((value: string) => !/^\d+$/.test(value)) : [],
           tags: Array.isArray(p.tags) ? p.tags : [],
         };
 
@@ -782,7 +783,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           displayLabels: Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))).filter((definition): definition is ProductTagDefinition => Boolean(definition) && !definition!.isAllergen).map(definition => definition.name) : [],
           productTagLabels: Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))?.name).filter((name): name is string => Boolean(name)) : [],
           unmappedProductTags: Array.isArray(p.productTags) ? p.productTags.map(String).filter((tagId: string) => !tagDefinitionMap.has(tagId)) : [],
-          allergens: [...(Array.isArray(p.allergens) ? p.allergens.map(String) : []), ...(Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))).filter((definition): definition is ProductTagDefinition => Boolean(definition?.isAllergen)).map(definition => definition.name) : [])],
+          allergens: Array.from(new Set([...(Array.isArray(p.allergens) ? p.allergens.map((value: string | number) => tagDefinitionMap.get(String(value))?.name || String(value)).filter((value: string) => !/^\d+$/.test(value)) : []), ...(Array.isArray(p.productTags) ? p.productTags.map((tag: string | number) => tagDefinitionMap.get(String(tag))).filter((definition): definition is ProductTagDefinition => Boolean(definition?.isAllergen)).map(definition => definition.name) : [])])),
           modifierGroups: p.modifierGroups || (rawMenu.modifierGroups ? Object.values(rawMenu.modifierGroups) : undefined),
         };
 
@@ -1247,9 +1248,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     if (quantity > 0 && !basket.items.some((i) => i.plu === productId || i.id === productId)) {
       try {
-        const catalog = await this.getStoreCatalog(basket.storeId).catch(() => this.getRootCatalog().catch(() => null));
+        const catalog = await this.getStoreCatalog(basket.storeId);
         const product = catalog?.products?.find((p) => p.plu === productId || p.id === productId);
-        if (product) {
+        if (product && this.isAvailableProduct(product) && product.price != null) {
           const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
           const price: Money =
             typeof product.price === 'object' && product.price && 'amount' in product.price
@@ -1259,12 +1260,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
             name: product.name,
             price,
             imageUrl: product.imageUrl,
-            bundleId: product.bundleId,
+            bundleId: (product as any).bundleId,
             tags: product.tags,
           };
         }
-      } catch (e) {
-        // Continue with default fallback
+      } catch (e: any) {
+        if (e instanceof CommerceError) throw e;
+        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Unable to verify ${productId} against the selected store catalogue.`, 503, true, { plu: productId, storeId: basket.storeId });
+      }
+      if (!productDetails) {
+        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Product ${productId} is not orderable at the selected store.`, 409, false, { plu: productId, storeId: basket.storeId });
       }
     }
 
@@ -1314,10 +1319,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           };
         }
         if (!catalog) {
-          catalog = await this.getStoreCatalog(basket.storeId).catch(() => this.getRootCatalog().catch(() => null));
+          catalog = await this.getStoreCatalog(basket.storeId);
         }
         const product = catalog?.products?.find((p) => p.plu === item.plu || p.id === item.plu);
-        if (product) {
+        if (product && this.isAvailableProduct(product) && product.price != null) {
           const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
           const price: Money =
             typeof product.price === 'object' && product.price && 'amount' in product.price
@@ -1329,12 +1334,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
             price,
           };
         }
-        const currency = basket.currency || 'GBP';
-        return {
-          ...item,
-          name: item.plu,
-          price: toMoney(100, currency),
-        };
+        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Product ${item.plu} is not orderable at the selected store.`, 409, false, { plu: item.plu, storeId: basket.storeId });
       })
     );
 
@@ -1360,7 +1360,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
     storeId: string,
     options?: { confirmMigration?: boolean }
   ): Promise<{ basket: Basket; storeSwitchDiff: any }> {
-    return defaultBasketService.updateBasketStore(basketId, storeId, options);
+    const result = await this.reconcileBasket(basketId, storeId);
+    return { basket: result.basket, storeSwitchDiff: { changes: result.changes } };
   }
 
   async updateDiscounts(
@@ -1398,7 +1399,25 @@ export class DeliverectApiClient implements DeliverectAdapter {
     basket: Basket;
     changes: any[];
   }> {
-    return defaultBasketService.reconcileBasket(basketId, destinationStoreId);
+    const basket = await defaultBasketService.getBasket(basketId);
+    if (!basket) throw new CommerceError('BASKET_VALIDATION_FAILED', 'Basket not found.', 404, false, { basketId });
+    const storeId = destinationStoreId || basket.storeId;
+    const catalog = await this.getStoreCatalog(storeId);
+    const authoritativeProducts = new Map<string, { name: string; price: Money; available: boolean; maxQuantity?: number }>();
+    for (const product of catalog.products || []) {
+      if (!product.plu || product.price == null) continue;
+      const currency = basket.currency || (typeof product.price === 'object' ? product.price.currency : 'GBP');
+      const price = typeof product.price === 'object'
+        ? product.price
+        : toMoney(product.priceMinor ?? product.price, currency);
+      authoritativeProducts.set(product.plu, {
+        name: product.name,
+        price,
+        available: this.isAvailableProduct(product),
+        maxQuantity: typeof product.stockQuantity === 'number' ? product.stockQuantity : undefined,
+      });
+    }
+    return defaultBasketService.reconcileBasket(basketId, storeId, authoritativeProducts);
   }
 
   async getDeliveryOptions(basketId: string, address: Address, fulfillmentType?: 'delivery' | 'pickup'): Promise<DeliveryOption[]> {

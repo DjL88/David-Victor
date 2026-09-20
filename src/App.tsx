@@ -53,15 +53,15 @@ export default function App() {
   }, []);
 
   const handleOpenAdmin = () => {
-    window.location.hash = '#admin';
+    window.history.pushState(null, '', '/admin');
     setIsAdminMode(true);
   };
 
   const handleExitAdmin = () => {
-    if (window.location.pathname.startsWith('/admin')) {
-      window.history.pushState(null, '', '/');
+    window.history.pushState(null, '', '/');
+    if (window.location.hash) {
+      window.location.hash = '';
     }
-    window.location.hash = '';
     setIsAdminMode(false);
   };
 

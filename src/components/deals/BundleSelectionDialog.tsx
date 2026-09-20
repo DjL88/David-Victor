@@ -101,6 +101,12 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
 
   const isBundleOutOfStock = stockEvaluation.stockStatus === 'OUT_OF_STOCK';
 
+  const hasPricedUpsells = useMemo(() => {
+    return groups.some((group) =>
+      group.modifiers?.some((m) => (m.price || m.priceMinor || 0) > 0)
+    );
+  }, [groups]);
+
   // Convert selections map into SelectedBundleModifier[]
   const selectedModifiersList: SelectedBundleModifier[] = useMemo(() => {
     if (!bundle) return [];
@@ -218,7 +224,9 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
               )}
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-base font-bold text-neutral-900">
-                  {bundle.price != null ? `From ${formatMoney(bundle.price, currency)}` : 'Price unavailable'}
+                  {bundle.price != null
+                    ? `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, currency)}`
+                    : 'Price unavailable'}
                 </span>
               </div>
             </div>

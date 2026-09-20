@@ -105,18 +105,11 @@ export class BasketService {
         bundleId: productDetails.bundleId,
       });
     } else {
-      const currency = basket.currency || 'GBP';
-      const defaultPrice = productDetails?.price || toMoney(100, currency);
-      basket.items.push({
-        id: `item_${Date.now()}_${plu}`,
-        plu,
-        name: productDetails?.name || plu,
-        quantity,
-        price: defaultPrice,
-        unitPrice: defaultPrice,
-        totalPrice: toMoney(moneyToMinor(defaultPrice) * quantity, currency),
-        imageUrl: productDetails?.imageUrl,
-      });
+      const error: any = new Error(`Product ${plu} is not orderable at store ${basket.storeId}`);
+      error.code = 'PRODUCT_NOT_AVAILABLE';
+      error.statusCode = 409;
+      error.details = { plu, storeId: basket.storeId };
+      throw error;
     }
 
     this.recalculateBasket(basket);
@@ -303,7 +296,8 @@ export class BasketService {
 
   async reconcileBasket(
     basketId: string,
-    destinationStoreId?: string
+    destinationStoreId?: string,
+    authoritativeProducts?: Map<string, { name: string; price: Money; available: boolean; maxQuantity?: number }>
   ): Promise<{
     reconciled: boolean;
     basket: Basket;
@@ -312,15 +306,47 @@ export class BasketService {
     const basket = await this.getBasket(basketId);
     if (!basket) throw new Error(`Basket ${basketId} not found`);
 
-    if (destinationStoreId && destinationStoreId !== basket.storeId) {
-      basket.storeId = destinationStoreId;
+    if (destinationStoreId) basket.storeId = destinationStoreId;
+
+    const changes: any[] = [];
+    if (authoritativeProducts) {
+      for (const item of basket.items) {
+        const product = authoritativeProducts.get(item.plu);
+        if (!product || !product.available) {
+          item.availabilityState = 'UNAVAILABLE_AT_STORE';
+          item.availabilityMessage = `Unavailable at ${basket.storeName || basket.storeId}`;
+          changes.push({ plu: item.plu, name: item.name, type: 'OUT_OF_STOCK', message: item.availabilityMessage });
+          continue;
+        }
+
+        if (product.maxQuantity != null && item.quantity > product.maxQuantity) {
+          item.availabilityState = 'QUANTITY_UNAVAILABLE';
+          item.availabilityMessage = `Only ${product.maxQuantity} available`;
+          changes.push({ plu: item.plu, name: item.name, type: 'QUANTITY_ADJUSTED', oldQuantity: item.quantity, newQuantity: product.maxQuantity, message: item.availabilityMessage });
+          continue;
+        }
+
+        if (moneyToMinor(item.price) !== moneyToMinor(product.price)) {
+          const oldPrice = item.price;
+          item.previousPrice = oldPrice;
+          item.price = product.price;
+          item.unitPrice = product.price;
+          item.availabilityState = 'PRICE_CHANGED';
+          item.availabilityMessage = 'Price updated for this store';
+          changes.push({ plu: item.plu, name: item.name, type: 'PRICE_CHANGED', oldPrice, newPrice: product.price, message: item.availabilityMessage });
+        } else {
+          item.availabilityState = 'AVAILABLE';
+          item.availabilityMessage = undefined;
+          item.previousPrice = undefined;
+        }
+      }
     }
 
     this.recalculateBasket(basket);
     return {
       reconciled: true,
       basket,
-      changes: [],
+      changes,
     };
   }
 

@@ -33,6 +33,7 @@ import { getCategoryAndAllDescendantIds, findCategoryById } from '../../commerce
 import { useFavourites } from '../../hooks/useFavourites';
 import { DietaryPreferencesModal, CatalogFilterState } from '../catalog/DietaryPreferencesModal';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { isProductMatchingFilters } from '../../domain/allergens';
 
 interface HomeScreenProps {
   stories: Story[];
@@ -177,38 +178,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   // Helper to check if a product satisfies dietary preferences, allergen exclusions, and favourites
   const matchesFilters = useCallback(
     (product: Product) => {
-      if (filterState.onlyFavourites && !isFavourite(product.plu)) {
-        return false;
-      }
-      if (filterState.onlyBuyAgain && !buyAgainPlus.has(product.plu)) {
-        return false;
-      }
-
-      const dietaryLabels = [
-        ...(product.displayLabels || []),
-        ...(product.productTagLabels || []),
-      ].map((value) => String(value).trim().toUpperCase());
-      const verifiedAllergens = (product.allergens || []).map((value) => String(value).trim().toUpperCase());
-
-      // Excluded allergens: if product has any excluded allergen, filter it out
-      if (filterState.excludedAllergens.length > 0) {
-        const hasExcludedAllergen = filterState.excludedAllergens.some((allergen) => {
-          const target = allergen.toUpperCase();
-          return verifiedAllergens.includes(target);
-        });
-        if (hasExcludedAllergen) return false;
-      }
-
-      // Selected dietary tags: product must match all selected dietary lifestyle tags
-      if (filterState.selectedDietaryTags.length > 0) {
-        const matchesAllTags = filterState.selectedDietaryTags.every((dietTag) => {
-          const target = dietTag.toUpperCase();
-          return dietaryLabels.includes(target);
-        });
-        if (!matchesAllTags) return false;
-      }
-
-      return true;
+      return isProductMatchingFilters(product, filterState, isFavourite, buyAgainPlus);
     },
     [filterState, isFavourite, buyAgainPlus]
   );

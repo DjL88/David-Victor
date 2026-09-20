@@ -1,6 +1,6 @@
 export interface GoogleFontFamily {
   family: string;
-  category: 'sans-serif' | 'display' | 'serif' | 'monospace';
+  category: 'sans-serif' | 'display' | 'serif' | 'monospace' | 'handwriting';
   weights: string[];
   popularPairing: string;
   previewText: string;

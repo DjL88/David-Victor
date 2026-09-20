@@ -3,6 +3,7 @@ import { Story, StoryAction, Product, formatMoney } from '../../commerce/models'
 import { useTenant } from '../../tenant/TenantContext';
 import { resolveStoryMediaUrl } from '../../utils/storyMediaUtils';
 import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
+import { getDealForStory } from '../../commerce/dealModels';
 import {
   X,
   ChevronLeft,
@@ -69,6 +70,12 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const parsedMedia = useMemo(() => {
     return parseStoryMedia(rawMediaUrl, explicitMediaType);
   }, [rawMediaUrl, explicitMediaType]);
+
+  // Check for genuine Deliverect deal
+  const activeDeal = useMemo(() => {
+    if (!currentStory) return null;
+    return getDealForStory(currentStory, products);
+  }, [currentStory, products]);
 
   // Find linked products from catalogue
   const linkedProducts = useMemo(() => {
@@ -405,12 +412,12 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               <div className="flex items-center justify-between text-[11px] font-semibold text-gray-200">
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  {currentStory.stockMatchMode === 'AND'
-                    ? `Meal Deal • All ${linkedProducts.length} Items in Stock`
-                    : `In Stock at ${selectedStoreName || 'Local Store'}`}
+                  {activeDeal
+                    ? `Combo Deal • All ${linkedProducts.length} Items in Stock`
+                    : `Featured Products (${linkedProducts.length})`}
                 </span>
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">
-                  {currentStory.stockMatchMode === 'AND' ? 'Bundle (AND)' : 'Variants (OR)'}
+                  {currentStory.stockMatchMode === 'AND' ? 'All Required' : 'Any Available'}
                 </span>
               </div>
 
@@ -448,8 +455,8 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 })}
               </div>
 
-              {/* Deal Breakdown Button */}
-              {onOpenDealDialog && (
+              {/* Deal Breakdown Button or Add All button */}
+              {activeDeal && onOpenDealDialog ? (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -460,9 +467,23 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                   className="w-full py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Layers className="w-3.5 h-3.5 text-amber-300" />
-                  <span>View Full Deal Breakdown</span>
+                  <span>View Combo Deal Details</span>
                 </button>
-              )}
+              ) : onAddItemsToBasket && linkedProducts.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const plus = linkedProducts.map((p) => p.plu);
+                    onAddItemsToBasket(plus, currentStory.title);
+                    onClose();
+                  }}
+                  className="w-full py-1.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Add All ({linkedProducts.length}) to Basket</span>
+                </button>
+              ) : null}
             </div>
           )}
 

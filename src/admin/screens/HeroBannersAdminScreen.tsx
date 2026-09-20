@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { MarketingScheduleEditor } from '../components/MarketingScheduleEditor';
 import {
   CategoryPromoBanner,
   Category,
@@ -157,6 +158,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
       categorySlugMatch: 'all',
       linkedProductPlus: [],
       stockMatchMode: 'OR',
+      schedule: { weekdays: [1, 2, 3, 4, 5, 6, 7], timezone: 'Europe/London' },
     });
     setIsEditingExisting(false);
     setIsEditorOpen(true);
@@ -598,6 +600,8 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                   </div>
                 </div>
               </div>
+
+              <MarketingScheduleEditor value={currentEditingBanner.schedule} onChange={(schedule) => setCurrentEditingBanner((prev) => ({ ...prev, schedule }))} />
 
               {/* Action Type & Category / Store Target */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">

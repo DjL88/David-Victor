@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
-import { MOCK_CMS_PAGES } from '../../commerce/cmsData';
+import { auth } from '../../firebase';
 import {
   FileText,
   Plus,
@@ -23,19 +23,39 @@ interface PagesAdminScreenProps {
 }
 
 export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) => {
-  const [pages, setPages] = useState<CmsPage[]>(
-    MOCK_CMS_PAGES[tenantId] || MOCK_CMS_PAGES['brand-alpha']
-  );
-  const [selectedPage, setSelectedPage] = useState<CmsPage>(pages[0]);
+  const blankPage = (): CmsPage => ({ id: `page_${Date.now()}`, tenantId, slug: 'new-page', title: 'New Page', seoTitle: '', seoDescription: '', locale: 'en-GB', status: 'draft', navigationVisibility: 'hidden', navigationLabel: 'New Page', navigationOrder: 1, blocks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const [pages, setPages] = useState<CmsPage[]>([]);
+  const [selectedPage, setSelectedPage] = useState<CmsPage>(blankPage());
+  const [loading, setLoading] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showBlockPicker, setShowBlockPicker] = useState(false);
 
-  const handleSavePage = () => {
-    setPages((prev) =>
-      prev.map((p) => (p.id === selectedPage.id ? { ...selectedPage, updatedAt: new Date().toISOString() } : p))
-    );
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+  useEffect(() => {
+    setLoading(true);
+    auth.currentUser?.getIdToken().then((token) => fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } }))
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to load pages')))
+      .then((data) => { const loaded = data.pages || []; setPages(loaded); setSelectedPage(loaded[0] || blankPage()); })
+      .finally(() => setLoading(false));
+  }, [tenantId]);
+
+  const handleSavePage = async () => {
+    const token = await auth.currentUser?.getIdToken();
+    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId }, body: JSON.stringify(selectedPage) });
+    if (!response.ok) throw new Error('Failed to save CMS page');
+    const saved = await response.json();
+    setSelectedPage(saved);
+    setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
+    setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  const createPage = () => setSelectedPage(blankPage());
+  const duplicatePage = () => setSelectedPage({ ...selectedPage, id: `page_${Date.now()}`, title: `${selectedPage.title} copy`, slug: `${selectedPage.slug}-copy`, status: 'draft', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const deletePage = async () => {
+    if (!pages.some((page) => page.id === selectedPage.id) || !window.confirm(`Delete “${selectedPage.title}”?`)) return;
+    const token = await auth.currentUser?.getIdToken();
+    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } });
+    if (!response.ok) throw new Error('Failed to delete CMS page');
+    const next = pages.filter((page) => page.id !== selectedPage.id); setPages(next); setSelectedPage(next[0] || blankPage());
   };
 
   const addBlock = (type: CmsBlockType) => {
@@ -159,7 +179,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
               <span>Structured CMS Page Builder</span>
             </h1>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              Demo Simulation
+              Tenant persisted
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
@@ -169,16 +189,16 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
 
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-300">
-            <span>Persistence: Not Connected (Deferred to Phase 5)</span>
+            <span>{loading ? 'Loading tenant pages…' : `${pages.length} tenant page${pages.length === 1 ? '' : 's'}`}</span>
           </span>
           <button
             type="button"
-            disabled
-            className="px-4 py-2 rounded-xl bg-gray-200 text-gray-400 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
-            title="CMS persistence is deferred per architecture specification Phase 5"
+            onClick={handleSavePage}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
           >
             <Check className="w-4 h-4" />
-            <span>Save Disabled</span>
+            <span>{saveSuccess ? 'Saved' : 'Save Page'}</span>
           </button>
         </div>
       </div>
@@ -186,12 +206,25 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* PAGE METADATA & SEO (LEFT 4 COLS) */}
         <div className="lg:col-span-4 space-y-4">
+          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between"><h3 className="text-xs font-bold">Site pages</h3><button type="button" onClick={createPage} className="text-xs font-bold text-indigo-700 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />New</button></div>
+            <div className="space-y-1 max-h-48 overflow-auto">{pages.map((page) => <button type="button" key={page.id} onClick={() => setSelectedPage(page)} className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPage.id === page.id ? 'bg-indigo-50 text-indigo-800 font-bold' : 'hover:bg-gray-50'}`}>{page.navigationLabel || page.title}<span className="float-right text-[10px] opacity-60">{page.status}</span></button>)}</div>
+            <div className="flex gap-2"><button type="button" onClick={duplicatePage} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-bold">Duplicate</button><button type="button" onClick={deletePage} className="px-2 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold">Delete</button></div>
+          </div>
           <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
             <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
               <Globe className="w-4 h-4 text-indigo-600" />
               <span>Page Metadata & SEO</span>
             </h3>
 
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Navigation Label</label>
+              <input type="text" value={selectedPage.navigationLabel || ''} onChange={(e) => setSelectedPage({ ...selectedPage, navigationLabel: e.target.value })} className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Navigation Order</label>
+              <input type="number" min="1" value={selectedPage.navigationOrder || 1} onChange={(e) => setSelectedPage({ ...selectedPage, navigationOrder: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white" />
+            </div>
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-1">Page Title</label>
               <input

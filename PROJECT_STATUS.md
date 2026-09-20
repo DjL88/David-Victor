@@ -444,6 +444,18 @@ The platform is now connected directly to the live Deliverect Staging environmen
     - **Store Selector Accuracy**: Reconciled store status logic (`useLocationAndStores`, `StorePickerModal`) to show only genuinely open, unsnoozed shops. Embedded Info `(i)` button on store cards with opening hours and external channel links.
     - **Video Stories (HTTP 400 Fix)**: Detected `.mp4`, `.mov`, `.webm` URLs and rendered HTML5 `<video>` elements with `autoPlay`, `muted`, `playsInline`, and `loop` across `StoryViewerModal` and `StoriesRow`.
 
+15. **MOBILE FULFILMENT CONTROLS, AISLES NAVIGATION & RESILIENCE FIXES (Completed & Verified)**:
+    - **Permanent Compact Mobile Fulfilment Control**: Added a prominent, compact mobile toggle (`[ 🚚 Delivery ] [ 🛍 Collection ]`) near the store/location bar on mobile screens. State persists across navigation, refreshes store eligibility, and triggers a store revalidation dialog if the current store does not support the newly chosen mode.
+    - **AislesModal Grid & Hierarchical Navigation**:
+      - Converted `AislesModal.tsx` list layout into a clean responsive grid (2 columns on mobile, 3 on larger mobile, 3-4 on tablet, 4+ on desktop).
+      - Added drill-down subcategory navigation: tapping a parent aisle displays its child subcategories with breadcrumbs, a Back button, and an "All [Aisle]" shortcut. Tapping a leaf category selects it and closes the modal seamlessly.
+    - **CategoryNav Sticky 2-Row Layout**: Separated controls in `CategoryNav.tsx` into a sticky Row 1 (`[ Filters ] [ Search... ]`) and Row 2 (`< All | Fruit | Drinks | Bakery | ... >`).
+    - **Pagination Label Standardization**: Updated load more button to "Load 25 more...".
+    - **JSON Parsing & Firestore Resilience**:
+      - Fixed `SyntaxError: Unexpected end of JSON input` errors across `FirestoreService`, `LinkedAccountsAdapter`, and `CmsService` by adding pre-check validation (`fs.existsSync` and `raw.trim().length > 0`) before `JSON.parse`.
+      - Removed Web Firestore SDK (`getWebFirestoreDb`) calls from server services to prevent client SDK `PERMISSION_DENIED` errors on Cloud Run.
+    - **Zero Build & Lint Errors**: 100% clean `lint_applet` and `compile_applet` compilation.
+
 ---
 
 ## 4. Next Tasks

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Address, Store } from '../commerce/models';
+import { CmsPage } from '../commerce/cmsModels';
 import { useTenant } from '../tenant/TenantContext';
 import { useTenantStyles } from '../tenant/useTenant';
 import { auth, onAuthStateChanged, User as FirebaseUser } from '../firebase';
@@ -52,6 +53,24 @@ export const Header: React.FC<HeaderProps> = ({
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [headerPages, setHeaderPages] = useState<CmsPage[]>([]);
+
+  useEffect(() => {
+    fetch('/api/v1/cms/pages')
+      .then((res) => res.ok ? res.json() : { pages: [] })
+      .then((data) => {
+        const pages = (data.pages || []) as CmsPage[];
+        setHeaderPages(pages
+          .filter((page) => ['header', 'both'].includes(page.navigationVisibility))
+          .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999)));
+      })
+      .catch(() => setHeaderPages([]));
+  }, [tenant?.tenantId]);
+
+  const openCmsPage = (page: CmsPage) => {
+    sessionStorage.setItem('__cms_page_slug', page.slug);
+    onNavigateTab?.('account');
+  };
 
   // Subscribe to Firebase Auth for real customer identity
   useEffect(() => {
@@ -89,21 +108,24 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => onNavigateTab?.('home')}
           className="flex items-center gap-2.5 shrink-0 cursor-pointer"
         >
-          <div className="w-9 h-9 rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center p-0.5 shadow-2xs">
+          <div
+            className={`${tenant?.headerLogoMode === 'ICON_WITH_TEXT' || !tenant?.headerLogoMode ? 'w-9' : ''} h-9 overflow-hidden flex items-center justify-center shrink-0`}
+            style={tenant?.headerLogoMode && tenant.headerLogoMode !== 'ICON_WITH_TEXT' ? { width: Math.min(tenant.headerLogoMaxWidth || 160, 240) } : undefined}
+          >
             <img
-              src={tenant?.iconUrl || tenant?.logoUrl}
+              src={tenant?.headerLogoMode === 'ICON_WITH_TEXT' || !tenant?.headerLogoMode ? (tenant?.iconUrl || tenant?.logoUrl) : tenant?.logoUrl}
               alt={tenant?.brandName}
-              className="w-full h-full object-contain p-0.5 rounded-xl"
+              className="w-full h-full object-contain"
             />
           </div>
-          <div>
+          {(tenant?.headerLogoMode === 'ICON_WITH_TEXT' || !tenant?.headerLogoMode) && <div>
             <span className="text-base font-black text-gray-900 leading-tight block">
               {tenant?.brandName}
             </span>
             <span className="text-[10px] font-semibold text-gray-400 block truncate max-w-[110px] sm:max-w-none">
               {tenant?.tagline}
             </span>
-          </div>
+          </div>}
         </div>
 
         {/* Location & Store Selectors (Tablet / Desktop) */}
@@ -318,6 +340,12 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
+      {headerPages.length > 0 && (
+        <nav aria-label="Brand pages" className="w-full max-w-7xl mx-auto px-4 pb-2 flex items-center gap-4 overflow-x-auto">
+          {headerPages.map((page) => <button key={page.id} type="button" onClick={() => openCmsPage(page)} className="text-xs font-bold whitespace-nowrap text-gray-600 hover:text-gray-950">{page.navigationLabel || page.title}</button>)}
+        </nav>
+      )}
+
       {/* Mobile Location & Store Sub-Bar */}
       <div className="md:hidden px-4 pb-1.5 flex items-center justify-between gap-2 text-xs">
         <button
@@ -351,4 +379,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

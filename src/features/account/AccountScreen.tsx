@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { CmsPageView } from '../cms/CmsPageView';
-import { DEFAULT_MOCK_PAGES } from '../../commerce/cmsData';
+import { CmsPage } from '../../commerce/cmsModels';
 import { auth, onAuthStateChanged, User as FirebaseUser, signInWithGoogle, signOutUser } from '../../firebase';
 import {
   User,
@@ -39,9 +39,25 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
   }, []);
 
   const [activePageSlug, setActivePageSlug] = useState<string | null>(null);
+  const [cmsPages, setCmsPages] = useState<CmsPage[]>([]);
+
+  useEffect(() => {
+    fetch('/api/v1/cms/pages')
+      .then((res) => res.ok ? res.json() : { pages: [] })
+      .then((data) => {
+        const loaded = data.pages || [];
+        setCmsPages(loaded);
+        const requestedSlug = sessionStorage.getItem('__cms_page_slug');
+        if (requestedSlug && loaded.some((page: CmsPage) => page.slug === requestedSlug)) {
+          setActivePageSlug(requestedSlug);
+          sessionStorage.removeItem('__cms_page_slug');
+        }
+      })
+      .catch(() => setCmsPages([]));
+  }, [tenant?.tenantId]);
 
   const selectedPage = activePageSlug
-    ? DEFAULT_MOCK_PAGES.find((p) => p.slug === activePageSlug)
+    ? cmsPages.find((p) => p.slug === activePageSlug)
     : null;
 
   const displayName = currentUser
@@ -156,13 +172,13 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           <span className="text-xs font-bold text-gray-900">Brand Information & Policies</span>
         </div>
         <div className="divide-y divide-gray-50">
-          {DEFAULT_MOCK_PAGES.filter((p) => p.status === 'published').map((page) => (
+          {cmsPages.filter((p) => p.status === 'published' && ['footer', 'both'].includes(p.navigationVisibility)).sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999)).map((page) => (
             <div
               key={page.id}
               onClick={() => setActivePageSlug(page.slug)}
               className="py-2.5 flex items-center justify-between cursor-pointer hover:text-emerald-700 transition-colors text-xs font-semibold text-gray-700"
             >
-              <span>{page.title}</span>
+              <span>{page.navigationLabel || page.title}</span>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </div>
           ))}
