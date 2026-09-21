@@ -1475,7 +1475,7 @@ v1Router.post(
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
     const integrationContext = await IntegrationContext.getContext(resolvedTenant);
-    const checkoutOptions = {
+    const checkoutOptions: any = {
       ...(options || {}),
       // One Deliverect basket can create one checkout session. Use a stable
       // basket-scoped key so browser retries/reopened modals recover the same
@@ -1484,6 +1484,23 @@ v1Router.post(
         options?.idempotencyKey ||
         `checkout:${resolvedTenant}:${basketId}`,
     };
+    const orderRoute: 'retail_quest' | 'commerce_checkout' =
+      checkoutOptions.orderRoute === 'commerce_checkout' ||
+      integrationContext.orderRoute === 'commerce_checkout'
+        ? 'commerce_checkout'
+        : 'retail_quest';
+
+    // Retail/Quest uses one deterministic customer order reference across DPay,
+    // Channel API submission, Firestore projections and retry recovery.
+    if (orderRoute === 'retail_quest' && !checkoutOptions.channelOrderReference) {
+      const digest = crypto
+        .createHash('sha256')
+        .update(`${resolvedTenant}:${basketId}`)
+        .digest('hex')
+        .slice(0, 16)
+        .toUpperCase();
+      checkoutOptions.channelOrderReference = `BWYDI-${digest}`;
+    }
 
     // Basket identity is the strongest checkout idempotency boundary. If this
     // basket already produced a checkout, return it rather than POSTing another
@@ -1498,6 +1515,84 @@ v1Router.post(
         `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
       );
       return res.status(200).json(existingBasketCheckout);
+    }
+
+    // Quest-first online payment: pre-authorise through DPay before the Retail
+    // order is submitted. A payment token is optional so unpaid/COD operational
+    // flows remain possible; when supplied, Commerce Checkout is not involved.
+    if (
+      orderRoute === 'retail_quest' &&
+      !checkoutOptions.paymentId &&
+      checkoutOptions.paymentTokenRef
+    ) {
+      const existingPayment =
+        await FirestorePlatformService.getPaymentProjectionByOrderReference(
+          checkoutOptions.channelOrderReference,
+          resolvedTenant
+        );
+
+      if (
+        existingPayment &&
+        (existingPayment.status === 'authorized' || existingPayment.status === 'captured')
+      ) {
+        checkoutOptions.paymentId = existingPayment.paymentId;
+        checkoutOptions.authorizedMaximum = existingPayment.authorizedAmount;
+      } else {
+        const basket = await (await getDeliverectAdapterAsync(resolvedTenant)).getBasket(basketId);
+        if (!basket) {
+          return res.status(404).json({
+            error: `Basket ${basketId} not found.`,
+            code: 'BASKET_NOT_FOUND',
+          });
+        }
+
+        const channelLinkId = String((basket as any).channelLinkId || basket.storeId || '').trim();
+        if (!channelLinkId) {
+          return res.status(422).json({
+            error: 'Basket is missing the channelLinkId required for DPay authorisation.',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        const approvedMaximum = checkoutOptions.authorizationMaximum || basket.total;
+        const payment = await PaymentService.requestPayment(
+          {
+            channelLinkId,
+            mode: { type: 'token', tokenId: checkoutOptions.paymentTokenRef },
+            captureMode: 'manual',
+            amount: approvedMaximum.amount,
+            currency: approvedMaximum.currency || basket.currency || 'GBP',
+            payer: basket.customer
+              ? {
+                  name: basket.customer.name,
+                  email: basket.customer.email,
+                  phone: basket.customer.phone,
+                }
+              : undefined,
+            orderReference: checkoutOptions.channelOrderReference,
+            basketId,
+            customerApprovedMaxAmount: approvedMaximum,
+            metadata: {
+              basketId,
+              orderRoute: 'retail_quest',
+            },
+          },
+          resolvedTenant
+        );
+
+        if (payment.status !== 'authorized' && payment.status !== 'captured') {
+          return res.status(422).json({
+            error: `DPay returned status '${payment.status}'. The Retail order was not submitted.`,
+            code: 'PAYMENT_NOT_AUTHORISED',
+          });
+        }
+
+        checkoutOptions.paymentId = payment.paymentId;
+        checkoutOptions.authorizedMaximum = {
+          amount: payment.authorizedAmount,
+          currency: payment.currency,
+        };
+      }
     }
 
     // Verify an existing DPay payment before creating the live order. Prefer the
@@ -1603,11 +1698,6 @@ v1Router.post(
 
     const adapter = await getDeliverectAdapterAsync(resolvedTenant);
     let checkoutResult: CheckoutResult;
-    const orderRoute: 'retail_quest' | 'commerce_checkout' =
-      checkoutOptions.orderRoute === 'commerce_checkout' ||
-      integrationContext.orderRoute === 'commerce_checkout'
-        ? 'commerce_checkout'
-        : 'retail_quest';
 
     if (orderRoute === 'retail_quest') {
       if (!adapter.submitRetailOrder) {
