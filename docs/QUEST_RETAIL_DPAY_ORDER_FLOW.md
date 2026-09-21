@@ -47,12 +47,14 @@ The authorisation ceiling is persisted separately and is never presented as the 
 Tenant integration configuration supports:
 
 - `orderRoute: "retail_quest" | "commerce_checkout"`
-- `channelName` for the Channel API scope
+- optional `channelName` override for the Channel API scope
+
+The normal Retail/Quest path derives `channelName` automatically from the OAuth grant `genericChannel:<channel_scope>`. A manual `channelName` is only required when the OAuth provider omits scope metadata or the credentials expose more than one Channel scope.
 
 Environment fallbacks:
 
 - `DELIVERECT_ORDER_ROUTE`
-- `DELIVERECT_CHANNEL_NAME`
+- `DELIVERECT_CHANNEL_NAME` (optional Channel-scope override)
 
 If no order route is configured, the server defaults to `retail_quest`.
 
