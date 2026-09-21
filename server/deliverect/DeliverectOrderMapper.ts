@@ -38,6 +38,7 @@ export interface RawDeliverectOrder {
   items?: RawDeliverectOrderItem[];
   originalBasket?: {
     id?: string;
+    fulfillmentType?: string;
     items?: RawDeliverectOrderItem[];
     total?: Money;
     currency?: string;
@@ -85,9 +86,14 @@ export interface RawDeliverectOrder {
  * in the UI. Unknown/unsupported fulfilment modes must never silently become delivery.
  */
 export function normalizeDeliverectFulfillmentType(
-  raw: Pick<RawDeliverectOrder, 'fulfillment' | 'fulfillmentType' | 'orderType'>
+  raw: Pick<RawDeliverectOrder, 'fulfillment' | 'fulfillmentType' | 'orderType' | 'originalBasket'>
 ): 'delivery' | 'pickup' {
-  const explicitType = String(raw.fulfillment?.type || raw.fulfillmentType || '')
+  const explicitType = String(
+    raw.fulfillment?.type ||
+    raw.fulfillmentType ||
+    raw.originalBasket?.fulfillmentType ||
+    ''
+  )
     .trim()
     .toLowerCase();
 
