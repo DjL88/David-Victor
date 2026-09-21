@@ -1,73 +1,91 @@
 {
   "tenantId": "tenant_retailer",
   "accounts": [],
-  "locations": [
-    {
-      "physicalLocationId": "loc_physical_covent",
-      "accountLinkId": "acclink_acc_del_777",
-      "deliverectLocationId": "loc_physical_covent",
-      "name": "Covent Garden Physical Depot",
-      "addressProjection": {
-        "street": "14 Floral Street",
-        "city": "London",
-        "postcode": "WC2E 9DH",
-        "country": "GB"
-      },
-      "coordinates": {
-        "latitude": 51.5121,
-        "longitude": -0.1245
-      },
-      "statusProjection": "ACTIVE",
-      "services": [
-        {
-          "id": "cl_channel_01",
-          "name": "Ordering channel",
-          "source": "DELIVERECT"
-        }
-      ]
-    }
-  ],
+  "locations": [],
   "stores": [
     {
-      "commerceStoreId": "cstore_cl_channel_01",
-      "accountLinkId": "acclink_acc_del_777",
-      "physicalLocationId": "loc_physical_covent",
-      "channelLinkId": "cl_channel_01",
-      "name": "Covent Garden Express",
+      "commerceStoreId": "cstore_cl_123",
+      "accountLinkId": "acclink_acc_del_999",
+      "physicalLocationId": null,
+      "channelLinkId": "cl_123",
+      "name": "Oxford Street Store",
       "stateProjection": "open",
-      "coordinates": {
-        "latitude": 51.5121,
-        "longitude": -0.1245
-      },
       "address": {
-        "street": "14 Floral Street",
+        "street": "100 Oxford St",
         "city": "London",
-        "postcode": "WC2E 9DH",
+        "postcode": "W1D 1LL",
         "country": "GB"
       },
-      "services": [
-        {
-          "id": "cl_channel_01",
-          "name": "Ordering channel",
-          "source": "DELIVERECT"
-        }
-      ],
-      "currency": "GBP",
-      "status": "ONLINE",
-      "lastSeenAt": "2026-09-21T08:55:45.708Z"
-    },
-    {
-      "commerceStoreId": "cstore_cl_channel_unlinked",
-      "accountLinkId": "acclink_acc_del_777",
-      "physicalLocationId": null,
-      "channelLinkId": "cl_channel_unlinked",
-      "name": "Standalone Virtual Store",
-      "stateProjection": "open",
       "services": [],
       "currency": "GBP",
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-21T08:55:45.708Z"
+      "lastSeenAt": "2026-09-21T12:21:46.722Z"
+    },
+    {
+      "commerceStoreId": "cstore_st_1",
+      "accountLinkId": "acclink_acc_multi",
+      "physicalLocationId": null,
+      "channelLinkId": "st_1",
+      "name": "Store 1",
+      "stateProjection": "open",
+      "services": [],
+      "status": "ONLINE",
+      "lastSeenAt": "2026-09-21T12:21:46.725Z"
+    },
+    {
+      "commerceStoreId": "cstore_st_2",
+      "accountLinkId": "acclink_acc_multi",
+      "physicalLocationId": null,
+      "channelLinkId": "st_2",
+      "name": "Store 2",
+      "stateProjection": "paused",
+      "services": [],
+      "status": "PAUSED",
+      "lastSeenAt": "2026-09-21T12:21:46.725Z"
+    },
+    {
+      "commerceStoreId": "cstore_st_3",
+      "accountLinkId": "acclink_acc_multi",
+      "physicalLocationId": null,
+      "channelLinkId": "st_3",
+      "name": "Store 3",
+      "stateProjection": "closed",
+      "services": [],
+      "status": "CLOSED",
+      "lastSeenAt": "2026-09-21T12:21:46.725Z"
+    },
+    {
+      "commerceStoreId": "cstore_raw_minimal_store_1",
+      "accountLinkId": "acclink_acc_minimal",
+      "physicalLocationId": null,
+      "channelLinkId": "raw_minimal_store_1",
+      "name": "",
+      "stateProjection": "UNKNOWN",
+      "services": [],
+      "lastSeenAt": "2026-09-21T12:21:46.727Z"
+    },
+    {
+      "commerceStoreId": "cstore_st_safe",
+      "accountLinkId": "acclink_acc_safe",
+      "physicalLocationId": null,
+      "channelLinkId": "st_safe",
+      "name": "Safe Store",
+      "stateProjection": "open",
+      "services": [],
+      "status": "ACTIVE",
+      "lastSeenAt": "2026-09-21T12:21:46.728Z"
+    },
+    {
+      "commerceStoreId": "cstore_st_survives",
+      "accountLinkId": "acclink_acc_db_fail",
+      "physicalLocationId": null,
+      "channelLinkId": "st_survives",
+      "name": "Surviving Store",
+      "stateProjection": "open",
+      "services": [],
+      "status": "ONLINE",
+      "lastSeenAt": "2026-09-21T12:21:46.729Z"
     }
   ],
-  "syncedAt": "2026-09-21T08:55:45.708Z"
+  "syncedAt": "2026-09-21T12:21:46.722Z"
 }

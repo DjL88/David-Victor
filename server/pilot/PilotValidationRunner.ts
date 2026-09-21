@@ -147,7 +147,7 @@ export class PilotValidationRunner {
         status: 'CHECKOUT_PENDING_CONFIRMATION',
         paymentStatus: 'AUTHORIZED',
         paymentId: payment.paymentId,
-        fulfillmentType: 'DELIVERY',
+        fulfillmentType: 'PICKUP',
         total: 220,
         authorizedMaximum: 240,
         finalAmount: 220,
@@ -157,7 +157,7 @@ export class PilotValidationRunner {
             plu: originalItemPlu,
             name: 'Organic Whole Milk 1L',
             quantity: 1,
-            price: 2.2,
+            price: 220,
             unitPrice: originalItemPrice,
             totalPrice: originalItemPrice,
           },
@@ -179,7 +179,7 @@ export class PilotValidationRunner {
       });
 
       // Step 7: Webhook Progression - Store Accepted & Picking Started
-      const webhookSecret = 'staging_secret_key_123';
+      const webhookSecret = WebhookService.getWebhookSecret(this.tenantId) || 'staging_secret_key_123';
       const eventKeyAccepted = `evt_accept_${Date.now()}`;
       const acceptPayload = {
         type: 'ORDER_ACCEPTED',
@@ -190,15 +190,14 @@ export class PilotValidationRunner {
       const rawAccept = Buffer.from(JSON.stringify(acceptPayload));
       const sigAccept = WebhookService.computeHmacSignature(rawAccept, webhookSecret);
 
-      await WebhookService.ingestEvent(
-        this.tenantId,
-        this.environment,
-        eventKeyAccepted,
-        'ORDER_ACCEPTED',
+      await WebhookService.processWebhook(
         acceptPayload,
         rawAccept,
-        sigAccept,
-        webhookSecret
+        {
+          'x-deliverect-signature': sigAccept,
+          'x-deliverect-event-id': eventKeyAccepted,
+        },
+        this.tenantId
       );
       this.recordStep('7. Upstream Store Acceptance Webhook', true, { status: 'STORE_ACCEPTED' });
 
@@ -218,16 +217,16 @@ export class PilotValidationRunner {
       };
       const rawQuest = Buffer.from(JSON.stringify(questAmendmentPayload));
       const sigQuest = WebhookService.computeHmacSignature(rawQuest, webhookSecret);
+      const questEventKey = `evt_quest_${Date.now()}`;
 
-      await WebhookService.ingestEvent(
-        this.tenantId,
-        this.environment,
-        `evt_quest_${Date.now()}`,
-        'ITEM_SUBSTITUTED',
+      await WebhookService.processWebhook(
         questAmendmentPayload,
         rawQuest,
-        sigQuest,
-        webhookSecret
+        {
+          'x-deliverect-signature': sigQuest,
+          'x-deliverect-event-id': questEventKey,
+        },
+        this.tenantId
       );
       this.recordStep('8. Quest Picking Amendment (Best Match Substitution)', true, {
         substitutionType: 'BEST_MATCH',
@@ -336,7 +335,7 @@ export class PilotValidationRunner {
       status: 'PICKING_COMPLETE',
       paymentStatus: 'AUTHORIZED',
       paymentId: mockPayment.paymentId,
-      fulfillmentType: 'DELIVERY',
+      fulfillmentType: 'PICKUP',
       total: 500, // £5.00 > £2.40 ceiling
       finalAmount: 500,
       authorizedMaximum: 240,
