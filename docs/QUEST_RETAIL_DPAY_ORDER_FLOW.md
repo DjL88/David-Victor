@@ -60,7 +60,9 @@ If no order route is configured, the server defaults to `retail_quest`.
 
 The existing `PaymentService.settleOrderPayment()` already calculates the authoritative final Quest amount, captures a lower final amount, and requests reauthorisation if the final amount exceeds the authorised ceiling.
 
-The live `DeliverectDPayAdapter` still deliberately blocks unverified raw capture/refund operations until their partner contract is confirmed. Do not guess a capture endpoint. The public DPay documentation confirms manual authorisation and later capture semantics; the exact live capture operation must be verified against the enabled Deliverect Pay contract before removing that guard.
+The live `DeliverectDPayAdapter` now uses the published Pay API contracts for gateway discovery, payment request/manual authorisation, payment lookup and refunds. The public docs also expose a re-authorisation route, but the meaning of its `amount` field must still be confirmed for our partner contract before enabling it automatically.
+
+Deliverect's current public Pay endpoint index does **not** expose a manual capture operation even though `captureMode: "manual"` explicitly supports pre-authorise-now/capture-later behaviour. Do not guess a capture URL. Final live capture therefore remains guarded until Deliverect confirms the enabled capture contract for this integration.
 
 ## Idempotency
 
