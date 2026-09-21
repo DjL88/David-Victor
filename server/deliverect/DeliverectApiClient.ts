@@ -2660,15 +2660,25 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const basket = await this.mapLiveCommerceBasket(reconciledRaw);
     const context = await IntegrationContext.getContext(this.tenantId);
 
+    // Read the latest persisted integration record as well as the cached
+    // IntegrationContext. This prevents a newly saved channelName from waiting
+    // up to the context-cache TTL before it can be used for an order.
+    const latestIntegration = await FirestorePlatformService
+      .getIntegrationConfig(this.tenantId)
+      .catch(() => null);
+    const configuredChannelName =
+      latestIntegration?.channelName ||
+      context.channelName;
+
     let channelResolution = resolveDeliverectChannelName(
-      context.channelName
+      configuredChannelName
     );
 
     if (!channelResolution.channelName) {
       const grantedChannelScopes =
         await this.tokenManager.getChannelScopeNames();
       channelResolution = resolveDeliverectChannelName(
-        context.channelName,
+        configuredChannelName,
         grantedChannelScopes
       );
     }
