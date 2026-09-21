@@ -63,6 +63,10 @@ export interface IntegrationConfig {
   channelLinkId?: string;
   /** Explicit tenant storefront allowlist; absent means all stores in the assigned account. */
   allowedChannelLinkIds?: string[];
+  /** Deliverect Channel API scope/name for Retail order creation. */
+  channelName?: string;
+  /** Which Deliverect endpoint creates the live order. */
+  orderRoute?: 'retail_quest' | 'commerce_checkout';
   environment: 'staging' | 'production';
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';
