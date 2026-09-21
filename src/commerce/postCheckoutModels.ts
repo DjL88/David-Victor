@@ -23,6 +23,7 @@ export type PaymentStateStatus =
   | 'FAILED'
   | 'CANCELLED'
   | 'RELEASED'
+  | 'NO_CAPTURE_REQUIRED'
   | 'PAYMENT_ACTION_REQUIRED';
 
 export interface OrderPaymentInfo {
@@ -172,6 +173,16 @@ export interface PickingAmendment {
   reason?: string;
 }
 
+export interface PickingBundlePricing {
+  /**
+   * Frozen per-unit customer prices allocated when the bundle was added.
+   * Sorted cheapest-first so a later quantity reduction preserves the most
+   * customer-favourable protected units.
+   */
+  protectedUnitPrices: Money[];
+  bundleInstanceIds: string[];
+}
+
 export interface PickingItem {
   id: string;
   plu: string;
@@ -185,6 +196,8 @@ export interface PickingItem {
   substitutionPreference?: SubstitutionPreferenceType;
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
+  preferredSubstitutePrice?: Money;
+  bundlePricing?: PickingBundlePricing;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
   unit?: string;

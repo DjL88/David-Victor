@@ -157,6 +157,7 @@ export class SubstitutionCallbackService {
           substitutionPreference: basketItem.substitutionPreference || 'BEST_MATCH',
           preferredSubstitutePlu: (basketItem as any).preferredSubstitutePlu,
           preferredSubstituteName: (basketItem as any).preferredSubstituteName,
+          preferredSubstitutePrice: (basketItem as any).preferredSubstitutePrice,
         } as any;
         originalPrice =
           typeof basketItem.price === 'number'
@@ -231,6 +232,7 @@ export class SubstitutionCallbackService {
           candidates.push({
             plu: pickingItem.preferredSubstitutePlu,
             name: pickingItem.preferredSubstituteName,
+            approvedPrice: pickingItem.preferredSubstitutePrice,
           });
         }
         return {
@@ -249,6 +251,7 @@ export class SubstitutionCallbackService {
         };
       }
 
+      case 'DO_NOT_SUBSTITUTE':
       case 'REMOVE_IF_UNAVAILABLE':
         return {
           orderId,

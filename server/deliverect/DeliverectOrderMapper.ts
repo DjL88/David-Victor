@@ -13,6 +13,7 @@ export interface RawDeliverectOrderItem {
   substituteCandidates?: Array<{ plu: string; name?: string; price?: number | Money }>;
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
+  preferredSubstitutePrice?: Money;
   [key: string]: any;
 }
 
@@ -38,6 +39,7 @@ export interface RawDeliverectOrder {
   items?: RawDeliverectOrderItem[];
   originalBasket?: {
     id?: string;
+    fulfillmentType?: string;
     items?: RawDeliverectOrderItem[];
     total?: Money;
     currency?: string;
@@ -76,11 +78,55 @@ export interface RawDeliverectOrder {
 }
 
 /**
+ * Convert Deliverect's fulfilment representation into Bwydi's canonical domain values.
+ *
+ * Deliverect orderType values used by the Ordering Experience order model:
+ *   1 = pickup, 2 = delivery.
+ *
+ * Bwydi uses `pickup` internally and renders the customer-facing label "Collection"
+ * in the UI. Unknown/unsupported fulfilment modes must never silently become delivery.
+ */
+export function normalizeDeliverectFulfillmentType(
+  raw: Pick<RawDeliverectOrder, 'fulfillment' | 'fulfillmentType' | 'orderType' | 'originalBasket'>
+): 'delivery' | 'pickup' {
+  const explicitType = String(
+    raw.fulfillment?.type ||
+    raw.fulfillmentType ||
+    raw.originalBasket?.fulfillmentType ||
+    ''
+  )
+    .trim()
+    .toLowerCase();
+
+  if (['pickup', 'collection', 'takeaway'].includes(explicitType)) return 'pickup';
+  if (['delivery', 'online_delivery'].includes(explicitType)) return 'delivery';
+
+  const orderType = Number(raw.orderType);
+  if (orderType === 1) return 'pickup';
+  if (orderType === 2) return 'delivery';
+
+  const detail = explicitType || `orderType:${String(raw.orderType ?? 'missing')}`;
+  const error: any = new Error(`Unsupported Deliverect fulfilment type: ${detail}`);
+  error.code = 'UNSUPPORTED_FULFILLMENT_TYPE';
+  throw error;
+}
+
+/**
  * Normalizes a raw Deliverect order or Bwydi Order into a clean, consistent structure for OrderProjections.
  */
 export class DeliverectOrderMapper {
   static normalizeOrder(raw: RawDeliverectOrder): Order {
-    const id = raw.id || raw._id || raw.orderId || raw.externalOrderId || `ord_${Date.now()}`;
+    // Prefer Deliverect IDs, then the channel order correlation ID. Avoid a
+    // timestamp-generated ID for real orders because Quest callbacks must resolve the
+    // same projection deterministically later.
+    const id =
+      raw.id ||
+      raw._id ||
+      raw.orderId ||
+      raw.externalOrderId ||
+      raw.channelOrderRawId ||
+      raw.channelOrderId ||
+      `ord_${Date.now()}`;
     const channelOrderId = raw.channelOrderId || raw.channelOrderDisplayId || raw.displayId || raw.orderReference;
     const basketId = raw.basketId || raw.originalBasket?.id;
 
@@ -114,6 +160,7 @@ export class DeliverectOrderMapper {
         substituteCandidates: item.substituteCandidates as any,
         preferredSubstitutePlu: item.preferredSubstitutePlu,
         preferredSubstituteName: item.preferredSubstituteName,
+        preferredSubstitutePrice: item.preferredSubstitutePrice,
       };
     });
 
@@ -140,18 +187,11 @@ export class DeliverectOrderMapper {
     if (status === '50' || status === '5') status = 'DELIVERED';
     if (status === '110' || status === '11') status = 'CANCELLED';
 
-    // Fulfillment type mapping
-    let fulfillmentType: 'delivery' | 'collection' = 'delivery';
-    if (
-      raw.fulfillmentType === 'collection' ||
-      raw.fulfillmentType === 'pickup' ||
-      raw.orderType === 2 ||
-      raw.orderType === 3
-    ) {
-      fulfillmentType = 'collection';
-    }
+    // Fulfilment is canonicalized once. Never default an unknown Deliverect order to delivery.
+    const fulfillmentType = normalizeDeliverectFulfillmentType(raw);
 
     return {
+      ...(raw as any),
       id,
       storeId: raw.channelLinkId || raw.deliverectLocationId || raw.locationId || 'store-alpha',
       status: status as any,
@@ -172,13 +212,18 @@ export class DeliverectOrderMapper {
         total: { amount: totalAmount, currency },
       },
       payment: {
-        state: raw.payment?.state || raw.paymentState || 'AUTHORIZED',
+        // Real unpaid Collection orders use third_party/isPrepaid:false and have
+        // orderIsAlreadyPaid:false. They have nothing to capture after Quest picking.
+        // Never fabricate AUTHORIZED when Deliverect did not provide an authorization.
+        state:
+          raw.payment?.state ||
+          raw.paymentState ||
+          'NO_CAPTURE_REQUIRED',
         paymentId: raw.payment?.paymentId || raw.paymentId,
         authorizationMaximum: raw.payment?.authorizationMaximum || { amount: totalAmount, currency },
       },
       orderReference: channelOrderId || id,
       createdAt: raw.createdAt || new Date().toISOString(),
-      ...(raw as any),
     };
   }
 }

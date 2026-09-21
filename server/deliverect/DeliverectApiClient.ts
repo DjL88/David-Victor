@@ -8,9 +8,11 @@ import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { FirestorePlatformService } from '../firestoreService';
 import { randomUUID } from 'node:crypto';
+import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
 import {
   DeliverectCommerceBasketApiClient,
   CommerceBasketItemInput,
+  CommerceBasketDiscountInput,
 } from './DeliverectCommerceBasketApi';
 import {
   mapDeliverectBasket,
@@ -49,6 +51,11 @@ import {
   TenantSchedulingPolicy,
   DEFAULT_TENANT_SCHEDULING_POLICY,
 } from '../../src/commerce/models';
+import type {
+  AddBundleToBasketRequest,
+  SelectedBundleModifier,
+} from '../../src/commerce/bundleModels';
+import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocation';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
@@ -457,7 +464,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
       return {
         id: s.channelLinkId || s.commerceStoreId,
         channelLinkId: s.channelLinkId,
+        channelLocationId: s.channelLocationId || undefined,
         physicalLocationId: s.physicalLocationId || undefined,
+        deliverectLocationId: loc?.deliverectLocationId || undefined,
+        // Friendly retailer/POS store number (for example 1234). This is display
+        // metadata only: Commerce APIs must continue to use channelLinkId.
+        brandStoreId: s.brandStoreId || loc?.brandStoreId || undefined,
         name: override?.name || s.name,
         address: {
           street: street || line1,
@@ -477,10 +489,14 @@ export class DeliverectApiClient implements DeliverectAdapter {
         deliveryRadiusKm,
         deliveryEta,
         currency: (s as any).currency || (loc as any)?.currency || 'GBP',
+        phone: s.phone || loc?.phone || undefined,
+        email: s.email || loc?.email || undefined,
+        timezone: s.timezone || loc?.timezone || undefined,
+        services: s.services?.length ? s.services : loc?.services || undefined,
         // Previously never passed through, so every real store silently fell back to
         // storeOpeningHoursService's demo-only default (07:00-23:00) regardless of its
         // actual Deliverect hours — fixed here.
-        openingHours: (s as any).openingHours,
+        openingHours: (s as any).openingHours || loc?.openingHours,
         scheduling: storeScheduling,
       };
     });
@@ -515,8 +531,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
       return await response.json() as any;
     });
-    const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?._items) ? raw._items : Object.entries(raw || {}).map(([id, value]) => typeof value === 'string' ? { id, name: value } : { ...(value as any), id: (value as any)?.id ?? id });
-    const definitions = items.map((item: any) => { const id = String(item.id ?? item._id ?? item.value ?? item.tagId ?? ''); const name = String(item.name ?? item.label ?? item.title ?? item.code ?? id); const type = item.type ?? item.category ?? item.group; const typeText = String(type ?? '').toLowerCase(); return { id, name, ...(type ? { type: String(type) } : {}), isAllergen: item.isAllergen === true || typeText.includes('allergen') }; }).filter((definition: ProductTagDefinition) => definition.id && definition.name);
+    // Normalize the known Deliverect response variants and merge documented standard
+    // IDs so customer-facing UI never falls back to raw numeric productTags.
+    const definitions = mergeDeliverectTagDefinitions(raw);
     this.tagDefinitionsCache = { definitions, loadedAt: Date.now() };
     return definitions;
   }
@@ -742,6 +759,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const rawProductsMap = new Map<string, any>();
+    const rawStandaloneProductsByPlu = new Map<string, any>();
     const rawProducts: any[] = Array.isArray(rawMenu.products)
       ? rawMenu.products
       : rawMenu.products && typeof rawMenu.products === 'object'
@@ -751,6 +769,29 @@ export class DeliverectApiClient implements DeliverectAdapter {
     for (const p of rawProducts) {
       if (p && (p.id || p._id)) {
         rawProductsMap.set(String(p.id || p._id), p);
+      }
+
+      const productPlu = String(p?.plu || '').trim();
+      if (productPlu && !productPlu.includes('#')) {
+        const existing = rawStandaloneProductsByPlu.get(productPlu);
+        const candidatePrice =
+          typeof p?.price === 'number'
+            ? Math.round(p.price)
+            : typeof p?.priceMinor === 'number'
+              ? Math.round(p.priceMinor)
+              : -1;
+        const existingPrice =
+          typeof existing?.price === 'number'
+            ? Math.round(existing.price)
+            : typeof existing?.priceMinor === 'number'
+              ? Math.round(existing.priceMinor)
+              : -1;
+
+        // If duplicate PLUs exist, retain the normal priced item rather than a
+        // zero-value bundle/modifier variant.
+        if (!existing || candidatePrice > existingPrice) {
+          rawStandaloneProductsByPlu.set(productPlu, p);
+        }
       }
     }
 
@@ -840,7 +881,38 @@ export class DeliverectApiClient implements DeliverectAdapter {
             const modPlu = String(mData.plu || mRef.plu || mId);
             const modName = String(mData.name || mRef.name || modPlu);
 
-            // Component pricing: 0 for included, exact minor unit uplift for premium
+            // Deliverect commonly publishes a zero-value bundle variant such as
+            // DRN-03### and exposes the normal standalone PLU in referenceId. The
+            // storefront bundle is exploded into normal products at basket time, so
+            // retain the bundle uplift separately from the standalone shelf value.
+            const referencedStandalonePlu = String(
+              mData.referenceId ||
+              mRef.referenceId ||
+              mData.originalPlu ||
+              mRef.originalPlu ||
+              ''
+            ).trim();
+            const deDecoratedPlu = modPlu.replace(/#+$/g, '');
+            const standaloneCandidate =
+              (referencedStandalonePlu
+                ? rawStandaloneProductsByPlu.get(referencedStandalonePlu)
+                : undefined) ||
+              rawStandaloneProductsByPlu.get(deDecoratedPlu) ||
+              rawStandaloneProductsByPlu.get(modPlu);
+            const standalonePlu = String(
+              standaloneCandidate?.plu ||
+              referencedStandalonePlu ||
+              (deDecoratedPlu !== modPlu ? deDecoratedPlu : '')
+            ).trim() || undefined;
+            const standalonePriceMinor =
+              typeof standaloneCandidate?.price === 'number'
+                ? Math.round(standaloneCandidate.price)
+                : typeof standaloneCandidate?.priceMinor === 'number'
+                  ? Math.round(standaloneCandidate.priceMinor)
+                  : undefined;
+
+            // Component pricing here is the bundle-specific uplift only: 0 for
+            // included components, 100 for a +£1 premium choice, etc.
             const modPriceMinor = typeof mData.price === 'number' ? Math.round(mData.price) : (typeof mRef.price === 'number' ? Math.round(mRef.price) : 0);
 
             // Snooze & active evaluation
@@ -881,6 +953,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
               id: mId,
               name: modName,
               plu: modPlu,
+              standalonePlu,
+              standalonePriceMinor,
               price: modPriceMinor,
               priceMinor: modPriceMinor,
               active: !isModExplicitlyInactive,
@@ -1519,10 +1593,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
       fallbackMenuId = String(catalog.activeMenuId || '').trim();
     }
 
-    return mapDeliverectBasket(raw, {
+    const mapped = mapDeliverectBasket(raw, {
       storeName: store?.name || storeId,
       fallbackMenuId,
     });
+
+    const persistedPreferences =
+      await FirestorePlatformService.getBasketSubstitutionPreferences(this.tenantId, mapped.id);
+
+    if (Object.keys(persistedPreferences).length > 0) {
+      mapped.items = mapped.items.map((item) => {
+        const persisted = persistedPreferences[item.plu];
+        if (!persisted) return item;
+        return {
+          ...item,
+          substitutionPreference: persisted.preference,
+          substituteCandidatePlus: persisted.substituteCandidatePlus,
+          preferredSubstitutePlu: persisted.preferredSubstitutePlu,
+          preferredSubstituteName: persisted.preferredSubstituteName,
+          preferredSubstitutePrice: persisted.preferredSubstitutePrice,
+        };
+      });
+    }
+
+    return mapped;
   }
 
   private async getMappedCommerceBasket(basketId: string): Promise<MappedBasket> {
@@ -1548,7 +1642,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     if (value.includes('FAIL') || value.includes('REJECT')) return 'ORDER_FAILED';
     if (value.includes('CANCEL')) return 'CANCELLED';
-    if (value.includes('CONFIRM') || value.includes('SUCCESS')) return 'ORDER_CONFIRMED';
+    if (
+      value === 'COMPLETED' ||
+      value.includes('CONFIRM') ||
+      value.includes('SUCCESS')
+    ) {
+      return 'ORDER_CONFIRMED';
+    }
 
     return 'CHECKOUT_PENDING_CONFIRMATION';
   }
@@ -1674,6 +1774,24 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }>
   ): Promise<Basket> {
     const current = await this.getMappedCommerceBasket(basketId);
+
+    for (const item of items) {
+      if (item.substitutionPreference) {
+        await FirestorePlatformService.saveBasketItemSubstitutionPreference(
+          this.tenantId,
+          basketId,
+          item.plu,
+          {
+            preference: item.substitutionPreference,
+            substituteCandidatePlus: item.substituteCandidatePlus,
+            preferredSubstitutePlu: item.preferredSubstitutePlu,
+            preferredSubstituteName: item.preferredSubstituteName,
+            preferredSubstitutePrice: item.preferredSubstitutePrice,
+          }
+        );
+      }
+    }
+
     const catalog = await this.getStoreCatalog(
       current.storeId,
       current.fulfillmentType
@@ -1720,32 +1838,287 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
-    const mapped = await this.mapLiveCommerceBasket(raw);
+    return this.mapLiveCommerceBasket(raw);
+  }
 
-    // Deliverect's real Commerce basket item schema has no substitution-preference
-    // field at all (confirmed against the official API reference) — so nothing we
-    // send here reaches Deliverect, and the basket Deliverect returns can't echo it
-    // back either. Without this merge, a customer's chosen substitution preference
-    // would be silently lost the moment this basket is re-fetched/re-mapped, and
-    // checkout would always persist the BEST_MATCH default (server/firestoreService.ts
-    // getOrderProjection... reads item.substitutionPreference || 'BEST_MATCH').
-    // Quest itself still learns the real preference live via SubstitutionCallbackService,
-    // which reads this same local Firestore-persisted value, not Deliverect's basket.
-    const preferenceByPlu = new Map(items.map((item) => [item.plu, item]));
-    mapped.items = mapped.items.map((mappedItem) => {
-      const source = preferenceByPlu.get(mappedItem.plu);
-      if (!source) return mappedItem;
-      return {
-        ...mappedItem,
-        substitutionPreference: source.substitutionPreference ?? mappedItem.substitutionPreference,
-        substituteCandidatePlus: source.substituteCandidatePlus ?? mappedItem.substituteCandidatePlus,
-        preferredSubstitutePlu: source.preferredSubstitutePlu ?? mappedItem.preferredSubstitutePlu,
-        preferredSubstituteName: source.preferredSubstituteName ?? mappedItem.preferredSubstituteName,
-        preferredSubstitutePrice: source.preferredSubstitutePrice ?? mappedItem.preferredSubstitutePrice,
-      };
-    });
+  async addBundleToBasket(
+    basketId: string,
+    request: AddBundleToBasketRequest
+  ): Promise<Basket> {
+    const api = await this.getCommerceBasketApi();
+    const rawBefore = await api.getBasket(basketId);
+    const current = await this.mapLiveCommerceBasket(rawBefore);
 
-    return mapped;
+    const catalog = await this.getStoreCatalog(
+      current.storeId,
+      current.fulfillmentType
+    );
+    const bundle = catalog.bundleCatalog?.bundles.find(
+      (candidate) =>
+        (request.bundleId && candidate.id === request.bundleId) ||
+        (request.bundlePlu && candidate.plu === request.bundlePlu)
+    );
+
+    if (!bundle) {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        'The selected bundle is not available in the current store catalogue.'
+      );
+    }
+    if (bundle.stockStatus === 'OUT_OF_STOCK') {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        bundle.outOfStockReason || `${bundle.name} is currently unavailable.`
+      );
+    }
+
+    const menuId = String(catalog.activeMenuId || '').trim();
+    if (!menuId) {
+      throw new CommerceError(
+        'MENU_NOT_AVAILABLE',
+        'Could not resolve the active Deliverect menu for this basket.'
+      );
+    }
+
+    const normalProducts = catalog.products || [];
+    const priceMinor = (product: Product): number | undefined => {
+      const price = product.price ?? product.basePrice;
+      if (typeof price === 'number' && Number.isInteger(price)) return price;
+      if (
+        price &&
+        typeof price === 'object' &&
+        Number.isInteger((price as Money).amount)
+      ) {
+        return (price as Money).amount;
+      }
+      if (Number.isInteger(product.priceMinor)) return product.priceMinor;
+      return undefined;
+    };
+
+    // Re-resolve every component's normal PLU + shelf price from the selected
+    // store catalogue. Client-supplied prices or normal-product PLUs are ignored.
+    const authoritativeBundle: BundleProduct = {
+      ...bundle,
+      sections: (bundle.sections || bundle.modifierGroups || []).map((section) => ({
+        ...section,
+        modifiers: section.modifiers.map((modifier) => {
+          const standalonePlu = String(modifier.standalonePlu || '').trim();
+          const product = standalonePlu
+            ? normalProducts.find((candidate) => candidate.plu === standalonePlu)
+            : undefined;
+
+          if (!standalonePlu || !product) {
+            return {
+              ...modifier,
+              standalonePlu: undefined,
+              standalonePriceMinor: undefined,
+            };
+          }
+
+          const shelfPrice = priceMinor(product);
+          if (
+            product.active === false ||
+            product.stockStatus === 'OUT_OF_STOCK' ||
+            shelfPrice === undefined
+          ) {
+            return {
+              ...modifier,
+              standalonePriceMinor: undefined,
+            };
+          }
+
+          return {
+            ...modifier,
+            standalonePlu: product.plu,
+            standalonePriceMinor: shelfPrice,
+          };
+        }),
+      })),
+    };
+    authoritativeBundle.modifierGroups = authoritativeBundle.sections;
+
+    const selectionByKey = new Map(
+      request.selections.map((selection) => [
+        `${selection.sectionId}:${selection.modifierId}`,
+        selection,
+      ])
+    );
+    const selectedModifiers: SelectedBundleModifier[] = [];
+
+    for (const section of authoritativeBundle.sections) {
+      for (const modifier of section.modifiers) {
+        const selected = selectionByKey.get(`${section.id}:${modifier.id}`);
+        if (!selected) continue;
+        selectedModifiers.push({
+          modifierId: modifier.id,
+          plu: modifier.plu,
+          name: modifier.name,
+          quantity: selected.quantity,
+          price: modifier.priceMinor ?? modifier.price ?? 0,
+          priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+          standalonePlu: modifier.standalonePlu,
+          standalonePriceMinor: modifier.standalonePriceMinor,
+          sectionId: section.id,
+          sectionName: section.name,
+        });
+      }
+    }
+
+    if (selectedModifiers.length !== request.selections.length) {
+      throw new CommerceError(
+        'INVALID_BUNDLE_SELECTION',
+        'One or more selected bundle components are not valid for this store.'
+      );
+    }
+
+    let allocation;
+    try {
+      allocation = allocateProtectedBundlePrices(
+        authoritativeBundle,
+        selectedModifiers,
+        request.quantity || 1
+      );
+    } catch (error: any) {
+      throw new CommerceError(
+        'INVALID_BUNDLE_SELECTION',
+        error?.message || 'Bundle selection could not be priced safely.'
+      );
+    }
+
+    const desired = toCommerceItemInputs(current);
+
+    // The bundle parent is deliberately NOT added to Deliverect. Every chosen
+    // component becomes a normal product line so Quest can amend/remove/substitute
+    // it independently.
+    for (const component of allocation.components) {
+      const product = normalProducts.find(
+        (candidate) => candidate.plu === component.componentPlu
+      );
+      if (
+        !product ||
+        product.active === false ||
+        product.stockStatus === 'OUT_OF_STOCK'
+      ) {
+        throw new CommerceError(
+          'PRODUCT_NOT_AVAILABLE',
+          `${component.componentName} is no longer available at this store.`
+        );
+      }
+
+      const existing = desired.find(
+        (candidate) => candidate.plu === component.componentPlu
+      );
+      if (existing) {
+        existing.quantity += component.quantity;
+      } else {
+        desired.push({
+          menuId,
+          plu: component.componentPlu,
+          quantity: component.quantity,
+        });
+      }
+    }
+
+    const bundleInstanceId = randomUUID();
+    const existingLedger = await FirestorePlatformService.getBasketBundleAllocations(
+      this.tenantId,
+      basketId
+    );
+
+    const isManagedBundleDiscount = (discount: any): boolean => {
+      const externalId = String(discount?.externalId || '');
+      const name = String(discount?.name || discount?.title || '');
+      return (
+        externalId.startsWith('bwydi-bundle:') ||
+        name.startsWith('Bwydi bundle:')
+      );
+    };
+
+    const originalDiscounts: CommerceBasketDiscountInput[] = Array.isArray(
+      rawBefore?.discounts
+    )
+      ? rawBefore.discounts
+      : [];
+    const nonBundleDiscounts = originalDiscounts.filter(
+      (discount) => !isManagedBundleDiscount(discount)
+    );
+
+    const managedDiscounts: CommerceBasketDiscountInput[] = [
+      ...existingLedger,
+      {
+        ...allocation,
+        bundleInstanceId,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+      .filter((entry) => entry.discountTotalMinor > 0)
+      .map((entry) => ({
+        type: 'order_flat_off',
+        provider: 'restaurant',
+        amount: entry.discountTotalMinor,
+        name: `Bwydi bundle: ${entry.bundleName}`,
+        externalId: `bwydi-bundle:${entry.bundleInstanceId}`,
+      }));
+
+    let itemsWritten = false;
+    let discountsWritten = false;
+    try {
+      const afterItems = await api.replaceItems(basketId, desired);
+      itemsWritten = true;
+
+      let afterPricing = afterItems;
+      const desiredDiscounts = [...nonBundleDiscounts, ...managedDiscounts];
+      if (
+        desiredDiscounts.length > 0 ||
+        originalDiscounts.length > 0
+      ) {
+        afterPricing = await api.updateDiscounts(
+          basketId,
+          desiredDiscounts
+        );
+        discountsWritten = true;
+      }
+
+      await FirestorePlatformService.saveBasketBundleAllocation(
+        this.tenantId,
+        basketId,
+        {
+          ...allocation,
+          bundleInstanceId,
+          createdAt: new Date().toISOString(),
+        }
+      );
+
+      const mapped = await this.mapLiveCommerceBasket(afterPricing);
+      if (
+        allocation.discountTotalMinor > 0 &&
+        mapped.discountTotal.amount < allocation.discountTotalMinor
+      ) {
+        throw new CommerceError(
+          'BUNDLE_DISCOUNT_NOT_APPLIED',
+          'Deliverect did not return the expected bundle discount. Basket was not accepted as safely priced.'
+        );
+      }
+
+      return mapped;
+    } catch (error) {
+      // Best-effort compensation. Do not knowingly leave an individual-item bundle
+      // half-applied if discount/ledger persistence failed after the item write.
+      if (itemsWritten) {
+        try {
+          await api.replaceItems(basketId, toCommerceItemInputs(current));
+          if (discountsWritten || originalDiscounts.length > 0) {
+            await api.updateDiscounts(basketId, originalDiscounts);
+          }
+        } catch (rollbackError) {
+          console.error(
+            '[DeliverectApiClient] Bundle basket rollback failed:',
+            rollbackError
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   async updateBasketCustomer(
@@ -2128,17 +2501,49 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const now = new Date().toISOString();
+    const resolvedChannelOrderReference = result.channelOrderId || channelOrderReference;
+    const channelLinkId = basket.channelLinkId || basket.storeId;
+
     return {
       checkoutId,
-      channelOrderReference: result.channelOrderId || channelOrderReference,
+      channelOrderReference: resolvedChannelOrderReference,
       tenantId: options?.tenantId || this.tenantId,
       storeId: basket.storeId,
-      channelLinkId: basket.channelLinkId || basket.storeId,
+      channelLinkId,
       status: 'CHECKOUT_PENDING_CONFIRMATION',
       basketId,
       fulfillmentType: 'pickup',
       total: basket.total,
       idempotencyKey: options?.idempotencyKey,
+      // Persist a provisional projection immediately. Deliverect creates the real
+      // order asynchronously, but Quest/webhook correlation must already have the
+      // basket lines and customer substitution choices available by checkoutId and
+      // channelOrderId before the first upstream callback arrives.
+      order: {
+        id: resolvedChannelOrderReference,
+        channelOrderId: resolvedChannelOrderReference,
+        channelOrderDisplayId: result.channelOrderDisplayId,
+        orderReference: resolvedChannelOrderReference,
+        basketId,
+        channelLinkId,
+        status: 'SUBMITTED',
+        fulfillmentType: 'pickup',
+        fulfillment: { type: 'pickup' },
+        originalBasket: {
+          id: basket.id,
+          fulfillmentType: 'pickup',
+          items: basket.items,
+          total: basket.total,
+          currency: basket.currency,
+        },
+        currentOrder: {
+          itemCount: basket.items.reduce((sum, item) => sum + item.quantity, 0),
+          total: basket.total,
+        },
+        paymentState: 'NO_CAPTURE_REQUIRED',
+        createdAt: now,
+        updatedAt: now,
+      },
       createdAt: now,
       updatedAt: now,
     };
@@ -2162,7 +2567,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const basket = await this.getMappedCommerceBasket(basketId);
     const orderId = String(
-      raw?.orderId || raw?.order?.id || raw?.order?._id || ''
+      raw?.orderId ||
+      raw?.order?.id ||
+      raw?.order?._id ||
+      raw?.order?.channelOrderRawId ||
+      raw?.order?.channelOrderId ||
+      raw?.channelOrderId ||
+      ''
     ).trim() || undefined;
 
     const now = new Date().toISOString();

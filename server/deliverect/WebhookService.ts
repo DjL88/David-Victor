@@ -368,20 +368,86 @@ export class WebhookService {
       ''
     ).toUpperCase();
 
-    const targetIdentifier = String(
-      payload.orderId ||
-      payload.channelOrderId ||
-      payload.channelOrderDisplayId ||
-      payload.channelOrderRawId ||
-      payload.orderReference ||
-      payload.checkoutId ||
-      payload.channelOrderReference ||
-      ''
-    ).trim();
+    const correlationCandidates = [
+      payload.orderId,
+      payload.order?.id,
+      payload.order?._id,
+      payload.data?.orderId,
+      payload.channelOrderId,
+      payload.order?.channelOrderId,
+      payload.channelOrderDisplayId,
+      payload.order?.channelOrderDisplayId,
+      payload.channelOrderRawId,
+      payload.orderReference,
+      payload.checkoutId,
+      payload.data?.checkoutId,
+      payload.checkout?.id,
+      payload.channelOrderReference,
+    ]
+      .map((value) => String(value || '').trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index);
 
-    let targetOrder = targetIdentifier
-      ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(targetIdentifier)
-      : null;
+    let targetOrder = null;
+    for (const candidate of correlationCandidates) {
+      targetOrder = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(candidate);
+      if (targetOrder) break;
+    }
+
+    // Backward-compatible checkout-only recovery for pending checkouts created before
+    // provisional order projections were introduced.
+    if (!targetOrder) {
+      const explicitCheckoutId = String(
+        payload.checkoutId || payload.data?.checkoutId || payload.checkout?.id || ''
+      ).trim();
+      const channelOrderReference = String(
+        payload.channelOrderId ||
+        payload.order?.channelOrderId ||
+        payload.channelOrderReference ||
+        ''
+      ).trim();
+
+      let checkout = explicitCheckoutId
+        ? await FirestorePlatformService.getCheckoutProjection(explicitCheckoutId)
+        : null;
+      if (!checkout && channelOrderReference) {
+        checkout = await FirestorePlatformService.getCheckoutByReference(channelOrderReference);
+      }
+
+      if (checkout && ['OPEN', 'COMPLETED', 'FAILED'].includes(rawStatus)) {
+        const upstreamOrderId = String(
+          payload.orderId ||
+          payload.order?.id ||
+          payload.order?._id ||
+          payload.data?.orderId ||
+          ''
+        ).trim() || undefined;
+
+        const checkoutState =
+          rawStatus === 'COMPLETED'
+            ? 'ORDER_CONFIRMED'
+            : rawStatus === 'FAILED'
+              ? 'ORDER_FAILED'
+              : 'CHECKOUT_PENDING_CONFIRMATION';
+
+        await FirestorePlatformService.updateCheckoutStatus(
+          checkout.checkoutId,
+          checkoutState,
+          {
+            orderId: upstreamOrderId || checkout.orderId,
+            failureReason: payload.failureReason || payload.reason,
+          }
+        );
+        await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+
+        return {
+          success: true,
+          eventId: webhookEventId,
+          status: 'PROCESSED',
+          orderId: upstreamOrderId || checkout.orderId,
+          newState: checkoutState,
+        };
+      }
+    }
 
     if (targetOrder) {
       const currentState = (targetOrder.status || 'SUBMITTED').toUpperCase();
@@ -518,17 +584,28 @@ export class WebhookService {
             payload.amendedQuantity ?? payload.suppliedQuantity ?? payload.quantity ?? payload.newQuantity ?? 0;
           const originalQuantity = existingItem?.originalQuantity || (existingItem as any)?.orderedQuantity || 1;
           const origPriceRaw = existingItem?.originalPrice || { amount: 0, currency: 'GBP' };
-          const origPriceAmount = typeof origPriceRaw === 'number' ? origPriceRaw : origPriceRaw.amount;
-          const unitPrice = originalQuantity > 0 ? origPriceAmount / originalQuantity : origPriceAmount;
-          const finalAmount =
+          const origUnitPrice =
+            typeof origPriceRaw === 'number' ? origPriceRaw : origPriceRaw.amount;
+
+          // Deliverect Retail item prices are unit prices in integer minor units.
+          // Quantity is applied separately by the final-amount calculator. If Quest
+          // amends quantity without sending a replacement unit price, preserve the
+          // original unit price. Dividing by originalQuantity here would undercharge
+          // every multi-quantity amendment.
+          const amendedUnitPrice =
             payload.amendedPrice !== undefined
               ? typeof payload.amendedPrice === 'number'
                 ? payload.amendedPrice
                 : payload.amendedPrice.amount
-              : Math.round(unitPrice * suppliedQuantity);
-          const finalPrice = typeof existingItem?.originalPrice === 'number'
-            ? finalAmount
-            : { amount: finalAmount, currency: (origPriceRaw as any).currency || 'GBP' };
+              : origUnitPrice;
+
+          const finalPrice: Money = {
+            amount: Math.round(amendedUnitPrice),
+            currency:
+              (typeof payload.amendedPrice === 'object' && payload.amendedPrice?.currency) ||
+              (typeof origPriceRaw === 'object' && origPriceRaw?.currency) ||
+              'GBP',
+          };
 
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'QUANTITY_AMENDED',
@@ -542,11 +619,15 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? payload.finalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount:
+            payload.newFinalAmount ?? payload.finalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
@@ -569,13 +650,19 @@ export class WebhookService {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
           const subPlu = payload.substitutePlu || payload.substitute?.plu || payload.newPlu || 'SUB_PLU';
           const subName = payload.substituteName || payload.substitute?.name || 'Alternative Product';
-          const subPriceRaw = payload.substitutePrice ?? payload.substitute?.price;
+          const subPriceRaw =
+            payload.substitutePrice ??
+            payload.substituteCatalogPrice ??
+            payload.substitute?.price;
           const subPriceAmount =
             typeof subPriceRaw === 'object' && subPriceRaw !== null
               ? subPriceRaw.amount
               : Number(subPriceRaw || 0);
 
-          const origPriceRaw = existingItem?.originalPrice;
+          const origPriceRaw =
+            existingItem?.originalPrice ??
+            payload.originalPrice ??
+            payload.item?.price;
           const origPriceAmount =
             typeof origPriceRaw === 'object' && origPriceRaw !== null
               ? origPriceRaw.amount
@@ -589,7 +676,15 @@ export class WebhookService {
               : 'BEST_MATCH';
 
           // Lower-of-Original-and-Substitute guarantee for Best Match substitutions
-          const chargedPriceAmount =
+          const preferredApprovedRaw = existingItem?.preferredSubstitutePrice;
+          const preferredApprovedAmount =
+            typeof preferredApprovedRaw === 'object' && preferredApprovedRaw !== null
+              ? preferredApprovedRaw.amount
+              : typeof preferredApprovedRaw === 'number'
+                ? preferredApprovedRaw
+                : undefined;
+
+          const requestedChargedPrice =
             payload.chargedPrice !== undefined
               ? typeof payload.chargedPrice === 'object'
                 ? payload.chargedPrice.amount
@@ -597,6 +692,18 @@ export class WebhookService {
               : subType === 'BEST_MATCH'
                 ? Math.min(origPriceAmount, subPriceAmount)
                 : subPriceAmount;
+
+          const chargedPriceAmount =
+            subType === 'CUSTOMER_SELECTED' &&
+            preferredApprovedAmount !== undefined
+              ? Math.min(requestedChargedPrice, preferredApprovedAmount)
+              : subType === 'BEST_MATCH'
+                ? Math.min(
+                    requestedChargedPrice,
+                    origPriceAmount,
+                    subPriceAmount
+                  )
+                : requestedChargedPrice;
 
           const currency = (origPriceRaw as any)?.currency || (existingItem?.originalPrice as any)?.currency || 'GBP';
           const finalPrice: Money = { amount: chargedPriceAmount, currency };
@@ -624,11 +731,14 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount: payload.newFinalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
@@ -654,11 +764,15 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? payload.finalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount:
+            payload.newFinalAmount ?? payload.finalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
@@ -805,9 +919,15 @@ export class WebhookService {
         };
       }
 
-      // Map incoming status to canonical customer status
+      // Map incoming status to canonical customer status. Commerce checkout
+      // webhooks use open -> completed/failed; picking/order webhooks use the
+      // order lifecycle states below.
       let canonicalState = rawStatus;
-      if (rawStatus === 'ACCEPTED' || rawStatus === 'STORE_ACCEPTED' || rawStatus === 'ORDER_ACCEPTED') {
+      if (rawStatus === 'OPEN') {
+        canonicalState = 'CHECKOUT_PENDING_CONFIRMATION';
+      } else if (rawStatus === 'COMPLETED') {
+        canonicalState = 'ORDER_CONFIRMED';
+      } else if (rawStatus === 'ACCEPTED' || rawStatus === 'STORE_ACCEPTED' || rawStatus === 'ORDER_ACCEPTED') {
         canonicalState = 'ACCEPTED';
       } else if (rawStatus === 'CONFIRMED' || rawStatus === 'ORDER_CONFIRMED') {
         canonicalState = 'ORDER_CONFIRMED';
@@ -820,11 +940,11 @@ export class WebhookService {
       } else if (rawStatus === 'CANCELLED' || rawStatus === 'ORDER_CANCELLED') {
         canonicalState = 'ORDER_CANCELLED';
       } else if (rawStatus === 'FAILED' || rawStatus === 'ORDER_FAILED') {
-        canonicalState = 'FAILED';
+        canonicalState = 'ORDER_FAILED';
       }
 
       // If order is cancelled or failed, execute settlement cancellation workflow via AsyncWorkerService
-      if (canonicalState === 'ORDER_CANCELLED' || canonicalState === 'FAILED') {
+      if (canonicalState === 'ORDER_CANCELLED' || canonicalState === 'ORDER_FAILED') {
         AsyncWorkerService.enqueueOrderCancellation({
           orderId: targetOrder.orderId,
           tenantId: targetOrder.tenantId,
@@ -875,19 +995,45 @@ export class WebhookService {
         }).catch((err) => console.error('[WebhookService] Analytics error:', err));
       }
 
-      // Update projection state in Firestore
+      const upstreamOrderId = String(
+        payload.orderId ||
+        payload.order?.id ||
+        payload.order?._id ||
+        payload.data?.orderId ||
+        ''
+      ).trim() || undefined;
+      const upstreamChannelOrderId = String(
+        payload.channelOrderId ||
+        payload.order?.channelOrderId ||
+        ''
+      ).trim() || undefined;
+      const upstreamDisplayId = String(
+        payload.channelOrderDisplayId ||
+        payload.order?.channelOrderDisplayId ||
+        ''
+      ).trim() || undefined;
+
+      // Update projection state and searchable correlation aliases in Firestore.
       await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, canonicalState, {
         updatedViaWebhookId: webhookEventId,
         amendments: payload.amendments,
         failureReason: payload.failureReason,
+        channelOrderRawId: upstreamOrderId,
+        channelOrderId: upstreamChannelOrderId,
+        channelOrderDisplayId: upstreamDisplayId,
       });
 
-      // Also update any active checkout projection
+      // Also update any active checkout projection. Prefer the real Deliverect order
+      // id once it is known; the order projection remains resolvable through the
+      // promoted channelOrderRawId alias.
       if (targetOrder.checkoutId) {
         await FirestorePlatformService.updateCheckoutStatus(
           targetOrder.checkoutId,
           canonicalState as any,
-          { orderId: targetOrder.orderId, failureReason: payload.failureReason }
+          {
+            orderId: upstreamOrderId || targetOrder.orderId,
+            failureReason: payload.failureReason || payload.reason,
+          }
         );
       }
 

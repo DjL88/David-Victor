@@ -335,51 +335,148 @@ export class PaymentService {
    * Enforces non-negative integer minor units.
    */
   static calculateAuthoritativeFinalAmount(order: OrderProjection): number {
-    // If picking items exist, derive exact subtotal from picked states
+    // If picking items exist, derive the exact payable subtotal from the frozen
+    // checkout price model and the actual Quest result.
     if (order.picking?.items && order.picking.items.length > 0) {
       let itemsSubtotal = 0;
+
+      const getItemPrice = (priceVal: any): number | undefined => {
+        if (typeof priceVal === 'number' && Number.isFinite(priceVal)) {
+          return Math.round(priceVal);
+        }
+        if (
+          priceVal &&
+          typeof priceVal.amount === 'number' &&
+          Number.isFinite(priceVal.amount)
+        ) {
+          return Math.round(priceVal.amount);
+        }
+        return undefined;
+      };
+
       for (const item of order.picking.items) {
-        const itemState = (item.state || (item as any).status || 'PENDING').toUpperCase();
+        const itemState = (
+          item.state ||
+          (item as any).status ||
+          'PENDING'
+        ).toUpperCase();
+
         if (itemState === 'REMOVED' || itemState === 'OUT_OF_STOCK') {
           continue;
         }
 
-        const qty = item.pickedQuantity !== undefined ? item.pickedQuantity : (item.originalQuantity ?? 1);
+        const qty =
+          item.pickedQuantity !== undefined
+            ? item.pickedQuantity
+            : (item.originalQuantity ?? 1);
         if (qty <= 0) continue;
 
-        const getItemPrice = (priceVal: any): number => {
-          if (typeof priceVal === 'number') return priceVal;
-          if (priceVal && typeof priceVal.amount === 'number') return priceVal.amount;
-          return 0;
-        };
+        const originalUnitPrice =
+          getItemPrice((item as any).price) ??
+          getItemPrice(item.originalPrice) ??
+          0;
+        const finalUnitPrice = getItemPrice(item.finalPrice);
+        const substituteUnitPrice =
+          getItemPrice((item as any).substitutedBy?.price) ??
+          getItemPrice(item.substitution?.substitutePrice);
+        const chargedSubstitutePrice = getItemPrice(
+          item.substitution?.chargedPrice
+        );
+
+        let effectiveUnitPrice: number;
 
         if (itemState === 'SUBSTITUTED') {
-          const finalPrice = getItemPrice(item.finalPrice);
-          if (finalPrice > 0) {
-            itemsSubtotal += Math.round(finalPrice * qty);
-          } else if ((item as any).substitutedBy?.price || item.substitution?.substitutePrice) {
-            const originalPrice = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
-            const substitutePrice = getItemPrice((item as any).substitutedBy?.price) || getItemPrice(item.substitution?.substitutePrice);
-            // Best-match price policy: customer pays lower of original or substitute
-            const effectiveUnitPrice = Math.min(originalPrice, substitutePrice);
-            itemsSubtotal += Math.round(effectiveUnitPrice * qty);
+          if (item.substitution?.type === 'CUSTOMER_SELECTED') {
+            // Customer-selected alternatives may exceed the protected/original
+            // item price, but never exceed the price the customer explicitly
+            // approved for that replacement.
+            const observedSubstitutePrice =
+              chargedSubstitutePrice ??
+              finalUnitPrice ??
+              substituteUnitPrice ??
+              originalUnitPrice;
+            const approvedPrice = getItemPrice(item.preferredSubstitutePrice);
+
+            effectiveUnitPrice =
+              approvedPrice !== undefined
+                ? Math.min(observedSubstitutePrice, approvedPrice)
+                : observedSubstitutePrice;
+          } else if (item.substitution?.type === 'BEST_MATCH') {
+            // Best Match can never increase the customer's price. Enforce the
+            // lower-of guarantee again at settlement even if an upstream event
+            // supplied a different chargedPrice.
+            const policyCap =
+              substituteUnitPrice !== undefined
+                ? Math.min(originalUnitPrice, substituteUnitPrice)
+                : originalUnitPrice;
+            const observedSubstitutePrice =
+              chargedSubstitutePrice ??
+              finalUnitPrice ??
+              substituteUnitPrice ??
+              originalUnitPrice;
+
+            effectiveUnitPrice = Math.min(
+              observedSubstitutePrice,
+              policyCap
+            );
           } else {
-            const price = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
-            itemsSubtotal += Math.round(price * qty);
+            // Legacy/imported order projections can mark a line SUBSTITUTED
+            // without recording the substitution policy. In that case preserve
+            // the authoritative final price rather than inventing Best Match.
+            effectiveUnitPrice =
+              chargedSubstitutePrice ??
+              finalUnitPrice ??
+              substituteUnitPrice ??
+              originalUnitPrice;
           }
         } else {
-          // PICKED, PENDING, etc.
-          const finalPrice = getItemPrice(item.finalPrice);
-          if (finalPrice > 0) {
-            itemsSubtotal += Math.round(finalPrice * qty);
+          effectiveUnitPrice =
+            finalUnitPrice !== undefined
+              ? finalUnitPrice
+              : originalUnitPrice;
+        }
+
+        effectiveUnitPrice = Math.max(0, Math.round(effectiveUnitPrice));
+
+        const protectedBundlePrices = (
+          item.bundlePricing?.protectedUnitPrices || []
+        )
+          .map((price) => getItemPrice(price))
+          .filter((price): price is number => price !== undefined)
+          .sort((a, b) => a - b);
+
+        const protectedQty = Math.min(qty, protectedBundlePrices.length);
+        const standaloneQty = Math.max(0, qty - protectedQty);
+
+        if (protectedQty > 0) {
+          if (
+            itemState === 'SUBSTITUTED' &&
+            item.substitution?.type === 'CUSTOMER_SELECTED'
+          ) {
+            // Explicitly approved replacement: the replacement price is allowed
+            // to exceed the bundle allocation, up to the approved amount.
+            itemsSubtotal += effectiveUnitPrice * protectedQty;
           } else {
-            const price = getItemPrice((item as any).price) || getItemPrice(item.originalPrice);
-            itemsSubtotal += Math.round(price * qty);
+            // Normal pick, quantity amendment, or Best Match: the frozen bundle
+            // allocation is a price ceiling. If the supplied item becomes cheaper,
+            // the customer receives the lower price.
+            for (let i = 0; i < protectedQty; i++) {
+              itemsSubtotal += Math.min(
+                protectedBundlePrices[i],
+                effectiveUnitPrice
+              );
+            }
           }
         }
+
+        // Any units beyond the protected bundle pool are ordinary standalone
+        // units and retain the normal item/substitution pricing policy.
+        itemsSubtotal += effectiveUnitPrice * standaloneQty;
       }
 
-      // Calculate fees/charges from metadata if available
+      // Calculate non-item fees/charges from metadata if available. Bundle
+      // discounts are NOT subtracted here because they have already been
+      // converted into protected component unit prices at checkout.
       let nonItemCharges = 0;
       if (order.metadata?.charges && typeof order.metadata.charges === 'object') {
         for (const charge of Object.values(order.metadata.charges)) {
@@ -392,7 +489,8 @@ export class PaymentService {
       }
 
       const calculated = itemsSubtotal + nonItemCharges;
-      // Legitimate zero-value must remain 0; never fall back to order.total when picking items were processed
+      // Legitimate zero-value must remain 0; never fall back to order.total when
+      // picking items were processed.
       return Math.max(0, Math.round(calculated));
     }
 
@@ -404,7 +502,6 @@ export class PaymentService {
     // Fallback to order.total only when there genuinely is no picking or final amount data
     return Math.max(0, Math.round(order.total || 0));
   }
-
   /**
    * Final Payment Settlement Reconciliation (Phase 13, PAY-07, PAY-08).
    * 

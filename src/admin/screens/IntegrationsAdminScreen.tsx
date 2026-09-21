@@ -73,6 +73,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [commerceDiagnostics, setCommerceDiagnostics] = useState<any | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [menuInspection, setMenuInspection] = useState<any | null>(null);
 
   // Test Order Probe state
   const [testOrderChannelLinkId, setTestOrderChannelLinkId] = useState<string>('');
@@ -195,6 +196,29 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       URL.revokeObjectURL(url);
     } catch (err: any) {
       setDiagnosticsError(err.message || 'Could not download the menu JSON.');
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const runMenuInspection = async () => {
+    const store = discoveredStores.find((item) => selectedChannelLinkIds.includes(String(item.channelLinkId))) || discoveredStores[0];
+    if (!store) {
+      setDiagnosticsError('Discover and assign a store before inspecting its menu.');
+      return;
+    }
+    setDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      const menuId = testOrderMenuId || commerceDiagnostics?.storeCatalog?.activeMenuId || undefined;
+      const report = await defaultAdminClient.inspectStoreMenu(
+        tenantId,
+        store.id || store.channelLinkId,
+        menuId
+      );
+      setMenuInspection(report);
+    } catch (err: any) {
+      setDiagnosticsError(err.message || 'Could not inspect the published menu.');
     } finally {
       setDiagnosticsLoading(false);
     }
@@ -1291,6 +1315,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
             <button onClick={downloadRawMenu} disabled={diagnosticsLoading || discoveredStores.length === 0} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-gray-700 bg-gray-950 text-xs font-semibold text-cyan-300 hover:border-cyan-700 disabled:opacity-40">
               <Download className="w-3.5 h-3.5" /> Download received menu JSON
             </button>
+            <button onClick={runMenuInspection} disabled={diagnosticsLoading || discoveredStores.length === 0} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-gray-700 bg-gray-950 text-xs font-semibold text-purple-300 hover:border-purple-700 disabled:opacity-40">
+              <Layers className="w-3.5 h-3.5" /> Inspect published menu
+            </button>
             <div className="space-y-2.5 text-xs text-gray-400">
               <div className="flex items-center justify-between">
                 <span>OAuth Token:</span>
@@ -1351,6 +1378,39 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 <div className="text-gray-500 truncate">
                   Store Channel: {commerceDiagnostics.stores?.items?.[0]?.channelLinkId || 'N/A'}
                 </div>
+                {commerceDiagnostics.stores?.items?.[0]?.brandStoreId && (
+                  <div className="text-gray-500 truncate">
+                    Friendly Store ID: {commerceDiagnostics.stores.items[0].brandStoreId}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {menuInspection?.inspection && (
+              <div className="mt-3 pt-3 border-t border-gray-800 text-[11px] text-gray-400 space-y-1.5">
+                <div className="font-semibold text-purple-300">
+                  Menu Inspector · {menuInspection.inspection.menuName || menuInspection.inspection.menuId}
+                </div>
+                <div>
+                  {menuInspection.inspection.categoryCount} categories · {menuInspection.inspection.productCount} products
+                </div>
+                <div>
+                  Native hierarchy: {menuInspection.inspection.nativeHierarchyDetected ? 'Yes (subCategories present)' : 'No — sequential fallback required'}
+                </div>
+                <div>
+                  Structure issues: {menuInspection.inspection.issues?.length || 0}
+                </div>
+                <div>
+                  Merchandising flag: {menuInspection.inspection.merchandisingSummary?.explicitCategoryCount > 0 ? 'Explicit field detected' : 'Not exposed by received Commerce menu'}
+                </div>
+                {menuInspection.inspection.numericProductTagIds?.length > 0 && (
+                  <div className="text-amber-400">
+                    Numeric tag IDs in raw menu: {menuInspection.inspection.numericProductTagIds.join(', ')}
+                  </div>
+                )}
+                <p className="text-gray-500">
+                  {menuInspection.inspection.merchandisingSummary?.note}
+                </p>
               </div>
             )}
           </div>

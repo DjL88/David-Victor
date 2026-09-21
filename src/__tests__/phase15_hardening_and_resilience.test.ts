@@ -275,18 +275,42 @@ describe('Phase 15: Platform Hardening, Resilience & Observability', () => {
       }
     });
 
-    it('verifies non-demo adapters properly support basket sessions and live operations', async () => {
-      const { DeliverectApiClient } = await import('../../server/deliverect/DeliverectApiClient');
-      const client = new DeliverectApiClient();
+    it('verifies non-demo mode fails closed instead of falling back to mock basket operations', async () => {
+      const { getDeliverectAdapter, resetDeliverectAdapter } = await import('../../server/deliverect');
+      const { setServerRuntimeMode } = await import('../../server/runtimeMode');
 
-      const stores = await client.getStores();
-      const storeId = stores[0]?.id || 'store-chelmsford-central';
+      const previousClientId = process.env.DELIVERECT_CLIENT_ID;
+      const previousClientSecret = process.env.DELIVERECT_CLIENT_SECRET;
+      const previousAppMode = process.env.APP_MODE;
 
-      // Basket operations succeed and return an active basket
-      const basket = await client.createBasket(storeId, 'pickup');
-      expect(basket).toBeDefined();
-      expect(basket.id).toBeDefined();
-      expect(basket.fulfillmentType).toBe('pickup');
+      try {
+        delete process.env.DELIVERECT_CLIENT_ID;
+        delete process.env.DELIVERECT_CLIENT_SECRET;
+        setServerRuntimeMode('staging');
+        resetDeliverectAdapter();
+
+        // Use a unique tenant so no token-manager instance from another test can
+        // accidentally make this path look configured.
+        const adapter = getDeliverectAdapter('ci-unconfigured-tenant', 'staging', 'default');
+        expect(adapter.adapterName).toBe('IntegrationUnavailableAdapter');
+
+        await expect(
+          adapter.createBasket('store-chelmsford-central', 'pickup')
+        ).rejects.toMatchObject({
+          statusCode: 503,
+          code: 'INTEGRATION_NOT_CONFIGURED',
+        });
+      } finally {
+        if (previousClientId === undefined) delete process.env.DELIVERECT_CLIENT_ID;
+        else process.env.DELIVERECT_CLIENT_ID = previousClientId;
+
+        if (previousClientSecret === undefined) delete process.env.DELIVERECT_CLIENT_SECRET;
+        else process.env.DELIVERECT_CLIENT_SECRET = previousClientSecret;
+
+        setServerRuntimeMode(null);
+        if (previousAppMode !== undefined) process.env.APP_MODE = previousAppMode;
+        resetDeliverectAdapter();
+      }
     });
   });
 

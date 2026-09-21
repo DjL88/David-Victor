@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import crypto from 'crypto';
 import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/WebhookService';
 import { SubstitutionCallbackService } from '../../server/deliverect/SubstitutionCallbackService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { PaymentService } from '../../server/deliverect/PaymentService';
+import { AsyncWorkerService } from '../../server/asyncWorkerService';
+import { DispatchOrchestrationService } from '../../server/deliverect/DispatchOrchestrationService';
 
 describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01 to QST-05, WH-04)', () => {
   const testTenant = 'brand-alpha';
@@ -99,8 +102,10 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect(updated?.picking?.status).toBe('IN_PROGRESS');
     });
 
-    it('handles PICKING_COMPLETE and transitions order status to PICKED / ready', async () => {
+    it('handles PICKING_COMPLETE for Collection without Dispatch or payment capture settlement', async () => {
       const orderId = `quest_ord_${Date.now()}_02`;
+      const settlementSpy = vi.spyOn(AsyncWorkerService, 'enqueuePaymentSettlement');
+      const dispatchSpy = vi.spyOn(DispatchOrchestrationService, 'handlePickingCompleted');
       const initialOrder = {
         orderId,
         channelLinkId: 'store-1',
@@ -142,6 +147,14 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.status).toBe('PICKED');
       expect(updated?.picking?.status).toBe('COMPLETED');
+      expect(updated?.fulfillmentType).toBe('pickup');
+      expect(updated?.paymentState).toBe('NO_CAPTURE_REQUIRED');
+      expect(updated?.dispatch).toBeUndefined();
+      expect(settlementSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy).not.toHaveBeenCalled();
+
+      settlementSpy.mockRestore();
+      dispatchSpy.mockRestore();
     });
   });
 
@@ -215,7 +228,7 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.picking?.hasChanges).toBe(true);
       expect(updated?.status).toBe('PICKING_WITH_CHANGES');
-      expect(updated?.finalAmount).toBe(800);
+      expect(updated?.finalAmount).toBe(250); // derived from supplied picking state; upstream total is informational only
 
       const removedItem = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BERRIES');
       expect(removedItem?.state).toBe('REMOVED');
@@ -228,6 +241,68 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
   // QST-03: Quantity Amendments (Catch-weight / Partial Stock)
   // ========================================================
   describe('QST-03: Quantity Amendment (ITEM_QUANTITY_AMENDED)', () => {
+    it('preserves unit price when Quest reduces quantity without sending a replacement price', async () => {
+      const orderId = `quest_ord_${Date.now()}_04_unit_price`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 900,
+        authorizedMaximum: 900,
+        finalAmount: 900,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-unit-price',
+              plu: 'PLU-UNIT-PRICE',
+              name: 'Three Pack Item',
+              orderedQuantity: 3,
+              originalQuantity: 3,
+              pickedQuantity: 0,
+              originalPrice: { amount: 300, currency: 'GBP' },
+              finalPrice: { amount: 300, currency: 'GBP' },
+              state: 'PENDING' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const amendPayload = JSON.stringify({
+        event: 'ITEM_QUANTITY_AMENDED',
+        orderId,
+        plu: 'PLU-UNIT-PRICE',
+        amendedQuantity: 2,
+        reason: 'Only two available',
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(amendPayload),
+        amendPayload,
+        buildSignatureHeaders(amendPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-UNIT-PRICE');
+
+      expect(amended?.pickedQuantity).toBe(2);
+      expect((amended?.finalPrice as any)?.amount).toBe(300);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(600);
+    });
+
     it('updates item quantity and line price', async () => {
       const orderId = `quest_ord_${Date.now()}_04`;
       const initialOrder = {
@@ -287,12 +362,13 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.picking?.hasChanges).toBe(true);
       expect(updated?.status).toBe('PICKING_WITH_CHANGES');
-      expect(updated?.finalAmount).toBe(1400);
+      expect(updated?.finalAmount).toBe(400); // 2 supplied x £2.00 unit price; do not trust upstream aggregate total
 
       const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BANANAS');
       expect(amended?.state).toBe('QUANTITY_AMENDED');
       expect(amended?.pickedQuantity).toBe(2);
-      expect(amended?.finalPrice).toBe(200);
+      expect((amended?.finalPrice as any)?.amount).toBe(200);
+      expect((amended?.finalPrice as any)?.currency).toBe('GBP');
       expect(amended?.amendment?.reason).toContain('Only 2 bunches available');
     });
   });

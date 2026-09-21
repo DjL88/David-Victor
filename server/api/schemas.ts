@@ -70,6 +70,45 @@ export const UpdateBasketItemsSchema = z.object({
   preferredSubstitutePrice: z.any().optional(),
 });
 
+export const AddBasketBundleSchema = z
+  .object({
+    bundleId: z.string().min(1).optional(),
+    bundlePlu: z.string().min(1).optional(),
+    quantity: z.number().int().min(1).max(99).optional().default(1),
+    selections: z
+      .array(
+        z.object({
+          sectionId: z.string().min(1),
+          modifierId: z.string().min(1),
+          quantity: z.number().int().min(1).max(99),
+        })
+      )
+      .min(1),
+  })
+  .refine((value) => Boolean(value.bundleId || value.bundlePlu), {
+    message: 'bundleId or bundlePlu is required',
+  });
+
+export const UpdateBasketItemSubstitutionSchema = z.object({
+  preference: z.enum([
+    'BEST_MATCH',
+    'CUSTOMER_SELECTED',
+    'REMOVE_IF_UNAVAILABLE',
+    'CANCEL_ORDER_IF_UNAVAILABLE',
+    'DO_NOT_SUBSTITUTE',
+  ]),
+  substituteCandidatePlus: z.array(z.string()).optional(),
+  preferredSubstitutePlu: z.string().optional(),
+  preferredSubstituteName: z.string().optional(),
+  preferredSubstitutePrice: z
+    .object({
+      amount: z.number().int().min(0),
+      currency: z.string().min(1),
+      fractionalDigits: z.number().int().min(0).max(6).optional(),
+    })
+    .optional(),
+});
+
 export const UpdateBasketCustomerSchema = z.object({
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -168,7 +207,7 @@ export const CheckoutBasketOptionsSchema = z
     customerEmail: z.string().email('Invalid customer email').optional(),
     customerPhone: z.string().optional(),
     deliveryAddress: z.any().optional(),
-    fulfillmentType: z.enum(['delivery', 'collection']).optional(),
+    fulfillmentType: z.enum(['delivery', 'pickup', 'collection']).optional(),
     substitutionPolicy: z.any().optional(),
     scheduledSlot: z.any().optional(),
     paymentMethod: z.any().optional(),

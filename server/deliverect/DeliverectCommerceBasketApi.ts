@@ -38,6 +38,26 @@ export interface CommerceBasketCustomerInput {
   externalId?: string;
 }
 
+export interface CommerceBasketDiscountInput {
+  type:
+    | 'order_flat_off'
+    | 'order_percent_off'
+    | 'item_free'
+    | 'item_bogof'
+    | 'item_flat_off'
+    | 'item_percent_off'
+    | 'wallet_cash'
+    | 'compensation_card';
+  provider: 'restaurant' | 'coupon' | 'loyalty';
+  amount?: number;
+  value?: number;
+  name?: string;
+  plu?: string;
+  menuId?: string;
+  externalId?: string | null;
+  itemIds?: string[];
+}
+
 export interface CommerceBasketStoreInput {
   storeId?: string;
   channelLinkId?: string;
@@ -273,6 +293,14 @@ export class DeliverectCommerceBasketApiClient {
   ): Promise<JsonObject> {
     const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/customer`;
     return this.request('PATCH', path, customer, 'Update basket customer');
+  }
+
+  async updateDiscounts(
+    basketId: string,
+    discounts: CommerceBasketDiscountInput[]
+  ): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/discounts`;
+    return this.request('PATCH', path, discounts, 'Update basket discounts');
   }
 
   async updateStore(

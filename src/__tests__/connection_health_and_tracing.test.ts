@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConnectionHealthService } from '../../server/deliverect/ConnectionHealthService';
 import { linkedAccountsAdapter } from '../../server/deliverect/LinkedAccountsAdapter';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { resetDeliverectAdapter, setDeliverectAdapter } from '../../server/deliverect';
 
 describe('Connection Health & 5-Stage Request Tracing', () => {
   let healthService: ConnectionHealthService;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetDeliverectAdapter();
+    // Success-path diagnostics must opt into demo explicitly. Missing APP_MODE is
+    // intentionally fail-closed to "unknown" and must never acquire mock data.
+    setServerRuntimeMode('demo');
     healthService = new ConnectionHealthService();
   });
 
@@ -41,6 +47,78 @@ describe('Connection Health & 5-Stage Request Tracing', () => {
 
   describe('5-Stage Request Tracing: Successful Trace', () => {
     it('traces through Upstream -> BFF -> HTTP Client -> Hook -> Visible Cards with verified counts at each stage', async () => {
+      vi.spyOn(linkedAccountsAdapter, 'getTenantMappings').mockResolvedValue({
+        tenantId: 'brand-alpha',
+        integration: {
+          status: 'CONNECTED',
+          deliverectAccountId: 'demo-account',
+          environment: 'staging',
+        },
+        accounts: [
+          {
+            accountLinkId: 'demo-account-link',
+            deliverectAccountId: 'demo-account',
+          },
+        ],
+        locations: [],
+        stores: [
+          {
+            id: 'store-01',
+            commerceStoreId: 'store-01',
+            channelLinkId: 'store-01',
+            accountLinkId: 'demo-account-link',
+            name: 'Demo Store',
+          },
+        ],
+      } as any);
+      setDeliverectAdapter(
+        {
+          adapterName: 'ConnectionTraceFixtureAdapter',
+          isConnected: true,
+          getStoreCatalog: vi.fn().mockResolvedValue({
+            id: 'menu-demo-store-01',
+            type: 'STORE',
+            menus: [{ id: 'menu-demo-store-01', name: 'Demo Store Menu' }],
+            categories: [{ id: 'cat-demo', name: 'Demo' }],
+            products: [
+              {
+                id: 'prod-demo-1',
+                plu: 'DEMO-1',
+                name: 'Demo Product',
+                active: true,
+                stockStatus: 'IN_STOCK',
+                price: { amount: 199, currency: 'GBP' },
+                categoryIds: ['cat-demo'],
+              },
+            ],
+            totalProducts: 1,
+            updatedAt: new Date().toISOString(),
+          }),
+          getRootCatalog: vi.fn().mockResolvedValue({
+            id: 'root-demo',
+            type: 'ROOT',
+            menus: [{ id: 'root-demo', name: 'Demo Root Menu' }],
+            categories: [{ id: 'cat-demo', name: 'Demo' }],
+            products: [
+              {
+                id: 'prod-demo-1',
+                plu: 'DEMO-1',
+                name: 'Demo Product',
+                active: true,
+                stockStatus: 'IN_STOCK',
+                price: { amount: 199, currency: 'GBP' },
+                categoryIds: ['cat-demo'],
+              },
+            ],
+            totalProducts: 1,
+            updatedAt: new Date().toISOString(),
+          }),
+        } as any,
+        'brand-alpha',
+        'staging',
+        'demo-account'
+      );
+
       const trace = await healthService.traceRequest({
         tenantId: 'brand-alpha',
         fulfillmentType: 'delivery',

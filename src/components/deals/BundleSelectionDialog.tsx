@@ -124,6 +124,8 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
             name: mod.name,
             price: mod.price,
             priceMinor: mod.price,
+            standalonePlu: mod.standalonePlu,
+            standalonePriceMinor: mod.standalonePriceMinor,
             quantity: qty,
             sectionId: group.id,
             sectionName: group.name,

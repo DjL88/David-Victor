@@ -12,6 +12,7 @@ import {
   calculateAuthorizationMaximum,
   calculatePreChosenAlternativeExtraBuffer,
   moneyToMajor,
+  moneyFromMajor,
 } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
@@ -90,11 +91,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Local authoritative basket & store state
   const [basket, setBasket] = useState<Basket | null>(initialBasket);
   const [store, setStore] = useState<Store | null>(initialStore);
+  const [customerName, setCustomerName] = useState(initialBasket?.customer?.name || '');
+  const [customerEmail, setCustomerEmail] = useState(initialBasket?.customer?.email || '');
+  const [customerPhone, setCustomerPhone] = useState(initialBasket?.customer?.phone || '');
+  const [customerDetailsError, setCustomerDetailsError] = useState<string | null>(null);
   const { products: storeProducts } = useCatalog(store?.id);
   const [phase, setPhase] = useState<CheckoutPhase>('review');
 
   // Confirmed Order Tracking
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
   const [isAdvancingStatus, setIsAdvancingStatus] = useState<boolean>(false);
 
   // Revalidation state
@@ -189,7 +195,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         undefined,
         preferredSubstitutePlu,
         preferredSubstituteName,
-        preferredSubstitutePrice
+        preferredSubstitutePrice !== undefined
+          ? moneyFromMajor(preferredSubstitutePrice, basket.currency)
+          : undefined
       );
       setBasket(updated);
       onBasketUpdated?.(updated);
@@ -306,20 +314,62 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!basket) return;
 
-    const isCollection = basket.fulfillmentType === 'pickup' || (basket.fulfillmentType as string) === 'collection';
+    const name = customerName.trim();
+    const email = customerEmail.trim();
+    const phone = customerPhone.trim();
+    const phoneDigits = phone.replace(/\D/g, '');
 
-    // Authoritative check before payment pre-authorisation: never silently assume availability for delivery
-    if (!isCollection) {
-      setIsAuthorizingDirect(true);
-      setRevalidationError(null);
-      try {
+    if (!name) {
+      setCustomerDetailsError('Please enter the name the store should use for this order.');
+      return;
+    }
+    if (!email && !phone) {
+      setCustomerDetailsError('Please provide an email address or phone number so the store can contact you.');
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCustomerDetailsError('Please enter a valid email address.');
+      return;
+    }
+    if (phone && phoneDigits.length < 7) {
+      setCustomerDetailsError('Please enter a valid phone number.');
+      return;
+    }
+    if (!defaultCommerceClient.updateBasketCustomer) {
+      setCustomerDetailsError('Customer details cannot be saved by the current checkout integration.');
+      return;
+    }
+
+    const isCollection =
+      basket.fulfillmentType === 'pickup' ||
+      (basket.fulfillmentType as string) === 'collection';
+
+    setIsAuthorizingDirect(true);
+    setRevalidationError(null);
+    setCustomerDetailsError(null);
+
+    try {
+      // Persist customer identity on the authoritative Deliverect basket before
+      // reconcile/checkout. The subsequent checkout() reads the reconciled basket
+      // and forwards these fields into the unpaid Collection checkout payload.
+      let checkoutBasket = await defaultCommerceClient.updateBasketCustomer(basket.id, {
+        name,
+        email: email || undefined,
+        phone: phone || undefined,
+      });
+      setBasket(checkoutBasket);
+      onBasketUpdated?.(checkoutBasket);
+
+      // Authoritative check before payment pre-authorisation: never silently assume
+      // availability for delivery. Collection intentionally skips Dispatch.
+      if (!isCollection) {
         if (!deliveryAddress) {
           setRevalidationError('Delivery address is required for delivery orders.');
-          setIsAuthorizingDirect(false);
           return;
         }
+
         const quoteCheck = await defaultCommerceClient.revalidateDelivery(
-          basket.id,
+          checkoutBasket.id,
           deliveryAddress
         );
         if (!quoteCheck.available) {
@@ -329,43 +379,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           );
           if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
           setCollectionEligible(quoteCheck.collectionEligible ?? true);
-          setIsAuthorizingDirect(false);
           return;
         }
         if (quoteCheck.dispatchValidationId) {
-          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
-          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+          checkoutBasket = {
+            ...checkoutBasket,
+            dispatchValidationId: quoteCheck.dispatchValidationId,
+            dispatchValidationExpiresAt: quoteCheck.dispatchValidationExpiresAt,
+          };
+          setBasket(checkoutBasket);
+          onBasketUpdated?.(checkoutBasket);
         }
-      } catch (err: any) {
-        setRevalidationError(
-          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
-        );
-        setIsAuthorizingDirect(false);
-        return;
       }
-    }
 
-    setIsAuthorizingDirect(true);
-    setRevalidationError(null);
-
-    try {
       let paymentTokenRef: string | undefined;
       let authorizationMaximum: Money | undefined;
 
       if (!isCollection) {
-        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(basket.storeId);
+        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(checkoutBasket.storeId);
         const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
         const calcMax = calculateAuthorizationMaximum(
-          basket.total,
+          checkoutBasket.total,
           true,
           policyBuffer,
-          basket.currency,
+          checkoutBasket.currency,
           preChosenBufferInfo.extraBufferAmount
         );
         authorizationMaximum = calcMax.authorizationMaximum;
         const token = await defaultPaymentClient.createToken({
           type: 'CARD',
-          cardholderName: 'Valued Customer',
+          cardholderName: name,
           last4: '4242',
         });
         paymentTokenRef = token.token;
@@ -373,42 +416,111 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       // For Collection, the chosen slot is a real basket property on Deliverect's side
       // (fulfillment.time), not a checkout-time option — update it on the basket first.
-      if (isCollection && schedulingType === 'SCHEDULED' && selectedSlot && defaultCommerceClient.updateBasketFulfillment) {
-        await defaultCommerceClient.updateBasketFulfillment(basket.id, { type: 'pickup', slot: selectedSlot });
+      if (
+        isCollection &&
+        schedulingType === 'SCHEDULED' &&
+        selectedSlot &&
+        defaultCommerceClient.updateBasketFulfillment
+      ) {
+        checkoutBasket = await defaultCommerceClient.updateBasketFulfillment(
+          checkoutBasket.id,
+          { type: 'pickup', slot: selectedSlot }
+        );
+        setBasket(checkoutBasket);
+        onBasketUpdated?.(checkoutBasket);
       }
 
-      const result = await defaultCommerceClient.checkoutBasket(basket.id, {
+      const result = await defaultCommerceClient.checkoutBasket(checkoutBasket.id, {
         paymentTokenRef,
         authorizationMaximum,
         schedulingType,
         slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
-        fulfillmentType: isCollection ? 'collection' : 'delivery',
+        fulfillmentType: isCollection ? 'pickup' : 'delivery',
         deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
-        dispatchValidationId: isCollection ? undefined : basket.dispatchValidationId,
-        dispatchValidationExpiresAt: isCollection ? undefined : basket.dispatchValidationExpiresAt,
+        dispatchValidationId: isCollection ? undefined : checkoutBasket.dispatchValidationId,
+        dispatchValidationExpiresAt: isCollection
+          ? undefined
+          : checkoutBasket.dispatchValidationExpiresAt,
       });
 
       const checkoutId = (result as any)?.checkoutId || (result as any)?.id;
-      if ((result as any)?.status === 'ORDER_CONFIRMED' || ((result as any)?.id && !(result as any)?.checkoutId)) {
-        const order = result as any;
-        setConfirmedOrder(order);
+      if (
+        (result as any)?.status === 'ORDER_CONFIRMED' ||
+        ((result as any)?.id && !(result as any)?.checkoutId)
+      ) {
+        const resultAny = result as any;
+        const resolvedOrderId =
+          resultAny.orderId ||
+          resultAny.order?.id ||
+          resultAny.order?._id ||
+          (resultAny.id && !resultAny.checkoutId ? resultAny.id : undefined);
+
+        let order: Order | null =
+          resultAny.order ||
+          (!resultAny.checkoutId && resultAny.id ? resultAny : null);
+
+        if (resolvedOrderId) {
+          setConfirmedOrderId(resolvedOrderId);
+        }
+
+        if (!order && resolvedOrderId) {
+          try {
+            order = await defaultCommerceClient.getOrder(resolvedOrderId);
+          } catch (detailError) {
+            // Checkout confirmation is authoritative. Order detail hydration may lag
+            // behind Deliverect's async order creation and must not turn success into failure.
+            console.warn(
+              '[Checkout] Order confirmed but order details are not available yet:',
+              detailError
+            );
+          }
+        }
+
+        if (order) {
+          setConfirmedOrder(order);
+        }
+
         defaultAnalyticsClient.track({
           type: AnalyticsEventType.ORDER_SUBMITTED,
           storeId: store?.id,
-          orderReferenceHash: order.orderReference || order.id,
+          orderReferenceHash:
+            order?.orderReference ||
+            order?.id ||
+            resolvedOrderId ||
+            checkoutId,
           properties: {
-            totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
-            currency: order.pricing?.total?.currency || 'GBP',
-            itemCount: order.items?.length || 0,
-            fulfillmentType: order.fulfillmentType || 'DELIVERY',
+            totalAmount:
+              order?.currentOrder?.total
+                ? moneyToMajor(order.currentOrder.total)
+                : moneyToMajor(checkoutBasket.total),
+            currency:
+              order?.currentOrder?.total?.currency ||
+              checkoutBasket.currency ||
+              'GBP',
+            itemCount:
+              order?.currentOrder?.itemCount ||
+              checkoutBasket.items.reduce((sum, item) => sum + item.quantity, 0),
+            fulfillmentType:
+              order?.fulfillment?.type ||
+              (order as any)?.fulfillmentType ||
+              (isCollection ? 'pickup' : 'delivery'),
           },
         });
-        onOrderSuccess(order.id);
+
+        if (resolvedOrderId) {
+          onOrderSuccess(resolvedOrderId);
+        }
+        setStatusMessage('Order confirmed!');
         setPhase('tracking');
       } else if (checkoutId) {
         setSessionId(checkoutId);
+        if (isCollection) setCheckoutStatus('placing_order');
         setPhase('polling_status');
-        setStatusMessage('Placing order with store & dispatching courier...');
+        setStatusMessage(
+          isCollection
+            ? 'Placing your collection order with the store...'
+            : 'Placing order with store & dispatching courier...'
+        );
 
         const pollInterval = setInterval(async () => {
           try {
@@ -418,8 +530,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               clearInterval(pollInterval);
               setStatusMessage('Order confirmed!');
               if (statusRes.orderId) {
-                const order = await defaultCommerceClient.getOrder(statusRes.orderId);
-                setConfirmedOrder(order);
+                setConfirmedOrderId(statusRes.orderId);
+                try {
+                  const order = await defaultCommerceClient.getOrder(statusRes.orderId);
+                  if (order) setConfirmedOrder(order);
+                } catch (detailError) {
+                  console.warn(
+                    '[Checkout] Order confirmed; order details are still syncing:',
+                    detailError
+                  );
+                }
                 onOrderSuccess(statusRes.orderId);
               }
               setPhase('tracking');
@@ -436,11 +556,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }, 1500);
       }
     } catch (err: any) {
-      setRevalidationError(err.message || 'Payment authorization failed');
+      setRevalidationError(
+        err.message ||
+          (isCollection ? 'Could not place collection order' : 'Payment authorization failed')
+      );
     } finally {
       setIsAuthorizingDirect(false);
     }
   };
+
+  useEffect(() => {
+    setCustomerName(initialBasket?.customer?.name || '');
+    setCustomerEmail(initialBasket?.customer?.email || '');
+    setCustomerPhone(initialBasket?.customer?.phone || '');
+    setCustomerDetailsError(null);
+    setConfirmedOrder(null);
+    setConfirmedOrderId(null);
+  }, [initialBasket?.id]);
 
   // Keep basket and store synced with props and track CHECKOUT_STARTED
   useEffect(() => {
@@ -538,43 +670,52 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleInitiatePayment = async () => {
     if (!basket) return;
 
+    if (
+      basket.fulfillmentType === 'pickup' ||
+      (basket.fulfillmentType as string) === 'collection'
+    ) {
+      setRevalidationError(
+        'Hosted payment is not used for Collection orders on the current live checkout path.'
+      );
+      return;
+    }
+
     if (snoozeAudit.hasSnoozedOrUnavailableItems) {
       setRevalidationError('Please swap or remove out-of-stock items before proceeding to payment.');
       return;
     }
 
-    // Authoritative check before payment pre-authorisation: never silently assume availability
-    if (basket.fulfillmentType !== 'pickup') {
-      setIsRevalidating(true);
-      setRevalidationError(null);
-      try {
-        const quoteCheck = await defaultCommerceClient.revalidateDelivery(
-          basket.id,
-          deliveryAddress
-        );
-        if (!quoteCheck.available) {
-          setRevalidationError(
-            quoteCheck.reason ||
-              'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
-          );
-          if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
-          setCollectionEligible(quoteCheck.collectionEligible ?? true);
-          setIsRevalidating(false);
-          return;
-        }
-        if (quoteCheck.dispatchValidationId) {
-          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
-          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
-        }
-      } catch (err: any) {
+    // Collection has already returned above, so this branch is delivery-only.
+    // Revalidate dispatch before opening a hosted payment session.
+    setIsRevalidating(true);
+    setRevalidationError(null);
+    try {
+      const quoteCheck = await defaultCommerceClient.revalidateDelivery(
+        basket.id,
+        deliveryAddress
+      );
+      if (!quoteCheck.available) {
         setRevalidationError(
-          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+          quoteCheck.reason ||
+            'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
         );
+        if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
+        setCollectionEligible(quoteCheck.collectionEligible ?? true);
         setIsRevalidating(false);
         return;
-      } finally {
-        setIsRevalidating(false);
       }
+      if (quoteCheck.dispatchValidationId) {
+        basket.dispatchValidationId = quoteCheck.dispatchValidationId;
+        basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+      }
+    } catch (err: any) {
+      setRevalidationError(
+        `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+      );
+      setIsRevalidating(false);
+      return;
+    } finally {
+      setIsRevalidating(false);
     }
 
     try {
@@ -608,8 +749,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           clearInterval(pollInterval);
           setStatusMessage('Order confirmed!');
           if (res.orderId) {
-            const order = await defaultCommerceClient.getOrder(res.orderId);
-            setConfirmedOrder(order);
+            setConfirmedOrderId(res.orderId);
+            try {
+              const order = await defaultCommerceClient.getOrder(res.orderId);
+              if (order) setConfirmedOrder(order);
+            } catch (detailError) {
+              console.warn(
+                '[Checkout] Payment/order confirmed; order details are still syncing:',
+                detailError
+              );
+            }
             onOrderSuccess(res.orderId);
           }
           setPhase('tracking');
@@ -625,6 +774,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }, 1200);
   };
+
+  // A confirmed checkout can precede the fully queryable order by a few seconds.
+  // Retry order hydration in the background without ever regressing the checkout
+  // back to a failure state.
+  useEffect(() => {
+    if (phase !== 'tracking' || !confirmedOrderId || confirmedOrder) return;
+
+    let cancelled = false;
+
+    const hydrateConfirmedOrder = async () => {
+      try {
+        const order = await defaultCommerceClient.getOrder(confirmedOrderId);
+        if (!cancelled && order) {
+          setConfirmedOrder(order);
+        }
+      } catch {
+        // Deliverect's async order projection may not be readable immediately.
+        // Keep the confirmed state and retry.
+      }
+    };
+
+    hydrateConfirmedOrder();
+    const interval = window.setInterval(hydrateConfirmedOrder, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [phase, confirmedOrderId, confirmedOrder]);
 
   // Advance Order Status (for live testing)
   const handleAdvanceOrder = async () => {
@@ -675,6 +853,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       defaultCommerceClient.setSimulationFlags({ simulatePaymentFailure: value });
     }
   };
+
+  const isCollectionBasket =
+    basket?.fulfillmentType === 'pickup' ||
+    (basket?.fulfillmentType as string | undefined) === 'collection';
 
   if (!isOpen || !basket) return null;
 
@@ -1239,6 +1421,69 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </ErrorBoundary>
 
+            {/* CUSTOMER CONTACT DETAILS */}
+            <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-3">
+              <div>
+                <h3 className="text-xs font-extrabold text-gray-900">Contact details</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Used by the store for this order. Enter a name plus an email address or phone number.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <label className="text-[11px] font-semibold text-gray-700 sm:col-span-2">
+                  Name
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="Name for collection"
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+
+                <label className="text-[11px] font-semibold text-gray-700">
+                  Email
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={customerEmail}
+                    onChange={(e) => {
+                      setCustomerEmail(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="you@example.com"
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+
+                <label className="text-[11px] font-semibold text-gray-700">
+                  Phone
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={customerPhone}
+                    onChange={(e) => {
+                      setCustomerPhone(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="+44 ..."
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+              </div>
+
+              {customerDetailsError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-800">
+                  {customerDetailsError}
+                </div>
+              )}
+            </div>
+
             {/* AUTHORITATIVE TOTALS BREAKDOWN */}
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2 text-xs">
               <div className="flex justify-between text-gray-700">
@@ -1284,33 +1529,47 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* GROCERY AUTHORIZATION NOTICE */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
-              <div className="flex items-center gap-1.5 font-bold">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Retail Grocery Payment Model</span>
+            {/* PAYMENT / COLLECTION CHECKOUT NOTICE */}
+            {isCollectionBasket ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Collection Order</span>
+                </div>
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  This Collection checkout is submitted directly to the store. No card
+                  pre-authorisation, payment capture, or courier dispatch is created on
+                  this order path.
+                </p>
               </div>
-              <p className="text-[11px] text-emerald-900 leading-relaxed">
-                You are <strong>not charged immediately</strong>. We pre-authorize up to{' '}
-                <strong>
-                  {formatCurrency(
-                    calculateAuthorizationMaximum(
-                      basket.total,
-                      true,
-                      0,
-                      basket.currency,
-                      preChosenBufferInfo.extraBufferAmount
-                    ).authorizationMaximum,
-                    currencySymbol
-                  )}
-                </strong>{' '}
-                (estimated total
-                {preChosenBufferInfo.extraBufferMajor > 0 ? (
-                  <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} pre-chosen alternative buffer</>
-                ) : null}
-                ). The final amount will only be captured when store picking completes.
-              </p>
-            </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Retail Grocery Payment Model</span>
+                </div>
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  You are <strong>not charged immediately</strong>. We pre-authorize up to{' '}
+                  <strong>
+                    {formatCurrency(
+                      calculateAuthorizationMaximum(
+                        basket.total,
+                        true,
+                        0,
+                        basket.currency,
+                        preChosenBufferInfo.extraBufferAmount
+                      ).authorizationMaximum,
+                      currencySymbol
+                    )}
+                  </strong>{' '}
+                  (estimated total
+                  {preChosenBufferInfo.extraBufferMajor > 0 ? (
+                    <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} pre-chosen alternative buffer</>
+                  ) : null}
+                  ). The final amount will only be captured when store picking completes.
+                </p>
+              </div>
+            )}
 
             {/* ACTION BUTTONS */}
             <div className="space-y-2 pt-1">
@@ -1332,16 +1591,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {isAuthorizingDirect ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Authorizing & Submitting...</span>
+                    <span>
+                      {isCollectionBasket ? 'Placing Collection Order...' : 'Authorizing & Submitting...'}
+                    </span>
                   </>
                 ) : (
                   <>
-                    <CreditCard className="w-4 h-4" />
+                    {isCollectionBasket ? (
+                      <ShoppingBag className="w-4 h-4" />
+                    ) : (
+                      <CreditCard className="w-4 h-4" />
+                    )}
                     <span>
                       {snoozeAudit.hasSnoozedOrUnavailableItems
                         ? 'Resolve Out of Stock Items Above'
                         : revalidationError || (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0)
                         ? 'Courier Dispatch Unavailable - Retry Above'
+                        : isCollectionBasket
+                        ? 'Place Collection Order'
                         : `Authorize & Place Order (up to ${formatCurrency(
                             calculateAuthorizationMaximum(
                               basket.total,
@@ -1357,27 +1624,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </button>
 
-              <button
-                type="button"
-                id="initiate-pay-btn"
-                onClick={handleInitiatePayment}
-                disabled={
-                  isAuthorizingDirect ||
-                  isRevalidating ||
-                  Boolean(revalidationError) ||
-                  (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0) ||
-                  snoozeAudit.hasSnoozedOrUnavailableItems ||
-                  isSwapping
-                }
-                className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <span>Or use Deliverect Pay Hosted Session</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {!isCollectionBasket && (
+                <button
+                  type="button"
+                  id="initiate-pay-btn"
+                  onClick={handleInitiatePayment}
+                  disabled={
+                    isAuthorizingDirect ||
+                    isRevalidating ||
+                    Boolean(revalidationError) ||
+                    secondsRemaining <= 0 ||
+                    snoozeAudit.hasSnoozedOrUnavailableItems ||
+                    isSwapping
+                  }
+                  className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Or use Deliverect Pay Hosted Session</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
 
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-gray-400">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Zero raw card exposure • PCI Tokenized Pre-Authorization</span>
+                <span>
+                  {isCollectionBasket
+                    ? 'No payment authorisation or courier dispatch for Collection'
+                    : 'Zero raw card exposure • PCI Tokenized Pre-Authorization'}
+                </span>
               </div>
             </div>
           </div>
@@ -1451,21 +1724,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Stepper showing async states */}
             <div className="max-w-xs mx-auto text-left space-y-2 text-xs">
-              {[
-                { key: 'preparing_payment', label: 'Preparing payment' },
-                { key: 'payment_authorised', label: 'Payment authorised' },
-                { key: 'placing_order', label: 'Placing order with store' },
-                { key: 'order_confirmed', label: 'Order confirmed' },
-              ].map((step, idx) => {
+              {(isCollectionBasket
+                ? [
+                    { key: 'placing_order', label: 'Placing collection order with store' },
+                    { key: 'order_confirmed', label: 'Order confirmed' },
+                  ]
+                : [
+                    { key: 'preparing_payment', label: 'Preparing payment' },
+                    { key: 'payment_authorised', label: 'Payment authorised' },
+                    { key: 'placing_order', label: 'Placing order with store' },
+                    { key: 'order_confirmed', label: 'Order confirmed' },
+                  ]
+              ).map((step, idx, steps) => {
                 const isCurrent = checkoutStatus === step.key;
-                const isPassed =
-                  (step.key === 'preparing_payment' &&
-                    ['payment_authorised', 'placing_order', 'order_confirmed'].includes(
-                      checkoutStatus
-                    )) ||
-                  (step.key === 'payment_authorised' &&
-                    ['placing_order', 'order_confirmed'].includes(checkoutStatus)) ||
-                  (step.key === 'placing_order' && checkoutStatus === 'order_confirmed');
+                const currentIndex = steps.findIndex((candidate) => candidate.key === checkoutStatus);
+                const isPassed = currentIndex > idx;
 
                 return (
                   <div key={step.key} className="flex items-center gap-2.5">
@@ -1506,10 +1779,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-gray-900">Payment Unsuccessful</h3>
+              <h3 className="text-lg font-black text-gray-900">
+                {isCollectionBasket ? 'Order Unsuccessful' : 'Payment Unsuccessful'}
+              </h3>
               <p className="text-xs text-red-700 font-semibold mt-1">{failureReason}</p>
               <p className="text-xs text-gray-500 mt-2 max-w-xs mx-auto">
-                No charges were captured on your account. Your basket items have been preserved.
+                {isCollectionBasket
+                  ? 'No payment was taken. Your basket items have been preserved.'
+                  : 'No charges were captured on your account. Your basket items have been preserved.'}
               </p>
             </div>
 
@@ -1524,7 +1801,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 style={primaryBtnStyle}
                 className="w-full py-3.5 rounded-2xl font-bold text-sm shadow-md"
               >
-                Try Payment Again
+                {isCollectionBasket ? 'Try Placing Order Again' : 'Try Payment Again'}
               </button>
 
               <button
@@ -1548,6 +1825,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               }}
               onBackToList={onClose}
             />
+          </div>
+        )}
+
+        {phase === 'tracking' && !confirmedOrder && (
+          <div className="p-6 rounded-3xl border border-emerald-200 bg-emerald-50 text-center space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+            <div>
+              <h3 className="text-base font-extrabold text-emerald-950">Order confirmed</h3>
+              <p className="mt-1 text-xs text-emerald-800">
+                The store has received your order. We&apos;re syncing the live order details now.
+              </p>
+              {confirmedOrderId && (
+                <p className="mt-2 text-[11px] font-mono text-emerald-700 break-all">
+                  {confirmedOrderId}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-emerald-800">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading order tracking…</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-2xl bg-white border border-emerald-200 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+            >
+              Close — order will remain confirmed
+            </button>
           </div>
         )}
       </div>

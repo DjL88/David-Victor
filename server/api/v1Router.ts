@@ -31,6 +31,8 @@ import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
+import { mergeCheckoutProjection } from '../deliverect/CheckoutProjectionMerge';
+import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
 
@@ -44,6 +46,8 @@ import {
   CreateBasketSchema,
   UpdateBasketItemSchema,
   UpdateBasketItemsSchema,
+  AddBasketBundleSchema,
+  UpdateBasketItemSubstitutionSchema,
   UpdateBasketCustomerSchema,
   UpdateBasketFulfillmentSchema,
   UpdateBasketStoreSchema,
@@ -847,6 +851,94 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
   }
 });
 
+v1Router.post(
+  '/baskets/:basketId/bundles',
+  validateBody(AddBasketBundleSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
+      if (!adapter.addBundleToBasket) {
+        return res.status(501).json({
+          error: 'Individual-line bundle basket writes are not implemented by the current commerce adapter.',
+          code: 'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED',
+        });
+      }
+
+      const basket = await adapter.addBundleToBasket(
+        req.params.basketId,
+        req.body
+      );
+      res.json(basket);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to add bundle to basket');
+    }
+  }
+);
+
+v1Router.patch(
+  '/baskets/:basketId/items/:plu/substitution',
+  validateBody(UpdateBasketItemSubstitutionSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
+      const basket = await adapter.getBasket(req.params.basketId);
+      if (!basket) {
+        return res.status(404).json({ error: 'Basket not found', code: 'BASKET_NOT_FOUND' });
+      }
+
+      const item = basket.items.find((candidate) => candidate.plu === req.params.plu);
+      if (!item) {
+        return res.status(404).json({
+          error: `Item ${req.params.plu} was not found in this basket.`,
+          code: 'BASKET_ITEM_NOT_FOUND',
+        });
+      }
+
+      const {
+        preference,
+        substituteCandidatePlus,
+        preferredSubstitutePlu,
+        preferredSubstituteName,
+        preferredSubstitutePrice,
+      } = req.body;
+
+      await FirestorePlatformService.saveBasketItemSubstitutionPreference(
+        tenantId,
+        req.params.basketId,
+        req.params.plu,
+        {
+          preference,
+          substituteCandidatePlus,
+          preferredSubstitutePlu,
+          preferredSubstituteName,
+          preferredSubstitutePrice,
+        }
+      );
+
+      res.json({
+        ...basket,
+        items: basket.items.map((candidate) =>
+          candidate.plu === req.params.plu
+            ? {
+                ...candidate,
+                substitutionPreference: preference,
+                substituteCandidatePlus,
+                preferredSubstitutePlu,
+                preferredSubstituteName,
+                preferredSubstitutePrice,
+              }
+            : candidate
+        ),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to update basket substitution preference');
+    }
+  }
+);
+
 v1Router.patch('/baskets/:basketId/customer', validateBody(UpdateBasketCustomerSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
@@ -1247,6 +1339,76 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
   }
 });
 
+async function persistRefreshedCheckout(
+  existingCheckout: CheckoutResult | null,
+  upstream: CheckoutResult,
+  resolvedTenant: string,
+  checkoutId: string
+): Promise<CheckoutResult> {
+  const merged = mergeCheckoutProjection(existingCheckout, upstream);
+  await FirestorePlatformService.saveCheckoutProjection(merged);
+
+  const existingOrder = await FirestorePlatformService.getOrderProjectionByCheckoutId(checkoutId);
+  const rawOrder: any = upstream.order;
+  const upstreamOrderId = String(
+    upstream.orderId ||
+    rawOrder?.id ||
+    rawOrder?._id ||
+    rawOrder?.orderId ||
+    ''
+  ).trim() || undefined;
+  const upstreamChannelOrderId = String(
+    rawOrder?.channelOrderId ||
+    upstream.channelOrderReference ||
+    ''
+  ).trim() || undefined;
+  const upstreamDisplayId = String(
+    rawOrder?.channelOrderDisplayId ||
+    rawOrder?.displayId ||
+    ''
+  ).trim() || undefined;
+
+  if (existingOrder) {
+    let nextState = existingOrder.status;
+    if (upstream.status === 'ORDER_CONFIRMED') nextState = 'ORDER_CONFIRMED';
+    else if (upstream.status === 'ORDER_FAILED') nextState = 'ORDER_FAILED';
+    else if (upstream.status === 'CANCELLED') nextState = 'CANCELLED';
+
+    await FirestorePlatformService.updateOrderProjectionState(existingOrder.orderId, nextState, {
+      channelOrderRawId: upstreamOrderId,
+      channelOrderId: upstreamChannelOrderId,
+      channelOrderDisplayId: upstreamDisplayId,
+    });
+  } else if (rawOrder) {
+    // Legacy recovery: old pending checkouts may pre-date provisional order
+    // persistence. Enrich only with values already known from the checkout; never
+    // invent delivery or payment state.
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        ...rawOrder,
+        basketId: rawOrder.basketId || merged.basketId,
+        channelOrderId: rawOrder.channelOrderId || merged.channelOrderReference,
+        channelOrderRawId: upstreamOrderId,
+        fulfillmentType:
+          rawOrder.fulfillment?.type ||
+          rawOrder.fulfillmentType ||
+          merged.fulfillmentType,
+        originalBasket: rawOrder.originalBasket || {
+          id: merged.basketId,
+          fulfillmentType: merged.fulfillmentType,
+          items: [],
+          total: merged.total,
+          currency: merged.total.currency,
+        },
+      },
+      resolvedTenant,
+      checkoutId
+    );
+  }
+
+  return merged;
+}
+
 v1Router.post(
   '/checkouts',
   checkoutAndPaymentRateLimiter.middleware(),
@@ -1355,6 +1517,13 @@ v1Router.post(
       const channelOrderReference = options?.channelOrderReference || order.orderReference || `ORD-${Date.now().toString().slice(-6)}`;
       const now = new Date().toISOString();
 
+      const fallbackFulfillmentType = order.fulfillment?.type;
+      if (fallbackFulfillmentType !== 'pickup' && fallbackFulfillmentType !== 'delivery') {
+        throw new Error(
+          'Checkout order is missing a supported fulfillment type. Refusing to default it to delivery.'
+        );
+      }
+
       checkoutResult = {
         checkoutId,
         channelOrderReference,
@@ -1364,7 +1533,7 @@ v1Router.post(
         channelLinkId: order.storeId,
         status: 'CHECKOUT_PENDING_CONFIRMATION',
         basketId,
-        fulfillmentType: (order.fulfillment?.type as any) || 'delivery',
+        fulfillmentType: fallbackFulfillmentType,
         total: order.originalBasket?.total || { amount: 0, currency: 'GBP' },
         idempotencyKey: options?.idempotencyKey,
         dispatchValidationId: options?.dispatchValidationId,
@@ -1383,16 +1552,21 @@ v1Router.post(
       if (!checkoutResult.order.payment && (options?.paymentId || checkoutResult.paymentId)) {
         (checkoutResult.order as any).paymentId = options?.paymentId || checkoutResult.paymentId;
       }
-      await FirestorePlatformService.saveOrderProjection(checkoutResult.order, resolvedTenant, checkoutResult.checkoutId);
+      const savedOrderProjection = await FirestorePlatformService.saveOrderProjection(
+        checkoutResult.order,
+        resolvedTenant,
+        checkoutResult.checkoutId
+      );
 
-      // Initialize dispatch lifecycle
+      // Initialize dispatch lifecycle from the canonical CheckoutResult fulfillment.
+      // Never infer delivery from a missing raw order field.
       const dispatchAdapter = getDispatchAdapter(resolvedTenant);
       await DispatchOrchestrationService.handleCheckoutCreated(
-        checkoutResult.order.id,
+        savedOrderProjection.orderId,
         resolvedTenant,
         dispatchAdapter,
         {
-          fulfillmentType: (checkoutResult.order.fulfillment?.type as any) || 'delivery',
+          fulfillmentType: checkoutResult.fulfillmentType,
           selectedQuote: (options as any)?.selectedQuote,
           quoteId: options?.selectedQuoteId || options?.dispatchValidationId,
           providerId: options?.selectedProviderId,
@@ -1434,15 +1608,12 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
         try {
           const upstream = await adapter.getCheckout(checkoutId);
           if (upstream) {
-            checkout = upstream;
-            await FirestorePlatformService.saveCheckoutProjection(upstream);
-            if (upstream.order) {
-              await FirestorePlatformService.saveOrderProjection(
-                upstream.order,
-                resolvedTenant,
-                checkoutId
-              );
-            }
+            checkout = await persistRefreshedCheckout(
+              checkout,
+              upstream,
+              resolvedTenant,
+              checkoutId
+            );
           }
         } catch (error) {
           if (!checkout) throw error;
@@ -1504,15 +1675,12 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
         try {
           const upstream = await adapter.getCheckout(checkoutId);
           if (upstream) {
-            checkout = upstream;
-            await FirestorePlatformService.saveCheckoutProjection(upstream);
-            if (upstream.order) {
-              await FirestorePlatformService.saveOrderProjection(
-                upstream.order,
-                resolvedTenant,
-                checkoutId
-              );
-            }
+            checkout = await persistRefreshedCheckout(
+              checkout,
+              upstream,
+              resolvedTenant,
+              checkoutId
+            );
           }
         } catch (error) {
           if (!checkout) throw error;
@@ -1658,7 +1826,7 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
     let order = await adapter.getOrder(orderId);
 
     // Merge or fall back to Firestore order projection for authoritative picking updates
-    const proj = await FirestorePlatformService.getOrderProjection(orderId);
+    const proj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
 
     // Section 26 & Item 18: Customer Access Control
     if (proj?.customerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
@@ -3895,6 +4063,10 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
           id: s.id,
           name: s.name,
           channelLinkId: s.channelLinkId,
+          channelLocationId: s.channelLocationId,
+          physicalLocationId: s.physicalLocationId,
+          deliverectLocationId: s.deliverectLocationId,
+          brandStoreId: s.brandStoreId,
           isOpen: s.isOpen,
         })),
       },
@@ -3909,6 +4081,8 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
         ? {
             id: storeCatalog.id,
             storeId: storeCatalog.storeId,
+            activeMenuId: storeCatalog.activeMenuId,
+            diagnostics: storeCatalog.diagnostics,
             menusCount: storeCatalog.menus?.length || 1,
             categoriesCount: storeCatalog.categories?.length || 0,
             productsCount: storeCatalog.products?.length || 0,
@@ -3936,6 +4110,44 @@ v1Router.get('/admin/tenants/:id/integration/raw-menu/:storeId', requireAdminAut
     res.json(result);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to download the Deliverect menu');
+  }
+});
+
+/**
+ * Validates the exact published Deliverect menu received for a tenant/store.
+ * This is diagnostic only: it never infers a merchandising flag that Deliverect
+ * did not actually expose in the payload.
+ */
+v1Router.get('/admin/tenants/:id/integration/menu-inspector/:storeId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const requestedMenuId = typeof req.query.menuId === 'string' ? req.query.menuId : undefined;
+    const adapter = await getDeliverectAdapterAsync(tenantId) as any;
+    if (typeof adapter.getRawStoreMenus !== 'function') {
+      return res.status(501).json({ error: 'Menu inspection is unavailable for this integration.', code: 'MENU_INSPECTION_NOT_SUPPORTED' });
+    }
+
+    const rawResult = await adapter.getRawStoreMenus(req.params.storeId);
+    const selectedMenu = selectRawMenu(rawResult?.payload, requestedMenuId);
+    if (!selectedMenu) {
+      return res.status(404).json({
+        error: requestedMenuId
+          ? `Menu ${requestedMenuId} was not found for assigned store ${req.params.storeId}.`
+          : `No published menu was returned for assigned store ${req.params.storeId}.`,
+        code: 'MENU_NOT_FOUND',
+      });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      accountId: rawResult.accountId,
+      channelLinkId: rawResult.channelLinkId,
+      storeId: rawResult.storeId,
+      receivedAt: rawResult.receivedAt,
+      inspection: inspectDeliverectMenu(selectedMenu),
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to inspect the Deliverect menu');
   }
 });
 
