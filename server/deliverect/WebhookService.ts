@@ -444,8 +444,11 @@ export class WebhookService {
           });
         }
         await FirestorePlatformService.updateOrderPickingState(targetOrder.orderId, { status: 'CANCELLED' });
+        // Do NOT set paymentState here: PaymentService.handleOrderCancellation (invoked
+        // below) reads order.paymentState to decide refund vs. void vs. no-op-for-unpaid,
+        // so writing 'RELEASED' first would corrupt that decision — it was previously
+        // set directly here, silently skipping the real refund/void logic entirely.
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'CANCELLED', {
-          paymentState: 'RELEASED',
           failureReason: payload.reason || 'Item unavailable: order cancelled per customer substitution policy',
           updatedViaWebhookId: webhookEventId,
         });
@@ -454,6 +457,22 @@ export class WebhookService {
             orderId: targetOrder.orderId,
             failureReason: payload.reason || 'Order cancelled per customer substitution policy',
           });
+        }
+        // Same real cancellation workflow as the general ORDER_CANCELLED/FAILED branch
+        // below: void/refund via PaymentService, notify, track analytics.
+        AsyncWorkerService.enqueueOrderCancellation({
+          orderId: targetOrder.orderId,
+          tenantId: targetOrder.tenantId,
+          reason: payload.reason || 'Item unavailable: order cancelled per customer substitution policy',
+        });
+        if (targetOrder.fulfillmentType === 'delivery') {
+          const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
+          DispatchOrchestrationService.handleOrderCancelled(
+            targetOrder.orderId,
+            targetOrder.tenantId,
+            dispatchAdapter,
+            payload.reason
+          ).catch((err) => console.warn('[WebhookService] Dispatch cancel error:', err));
         }
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
