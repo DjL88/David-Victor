@@ -401,7 +401,7 @@ export class PaymentService {
               approvedPrice !== undefined
                 ? Math.min(observedSubstitutePrice, approvedPrice)
                 : observedSubstitutePrice;
-          } else {
+          } else if (item.substitution?.type === 'BEST_MATCH') {
             // Best Match can never increase the customer's price. Enforce the
             // lower-of guarantee again at settlement even if an upstream event
             // supplied a different chargedPrice.
@@ -419,6 +419,15 @@ export class PaymentService {
               observedSubstitutePrice,
               policyCap
             );
+          } else {
+            // Legacy/imported order projections can mark a line SUBSTITUTED
+            // without recording the substitution policy. In that case preserve
+            // the authoritative final price rather than inventing Best Match.
+            effectiveUnitPrice =
+              chargedSubstitutePrice ??
+              finalUnitPrice ??
+              substituteUnitPrice ??
+              originalUnitPrice;
           }
         } else {
           effectiveUnitPrice =

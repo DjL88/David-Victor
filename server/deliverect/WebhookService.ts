@@ -650,13 +650,19 @@ export class WebhookService {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
           const subPlu = payload.substitutePlu || payload.substitute?.plu || payload.newPlu || 'SUB_PLU';
           const subName = payload.substituteName || payload.substitute?.name || 'Alternative Product';
-          const subPriceRaw = payload.substitutePrice ?? payload.substitute?.price;
+          const subPriceRaw =
+            payload.substitutePrice ??
+            payload.substituteCatalogPrice ??
+            payload.substitute?.price;
           const subPriceAmount =
             typeof subPriceRaw === 'object' && subPriceRaw !== null
               ? subPriceRaw.amount
               : Number(subPriceRaw || 0);
 
-          const origPriceRaw = existingItem?.originalPrice;
+          const origPriceRaw =
+            existingItem?.originalPrice ??
+            payload.originalPrice ??
+            payload.item?.price;
           const origPriceAmount =
             typeof origPriceRaw === 'object' && origPriceRaw !== null
               ? origPriceRaw.amount
