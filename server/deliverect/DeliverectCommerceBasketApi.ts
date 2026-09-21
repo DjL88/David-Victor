@@ -3,10 +3,12 @@
  *
  * Narrow, raw-contract client for the Deliverect Commerce basket -> checkout path.
  *
- * Verified Deliverect Commerce contracts used here:
+ * Verified Deliverect Commerce contracts used here (confirmed against the official
+ * Deliverect API reference at developers.deliverect.com, Ordering Experience v3.0):
  *   POST  /commerce/{accountId}/baskets
  *   GET   /commerce/{accountId}/baskets/{basketId}
  *   PATCH /commerce/{accountId}/baskets/{basketId}/items
+ *   PATCH /commerce/{accountId}/baskets/{basketId}/fulfillment
  *   POST  /commerce/{accountId}/baskets/{basketId}/reconcile
  *   POST  /commerce/{accountId}/v2/checkouts
  */
@@ -246,7 +248,11 @@ export class DeliverectCommerceBasketApiClient {
       storeId,
       fulfillment: {
         type: 'pickup',
-        ...(params.pickupTime ? { pickupTime: params.pickupTime } : {}),
+        // Deliverect's documented field is "time" (ISO datetime), not "pickupTime" —
+        // the latter is silently ignored by the API. Keeping the params field named
+        // pickupTime internally for clarity; only the outgoing JSON key must match
+        // Deliverect's contract.
+        ...(params.pickupTime ? { time: params.pickupTime } : {}),
         ...(params.pickupNotes ? { pickupNotes: params.pickupNotes } : {}),
       },
       ...(customerObj ? { customer: customerObj } : {}),
@@ -275,6 +281,20 @@ export class DeliverectCommerceBasketApiClient {
   ): Promise<JsonObject> {
     const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/store`;
     return this.request('PATCH', path, { storeId }, 'Update basket store');
+  }
+
+  /**
+   * PATCH /commerce/{accountId}/baskets/{basketId}/fulfillment
+   * Updates the fulfilment type and/or requested time on an existing basket.
+   * Pickup-only for now (matches the rest of this client); `time` is an ISO
+   * datetime string that must fall within the store's real operating hours.
+   */
+  async updateFulfillment(
+    basketId: string,
+    fulfillment: { type: 'pickup'; time?: string; pickupNotes?: string }
+  ): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/fulfillment`;
+    return this.request('PATCH', path, fulfillment, 'Update basket fulfillment');
   }
 
   async validateBasket(basketId: string): Promise<JsonObject> {
