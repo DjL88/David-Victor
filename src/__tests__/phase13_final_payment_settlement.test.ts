@@ -839,20 +839,16 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
   // 6. Staging / Production Deliverect DPay Adapter Safety Guard
   // ========================================================
   describe('Deliverect DPay Adapter Staging Verification Guard', () => {
-    it('throws 501 Not Implemented (TODO_DELIVERECT_VERIFY) on capture, refund, and reauthorize until staging contracts are confirmed', async () => {
+    it('guards final capture and ambiguous re-authorisation while verified Pay endpoints remain enabled', async () => {
       const stagingAdapter = new DeliverectDPayAdapter();
 
       await expect(
         stagingAdapter.capture('pay_123', 1500)
-      ).rejects.toThrow('TODO_DELIVERECT_VERIFY');
-
-      await expect(
-        stagingAdapter.refund('pay_123', 500, 'Damage')
-      ).rejects.toThrow('TODO_DELIVERECT_VERIFY');
+      ).rejects.toThrow(/manual capture/i);
 
       await expect(
         stagingAdapter.reauthorize('pay_123', 200)
-      ).rejects.toThrow('TODO_DELIVERECT_VERIFY');
+      ).rejects.toThrow(/amount semantics/i);
     });
   });
 });
