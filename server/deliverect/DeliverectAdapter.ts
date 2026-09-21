@@ -154,5 +154,6 @@ export interface DeliverectAdapter {
   confirmCheckoutDemo?(checkoutId: string): Promise<CheckoutResult | null>;
 
   getOrder(orderId: string): Promise<Order | null>;
-  advancePickingDemo(orderId: string): Promise<Order | null>;
+  /** Demo/sandbox-only capability: manually advances a simulated order's picking state. Not part of the live Deliverect contract. */
+  advancePickingDemo?(orderId: string): Promise<Order | null>;
 }

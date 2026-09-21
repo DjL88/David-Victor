@@ -489,10 +489,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
   async getProductTagDefinitions(forceRefresh = false): Promise<ProductTagDefinition[]> {
     if (!forceRefresh && this.tagDefinitionsCache && Date.now() - this.tagDefinitionsCache.loadedAt < DeliverectApiClient.TAG_CACHE_TTL_MS) return this.tagDefinitionsCache.definitions;
-    const token = await this.tokenManager.getAccessToken();
-    const response = await fetch(`${this.baseUrl}/allAllergens`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-    if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
-    const raw = await response.json() as any;
+    const raw = await circuitBreakers.commerce.execute(async () => {
+      const token = await this.tokenManager.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/allAllergens`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
+      return await response.json() as any;
+    });
     const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?._items) ? raw._items : Object.entries(raw || {}).map(([id, value]) => typeof value === 'string' ? { id, name: value } : { ...(value as any), id: (value as any)?.id ?? id });
     const definitions = items.map((item: any) => { const id = String(item.id ?? item._id ?? item.value ?? item.tagId ?? ''); const name = String(item.name ?? item.label ?? item.title ?? item.code ?? id); const type = item.type ?? item.category ?? item.group; const typeText = String(type ?? '').toLowerCase(); return { id, name, ...(type ? { type: String(type) } : {}), isAllergen: item.isAllergen === true || typeText.includes('allergen') }; }).filter((definition: ProductTagDefinition) => definition.id && definition.name);
     this.tagDefinitionsCache = { definitions, loadedAt: Date.now() };
@@ -1266,19 +1268,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
       store?.physicalLocationId ? `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(store.physicalLocationId)}/menus` : null,
     ].filter(Boolean) as string[];
 
-    let lastStatus = 502;
-    for (const url of urls) {
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-      lastStatus = response.status;
-      if (response.ok) {
-        return { accountId, channelLinkId, storeId, receivedAt: new Date().toISOString(), payload: await response.json() };
+    return await circuitBreakers.commerce.execute(async () => {
+      let lastStatus = 502;
+      for (const url of urls) {
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        lastStatus = response.status;
+        if (response.ok) {
+          return { accountId, channelLinkId, storeId, receivedAt: new Date().toISOString(), payload: await response.json() };
+        }
+        if (response.status !== 404) break;
       }
-      if (response.status !== 404) break;
-    }
-    const error: any = new Error(`Deliverect raw menu request failed: HTTP ${lastStatus} for assigned store ${storeId}`);
-    error.statusCode = 502;
-    error.code = 'DELIVERECT_RAW_MENU_UNAVAILABLE';
-    throw error;
+      const error: any = new Error(`Deliverect raw menu request failed: HTTP ${lastStatus} for assigned store ${storeId}`);
+      error.statusCode = 502;
+      error.code = 'DELIVERECT_RAW_MENU_UNAVAILABLE';
+      throw error;
+    });
   }
 
   async getBundleCatalog(
@@ -1908,10 +1912,6 @@ export class DeliverectApiClient implements DeliverectAdapter {
   }
 
   async getOrder(_orderId: string): Promise<Order | null> {
-    return null;
-  }
-
-  async advancePickingDemo(_orderId: string): Promise<Order | null> {
     return null;
   }
 }
