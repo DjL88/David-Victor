@@ -9,7 +9,11 @@ export interface BundleModifier {
   id: string;
   name: string;
   plu: string;
-  price: number; // Integer minor units: 0 for included, 50 for +50p uplift
+  /** Normal standalone product PLU used when exploding the bundle into pickable items. */
+  standalonePlu?: string;
+  /** Normal shelf price in integer minor units, used as the proportional allocation weight. */
+  standalonePriceMinor?: number;
+  price: number; // Bundle uplift in minor units: 0 for included, 50 for +50p uplift
   priceMinor?: number;
   priceFormatted?: string;
   active: boolean;
@@ -74,6 +78,9 @@ export interface SelectedBundleModifier {
   quantity: number;
   price: number;
   priceMinor: number;
+  /** Display/debug only; the BFF re-resolves these from authoritative catalogue data. */
+  standalonePlu?: string;
+  standalonePriceMinor?: number;
   sectionId: string;
   sectionName: string;
 }
@@ -282,6 +289,8 @@ export function validateBundleSelection(
           quantity: qty,
           price: modifier.price || modifier.priceMinor || 0,
           priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+          standalonePlu: modifier.standalonePlu,
+          standalonePriceMinor: modifier.standalonePriceMinor,
           sectionId: section.id,
           sectionName: section.name,
         });

@@ -753,6 +753,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const rawProductsMap = new Map<string, any>();
+    const rawStandaloneProductsByPlu = new Map<string, any>();
     const rawProducts: any[] = Array.isArray(rawMenu.products)
       ? rawMenu.products
       : rawMenu.products && typeof rawMenu.products === 'object'
@@ -762,6 +763,29 @@ export class DeliverectApiClient implements DeliverectAdapter {
     for (const p of rawProducts) {
       if (p && (p.id || p._id)) {
         rawProductsMap.set(String(p.id || p._id), p);
+      }
+
+      const productPlu = String(p?.plu || '').trim();
+      if (productPlu && !productPlu.includes('#')) {
+        const existing = rawStandaloneProductsByPlu.get(productPlu);
+        const candidatePrice =
+          typeof p?.price === 'number'
+            ? Math.round(p.price)
+            : typeof p?.priceMinor === 'number'
+              ? Math.round(p.priceMinor)
+              : -1;
+        const existingPrice =
+          typeof existing?.price === 'number'
+            ? Math.round(existing.price)
+            : typeof existing?.priceMinor === 'number'
+              ? Math.round(existing.priceMinor)
+              : -1;
+
+        // If duplicate PLUs exist, retain the normal priced item rather than a
+        // zero-value bundle/modifier variant.
+        if (!existing || candidatePrice > existingPrice) {
+          rawStandaloneProductsByPlu.set(productPlu, p);
+        }
       }
     }
 
@@ -851,7 +875,38 @@ export class DeliverectApiClient implements DeliverectAdapter {
             const modPlu = String(mData.plu || mRef.plu || mId);
             const modName = String(mData.name || mRef.name || modPlu);
 
-            // Component pricing: 0 for included, exact minor unit uplift for premium
+            // Deliverect commonly publishes a zero-value bundle variant such as
+            // DRN-03### and exposes the normal standalone PLU in referenceId. The
+            // storefront bundle is exploded into normal products at basket time, so
+            // retain the bundle uplift separately from the standalone shelf value.
+            const referencedStandalonePlu = String(
+              mData.referenceId ||
+              mRef.referenceId ||
+              mData.originalPlu ||
+              mRef.originalPlu ||
+              ''
+            ).trim();
+            const deDecoratedPlu = modPlu.replace(/#+$/g, '');
+            const standaloneCandidate =
+              (referencedStandalonePlu
+                ? rawStandaloneProductsByPlu.get(referencedStandalonePlu)
+                : undefined) ||
+              rawStandaloneProductsByPlu.get(deDecoratedPlu) ||
+              rawStandaloneProductsByPlu.get(modPlu);
+            const standalonePlu = String(
+              standaloneCandidate?.plu ||
+              referencedStandalonePlu ||
+              (deDecoratedPlu !== modPlu ? deDecoratedPlu : '')
+            ).trim() || undefined;
+            const standalonePriceMinor =
+              typeof standaloneCandidate?.price === 'number'
+                ? Math.round(standaloneCandidate.price)
+                : typeof standaloneCandidate?.priceMinor === 'number'
+                  ? Math.round(standaloneCandidate.priceMinor)
+                  : undefined;
+
+            // Component pricing here is the bundle-specific uplift only: 0 for
+            // included components, 100 for a +£1 premium choice, etc.
             const modPriceMinor = typeof mData.price === 'number' ? Math.round(mData.price) : (typeof mRef.price === 'number' ? Math.round(mRef.price) : 0);
 
             // Snooze & active evaluation
@@ -892,6 +947,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
               id: mId,
               name: modName,
               plu: modPlu,
+              standalonePlu,
+              standalonePriceMinor,
               price: modPriceMinor,
               priceMinor: modPriceMinor,
               active: !isModExplicitlyInactive,
