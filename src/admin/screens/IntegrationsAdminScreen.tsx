@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Package,
   Download,
+  Copy,
   ShoppingCart,
   Play,
   ChevronDown,
@@ -91,6 +92,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [testOrderResult, setTestOrderResult] = useState<any | null>(null);
   const [testOrderError, setTestOrderError] = useState<string | null>(null);
   const [showRawTestOrderJson, setShowRawTestOrderJson] = useState<boolean>(false);
+  const [copiedWebhookKey, setCopiedWebhookKey] = useState<string | null>(null);
 
   const addTestOrderItem = () => {
     setTestOrderAdditionalItems((prev) => [
@@ -471,6 +473,41 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   };
 
   const currentStatus = getStatusBadge(config.status);
+
+  const callbackOrigin =
+    typeof window !== 'undefined'
+      ? window.location.origin.replace(/\/$/, '')
+      : '';
+  const callbackIdentifier =
+    String(config.integrationId || tenantId || DEFAULT_TENANT_ID).trim();
+
+  const questRetailWebhookUrls = {
+    pickingStatus: callbackOrigin
+      ? `${callbackOrigin}/api/v1/webhooks/deliverect/${encodeURIComponent(
+          callbackIdentifier
+        )}/picking/status`
+      : '',
+    amendments: callbackOrigin
+      ? `${callbackOrigin}/api/v1/webhooks/deliverect/${encodeURIComponent(
+          callbackIdentifier
+        )}/picking/amendments`
+      : '',
+    substitutions: callbackOrigin
+      ? `${callbackOrigin}/api/v1/integrations/deliverect/orders/{channelOrderId}/substitute/{plu}`
+      : '',
+  };
+
+  const copyQuestWebhook = async (key: string, value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedWebhookKey(key);
+      window.setTimeout(() => setCopiedWebhookKey(null), 1800);
+    } catch (err) {
+      console.warn('Could not copy webhook URL:', err);
+      setError('Could not copy webhook URL. Select the URL and copy it manually.');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1294,6 +1331,78 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               </div>
               <p>
                 In staging and production, the platform does not allow mock fallback. Deliverect is authoritative for all menu items, prices, and inventory availability.
+              </p>
+            </div>
+          </div>
+
+          {/* Quest Retail callback provisioning */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-950/60 border border-cyan-800/50 flex items-center justify-center shrink-0">
+                <Radio className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Quest Retail Webhooks</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Copy these exact URLs into Deliverect Partner Integration → Order info.
+                </p>
+              </div>
+            </div>
+
+            {[
+              {
+                key: 'pickingStatus',
+                label: 'Order picking status webhook URL',
+                method: 'POST',
+                value: questRetailWebhookUrls.pickingStatus,
+              },
+              {
+                key: 'amendments',
+                label: 'Order amendments webhook URL',
+                method: 'POST',
+                value: questRetailWebhookUrls.amendments,
+              },
+              {
+                key: 'substitutions',
+                label: 'Order substitutions endpoint URL',
+                method: 'GET',
+                value: questRetailWebhookUrls.substitutions,
+              },
+            ].map((row) => (
+              <div key={row.key} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-semibold text-gray-300">
+                    {row.label}
+                  </label>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 text-cyan-300 border border-gray-700">
+                    {row.method}
+                  </span>
+                </div>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={row.value}
+                    className="min-w-0 flex-1 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2.5 text-[10px] font-mono text-gray-300 focus:outline-none focus:border-cyan-700"
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyQuestWebhook(row.key, row.value)}
+                    className="px-3 rounded-xl border border-gray-700 bg-gray-950 hover:bg-gray-800 text-gray-300 hover:text-white transition-colors flex items-center gap-1.5 text-[11px] font-semibold"
+                    title={`Copy ${row.label}`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copiedWebhookKey === row.key ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-900/60 text-[11px] text-cyan-100/80 space-y-1">
+              <div className="font-semibold text-cyan-300">Staging callback security</div>
+              <p>
+                The BFF verifies Deliverect HMAC signatures. In staging it also supports Deliverect&apos;s documented channelLinkId signing fallback when no dedicated HMAC secret is configured.
               </p>
             </div>
           </div>
