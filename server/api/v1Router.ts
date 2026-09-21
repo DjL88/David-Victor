@@ -1829,6 +1829,14 @@ v1Router.post(
 
     // Save GDPR-safe order projection in Firestore
     if (checkoutResult.order) {
+      const customerUid = await getCallerUid(req);
+      if (customerUid) {
+        (checkoutResult.order as any).customerUid = customerUid;
+        (checkoutResult.order as any).metadata = {
+          ...((checkoutResult.order as any).metadata || {}),
+          customerUid,
+        };
+      }
       if (!checkoutResult.order.payment && (options?.paymentId || checkoutResult.paymentId)) {
         (checkoutResult.order as any).paymentId = options?.paymentId || checkoutResult.paymentId;
       }
@@ -2243,6 +2251,115 @@ v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], asyn
       error: err.message,
       code,
     });
+  }
+});
+
+v1Router.get('/orders', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const customerUid = await getCallerUid(req);
+
+    if (!customerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
+      return res.status(401).json({
+        error: 'Sign in to view your order history.',
+        code: 'AUTH_REQUIRED',
+      });
+    }
+
+    const projections = customerUid
+      ? await FirestorePlatformService.listCustomerOrderProjections(
+          tenantId,
+          customerUid,
+          50
+        )
+      : await FirestorePlatformService.listOrderProjections(tenantId, 20);
+
+    const tenant = await FirestorePlatformService.getTenantConfig(tenantId);
+    const defaultCurrency = tenant?.currency || 'GBP';
+
+    const orders = projections.map((projection) => {
+      const currency =
+        projection.currency ||
+        projection.metadata?.currency ||
+        defaultCurrency;
+      const totalMinor =
+        projection.finalAmount ??
+        projection.total ??
+        0;
+      const itemCount =
+        projection.picking?.items?.reduce(
+          (sum, item) =>
+            sum +
+            Math.max(
+              0,
+              item.pickedQuantity || item.originalQuantity || 0
+            ),
+          0
+        ) ||
+        projection.itemsCount ||
+        0;
+
+      return {
+        id: projection.orderId,
+        displayId:
+          projection.channelOrderDisplayId ||
+          projection.orderReference ||
+          projection.channelOrderId ||
+          projection.orderId,
+        orderReference:
+          projection.orderReference ||
+          projection.channelOrderReference,
+        storeId: projection.channelLinkId || '',
+        storeName:
+          projection.metadata?.storeName ||
+          projection.metadata?.locationName ||
+          'Selected store',
+        createdAt: projection.createdAt,
+        updatedAt: projection.updatedAt,
+        status: projection.status,
+        fulfillment: {
+          type:
+            projection.fulfillmentType === 'pickup'
+              ? 'pickup'
+              : 'delivery',
+        },
+        currentOrder: {
+          itemCount,
+          total: { amount: totalMinor, currency },
+          subtotal: { amount: totalMinor, currency },
+        },
+        finalOrder:
+          projection.finalAmount !== undefined
+            ? {
+                total: {
+                  amount: projection.finalAmount,
+                  currency,
+                },
+              }
+            : undefined,
+        picking:
+          projection.picking || {
+            status: 'NOT_STARTED',
+            totalItems: projection.itemsCount || 0,
+            itemsPicked: 0,
+            hasChanges: false,
+            items: [],
+          },
+        payment: projection.paymentState
+          ? {
+              state: projection.paymentState,
+              paymentId: projection.paymentId,
+            }
+          : undefined,
+        dispatch: projection.dispatch,
+        destinationArea: projection.destinationArea,
+        estimatedDeliveryTime: projection.estimatedDeliveryTime,
+      };
+    });
+
+    res.json({ orders });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve customer orders');
   }
 });
 
