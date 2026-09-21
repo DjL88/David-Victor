@@ -834,7 +834,10 @@ export class HttpAdminClient implements AdminClient {
       headers,
       body: JSON.stringify(rule),
     });
-    if (!res.ok) throw new Error('Failed to save rule');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to save rule (HTTP ${res.status})`);
+    }
     return this.getProductRules(tenantId);
   }
 
@@ -844,7 +847,12 @@ export class HttpAdminClient implements AdminClient {
       method: 'DELETE',
       headers,
     });
-    return res.ok;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to delete rule (HTTP ${res.status})`);
+    }
+    const result = await res.json().catch(() => ({ success: true }));
+    return result.success !== false;
   }
 
   // NOT CONNECTED: no /admin/tenants/:id/country-rules BFF endpoint exists yet, so these
