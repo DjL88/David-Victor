@@ -23,6 +23,24 @@ export interface CommerceBasketItemInput {
   plu: string;
   quantity: number;
   note?: string;
+  /**
+   * Deliverect Retail/Quest per-item permissions when an item is unavailable.
+   * These are customer/channel permissions, not UI-only metadata.
+   */
+  itemUnavailableActions?: Array<
+    | 'ITEM_AMENDMENT'
+    | 'ITEM_REMOVE'
+    | 'ITEM_SUBSTITUTION'
+    | 'ITEM_SUBSTITUTION_CATALOG'
+    | 'ITEM_SUBSTITUTION_CUSTOMER'
+    | 'CANCEL_ORDER'
+  >;
+  substituteCandidate?: Array<{
+    plu: string;
+    name: string;
+    quantity?: number;
+    price?: number;
+  }>;
   subItems?: Array<{
     plu: string;
     customizationPlu?: string;

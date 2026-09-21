@@ -215,9 +215,39 @@ describe('individual-line bundle basket write', () => {
     });
 
     expect(replacedItems).toEqual([
-      { menuId: 'menu-1', plu: 'A', quantity: 1 },
-      { menuId: 'menu-1', plu: 'B', quantity: 1 },
-      { menuId: 'menu-1', plu: 'C', quantity: 1 },
+      expect.objectContaining({
+        menuId: 'menu-1',
+        plu: 'A',
+        quantity: 1,
+        itemUnavailableActions: [
+          'ITEM_AMENDMENT',
+          'ITEM_REMOVE',
+          'ITEM_SUBSTITUTION',
+          'ITEM_SUBSTITUTION_CATALOG',
+        ],
+      }),
+      expect.objectContaining({
+        menuId: 'menu-1',
+        plu: 'B',
+        quantity: 1,
+        itemUnavailableActions: [
+          'ITEM_AMENDMENT',
+          'ITEM_REMOVE',
+          'ITEM_SUBSTITUTION',
+          'ITEM_SUBSTITUTION_CATALOG',
+        ],
+      }),
+      expect.objectContaining({
+        menuId: 'menu-1',
+        plu: 'C',
+        quantity: 1,
+        itemUnavailableActions: [
+          'ITEM_AMENDMENT',
+          'ITEM_REMOVE',
+          'ITEM_SUBSTITUTION',
+          'ITEM_SUBSTITUTION_CATALOG',
+        ],
+      }),
     ]);
     expect(replacedItems.some((item) => item.plu === 'MEAL-DEAL-PARENT')).toBe(false);
 

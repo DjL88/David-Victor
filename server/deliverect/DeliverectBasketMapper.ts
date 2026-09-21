@@ -68,6 +68,41 @@ export type MappedBasket = Omit<Basket, 'items'> & {
   };
 };
 
+export type DeliverectItemUnavailableAction =
+  | 'ITEM_AMENDMENT'
+  | 'ITEM_REMOVE'
+  | 'ITEM_SUBSTITUTION'
+  | 'ITEM_SUBSTITUTION_CATALOG'
+  | 'ITEM_SUBSTITUTION_CUSTOMER'
+  | 'CANCEL_ORDER';
+
+/**
+ * Translate Bwydi's customer preference into Deliverect Retail/Quest's item-level
+ * unavailable-action contract. Quest only exposes amend/remove/replace controls
+ * when these permissions are present on the order item.
+ */
+export function buildQuestItemUnavailableActions(
+  preference?: SubstitutionPreferenceType | string
+): DeliverectItemUnavailableAction[] {
+  switch (String(preference || 'BEST_MATCH').toUpperCase()) {
+    case 'CUSTOMER_SELECTED':
+      return ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CUSTOMER'];
+    case 'CANCEL_ORDER_IF_UNAVAILABLE':
+      return ['ITEM_AMENDMENT', 'CANCEL_ORDER'];
+    case 'REMOVE_IF_UNAVAILABLE':
+    case 'DO_NOT_SUBSTITUTE':
+      return ['ITEM_AMENDMENT', 'ITEM_REMOVE'];
+    case 'BEST_MATCH':
+    default:
+      return [
+        'ITEM_AMENDMENT',
+        'ITEM_REMOVE',
+        'ITEM_SUBSTITUTION',
+        'ITEM_SUBSTITUTION_CATALOG',
+      ];
+  }
+}
+
 export class DeliverectBasketMappingError extends Error {
   readonly code: string;
   readonly field?: string;
@@ -210,6 +245,7 @@ function mapItem(
 
   const rawActions = asArray(raw?.itemUnavailableActions ?? raw?.unavailableActions).map((a) => String(a));
   if (rawActions.length > 0) {
+    (item as any).itemUnavailableActions = rawActions;
     (item as any).deliverectUnavailableActions = rawActions;
     item.allowQuantityAmendment = rawActions.includes('ITEM_AMENDMENT');
   }
@@ -412,16 +448,53 @@ export function mapDeliverectBasket(rawBasket: JsonObject, options: MapBasketOpt
 
 export function toCommerceItemInputs(
   basket: MappedBasket
-): Array<{ menuId: string; plu: string; quantity: number; note?: string; subItems?: any[] }> {
-  return basket.items.map((item) => ({
-    menuId: item.deliverect.menuId,
-    plu: item.plu,
-    quantity: item.quantity,
-    ...((item as any).note ? { note: (item as any).note } : {}),
-    ...(item.subItems && item.subItems.length > 0
-      ? { subItems: item.subItems.map((sub) => ({ plu: sub.plu, quantity: sub.quantity })) }
-      : {}),
-  }));
+): Array<{
+  menuId: string;
+  plu: string;
+  quantity: number;
+  note?: string;
+  subItems?: any[];
+  itemUnavailableActions: DeliverectItemUnavailableAction[];
+  substituteCandidate?: Array<{ plu: string; name: string; quantity?: number; price?: number }>;
+}> {
+  return basket.items.map((item) => {
+    const preference = item.substitutionPreference || 'BEST_MATCH';
+    const actions =
+      Array.isArray((item as any).itemUnavailableActions) &&
+      (item as any).itemUnavailableActions.length > 0
+        ? (item as any).itemUnavailableActions
+        : buildQuestItemUnavailableActions(preference);
+
+    const preferredPrice = (item as any).preferredSubstitutePrice;
+    const preferredPlu = String((item as any).preferredSubstitutePlu || '').trim();
+    const preferredName = String((item as any).preferredSubstituteName || preferredPlu).trim();
+
+    const substituteCandidate =
+      String(preference).toUpperCase() === 'CUSTOMER_SELECTED' && preferredPlu
+        ? [
+            {
+              plu: preferredPlu,
+              name: preferredName || preferredPlu,
+              quantity: item.quantity,
+              ...(preferredPrice && typeof preferredPrice.amount === 'number'
+                ? { price: Math.round(preferredPrice.amount) }
+                : {}),
+            },
+          ]
+        : undefined;
+
+    return {
+      menuId: item.deliverect.menuId,
+      plu: item.plu,
+      quantity: item.quantity,
+      ...((item as any).note ? { note: (item as any).note } : {}),
+      ...(item.subItems && item.subItems.length > 0
+        ? { subItems: item.subItems.map((sub) => ({ plu: sub.plu, quantity: sub.quantity })) }
+        : {}),
+      itemUnavailableActions: actions,
+      ...(substituteCandidate ? { substituteCandidate } : {}),
+    };
+  });
 }
 
 export { DeliverectMoneyError };

@@ -31,6 +31,10 @@ export function mergeCheckoutProjection(
       ? upstream.channelLinkId
       : existing.channelLinkId,
     basketId: nonEmpty(upstream.basketId) ? upstream.basketId : existing.basketId,
+    fulfillmentType:
+      upstream.fulfillmentType === 'pickup' || upstream.fulfillmentType === 'delivery'
+        ? upstream.fulfillmentType
+        : existing.fulfillmentType,
     total: upstream.total || existing.total,
     paymentId: nonEmpty(upstream.paymentId) ? upstream.paymentId : existing.paymentId,
     idempotencyKey: nonEmpty(upstream.idempotencyKey)

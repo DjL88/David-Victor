@@ -21,6 +21,8 @@ const FAILED_ORDER_STATES = new Set([
 ]);
 
 const CONFIRMED_ORDER_STATES = new Set([
+  // Deliverect Commerce checkout GET/webhook terminal success state.
+  'COMPLETED',
   'ORDER_CONFIRMED',
   'CONFIRMED',
   'STORE_ACCEPTED',
