@@ -72,6 +72,70 @@ describe('LinkedAccountsAdapter.getCommerceStores', () => {
     expect(result.stores[0].stateProjection).toBe('open');
   });
 
+  it('maps documented fulfillmentTypes pickup capability from Commerce Store responses', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        total: 1,
+        page: 1,
+        size: 50,
+        items: [
+          {
+            id: 'st_pickup_types',
+            name: 'Pickup Store',
+            status: 'open',
+            fulfillmentTypes: ['pickup'],
+          },
+        ],
+      }),
+    });
+
+    const result = await adapter.getCommerceStores('acc_pickup_types', 'tenant_retailer');
+
+    expect(result.count).toBe(1);
+    expect(result.stores[0].stateProjection).toBe('open');
+    expect(result.stores[0].fulfillmentCapabilitiesProjection).toEqual({
+      delivery: false,
+      pickup: true,
+      scheduling: false,
+      provenance: 'fulfillmentTypes',
+    });
+  });
+
+  it('maps documented settings.pickup.enabled capability from Commerce Store responses', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        total: 1,
+        page: 1,
+        size: 50,
+        items: [
+          {
+            id: 'st_pickup_settings',
+            name: 'Collection Store',
+            status: 'open',
+            settings: {
+              pickup: { enabled: true },
+              delivery: { enabled: false },
+            },
+          },
+        ],
+      }),
+    });
+
+    const result = await adapter.getCommerceStores('acc_pickup_settings', 'tenant_retailer');
+
+    expect(result.count).toBe(1);
+    expect(result.stores[0].fulfillmentCapabilitiesProjection).toEqual({
+      delivery: false,
+      pickup: true,
+      scheduling: false,
+      provenance: 'settings',
+    });
+  });
+
   it('paginates using returned total, page, and size', async () => {
     fetchMock
       .mockResolvedValueOnce({
