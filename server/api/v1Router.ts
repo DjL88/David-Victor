@@ -77,6 +77,7 @@ import {
   AssignDispatchSchema,
   CancelDispatchSchema,
   UpdateTenantDispatchRulesSchema,
+  SaveVisualRuleSchema,
   CreateTenantSchema,
   UpdateTenantConfigSchema,
   UpdateFeePolicySchema,
@@ -3375,7 +3376,7 @@ v1Router.get('/admin/tenants/:id/rules', requireAdminAuth(), async (req: Request
   }
 });
 
-v1Router.post('/admin/tenants/:id/rules', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/rules', requireAdminAuth('marketingEditor'), validateBody(SaveVisualRuleSchema), async (req: Request, res: Response) => {
   try {
     const rule = await FirestorePlatformService.saveTenantRule(req.params.id, req.body);
     await FirestorePlatformService.addAuditLog(req.params.id, {
