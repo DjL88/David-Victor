@@ -2606,13 +2606,31 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const basket = await this.mapLiveCommerceBasket(reconciledRaw);
     const context = await IntegrationContext.getContext(this.tenantId);
 
-    const channelName = String(context.channelName || '').trim().toLowerCase();
+    let channelName = String(context.channelName || '').trim().toLowerCase();
     if (!channelName) {
-      throw new CommerceError(
-        'INTEGRATION_NOT_CONFIGURED',
-        'Retail/Quest order submission requires the Deliverect Channel API scope/name. Configure integration.channelName or DELIVERECT_CHANNEL_NAME.',
-        503
-      );
+      const grantedChannelScopes =
+        await this.tokenManager.getChannelScopeNames();
+
+      if (grantedChannelScopes.length === 1) {
+        channelName = grantedChannelScopes[0];
+        console.log(
+          `[DeliverectApiClient] Derived Channel API name "${channelName}" from OAuth genericChannel scope.`
+        );
+      } else if (grantedChannelScopes.length === 0) {
+        throw new CommerceError(
+          'INTEGRATION_NOT_CONFIGURED',
+          'Retail/Quest ordering needs a Deliverect Channel API grant. The current OAuth credentials do not expose a genericChannel:<channel_scope> scope. Enable the Channel API scope for these credentials, or configure integration.channelName / DELIVERECT_CHANNEL_NAME if the OAuth provider omits scope metadata.',
+          503
+        );
+      } else {
+        throw new CommerceError(
+          'INTEGRATION_NOT_CONFIGURED',
+          `The OAuth credentials expose multiple Deliverect Channel scopes (${grantedChannelScopes.join(
+            ', '
+          )}). Configure integration.channelName or DELIVERECT_CHANNEL_NAME to choose the scope used for storefront orders.`,
+          503
+        );
+      }
     }
 
     const channelLinkId = String(basket.channelLinkId || basket.storeId || '').trim();
