@@ -4,6 +4,8 @@ import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
 const defaultCommerceClient = getCommerceClient() as any;
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useTenant } from '../../tenant/TenantContext';
+import { auth, onAuthStateChanged, signInWithGoogle, User as FirebaseUser } from '../../firebase';
 import { formatCurrency } from '../../utils/formatters';
 import { OrderTrackingView } from './OrderTrackingView';
 import {
@@ -22,12 +24,16 @@ import {
 
 export const OrdersScreen: React.FC = () => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { appMode, tenant } = useTenant();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
+  const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   const loadOrders = async () => {
     setLoading(true);
+    setError(null);
     try {
       const history = await defaultCommerceClient.getOrderHistory();
       setOrders(history);
@@ -36,15 +42,23 @@ export const OrdersScreen: React.FC = () => {
         const found = history.find((o) => o.id === selectedOrder.id);
         if (found) setSelectedOrder(found);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load orders', e);
+      setOrders([]);
+      setError(e?.code === 'AUTH_REQUIRED' || e?.status === 401
+        ? 'Sign in to see your previous and active orders.'
+        : (e?.message || 'Could not load your orders.'));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadOrders();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      void loadOrders();
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreateDemo = async (scenario: DemoScenario) => {
@@ -91,7 +105,8 @@ export const OrdersScreen: React.FC = () => {
         </button>
       </div>
 
-      {/* Demo Scenario Launcher Card */}
+      {/* Demo Scenario Launcher Card - never expose simulator controls in live storefronts */}
+      {appMode === 'demo' && (
       <div className="p-4 rounded-3xl bg-linear-to-r from-gray-900 via-gray-800 to-gray-900 text-white shadow-md space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -165,6 +180,7 @@ export const OrdersScreen: React.FC = () => {
           </button>
         </div>
       </div>
+      )}
 
       {/* Orders List */}
       <div className="space-y-3">
@@ -173,12 +189,26 @@ export const OrdersScreen: React.FC = () => {
         </h2>
 
         {orders.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 space-y-2">
+          <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 space-y-3">
             <Package className="w-10 h-10 text-gray-300 mx-auto" />
-            <p className="text-xs font-bold text-gray-700">No active orders yet</p>
-            <p className="text-xs text-gray-400">
-              Place an order from the shop or launch a scenario above to test the lifecycle.
+            <p className="text-sm font-bold text-gray-800">
+              {loading ? 'Loading your orders…' : currentUser ? 'No orders yet' : 'Sign in to view your orders'}
             </p>
+            <p className="text-xs text-gray-500 max-w-sm mx-auto">
+              {error || (currentUser
+                ? `Orders placed with ${tenant?.brandName || 'this store'} will appear here with live status updates.`
+                : 'Your order history is private and is only shown after you sign in.')}
+            </p>
+            {!currentUser && appMode !== 'demo' && (
+              <button
+                type="button"
+                onClick={() => signInWithGoogle().catch(() => undefined)}
+                style={primaryBtnStyle}
+                className="px-4 py-2 rounded-xl text-white text-xs font-bold"
+              >
+                Sign in
+              </button>
+            )}
           </div>
         ) : (
           orders.map((order) => {
@@ -215,8 +245,8 @@ export const OrdersScreen: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-gray-400" />
                     <span>
-                      {order.picking.items.length} items
-                      {order.picking.hasChanges && ' (with substitutions)'}
+                      {order.picking?.items?.length ?? order.currentOrder?.itemCount ?? 0} items
+                      {order.picking?.hasChanges && ' (with changes)'}
                     </span>
                   </div>
                   <span className="font-extrabold text-gray-900 text-sm">
