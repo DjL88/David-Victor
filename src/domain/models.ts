@@ -231,6 +231,8 @@ export interface CheckoutResult {
   fulfillmentType: 'delivery' | 'pickup';
   total: Money;
   paymentId?: string;
+  /** Terminal Deliverect order creation path used for this customer order. */
+  orderRoute?: 'retail_quest' | 'commerce_checkout';
   idempotencyKey?: string;
   createdAt: string;
   updatedAt: string;
