@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { VisualRule, AdminUser } from '../../commerce/models';
+import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
-import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock } from 'lucide-react';
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -13,14 +13,17 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   tenantId,
   currentUser,
 }) => {
-  const [activeTab, setActiveTab] = useState<'product' | 'dispatch'>('product');
+  const [activeTab, setActiveTab] = useState<'product' | 'dispatch' | 'scheduling'>('product');
   const [rules, setRules] = useState<VisualRule[]>([]);
   const [dispatchRules, setDispatchRules] = useState<TenantDispatchRules>(DEFAULT_DISPATCH_RULES);
+  const [schedulingPolicy, setSchedulingPolicy] = useState<TenantSchedulingPolicy>(DEFAULT_TENANT_SCHEDULING_POLICY);
   const [loading, setLoading] = useState<boolean>(true);
   const [editingRule, setEditingRule] = useState<VisualRule | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [dispatchSaving, setDispatchSaving] = useState<boolean>(false);
   const [dispatchSuccessMsg, setDispatchSuccessMsg] = useState<string | null>(null);
+  const [schedulingSaving, setSchedulingSaving] = useState<boolean>(false);
+  const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -29,16 +32,34 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const loadRules = async () => {
     setLoading(true);
     try {
-      const [pRules, dRules] = await Promise.all([
+      const [pRules, dRules, sPolicy] = await Promise.all([
         defaultAdminClient.getProductRules(tenantId),
         defaultAdminClient.getDispatchRules(tenantId),
+        defaultAdminClient.getSchedulingPolicy?.(tenantId) ?? Promise.resolve(DEFAULT_TENANT_SCHEDULING_POLICY),
       ]);
       setRules(pRules);
       setDispatchRules(dRules);
+      setSchedulingPolicy(sPolicy);
     } catch (err) {
       console.warn('[ProductRulesScreen] Error loading rules:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveSchedulingPolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSchedulingSaving(true);
+    setSchedulingSuccessMsg(null);
+    try {
+      const updated = await defaultAdminClient.updateSchedulingPolicy?.(tenantId, schedulingPolicy);
+      if (updated) setSchedulingPolicy(updated);
+      setSchedulingSuccessMsg('Scheduling policy saved and active.');
+      setTimeout(() => setSchedulingSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save scheduling policy');
+    } finally {
+      setSchedulingSaving(false);
     }
   };
 
@@ -168,6 +189,24 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-mono font-semibold">
             {dispatchRules.assignmentEvent}
           </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('scheduling')}
+          className={`pb-3 px-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'scheduling'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <CalendarClock className="w-4 h-4" />
+          <span>ASAP & Pre-Order Scheduling</span>
+          {schedulingPolicy.acceptAsapOrdersOnly && (
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800 font-mono font-semibold">
+              ASAP ONLY
+            </span>
+          )}
         </button>
       </div>
 
@@ -449,6 +488,102 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               >
                 {dispatchSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
                 <span>{dispatchSaving ? 'Saving Rules...' : 'Save Dispatch Rules'}</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {activeTab === 'scheduling' && (
+        <form onSubmit={handleSaveSchedulingPolicy} className="space-y-6">
+          {schedulingSuccessMsg && (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{schedulingSuccessMsg}</span>
+            </div>
+          )}
+
+          <div className="p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-4">
+            <div className="border-b border-gray-100 pb-3">
+              <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-indigo-600" />
+                <span>ASAP & Pre-Order Scheduling</span>
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Controls whether customers can build a basket for a closed store's next opening, or pick a
+                later same-day time slot while the store is open. Pre-ordering beyond the current day is not
+                supported, to keep the fulfilment model simple.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <input
+                type="checkbox"
+                checked={schedulingPolicy.acceptAsapOrdersOnly}
+                onChange={(e) =>
+                  setSchedulingPolicy({ ...schedulingPolicy, acceptAsapOrdersOnly: e.target.checked })
+                }
+                className="w-4 h-4 rounded text-amber-600 border-gray-300 focus:ring-amber-500"
+              />
+              <div>
+                <span className="text-xs font-bold text-gray-900 block">Accept ASAP Orders Only</span>
+                <span className="text-[11px] text-gray-600">
+                  Disables both pre-order modes below. A closed store is simply unavailable rather than
+                  offered for pre-order.
+                </span>
+              </div>
+            </label>
+
+            <fieldset disabled={schedulingPolicy.acceptAsapOrdersOnly} className="space-y-3 disabled:opacity-50">
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl bg-gray-50 border border-gray-200">
+                <input
+                  type="checkbox"
+                  checked={schedulingPolicy.allowNextOpeningPreOrder}
+                  onChange={(e) =>
+                    setSchedulingPolicy({ ...schedulingPolicy, allowNextOpeningPreOrder: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-xs font-bold text-gray-900 block">
+                    1. Pre-Order for Next Opening
+                  </span>
+                  <span className="text-[11px] text-gray-600">
+                    A customer may still build a basket for a currently closed store; it targets the store's
+                    next real opening time.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl bg-gray-50 border border-gray-200">
+                <input
+                  type="checkbox"
+                  checked={schedulingPolicy.allowSameDayScheduledPreOrder}
+                  onChange={(e) =>
+                    setSchedulingPolicy({ ...schedulingPolicy, allowSameDayScheduledPreOrder: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-xs font-bold text-gray-900 block">
+                    2. Scheduled Pre-Order, Same Day
+                  </span>
+                  <span className="text-[11px] text-gray-600">
+                    A customer may pick a specific later time slot, today only, while the store is or will be
+                    open. Offered at checkout.
+                  </span>
+                </div>
+              </label>
+            </fieldset>
+
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-end">
+              <button
+                type="submit"
+                disabled={schedulingSaving}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-xs disabled:opacity-50"
+              >
+                {schedulingSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
+                <span>{schedulingSaving ? 'Saving Policy...' : 'Save Scheduling Policy'}</span>
               </button>
             </div>
           </div>
