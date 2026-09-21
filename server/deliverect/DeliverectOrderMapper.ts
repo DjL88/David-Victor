@@ -200,7 +200,7 @@ export class DeliverectOrderMapper {
         state:
           raw.payment?.state ||
           raw.paymentState ||
-          ((raw as any).orderIsAlreadyPaid === false ? 'NO_CAPTURE_REQUIRED' : 'NO_CAPTURE_REQUIRED'),
+          'NO_CAPTURE_REQUIRED',
         paymentId: raw.payment?.paymentId || raw.paymentId,
         authorizationMaximum: raw.payment?.authorizationMaximum || { amount: totalAmount, currency },
       },
