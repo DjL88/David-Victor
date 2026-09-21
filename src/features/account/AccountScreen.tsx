@@ -37,6 +37,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
 
   const [activePageSlug, setActivePageSlug] = useState<string | null>(null);
   const [cmsPages, setCmsPages] = useState<CmsPage[]>([]);
+  const [accountPanel, setAccountPanel] = useState<'addresses' | 'payments' | 'notifications' | null>(null);
 
   useEffect(() => {
     fetch('/api/v1/cms/pages')
@@ -148,18 +149,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
 
       {/* Account Links */}
       <div className="bg-white rounded-3xl border border-gray-100 shadow-2xs divide-y divide-gray-50 overflow-hidden text-xs font-semibold text-gray-800">
-        <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
-          <MapPin className="w-4 h-4 text-gray-400" />
-          <span>Saved delivery addresses</span>
-        </div>
-        <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
-          <CreditCard className="w-4 h-4 text-gray-400" />
-          <span>Payment methods</span>
-        </div>
-        <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
-          <Bell className="w-4 h-4 text-gray-400" />
-          <span>Order notifications & delivery alerts</span>
-        </div>
+        <button type="button" onClick={() => setAccountPanel('addresses')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+          <span className="flex items-center gap-3"><MapPin className="w-4 h-4 text-gray-400" />Saved delivery addresses</span><ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
+        <button type="button" onClick={() => setAccountPanel('payments')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+          <span className="flex items-center gap-3"><CreditCard className="w-4 h-4 text-gray-400" />Payment methods</span><ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
+        <button type="button" onClick={() => setAccountPanel('notifications')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+          <span className="flex items-center gap-3"><Bell className="w-4 h-4 text-gray-400" />Order notifications & delivery alerts</span><ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
       </div>
 
       {/* Brand CMS Pages (Information & Policies) */}
@@ -185,16 +183,16 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
       {/* White-label Brand Support Details */}
       <div className="p-4 rounded-3xl bg-gray-50 border border-gray-100 text-xs text-gray-600">
         <span className="font-bold text-gray-900 block mb-2">
-          {tenant?.brandName} Customer Support
+          {tenant?.brandName ? `${tenant.brandName} customer support` : 'Customer support'}
         </span>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 text-gray-400" />
-            <span>{tenant?.supportDetails.email}</span>
+            <span>{tenant?.supportDetails?.email || 'Support email not configured'}</span>
           </div>
           <div className="flex items-center gap-2">
             <Phone className="w-3.5 h-3.5 text-gray-400" />
-            <span>{tenant?.supportDetails.phone}</span>
+            <span>{tenant?.supportDetails?.phone || 'Support phone not configured'}</span>
           </div>
           <div className="flex items-center gap-2 text-gray-500 text-[11px] pt-1">
             <span>Hours: {tenant?.supportDetails?.openingHours || 'See store information for opening hours'}</span>
@@ -221,6 +219,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           >
             Launch Admin
           </button>
+        </div>
+      )}
+
+      {accountPanel && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <button type="button" aria-label="Close" onClick={() => setAccountPanel(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center"><X className="w-4 h-4" /></button>
+            <div className="pr-10"><h3 className="text-lg font-bold text-gray-900">{accountPanel === 'addresses' ? 'Saved delivery addresses' : accountPanel === 'payments' ? 'Payment methods' : 'Order notifications'}</h3><p className="mt-2 text-sm text-gray-600">{!currentUser ? 'Sign in to manage settings linked to your account.' : accountPanel === 'addresses' ? 'No saved delivery addresses are available for this account yet.' : accountPanel === 'payments' ? 'Payment methods are securely collected during checkout and are not displayed here unless the payment provider exposes a saved method.' : 'Order updates use the contact details and notification channels available for each order.'}</p>{!currentUser && <button type="button" onClick={() => signInWithGoogle().catch(() => undefined)} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Sign in</button>}</div>
+          </div>
         </div>
       )}
 
