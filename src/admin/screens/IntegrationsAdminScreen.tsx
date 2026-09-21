@@ -478,8 +478,10 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     typeof window !== 'undefined'
       ? window.location.origin.replace(/\/$/, '')
       : '';
+  // Keep the provisioning URL human-readable and stable per brand.
+  // The BFF resolves this tenant id and still requires valid Deliverect HMAC.
   const callbackIdentifier =
-    String(config.integrationId || tenantId || DEFAULT_TENANT_ID).trim();
+    String(tenantId || DEFAULT_TENANT_ID).trim();
 
   const questRetailWebhookUrls = {
     pickingStatus: callbackOrigin
