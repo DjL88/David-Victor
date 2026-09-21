@@ -32,6 +32,12 @@ import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLi
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
 import { mergeCheckoutProjection } from '../deliverect/CheckoutProjectionMerge';
+import {
+  isConfirmedOrderLifecycleStatus,
+  isFailedOrderLifecycleStatus,
+  isPendingCheckoutStatus,
+  mapCheckoutPublicStatus,
+} from '../checkoutState';
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
@@ -1339,6 +1345,57 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
   }
 });
 
+async function recoverCheckoutFromOrderProjection(
+  checkout: CheckoutResult,
+  checkoutId: string
+): Promise<CheckoutResult> {
+  if (!isPendingCheckoutStatus(checkout.status)) return checkout;
+
+  let orderProjection = checkout.orderId
+    ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(checkout.orderId)
+    : null;
+
+  if (!orderProjection) {
+    orderProjection = await FirestorePlatformService.getOrderProjectionByCheckoutId(checkoutId);
+  }
+
+  if (!orderProjection) return checkout;
+
+  const resolvedOrderId = String(
+    orderProjection.channelOrderRawId ||
+      orderProjection.orderId ||
+      checkout.orderId ||
+      ''
+  ).trim() || undefined;
+
+  if (isFailedOrderLifecycleStatus(orderProjection.status)) {
+    return (
+      (await FirestorePlatformService.updateCheckoutStatus(
+        checkoutId,
+        'ORDER_FAILED',
+        {
+          orderId: resolvedOrderId,
+          failureReason:
+            (orderProjection.metadata as any)?.failureReason ||
+            checkout.failureReason,
+        }
+      )) || checkout
+    );
+  }
+
+  if (isConfirmedOrderLifecycleStatus(orderProjection.status)) {
+    return (
+      (await FirestorePlatformService.updateCheckoutStatus(
+        checkoutId,
+        'ORDER_CONFIRMED',
+        { orderId: resolvedOrderId }
+      )) || checkout
+    );
+  }
+
+  return checkout;
+}
+
 async function persistRefreshedCheckout(
   existingCheckout: CheckoutResult | null,
   upstream: CheckoutResult,
@@ -1639,18 +1696,10 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
       }
     }
 
-    // CHECK-03: Webhook recovery check
-    // If order was confirmed via external order projection but checkout projection hadn't synced
-    if (checkout.orderId && (checkout.status === 'CHECKOUT_PENDING_CONFIRMATION' || checkout.status === 'CHECKOUT_SUBMITTING')) {
-      const orderProj = await FirestorePlatformService.getOrderProjection(checkout.orderId);
-      if (orderProj && orderProj.status !== 'CHECKOUT_PENDING_CONFIRMATION' && orderProj.status !== 'SUBMITTED') {
-        checkout = (await FirestorePlatformService.updateCheckoutStatus(
-          checkoutId,
-          orderProj.status as any,
-          { orderId: checkout.orderId }
-        )) || checkout;
-      }
-    }
+    // CHECK-03: Recover confirmation from the linked order projection even when
+    // Deliverect's checkout object never exposes a real orderId. Any downstream
+    // lifecycle state such as ACCEPTED/PICKING/READY proves checkout succeeded.
+    checkout = await recoverCheckoutFromOrderProjection(checkout, checkoutId);
 
     res.json(checkout);
   } catch (err: any) {
@@ -1693,25 +1742,11 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
       return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
     }
 
-    // CHECK-03: Webhook recovery check
-    if (checkout.orderId && (checkout.status === 'CHECKOUT_PENDING_CONFIRMATION' || checkout.status === 'CHECKOUT_SUBMITTING')) {
-      const orderProj = await FirestorePlatformService.getOrderProjection(checkout.orderId);
-      if (orderProj && orderProj.status !== 'CHECKOUT_PENDING_CONFIRMATION' && orderProj.status !== 'SUBMITTED') {
-        checkout = (await FirestorePlatformService.updateCheckoutStatus(
-          checkoutId,
-          orderProj.status as any,
-          { orderId: checkout.orderId }
-        )) || checkout;
-      }
-    }
+    // CHECK-03: Same recovery path as the full checkout endpoint. This also
+    // catches Quest picking states that arrive before the checkout webhook.
+    checkout = await recoverCheckoutFromOrderProjection(checkout, checkoutId);
 
-    let mappedStatus = 'PENDING_CONFIRMATION';
-    const rawStatus = String(checkout.status);
-    if (rawStatus === 'ORDER_CONFIRMED' || rawStatus === 'CONFIRMED' || rawStatus === 'STORE_ACCEPTED') {
-      mappedStatus = 'CONFIRMED';
-    } else if (rawStatus === 'FAILED' || rawStatus === 'CANCELLED' || rawStatus === 'ORDER_FAILED') {
-      mappedStatus = 'FAILED';
-    }
+    const mappedStatus = mapCheckoutPublicStatus(checkout.status);
 
     res.json({
       checkoutId: checkout.checkoutId,
