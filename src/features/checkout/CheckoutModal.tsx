@@ -382,7 +382,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         authorizationMaximum,
         schedulingType,
         slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
-        fulfillmentType: isCollection ? 'collection' : 'delivery',
+        fulfillmentType: isCollection ? 'pickup' : 'delivery',
         deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
         dispatchValidationId: isCollection ? undefined : basket.dispatchValidationId,
         dispatchValidationExpiresAt: isCollection ? undefined : basket.dispatchValidationExpiresAt,
