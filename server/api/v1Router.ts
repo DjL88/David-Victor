@@ -2013,49 +2013,208 @@ v1Router.post('/checkouts/:checkoutId/confirm-demo', requireAdminAuth('tenantAdm
 });
 
 /**
+ * Resolve an inbound Deliverect callback to a provisioned tenant. Retail Quest
+ * callbacks use the same integration identifier as the normal Channel webhook.
+ */
+async function resolveDeliverectWebhookTenant(
+  req: Request
+): Promise<string> {
+  const identifier = req.params.identifier;
+  let tenantId: string | undefined;
+
+  if (identifier) {
+    const resolved =
+      await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
+    if (resolved) {
+      tenantId = resolved;
+    } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      tenantId = identifier;
+    } else {
+      throw new BFFError(
+        'INTEGRATION_NOT_CONFIGURED',
+        `No registered integration found for identifier "${identifier}".`,
+        404
+      );
+    }
+  }
+
+  if (!tenantId) {
+    if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      return (
+        (req.query.tenantId as string) ||
+        (req.headers['x-tenant-id'] as string) ||
+        'brand-alpha'
+      );
+    }
+
+    const host = (
+      (req.headers['x-forwarded-host'] as string) ||
+      req.hostname ||
+      ''
+    )
+      .toLowerCase()
+      .split(':')[0];
+    const resolvedFromDb =
+      await FirestorePlatformService.resolveTenantByHostname(host);
+    if (resolvedFromDb) return resolvedFromDb;
+
+    throw new BFFError(
+      'WEBHOOK_UNROUTABLE',
+      'Inbound webhook cannot be routed: integrationId or registered domain required.',
+      400
+    );
+  }
+
+  return tenantId;
+}
+
+function normalizeQuestPickingStatusPayload(payload: any): any {
+  const rawStatus =
+    payload?.pickingStatus ??
+    payload?.status ??
+    payload?.event ??
+    payload?.eventType ??
+    payload?.type ??
+    payload?.data?.status;
+
+  const value = String(rawStatus ?? '').trim().toUpperCase();
+  let status = value;
+
+  if (
+    ['STARTED', 'PICKING_STARTED', 'PICKING', 'IN_PROGRESS'].includes(
+      value
+    )
+  ) {
+    status = 'PICKING_STARTED';
+  } else if (
+    ['COMPLETED', 'COMPLETE', 'PICKED', 'PICKING_COMPLETE'].includes(
+      value
+    )
+  ) {
+    status = 'PICKING_COMPLETE';
+  } else if (['ACCEPTED', 'ORDER_ACCEPTED'].includes(value) || value === '20') {
+    status = 'ORDER_ACCEPTED';
+  } else if (['CANCELLED', 'CANCELED', 'ORDER_CANCELLED'].includes(value) || value === '110') {
+    status = 'ORDER_CANCELLED';
+  } else if (['READY', 'PICKUP_READY'].includes(value) || value === '70') {
+    status = 'READY';
+  } else if (['FAILED', 'ORDER_FAILED'].includes(value) || value === '120') {
+    status = 'ORDER_FAILED';
+  } else if (!status) {
+    // This endpoint itself proves the event belongs to the picking lifecycle.
+    // Preserve the raw payload while advancing only to PICKING.
+    status = 'PICKING';
+  }
+
+  return {
+    ...payload,
+    status,
+    pickingStatus: status,
+    rawPickingStatus: rawStatus,
+    channelOrderId:
+      payload?.channelOrderId ||
+      payload?.order?.channelOrderId ||
+      payload?.data?.channelOrderId,
+    orderId:
+      payload?.orderId ||
+      payload?.order?.id ||
+      payload?.data?.orderId,
+  };
+}
+
+function normalizeQuestAmendmentsPayload(payload: any): any {
+  const amendments =
+    payload?.amendments ||
+    payload?.itemAmendments ||
+    payload?.items ||
+    payload?.data?.amendments ||
+    payload?.data?.items ||
+    [];
+
+  return {
+    ...payload,
+    status: 'PICKING_WITH_CHANGES',
+    eventType: 'PICKING_AMENDMENTS',
+    amendments,
+    channelOrderId:
+      payload?.channelOrderId ||
+      payload?.order?.channelOrderId ||
+      payload?.data?.channelOrderId,
+    orderId:
+      payload?.orderId ||
+      payload?.order?.id ||
+      payload?.data?.orderId,
+  };
+}
+
+async function handleQuestRetailCallback(
+  req: Request,
+  res: Response,
+  kind: 'status' | 'amendments'
+) {
+  try {
+    const tenantId = await resolveDeliverectWebhookTenant(req);
+    const rawBody =
+      (req as any).rawBody ||
+      Buffer.from(JSON.stringify(req.body), 'utf8');
+    const payload =
+      kind === 'status'
+        ? normalizeQuestPickingStatusPayload(req.body)
+        : normalizeQuestAmendmentsPayload(req.body);
+
+    const result = await WebhookService.processWebhook(
+      payload,
+      rawBody,
+      req.headers,
+      tenantId
+    );
+
+    return res.status(200).json({
+      ...result,
+      callbackType:
+        kind === 'status'
+          ? 'PICKING_STATUS'
+          : 'PICKING_AMENDMENTS',
+    });
+  } catch (err: any) {
+    const status = err.status || err.statusCode || 500;
+    const code = err.code || 'WEBHOOK_PROCESSING_ERROR';
+    console.error(
+      `[Deliverect Quest ${kind} Callback Error] (${status} ${code}):`,
+      err.message
+    );
+    return res.status(status).json({
+      error: err.message,
+      code,
+    });
+  }
+}
+
+/**
+ * Deliverect Retail/Quest callback URLs configured in Partner Integration >
+ * Order info. Deliverect documents these as POST status, POST amendments and
+ * GET substitutes.
+ */
+v1Router.post(
+  '/webhooks/deliverect/:identifier/picking/status',
+  (req: Request, res: Response) =>
+    handleQuestRetailCallback(req, res, 'status')
+);
+
+v1Router.post(
+  '/webhooks/deliverect/:identifier/picking/amendments',
+  (req: Request, res: Response) =>
+    handleQuestRetailCallback(req, res, 'amendments')
+);
+
+/**
  * Deliverect Inbound Webhook Ingestion (WH-01, WH-02, WH-03)
  * Supports integration-specific routes (/webhooks/deliverect/:identifier) and global route with host/query resolution.
  * Enforces HMAC validation, event journaling, deduplication, and monotonic state progression.
  */
 v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], async (req: Request, res: Response) => {
   try {
-    const identifier = req.params.identifier;
-    let tenantId: string | undefined;
-
-    if (identifier) {
-      // In staging/production: identifier MUST be resolved through stored Integration records.
-      // Tenant slug acceptance is strictly prohibited in live mode.
-      const resolved = await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
-      if (resolved) {
-        tenantId = resolved;
-      } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
-        tenantId = identifier;
-      } else {
-        return res.status(404).json({
-          error: `No registered integration found for identifier "${identifier}".`,
-          code: 'INTEGRATION_NOT_FOUND',
-        });
-      }
-    }
-
-    if (!tenantId) {
-      if (isDemoMode() || process.env.NODE_ENV === 'test') {
-        tenantId = (req.query.tenantId as string) || (req.headers['x-tenant-id'] as string) || 'brand-alpha';
-      } else {
-        // In staging/production, query/header tenantId cannot be spoofed! Must have a valid integration identifier or host-resolved domain
-        const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
-        const resolvedFromDb = await FirestorePlatformService.resolveTenantByHostname(host);
-        if (resolvedFromDb) {
-          tenantId = resolvedFromDb;
-        } else {
-          return res.status(400).json({
-            error: 'Inbound webhook cannot be routed: integrationId or registered domain required.',
-            code: 'WEBHOOK_UNROUTABLE',
-          });
-        }
-      }
-    }
-
+    const tenantId = await resolveDeliverectWebhookTenant(req);
     const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
 
     const result = await WebhookService.processWebhook(
@@ -2067,7 +2226,7 @@ v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], asyn
 
     res.status(200).json(result);
   } catch (err: any) {
-    const status = err.statusCode || 500;
+    const status = err.status || err.statusCode || 500;
     const code = err.code || 'WEBHOOK_PROCESSING_ERROR';
     console.error(`[Deliverect Webhook Error] (${status} ${code}):`, err.message);
     res.status(status).json({
