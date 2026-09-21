@@ -1474,20 +1474,44 @@ v1Router.post(
   try {
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
+    const checkoutOptions = {
+      ...(options || {}),
+      // One Deliverect basket can create one checkout session. Use a stable
+      // basket-scoped key so browser retries/reopened modals recover the same
+      // checkout even when the client did not supply its own key.
+      idempotencyKey:
+        options?.idempotencyKey ||
+        `checkout:${resolvedTenant}:${basketId}`,
+    };
+
+    // Basket identity is the strongest checkout idempotency boundary. If this
+    // basket already produced a checkout, return it rather than POSTing another
+    // session to Deliverect.
+    const existingBasketCheckout =
+      await FirestorePlatformService.getCheckoutByBasketId(
+        basketId,
+        resolvedTenant
+      );
+    if (existingBasketCheckout) {
+      console.log(
+        `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
+      );
+      return res.status(200).json(existingBasketCheckout);
+    }
 
     // PAY-10: Verify checkout references a valid authorized DPay payment when paymentId provided
-    if (options?.paymentId) {
+    if (checkoutOptions?.paymentId) {
       try {
-        const payment = await PaymentService.getPayment(options.paymentId, resolvedTenant);
+        const payment = await PaymentService.getPayment(checkoutOptions.paymentId, resolvedTenant);
         if (!payment) {
           return res.status(404).json({
-            error: `Payment ${options.paymentId} not found.`,
+            error: `Payment ${checkoutOptions.paymentId} not found.`,
             code: 'PAYMENT_NOT_FOUND',
           });
         }
         if (payment.status !== 'authorized' && payment.status !== 'captured') {
           return res.status(422).json({
-            error: `Payment ${options.paymentId} is in status '${payment.status}', but must be authorized before checkout.`,
+            error: `Payment ${checkoutOptions.paymentId} is in status '${payment.status}', but must be authorized before checkout.`,
             code: 'PAYMENT_NOT_AUTHORISED',
           });
         }
@@ -1497,29 +1521,38 @@ v1Router.post(
     }
 
     // CHECK-02: Idempotency check via idempotencyKey
-    if (options?.idempotencyKey) {
-      const existing = await FirestorePlatformService.getCheckoutByIdempotencyKey(options.idempotencyKey);
+    if (checkoutOptions.idempotencyKey) {
+      const existing = await FirestorePlatformService.getCheckoutByIdempotencyKey(
+        checkoutOptions.idempotencyKey
+      );
       if (existing) {
-        console.log(`[v1Router] Returning existing checkout for idempotencyKey ${options.idempotencyKey}`);
+        console.log(
+          `[v1Router] Returning existing checkout for idempotencyKey ${checkoutOptions.idempotencyKey}`
+        );
         return res.status(200).json(existing);
       }
     }
 
     // CHECK-02: Duplicate check via channelOrderReference
-    if (options?.channelOrderReference) {
-      const existing = await FirestorePlatformService.getCheckoutByReference(options.channelOrderReference);
+    if (checkoutOptions?.channelOrderReference) {
+      const existing = await FirestorePlatformService.getCheckoutByReference(
+        checkoutOptions.channelOrderReference
+      );
       if (existing) {
-        console.log(`[v1Router] Returning existing checkout for channelOrderReference ${options.channelOrderReference}`);
+        console.log(
+          `[v1Router] Returning existing checkout for channelOrderReference ${checkoutOptions.channelOrderReference}`
+        );
         return res.status(200).json(existing);
       }
     }
 
     const isExplicitCollection =
-      options?.fulfillmentType === 'collection' ||
-      options?.fulfillmentType === 'pickup';
+      checkoutOptions?.fulfillmentType === 'collection' ||
+      checkoutOptions?.fulfillmentType === 'pickup';
     const isDelivery =
-      options?.fulfillmentType === 'delivery' ||
-      (!options?.fulfillmentType && Boolean(options?.deliveryAddress));
+      checkoutOptions?.fulfillmentType === 'delivery' ||
+      (!checkoutOptions?.fulfillmentType &&
+        Boolean(checkoutOptions?.deliveryAddress));
 
     // DSP-03 & Dispatch Orchestration: Authoritative dispatch quote/availability check
     if (isDelivery && !isExplicitCollection) {
@@ -1564,14 +1597,81 @@ v1Router.post(
     let checkoutResult: CheckoutResult;
 
     if (adapter.checkout) {
-      checkoutResult = await adapter.checkout(basketId, {
-        ...options,
-        tenantId: resolvedTenant,
-      });
+      try {
+        checkoutResult = await adapter.checkout(basketId, {
+          ...checkoutOptions,
+          tenantId: resolvedTenant,
+        });
+      } catch (checkoutErr: any) {
+        const statusCode =
+          checkoutErr?.statusCode || checkoutErr?.status;
+        const message = String(checkoutErr?.message || '');
+        const isExistingCheckout =
+          statusCode === 422 &&
+          /checkout session already exists for basket/i.test(message);
+
+        if (!isExistingCheckout) throw checkoutErr;
+
+        // A concurrent request may have created/persisted the checkout between
+        // our initial lookup and the upstream 422. Retry the local lookup briefly.
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const existing =
+            await FirestorePlatformService.getCheckoutByBasketId(
+              basketId,
+              resolvedTenant
+            );
+          if (existing) {
+            console.log(
+              `[v1Router] Recovered checkout ${existing.checkoutId} after Deliverect duplicate-session response.`
+            );
+            return res.status(200).json(existing);
+          }
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * (attempt + 1))
+          );
+        }
+
+        // Some Deliverect error responses include the already-created checkout
+        // identifier. If present, hydrate/persist it rather than failing the user.
+        const responseBody =
+          checkoutErr?.responseBody ||
+          checkoutErr?.upstreamBody ||
+          {};
+        const existingCheckoutId = String(
+          responseBody?.checkoutId ||
+          responseBody?.existingCheckoutId ||
+          responseBody?.checkout?.id ||
+          responseBody?.id ||
+          ''
+        ).trim();
+
+        if (existingCheckoutId && adapter.getCheckout) {
+          const upstream = await adapter.getCheckout(existingCheckoutId);
+          if (upstream) {
+            const recovered = await persistRefreshedCheckout(
+              null,
+              upstream,
+              resolvedTenant,
+              existingCheckoutId
+            );
+            console.log(
+              `[v1Router] Recovered upstream checkout ${existingCheckoutId} after duplicate-session response.`
+            );
+            return res.status(200).json(recovered);
+          }
+        }
+
+        const recoveryError: any = new Error(
+          'This basket already has a checkout session, but its local checkout record could not be recovered yet. Refresh order status instead of creating another checkout.'
+        );
+        recoveryError.code = 'CHECKOUT_ALREADY_EXISTS';
+        recoveryError.statusCode = 409;
+        throw recoveryError;
+      }
     } else {
       const order = await adapter.checkoutBasket(basketId, options);
       const checkoutId = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const channelOrderReference = options?.channelOrderReference || order.orderReference || `ORD-${Date.now().toString().slice(-6)}`;
+      const channelOrderReference = checkoutOptions?.channelOrderReference || order.orderReference || `ORD-${Date.now().toString().slice(-6)}`;
       const now = new Date().toISOString();
 
       const fallbackFulfillmentType = order.fulfillment?.type;
@@ -1592,14 +1692,21 @@ v1Router.post(
         basketId,
         fulfillmentType: fallbackFulfillmentType,
         total: order.originalBasket?.total || { amount: 0, currency: 'GBP' },
-        idempotencyKey: options?.idempotencyKey,
-        dispatchValidationId: options?.dispatchValidationId,
-        paymentId: options?.paymentId,
+        idempotencyKey: checkoutOptions?.idempotencyKey,
+        dispatchValidationId: checkoutOptions?.dispatchValidationId,
+        paymentId: checkoutOptions?.paymentId,
         order,
         createdAt: now,
         updatedAt: now,
       };
     }
+
+    checkoutResult = {
+      ...checkoutResult,
+      idempotencyKey:
+        checkoutResult.idempotencyKey ||
+        checkoutOptions.idempotencyKey,
+    };
 
     // Persist CheckoutProjection in Firestore / in-memory
     await FirestorePlatformService.saveCheckoutProjection(checkoutResult);

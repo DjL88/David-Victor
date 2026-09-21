@@ -93,6 +93,36 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       expect(foundByRef).not.toBeNull();
       expect(foundByRef?.checkoutId).toBe(initialCheckout.checkoutId);
     });
+
+    it('returns the existing checkout for the same basket even when the retry uses a different idempotency key', async () => {
+      const basketId = `basket_retry_${Date.now()}`;
+      const initialCheckout: CheckoutResult = {
+        checkoutId: `chk_retry_${Date.now()}`,
+        channelOrderReference: `ORD-RETRY-${Date.now().toString().slice(-5)}`,
+        orderId: 'order_retry_existing',
+        tenantId: testTenant,
+        storeId: 'store-chelmsford-central',
+        status: 'CHECKOUT_PENDING_CONFIRMATION',
+        basketId,
+        fulfillmentType: 'pickup',
+        total: { amount: 899, currency: 'GBP' },
+        idempotencyKey: `first-key-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await FirestorePlatformService.saveCheckoutProjection(initialCheckout);
+
+      const recovered = await FirestorePlatformService.getCheckoutByBasketId(
+        basketId,
+        testTenant
+      );
+
+      expect(recovered).not.toBeNull();
+      expect(recovered?.checkoutId).toBe(initialCheckout.checkoutId);
+      expect(recovered?.basketId).toBe(basketId);
+      expect(recovered?.fulfillmentType).toBe('pickup');
+    });
   });
 
   // ========================================================

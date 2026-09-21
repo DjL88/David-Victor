@@ -2098,6 +2098,54 @@ export class FirestoreService {
   }
 
   /**
+   * Finds an existing checkout for a basket.
+   *
+   * Deliverect permits a basket to create one checkout session. This lookup is
+   * therefore the primary retry/idempotency boundary for checkout: a browser
+   * retry, lost HTTP response, or reopened modal must recover the existing
+   * checkout instead of POSTing a second checkout for the same basket.
+   */
+  static async getCheckoutByBasketId(
+    basketId: string,
+    tenantId?: string
+  ): Promise<CheckoutResult | null> {
+    if (!basketId) return null;
+
+    for (const checkout of Object.values(inMemoryCheckouts)) {
+      if (
+        checkout.basketId === basketId &&
+        (!tenantId || checkout.tenantId === tenantId)
+      ) {
+        return checkout;
+      }
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return null;
+
+    try {
+      let query: any = db
+        .collection('checkouts')
+        .where('basketId', '==', basketId);
+
+      if (tenantId) {
+        query = query.where('tenantId', '==', tenantId);
+      }
+
+      const snap = await query.limit(1).get();
+      if (!snap.empty) {
+        const data = snap.docs[0].data() as CheckoutResult;
+        inMemoryCheckouts[data.checkoutId] = data;
+        return data;
+      }
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not query checkout by basketId:', err);
+    }
+
+    return null;
+  }
+
+  /**
    * Finds existing checkout by idempotency key (CHECK-02: idempotent checkout).
    */
   static async getCheckoutByIdempotencyKey(idempotencyKey: string): Promise<CheckoutResult | null> {
