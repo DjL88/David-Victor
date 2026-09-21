@@ -565,38 +565,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    // Authoritative check before payment pre-authorisation: never silently assume availability
-    if (basket.fulfillmentType !== 'pickup') {
-      setIsRevalidating(true);
-      setRevalidationError(null);
-      try {
-        const quoteCheck = await defaultCommerceClient.revalidateDelivery(
-          basket.id,
-          deliveryAddress
-        );
-        if (!quoteCheck.available) {
-          setRevalidationError(
-            quoteCheck.reason ||
-              'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
-          );
-          if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
-          setCollectionEligible(quoteCheck.collectionEligible ?? true);
-          setIsRevalidating(false);
-          return;
-        }
-        if (quoteCheck.dispatchValidationId) {
-          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
-          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
-        }
-      } catch (err: any) {
+    // Collection has already returned above, so this branch is delivery-only.
+    // Revalidate dispatch before opening a hosted payment session.
+    setIsRevalidating(true);
+    setRevalidationError(null);
+    try {
+      const quoteCheck = await defaultCommerceClient.revalidateDelivery(
+        basket.id,
+        deliveryAddress
+      );
+      if (!quoteCheck.available) {
         setRevalidationError(
-          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+          quoteCheck.reason ||
+            'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
         );
+        if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
+        setCollectionEligible(quoteCheck.collectionEligible ?? true);
         setIsRevalidating(false);
         return;
-      } finally {
-        setIsRevalidating(false);
       }
+      if (quoteCheck.dispatchValidationId) {
+        basket.dispatchValidationId = quoteCheck.dispatchValidationId;
+        basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+      }
+    } catch (err: any) {
+      setRevalidationError(
+        `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
+      );
+      setIsRevalidating(false);
+      return;
+    } finally {
+      setIsRevalidating(false);
     }
 
     try {
