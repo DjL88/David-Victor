@@ -31,6 +31,7 @@ import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
+import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
 
@@ -3895,6 +3896,10 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
           id: s.id,
           name: s.name,
           channelLinkId: s.channelLinkId,
+          channelLocationId: s.channelLocationId,
+          physicalLocationId: s.physicalLocationId,
+          deliverectLocationId: s.deliverectLocationId,
+          brandStoreId: s.brandStoreId,
           isOpen: s.isOpen,
         })),
       },
@@ -3936,6 +3941,44 @@ v1Router.get('/admin/tenants/:id/integration/raw-menu/:storeId', requireAdminAut
     res.json(result);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to download the Deliverect menu');
+  }
+});
+
+/**
+ * Validates the exact published Deliverect menu received for a tenant/store.
+ * This is diagnostic only: it never infers a merchandising flag that Deliverect
+ * did not actually expose in the payload.
+ */
+v1Router.get('/admin/tenants/:id/integration/menu-inspector/:storeId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const requestedMenuId = typeof req.query.menuId === 'string' ? req.query.menuId : undefined;
+    const adapter = await getDeliverectAdapterAsync(tenantId) as any;
+    if (typeof adapter.getRawStoreMenus !== 'function') {
+      return res.status(501).json({ error: 'Menu inspection is unavailable for this integration.', code: 'MENU_INSPECTION_NOT_SUPPORTED' });
+    }
+
+    const rawResult = await adapter.getRawStoreMenus(req.params.storeId);
+    const selectedMenu = selectRawMenu(rawResult?.payload, requestedMenuId);
+    if (!selectedMenu) {
+      return res.status(404).json({
+        error: requestedMenuId
+          ? `Menu ${requestedMenuId} was not found for assigned store ${req.params.storeId}.`
+          : `No published menu was returned for assigned store ${req.params.storeId}.`,
+        code: 'MENU_NOT_FOUND',
+      });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      accountId: rawResult.accountId,
+      channelLinkId: rawResult.channelLinkId,
+      storeId: rawResult.storeId,
+      receivedAt: rawResult.receivedAt,
+      inspection: inspectDeliverectMenu(selectedMenu),
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to inspect the Deliverect menu');
   }
 });
 
