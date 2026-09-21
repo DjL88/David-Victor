@@ -1105,7 +1105,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  <strong className="block font-bold">ASAP Delivery</strong>
+                  <strong className="block font-bold">
+                    {isCollectionBasket ? 'ASAP Collection' : 'ASAP Delivery'}
+                  </strong>
                   {store?.deliveryEta && (
                     <span className="text-[11px] text-gray-500 block">ETA: {store.deliveryEta}</span>
                   )}
@@ -1243,49 +1245,53 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* DISPATCH REVALIDATION BANNER */}
-            <div
-              className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
-                secondsRemaining > 30
-                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                  : secondsRemaining > 0
-                  ? 'bg-amber-50 border-amber-200 text-amber-900'
-                  : 'bg-red-50 border-red-200 text-red-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 shrink-0" />
-                <div>
-                  <span className="font-bold block">
-                    {secondsRemaining > 0
-                      ? `Dispatch quote guaranteed: ${Math.floor(secondsRemaining / 60)}m ${
-                          secondsRemaining % 60
-                        }s`
-                      : 'Dispatch quote expired'}
-                  </span>
-                  <span className="text-[10px] opacity-80">
-                    Authoritative Deliverect Dispatch slot confirmation
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRevalidateDelivery}
-                disabled={isRevalidating}
-                className="px-2.5 py-1.5 rounded-xl bg-white text-gray-800 font-bold text-[11px] shadow-xs hover:bg-gray-50 flex items-center gap-1 shrink-0 border border-gray-200"
+            {!isCollectionBasket && (
+              <div
+                className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
+                  secondsRemaining > 30
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : secondsRemaining > 0
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-red-50 border-red-200 text-red-900'
+                }`}
               >
-                <RefreshCw className={`w-3 h-3 ${isRevalidating ? 'animate-spin' : ''}`} />
-                <span>{isRevalidating ? 'Checking...' : 'Recheck'}</span>
-              </button>
-            </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  <div>
+                    <span className="font-bold block">
+                      {secondsRemaining > 0
+                        ? `Dispatch quote guaranteed: ${Math.floor(secondsRemaining / 60)}m ${
+                            secondsRemaining % 60
+                          }s`
+                        : 'Dispatch quote expired'}
+                    </span>
+                    <span className="text-[10px] opacity-80">
+                      Authoritative Deliverect Dispatch slot confirmation
+                    </span>
+                  </div>
+                </div>
+  
+                <button
+                  type="button"
+                  onClick={handleRevalidateDelivery}
+                  disabled={isRevalidating}
+                  className="px-2.5 py-1.5 rounded-xl bg-white text-gray-800 font-bold text-[11px] shadow-xs hover:bg-gray-50 flex items-center gap-1 shrink-0 border border-gray-200"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRevalidating ? 'animate-spin' : ''}`} />
+                  <span>{isRevalidating ? 'Checking...' : 'Recheck'}</span>
+                </button>
+              </div>
+            )}
 
-            {/* REVALIDATION ERROR & RECOVERY */}
+            {/* CHECKOUT / DISPATCH ERROR & RECOVERY */}
             {revalidationError && (
               <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs space-y-2">
                 <div className="flex items-start gap-2 text-red-800">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold block">Dispatch Unavailable</span>
+                    <span className="font-bold block">
+                      {isCollectionBasket ? 'Collection Order Issue' : 'Dispatch Unavailable'}
+                    </span>
                     <span className="text-red-700">{revalidationError}</span>
                   </div>
                 </div>
@@ -1293,14 +1299,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={handleRevalidateDelivery}
-                    disabled={isRevalidating}
+                    onClick={
+                      isCollectionBasket
+                        ? handleDirectAuthorizeCheckout
+                        : handleRevalidateDelivery
+                    }
+                    disabled={
+                      isCollectionBasket
+                        ? isAuthorizingDirect
+                        : isRevalidating
+                    }
                     className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRevalidating ? 'animate-spin' : ''}`} />
-                    <span>{isRevalidating ? 'Checking Availability...' : 'Retry Availability Check'}</span>
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        (isCollectionBasket
+                          ? isAuthorizingDirect
+                          : isRevalidating)
+                          ? 'animate-spin'
+                          : ''
+                      }`}
+                    />
+                    <span>
+                      {isCollectionBasket
+                        ? isAuthorizingDirect
+                          ? 'Recovering Order...'
+                          : 'Retry Collection Order'
+                        : isRevalidating
+                          ? 'Checking Availability...'
+                          : 'Retry Availability Check'}
+                    </span>
                   </button>
-                  {collectionEligible && (
+
+                  {!isCollectionBasket && collectionEligible && (
                     <button
                       type="button"
                       onClick={handleSwitchToCollection}
@@ -1311,7 +1342,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   )}
                 </div>
 
-                {alternativeStores.length > 0 && (
+                {!isCollectionBasket && alternativeStores.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-red-200/70 space-y-1">
                     <span className="font-semibold text-red-900 block text-[11px]">
                       Available stores with couriers:
@@ -1332,29 +1363,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {/* TIP SELECTION */}
-            <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
-              <span className="font-bold text-gray-900 block mb-2 flex items-center gap-1.5">
-                <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-                <span>Tip your courier (100% goes to driver)</span>
-              </span>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[0, 1.0, 2.0, 3.0].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => handleSelectTip(amt)}
-                    className={`py-2 rounded-xl font-bold text-xs transition-all ${
-                      tipAmount === amt
-                        ? 'bg-emerald-700 text-white shadow-xs'
-                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    {amt === 0 ? 'None' : `+£${amt.toFixed(2)}`}
-                  </button>
-                ))}
+            {/* TIP SELECTION — delivery courier only */}
+            {!isCollectionBasket && (
+              <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
+                <span className="font-bold text-gray-900 block mb-2 flex items-center gap-1.5">
+                  <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
+                  <span>Tip your courier (100% goes to driver)</span>
+                </span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[0, 1.0, 2.0, 3.0].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => handleSelectTip(amt)}
+                      className={`py-2 rounded-xl font-bold text-xs transition-all ${
+                        tipAmount === amt
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {amt === 0 ? 'None' : `+£${amt.toFixed(2)}`}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* PROMO CODE INPUT */}
             <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
@@ -1605,6 +1638,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>
                       {snoozeAudit.hasSnoozedOrUnavailableItems
                         ? 'Resolve Out of Stock Items Above'
+                        : revalidationError && isCollectionBasket
+                        ? 'Collection Order Issue - Retry Above'
                         : revalidationError || (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0)
                         ? 'Courier Dispatch Unavailable - Retry Above'
                         : isCollectionBasket
