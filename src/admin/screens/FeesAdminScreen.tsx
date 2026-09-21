@@ -21,6 +21,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     loadPolicy();
@@ -28,9 +29,14 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
   const loadPolicy = async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await defaultAdminClient.getFeePolicy(tenantId);
       setPolicy(data);
+    } catch (err) {
+      console.error(err);
+      setPolicy(null);
+      setError('Unable to load fee settings.');
     } finally {
       setLoading(false);
     }
@@ -62,6 +68,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     if (!policy) return;
     setSaving(true);
     setSaveSuccess(false);
+    setError('');
 
     try {
       // Ensure all monetary fields saved to server are normalized minor units
@@ -84,12 +91,15 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
       setPolicy(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error(err);
+      setError('Fee settings could not be saved. Your edits are still on screen.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading || !policy) {
+  if (loading) {
     return (
       <div className="p-8 flex items-center justify-center text-gray-500">
         <RefreshCw className="w-6 h-6 animate-spin mr-2" />
@@ -98,32 +108,38 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     );
   }
 
+  if (!policy) {
+    return <div className="p-8 text-center"><div role="alert" className="text-sm font-semibold text-rose-700">{error || 'Fee settings are unavailable.'}</div><button type="button" onClick={loadPolicy} className="mt-3 text-xs font-bold text-indigo-700 underline">Retry</button></div>;
+  }
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Coins className="w-5 h-5 text-indigo-600" />
-            <span>Authoritative Tenant Fee Policy</span>
+            <span>Fees & basket charges</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Rules defined here are evaluated exclusively by the Backend-for-Frontend when reconciling baskets.
+            Configure the fees and basket thresholds applied to this brand.
           </p>
         </div>
 
         {saveSuccess && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 animate-in fade-in">
             <Check className="w-4 h-4" />
-            <span>Policy published & audited</span>
+            <span>Fee settings saved</span>
           </div>
         )}
       </div>
+
+      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{error}</div>}
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* DELIVERY FEE CONFIGURATION */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <span>1. Courier Delivery Fee Formula</span>
+            <span>Delivery fee</span>
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -222,7 +238,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
         {/* SERVICE FEE & BAG FEE */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-gray-900">2. Service Fee & Packaging Charges</h3>
+            <h3 className="text-sm font-bold text-gray-900">Service fee & packaging</h3>
             <label className="flex items-center gap-2 font-bold text-xs text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
@@ -335,7 +351,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
         {/* SMALL ORDER THRESHOLD */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-gray-900">3. Basket Minimums & Small Order Surcharges</h3>
+            <h3 className="text-sm font-bold text-gray-900">Basket minimums & small orders</h3>
             <label className="flex items-center gap-2 font-bold text-xs text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
@@ -389,7 +405,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
         {/* REAUTHORIZATION & PAYMENT TOLERANCE */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-gray-900">4. Payment Reauthorization & Catch-Weight Tolerance</h3>
+          <h3 className="text-sm font-bold text-gray-900">Payment tolerance</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
@@ -429,7 +445,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5"
           >
             {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            <span>Publish Fee Policy</span>
+            <span>Save fee settings</span>
           </button>
         </div>
       </form>
