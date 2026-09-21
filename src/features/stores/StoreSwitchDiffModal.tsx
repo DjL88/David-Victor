@@ -44,11 +44,22 @@ export const StoreSwitchDiffModal: React.FC<StoreSwitchDiffModalProps> = ({
 
   if (!diff) return null;
 
+  // Defensive normalization: some adapters (e.g. the live Deliverect Commerce store
+  // switch, which only reports fromStoreId/toStoreId/changed today) don't populate every
+  // bucket. Never assume any of these arrays exist — this modal should describe whatever
+  // real data it was actually given, not crash on a partial shape.
+  const normalizedDiff = {
+    availableUnchanged: diff.availableUnchanged ?? [],
+    priceChanges: diff.priceChanges ?? [],
+    unavailableItems: diff.unavailableItems ?? [],
+    quantityAdjusted: diff.quantityAdjusted ?? [],
+  };
+
   const hasChanges =
-    diff.priceChanges.length > 0 ||
-    diff.unavailableItems.length > 0 ||
-    diff.quantityAdjusted.length > 0 ||
-    (diff.availableUnchanged && diff.availableUnchanged.length > 0);
+    normalizedDiff.priceChanges.length > 0 ||
+    normalizedDiff.unavailableItems.length > 0 ||
+    normalizedDiff.quantityAdjusted.length > 0 ||
+    normalizedDiff.availableUnchanged.length > 0;
 
   if (!hasChanges) return null;
 
@@ -85,14 +96,14 @@ export const StoreSwitchDiffModal: React.FC<StoreSwitchDiffModalProps> = ({
 
         <div className="space-y-3 max-h-72 overflow-y-auto pr-1 mb-5">
           {/* 1. Available Unchanged */}
-          {diff.availableUnchanged && diff.availableUnchanged.length > 0 && (
+          {normalizedDiff.availableUnchanged && normalizedDiff.availableUnchanged.length > 0 && (
             <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-xs">
               <div className="flex items-center gap-1.5 font-bold text-emerald-900 mb-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Available Unchanged ({diff.availableUnchanged.length})</span>
+                <span>Available Unchanged ({normalizedDiff.availableUnchanged.length})</span>
               </div>
               <ul className="space-y-1 text-emerald-800">
-                {diff.availableUnchanged.map((item, i) => (
+                {normalizedDiff.availableUnchanged.map((item, i) => (
                   <li key={i} className="flex justify-between items-center text-[11px]">
                     <span className="truncate pr-2">
                       {item?.name || item?.plu || 'Item'} × {item?.quantity || 1}
@@ -105,14 +116,14 @@ export const StoreSwitchDiffModal: React.FC<StoreSwitchDiffModalProps> = ({
           )}
 
           {/* 2. Available but Price Changed */}
-          {diff.priceChanges.length > 0 && (
+          {normalizedDiff.priceChanges.length > 0 && (
             <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-100 text-xs">
               <div className="flex items-center gap-1.5 font-bold text-blue-900 mb-1.5">
                 <Sliders className="w-3.5 h-3.5 text-blue-600" />
-                <span>Available but Price Changed ({diff.priceChanges.length})</span>
+                <span>Available but Price Changed ({normalizedDiff.priceChanges.length})</span>
               </div>
               <div className="space-y-1.5 text-blue-900">
-                {diff.priceChanges.map((change, i) => {
+                {normalizedDiff.priceChanges.map((change, i) => {
                   const isUp = moneyToMajor(change.newPrice) > moneyToMajor(change.oldPrice);
                   return (
                     <div key={i} className="flex items-center justify-between text-[11px]">
@@ -136,14 +147,14 @@ export const StoreSwitchDiffModal: React.FC<StoreSwitchDiffModalProps> = ({
           )}
 
           {/* 3. Unavailable in Target Store */}
-          {diff.unavailableItems.length > 0 && (
+          {normalizedDiff.unavailableItems.length > 0 && (
             <div className="p-3 rounded-2xl bg-red-50/70 border border-red-100 text-xs">
               <div className="flex items-center gap-1.5 font-bold text-red-900 mb-1.5">
                 <PackageX className="w-3.5 h-3.5 text-red-600" />
-                <span>Unavailable in New Store ({diff.unavailableItems.length})</span>
+                <span>Unavailable in New Store ({normalizedDiff.unavailableItems.length})</span>
               </div>
               <ul className="space-y-1 text-red-800">
-                {diff.unavailableItems.map((item, i) => (
+                {normalizedDiff.unavailableItems.map((item, i) => (
                   <li key={i} className="flex justify-between items-center text-[11px]">
                     <span className="truncate pr-2">{item?.name || item?.plu || 'Item'}</span>
                     <span className="text-[10px] text-red-600 font-semibold italic shrink-0">
@@ -156,14 +167,14 @@ export const StoreSwitchDiffModal: React.FC<StoreSwitchDiffModalProps> = ({
           )}
 
           {/* 4. Quantity Reduced due to Stock or Limits */}
-          {diff.quantityAdjusted.length > 0 && (
+          {normalizedDiff.quantityAdjusted.length > 0 && (
             <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-100 text-xs text-amber-900">
               <div className="flex items-center gap-1.5 font-bold text-amber-900 mb-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Quantity Reduced ({diff.quantityAdjusted.length})</span>
+                <span>Quantity Reduced ({normalizedDiff.quantityAdjusted.length})</span>
               </div>
               <div className="space-y-1 text-amber-900">
-                {diff.quantityAdjusted.map((adj, i) => (
+                {normalizedDiff.quantityAdjusted.map((adj, i) => (
                   <div key={i} className="flex justify-between items-center text-[11px]">
                     <span className="truncate pr-2">{adj.name || `Item ${adj.plu}`}</span>
                     <span className="font-semibold shrink-0">

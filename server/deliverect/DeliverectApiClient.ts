@@ -1698,6 +1698,69 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return this.unsupportedLiveCapability('Basket fulfillment update');
   }
 
+  /**
+   * Compares basket line items before/after an upstream Deliverect operation (store
+   * switch, reconcile) and classifies each pre-existing line. Never guesses *why* an
+   * item disappeared (out of stock vs. not carried vs. restricted) since Deliverect
+   * doesn't tell us — it's reported as REMOVED, not a fabricated specific reason.
+   */
+  private compareBasketItems(
+    before: Basket,
+    after: Basket
+  ): Array<{
+    plu: string;
+    name: string;
+    quantity: number;
+    price: Money;
+    status: 'UNCHANGED' | 'PRICE_CHANGED' | 'QUANTITY_REDUCED' | 'REMOVED';
+    oldPrice?: Money;
+    oldQuantity?: number;
+  }> {
+    const afterByPlu = new Map(after.items.map((item) => [item.plu, item]));
+
+    return before.items.map((beforeItem) => {
+      const afterItem = afterByPlu.get(beforeItem.plu);
+      if (!afterItem) {
+        return {
+          plu: beforeItem.plu,
+          name: beforeItem.name,
+          quantity: beforeItem.quantity,
+          price: beforeItem.price,
+          status: 'REMOVED' as const,
+          oldPrice: beforeItem.price,
+          oldQuantity: beforeItem.quantity,
+        };
+      }
+      if (afterItem.price.amount !== beforeItem.price.amount) {
+        return {
+          plu: beforeItem.plu,
+          name: afterItem.name,
+          quantity: afterItem.quantity,
+          price: afterItem.price,
+          status: 'PRICE_CHANGED' as const,
+          oldPrice: beforeItem.price,
+        };
+      }
+      if (afterItem.quantity < beforeItem.quantity) {
+        return {
+          plu: beforeItem.plu,
+          name: afterItem.name,
+          quantity: afterItem.quantity,
+          price: afterItem.price,
+          status: 'QUANTITY_REDUCED' as const,
+          oldQuantity: beforeItem.quantity,
+        };
+      }
+      return {
+        plu: beforeItem.plu,
+        name: afterItem.name,
+        quantity: afterItem.quantity,
+        price: afterItem.price,
+        status: 'UNCHANGED' as const,
+      };
+    });
+  }
+
   async updateBasketStore(
     basketId: string,
     storeId: string,
@@ -1709,12 +1772,26 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const raw = await api.updateStore(basketId, channelLinkId);
     const after = await this.mapLiveCommerceBasket(raw);
 
+    const comparison = this.compareBasketItems(before, after);
+
     return {
       basket: after,
       storeSwitchDiff: {
         fromStoreId: before.storeId,
         toStoreId: after.storeId,
         changed: before.storeId !== after.storeId,
+        availableUnchanged: comparison
+          .filter((c) => c.status === 'UNCHANGED')
+          .map((c) => ({ plu: c.plu, name: c.name, quantity: c.quantity, price: c.price })),
+        priceChanges: comparison
+          .filter((c) => c.status === 'PRICE_CHANGED')
+          .map((c) => ({ plu: c.plu, name: c.name, oldPrice: c.oldPrice!, newPrice: c.price })),
+        unavailableItems: comparison
+          .filter((c) => c.status === 'REMOVED')
+          .map((c) => ({ plu: c.plu, name: c.name })),
+        quantityAdjusted: comparison
+          .filter((c) => c.status === 'QUANTITY_REDUCED')
+          .map((c) => ({ plu: c.plu, name: c.name, requested: c.oldQuantity!, adjustedTo: c.quantity })),
       },
     };
   }
@@ -1767,14 +1844,48 @@ export class DeliverectApiClient implements DeliverectAdapter {
       message: string;
     }>;
   }> {
+    const before = await this.getMappedCommerceBasket(basketId).catch(() => null);
     const api = await this.getCommerceBasketApi();
     const raw = await api.reconcileBasket(basketId);
     const after = await this.mapLiveCommerceBasket(raw);
 
+    const comparison = before ? this.compareBasketItems(before, after) : [];
+    const changes = comparison
+      .filter((c) => c.status !== 'UNCHANGED')
+      .map((c) => {
+        if (c.status === 'REMOVED') {
+          return {
+            plu: c.plu,
+            name: c.name,
+            type: 'ITEM_REMOVED' as const,
+            oldQuantity: c.oldQuantity,
+            message: `${c.name} is no longer available and was removed from your basket.`,
+          };
+        }
+        if (c.status === 'PRICE_CHANGED') {
+          return {
+            plu: c.plu,
+            name: c.name,
+            type: 'PRICE_CHANGED' as const,
+            oldPrice: c.oldPrice,
+            newPrice: c.price,
+            message: `${c.name}'s price has changed.`,
+          };
+        }
+        return {
+          plu: c.plu,
+          name: c.name,
+          type: 'QUANTITY_ADJUSTED' as const,
+          oldQuantity: c.oldQuantity,
+          newQuantity: c.quantity,
+          message: `${c.name} quantity was adjusted from ${c.oldQuantity} to ${c.quantity}.`,
+        };
+      });
+
     return {
       reconciled: true,
       basket: after,
-      changes: [],
+      changes,
     };
   }
 
