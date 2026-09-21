@@ -81,6 +81,34 @@ import { PickingState, PickingItem, DispatchStateRecord } from '../src/commerce/
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../src/rules/types';
 
 // GDPR-safe, de-identified read projection for order tracking
+export interface CustomerSavedAddress {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  isDefault?: boolean;
+}
+
+export interface CustomerAccountProfile {
+  tenantId: string;
+  customerUid: string;
+  displayName?: string;
+  email?: string;
+  phone?: string;
+  locale?: string;
+  addresses: CustomerSavedAddress[];
+  notifications: {
+    orderUpdates: boolean;
+    deliveryUpdates: boolean;
+    marketing: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OrderProjection {
   orderId: string;
   tenantId: string;
@@ -254,6 +282,7 @@ const inMemoryWebhookClaims: Record<string, string> = {};
 const inMemoryPaymentProjections: Record<string, DomainPaymentProjection> = {};
 const inMemorySearchConfigs: Record<string, any> = {};
 const inMemoryDispatchRules: Record<string, TenantDispatchRules> = {};
+const inMemoryCustomerProfiles: Record<string, CustomerAccountProfile> = {};
 
 export interface DomainRecord {
   domainId: string;
@@ -2035,6 +2064,104 @@ export class FirestoreService {
     }
 
     return projection;
+  }
+
+  /**
+   * Customer account data lives under the tenant document, separate from the
+   * GDPR-safe order projection. Only server-authenticated callers should invoke
+   * these methods.
+   */
+  static async getCustomerAccountProfile(
+    tenantId: string,
+    customerUid: string
+  ): Promise<CustomerAccountProfile> {
+    const key = `${tenantId}:${customerUid}`;
+    if (inMemoryCustomerProfiles[key]) {
+      return inMemoryCustomerProfiles[key];
+    }
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const snap = await db
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('customers')
+          .doc(customerUid)
+          .get();
+        if (snap.exists) {
+          const profile = snap.data() as CustomerAccountProfile;
+          inMemoryCustomerProfiles[key] = profile;
+          return profile;
+        }
+      } catch (err) {
+        console.warn('[Firestore Admin] Could not load customer account profile:', err);
+        if (!isDemoMode() && !isTestMode()) throw err;
+      }
+    } else if (!isDemoMode() && !isTestMode()) {
+      throw new Error(
+        'Customer account persistence is unavailable: Firestore is required outside demo/test mode.'
+      );
+    }
+
+    const now = new Date().toISOString();
+    const profile: CustomerAccountProfile = {
+      tenantId,
+      customerUid,
+      addresses: [],
+      notifications: {
+        orderUpdates: true,
+        deliveryUpdates: true,
+        marketing: false,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    inMemoryCustomerProfiles[key] = profile;
+    return profile;
+  }
+
+  static async saveCustomerAccountProfile(
+    tenantId: string,
+    customerUid: string,
+    patch: Partial<CustomerAccountProfile>
+  ): Promise<CustomerAccountProfile> {
+    const existing = await this.getCustomerAccountProfile(tenantId, customerUid);
+    const now = new Date().toISOString();
+    const profile: CustomerAccountProfile = cleanUndefined({
+      ...existing,
+      ...patch,
+      tenantId,
+      customerUid,
+      addresses: Array.isArray(patch.addresses)
+        ? patch.addresses
+        : existing.addresses,
+      notifications: {
+        ...existing.notifications,
+        ...(patch.notifications || {}),
+      },
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+    });
+
+    const key = `${tenantId}:${customerUid}`;
+    inMemoryCustomerProfiles[key] = profile;
+
+    const db = getFirestoreDb();
+    if (db) {
+      await db
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('customers')
+        .doc(customerUid)
+        .set(cleanUndefined(profile), { merge: false });
+    } else if (!isDemoMode() && !isTestMode()) {
+      throw new Error(
+        'Customer account persistence is unavailable: Firestore is required outside demo/test mode.'
+      );
+    }
+
+    return profile;
   }
 
   /**
