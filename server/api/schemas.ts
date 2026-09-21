@@ -211,6 +211,7 @@ export const CheckoutBasketOptionsSchema = z
     substitutionPolicy: z.any().optional(),
     scheduledSlot: z.any().optional(),
     paymentMethod: z.any().optional(),
+    paymentTokenRef: z.string().min(1).optional(),
     paymentId: z.string().optional(),
     orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
     authorizedMaximum: z
