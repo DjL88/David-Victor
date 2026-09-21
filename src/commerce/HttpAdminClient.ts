@@ -947,6 +947,33 @@ export class HttpAdminClient implements AdminClient {
     return this.safeJson(res, 'Store discovery failed');
   }
 
+  async placePickupTestOrder(
+    tenantId: string,
+    options?: {
+      channelLinkId?: string;
+      menuId?: string;
+      plu?: string;
+      quantity?: number;
+      customer?: {
+        name?: string;
+        email?: string;
+        phoneNumber?: string;
+      };
+      pickupNotes?: string;
+      orderNote?: string;
+      performCheckout?: boolean;
+    }
+  ): Promise<any> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tId)}/integration/test-order`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(options || {}),
+    });
+    return this.safeJson(res, 'Test pickup order failed');
+  }
+
   async getCommerceDiagnostics(tenantId?: string): Promise<any> {
     const tId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();

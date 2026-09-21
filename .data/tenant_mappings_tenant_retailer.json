@@ -19,7 +19,7 @@
       "services": [],
       "currency": "GBP",
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-21T03:35:45.235Z"
+      "lastSeenAt": "2026-09-21T05:57:01.096Z"
     },
     {
       "commerceStoreId": "cstore_st_1",
@@ -30,7 +30,7 @@
       "stateProjection": "open",
       "services": [],
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-21T03:35:45.237Z"
+      "lastSeenAt": "2026-09-21T05:57:01.099Z"
     },
     {
       "commerceStoreId": "cstore_st_2",
@@ -41,7 +41,7 @@
       "stateProjection": "paused",
       "services": [],
       "status": "PAUSED",
-      "lastSeenAt": "2026-09-21T03:35:45.237Z"
+      "lastSeenAt": "2026-09-21T05:57:01.099Z"
     },
     {
       "commerceStoreId": "cstore_st_3",
@@ -52,7 +52,7 @@
       "stateProjection": "closed",
       "services": [],
       "status": "CLOSED",
-      "lastSeenAt": "2026-09-21T03:35:45.237Z"
+      "lastSeenAt": "2026-09-21T05:57:01.099Z"
     },
     {
       "commerceStoreId": "cstore_raw_minimal_store_1",
@@ -62,7 +62,7 @@
       "name": "",
       "stateProjection": "UNKNOWN",
       "services": [],
-      "lastSeenAt": "2026-09-21T03:35:45.239Z"
+      "lastSeenAt": "2026-09-21T05:57:01.101Z"
     },
     {
       "commerceStoreId": "cstore_st_safe",
@@ -73,7 +73,7 @@
       "stateProjection": "open",
       "services": [],
       "status": "ACTIVE",
-      "lastSeenAt": "2026-09-21T03:35:45.240Z"
+      "lastSeenAt": "2026-09-21T05:57:01.102Z"
     },
     {
       "commerceStoreId": "cstore_st_survives",
@@ -84,8 +84,8 @@
       "stateProjection": "open",
       "services": [],
       "status": "ONLINE",
-      "lastSeenAt": "2026-09-21T03:35:45.242Z"
+      "lastSeenAt": "2026-09-21T05:57:01.104Z"
     }
   ],
-  "syncedAt": "2026-09-21T03:35:45.235Z"
+  "syncedAt": "2026-09-21T05:57:01.096Z"
 }

@@ -159,7 +159,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-21T03:35:28.248Z"
+      "lastSeenAt": "2026-09-21T05:56:29.736Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c418596ac8a7730c052",
@@ -204,7 +204,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-21T03:35:28.248Z"
+      "lastSeenAt": "2026-09-21T05:56:29.736Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c0885ccd3ab9ac0adec",
@@ -239,7 +239,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-21T03:35:28.248Z"
+      "lastSeenAt": "2026-09-21T05:56:29.736Z"
     },
     {
       "commerceStoreId": "cstore_6aadaa0cb3aef90f42ab345d",
@@ -329,10 +329,10 @@
       ],
       "currency": "EUR",
       "status": "open",
-      "lastSeenAt": "2026-09-21T03:35:28.248Z"
+      "lastSeenAt": "2026-09-21T05:56:29.736Z"
     }
   ],
-  "syncedAt": "2026-09-21T03:35:28.250Z",
+  "syncedAt": "2026-09-21T05:56:29.738Z",
   "status": "DISCOVERY_SUCCEEDED_PERSISTENCE_FAILED",
   "persistenceStatus": "FAILED",
   "persistenceCode": "DATABASE_PERMISSION_DENIED",

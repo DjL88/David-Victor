@@ -30,6 +30,8 @@ import { CmsService } from '../cmsService';
 import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
+import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
+import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
 
 if (isDemoMode()) {
@@ -550,7 +552,7 @@ v1Router.get('/config/maps', (_req: Request, res: Response) => {
 // ==========================================
 // CACHE MANAGEMENT & RESET
 // ==========================================
-v1Router.all('/cache/reset', async (req: Request, res: Response) => {
+v1Router.post('/cache/reset', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
   try {
     CommerceDiscoveryService.getInstance().clearCache();
     console.info('[BFF Cache Reset] Cleared candidate stores, root catalog, and store catalog memory caches.');
@@ -1439,8 +1441,15 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
   }
 });
 
-v1Router.post('/checkouts/:checkoutId/confirm-demo', async (req: Request, res: Response) => {
+v1Router.post('/checkouts/:checkoutId/confirm-demo', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
+    if (getServerRuntimeMode() !== 'demo') {
+      return res.status(403).json({
+        error: 'Demo checkout confirmation is strictly forbidden in staging/production environments.',
+        code: 'FEATURE_DISABLED_IN_ENVIRONMENT',
+      });
+    }
+
     const { checkoutId } = req.params;
     const checkout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
     if (!checkout) {
@@ -3354,7 +3363,7 @@ v1Router.post('/admin/tenants/:id/integration/sync', requireAdminAuth('tenantAdm
 /**
  * Select a discovered Deliverect Account to map to this tenant
  */
-v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
@@ -3367,11 +3376,40 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     }
 
     const adapter = new LinkedAccountsAdapter();
-    let mappings: any = { accounts: [], stores: [] };
+    let mappings: any = null;
     try {
       mappings = await adapter.getTenantMappings(tenantId);
     } catch (mappingErr: any) {
       console.warn(`[Select Account] Live tenant mappings unavailable for ${tenantId}:`, mappingErr?.message || mappingErr);
+      if (!isDemoMode()) {
+        return res.status(503).json({
+          error: `Live Deliverect account discovery failed: ${mappingErr?.message || 'Upstream unavailable'}`,
+          code: 'DELIVERECT_DISCOVERY_FAILED',
+        });
+      }
+    }
+
+    if (!mappings || !Array.isArray(mappings.accounts) || (mappings.accounts.length === 0 && !isDemoMode())) {
+      if (!isDemoMode()) {
+        return res.status(503).json({
+          error: 'No live Deliverect accounts were discovered for this tenant. Cannot map account.',
+          code: 'DELIVERECT_DISCOVERY_FAILED',
+        });
+      }
+    }
+
+    const discoveredAccounts = mappings?.accounts || [];
+    const accountExists = discoveredAccounts.some((a: any) =>
+      a.deliverectAccountId === accountId ||
+      a.accountLinkId === accountId ||
+      a.accountLinkId === `acclink_${accountId}`
+    );
+
+    if (!accountExists && !isDemoMode()) {
+      return res.status(400).json({
+        error: `Deliverect account "${accountId}" was not found in discovered accounts for tenant "${tenantId}".`,
+        code: 'UNKNOWN_DELIVERECT_ACCOUNT',
+      });
     }
 
     const matchingStores = (mappings?.stores || []).filter((s: any) => s.accountLinkId === `acclink_${accountId}` || s.accountLinkId === accountId);
@@ -3381,15 +3419,14 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       ? []
       : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
     
-    if (availableChannelLinkIds.size > 0) {
-      const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
-      if (invalidChannelLinkIds.length > 0) {
-        return res.status(400).json({
-          error: 'One or more channel links do not belong to the selected Deliverect account.',
-          code: 'INVALID_CHANNEL_ASSIGNMENT',
-          invalidChannelLinkIds,
-        });
-      }
+    // Every requested channelLinkId must belong to the selected account
+    const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
+    if (invalidChannelLinkIds.length > 0) {
+      return res.status(400).json({
+        error: 'One or more channel links do not belong to the selected Deliverect account.',
+        code: 'INVALID_CHANNEL_ASSIGNMENT',
+        invalidChannelLinkIds,
+      });
     }
 
     const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
@@ -3433,9 +3470,101 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
 });
 
 /**
- * Discover and map Commerce Stores for selected account
- * Queries GET /commerce/{accountId}/stores directly from official Deliverect Commerce API
+ * Place a test pickup order using the isolated Deliverect Commerce Basket API
  */
+v1Router.post('/admin/tenants/:id/integration/test-order', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const {
+      channelLinkId,
+      menuId,
+      plu,
+      quantity,
+      customer,
+      pickupNotes,
+      orderNote,
+      performCheckout,
+    } = req.body;
+
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const deliverectAccountId = integration?.deliverectAccountId;
+    if (!deliverectAccountId) {
+      return res.status(400).json({
+        error: 'Tenant does not have a mapped Deliverect Account ID. Please select or map an account in Step 3 first.',
+        code: 'ACCOUNT_REQUIRED',
+      });
+    }
+
+    const environment = integration?.environment || 'staging';
+    const tokenManager = OAuthTokenManager.getInstance(environment);
+    const basketApi = new DeliverectCommerceBasketApi(tokenManager, deliverectAccountId);
+
+    let targetChannelLinkId = channelLinkId;
+    if (!targetChannelLinkId) {
+      targetChannelLinkId = integration?.allowedChannelLinkIds?.[0];
+    }
+    if (!targetChannelLinkId) {
+      const adapter = new LinkedAccountsAdapter({ environment });
+      const storesRes = await adapter.getCommerceStores(deliverectAccountId, tenantId);
+      targetChannelLinkId = storesRes?.stores?.[0]?.channelLinkId;
+    }
+
+    if (!targetChannelLinkId) {
+      return res.status(400).json({
+        error: 'No channelLinkId found or selected for placing a test order.',
+        code: 'CHANNEL_LINK_REQUIRED',
+      });
+    }
+
+    let targetMenuId = menuId;
+    let targetPlu = plu;
+
+    if (!targetMenuId || !targetPlu) {
+      const discovery = CommerceDiscoveryService.getInstance();
+      const catalog = await discovery.getStoreCatalog({
+        tenantId,
+        storeId: targetChannelLinkId,
+        fulfillmentType: 'pickup',
+        appMode: environment,
+      });
+      const item = catalog?.products?.[0];
+      if (item) {
+        targetMenuId = targetMenuId || (item as any).menuId || catalog?.menus?.[0]?.menuId || 'main';
+        targetPlu = targetPlu || item.plu;
+      }
+    }
+
+    if (!targetMenuId || !targetPlu) {
+      return res.status(400).json({
+        error: 'Could not resolve menuId and plu for test order. Please specify menuId and plu explicitly.',
+        code: 'PRODUCT_REQUIRED',
+      });
+    }
+
+    const testOrderResult = await basketApi.createPickupTestOrder({
+      channelLinkId: targetChannelLinkId,
+      menuId: targetMenuId,
+      plu: targetPlu,
+      quantity: quantity ? Number(quantity) : 1,
+      customer: customer || {
+        name: 'Staging Test Customer',
+        email: 'test@bwydi.com',
+        phoneNumber: '+447700900123',
+      },
+      pickupNotes: pickupNotes || 'Test order via Admin UI',
+      orderNote: orderNote || 'Deliverect Commerce Staging Test',
+      performCheckout: performCheckout !== false,
+    });
+
+    res.json({
+      success: true,
+      tenantId,
+      result: testOrderResult,
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to place test pickup order');
+  }
+});
 v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;

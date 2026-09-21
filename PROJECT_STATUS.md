@@ -116,8 +116,17 @@ The platform is now connected directly to the live Deliverect Staging environmen
      - Applied `.no-scrollbar` cross-browser utilities to all swipeable horizontal tracks so in-page carousels remain fully touch-scrollable without exposing visible scrollbars.
    - **Modal & Backdrop Overflow Guard**:
      - Applied `overflow-x-hidden` to all backdrop and card wrappers across `CartDrawerModal`, `CheckoutModal`, `StorePickerModal`, `ProductDetailModal`, `MealDealDialog`, and `StoryViewerModal`, preventing modal entrance animations from triggering viewport overflow.
-13. **FULL TEST SUITE PASSING 100% GREEN (29/29 Test Files, 271/271 Tests Passing)**:
-    - **Adapter Runtime Mode Isolation**: Keyed all adapter instances (`deliverectAdapters`, `dPayAdapters`, `dispatchAdapters`) by `${tenantId}:${environment}:${deliverectAccountId}:${appMode}` to prevent runtime mode leakage between demo and staging test contexts.
+14. **SECURITY HARDENING, FAIL-CLOSED PROVISIONING & PICKUP TEST ORDER PLACEMENT (Completed)**:
+    - **Security Hardening on Admin API Routes (`server/api/v1Router.ts`)**:
+      - Restructured `POST /api/v1/admin/tenants/:id/integration/select-account` to enforce `platformSuperAdmin` authorization (`requireAdminAuth('platformSuperAdmin')`).
+      - Implemented strict fail-closed provisioning logic: in staging/production, if live account or store discovery fails, the endpoint immediately returns a typed 503 `UPSTREAM_UNAVAILABLE` error and does NOT persist any integration configuration.
+      - Enforced strict validation: requested `accountId` must exist in discovered Deliverect accounts, and every `channelLinkId` in `allowedChannelLinkIds` must exist in discovered store channel links.
+      - Hardened `/api/v1/cache/reset` (restricting to POST method and `platformSuperAdmin` auth).
+      - Hardened `/api/v1/checkouts/:checkoutId/confirm-demo` (strictly restricting to demo/test modes using `getServerRuntimeMode() !== 'demo'`).
+    - **Pickup Test Order UI in Admin Integrations Screen**:
+      - Added Step 5 ("5. Place Pickup Test Order") in `IntegrationsAdminScreen.tsx` allowing platform admins to select location and product(s) to verify isolated Deliverect pickup ordering.
+      - Integrated `placePickupTestOrder` into `AdminClient` and `HttpAdminClient`.
+    - **Verified Test Suite**: Created and passed `src/__tests__/security_admin_routes.test.ts` with 11/11 tests covering all security constraints, environment checks, and fail-closed provisioning logic. All 36 Vitest test files (333/333 tests) pass 100% green.
     - **Firestore Test Resilience**: Enhanced `server/firestoreService.ts` in-memory fallback checks to verify `isTestMode()` (`NODE_ENV === 'test' || VITEST === 'true'`), preventing `DATABASE_UNAVAILABLE` errors when individual tests set staging/production mode.
     - **Commerce Discovery Isolation**: Guaranteed `DemoDispatchAdapter` is selected when `effectiveMode === 'demo'` in `CommerceDiscoveryService.ts`, and ensured test state resets in `beforeEach` (`process.env.APP_MODE = 'demo'`, `setServerRuntimeMode('demo')`, `setRuntimeMode('DEMO')`).
     - **Clean Compilation & Linting**: Verified zero TypeScript or lint errors with `tsc --noEmit` and full applet compilation. All 29 Vitest suites pass cleanly with 271 tests green.

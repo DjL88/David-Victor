@@ -21,6 +21,10 @@ import {
   ExternalLink,
   Package,
   Download,
+  ShoppingCart,
+  Play,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface IntegrationsAdminScreenProps {
@@ -66,6 +70,48 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [commerceDiagnostics, setCommerceDiagnostics] = useState<any | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  // Test Order Probe state
+  const [testOrderChannelLinkId, setTestOrderChannelLinkId] = useState<string>('');
+  const [testOrderMenuId, setTestOrderMenuId] = useState<string>('');
+  const [testOrderPlu, setTestOrderPlu] = useState<string>('');
+  const [testOrderQuantity, setTestOrderQuantity] = useState<number>(1);
+  const [testOrderCustomerName, setTestOrderCustomerName] = useState<string>('Staging Test Customer');
+  const [testOrderCustomerEmail, setTestOrderCustomerEmail] = useState<string>('test@bwydi.com');
+  const [testOrderCustomerPhone, setTestOrderCustomerPhone] = useState<string>('+447700900123');
+  const [testOrderPerformCheckout, setTestOrderPerformCheckout] = useState<boolean>(true);
+  const [placingTestOrder, setPlacingTestOrder] = useState<boolean>(false);
+  const [testOrderResult, setTestOrderResult] = useState<any | null>(null);
+  const [testOrderError, setTestOrderError] = useState<string | null>(null);
+  const [showRawTestOrderJson, setShowRawTestOrderJson] = useState<boolean>(false);
+
+  const handlePlaceTestOrder = async () => {
+    setPlacingTestOrder(true);
+    setTestOrderError(null);
+    setTestOrderResult(null);
+    try {
+      if (defaultAdminClient.placePickupTestOrder) {
+        const res = await defaultAdminClient.placePickupTestOrder(tenantId, {
+          channelLinkId: testOrderChannelLinkId || selectedChannelLinkIds[0] || discoveredStores[0]?.channelLinkId,
+          menuId: testOrderMenuId || undefined,
+          plu: testOrderPlu || undefined,
+          quantity: Number(testOrderQuantity) || 1,
+          customer: {
+            name: testOrderCustomerName,
+            email: testOrderCustomerEmail,
+            phoneNumber: testOrderCustomerPhone,
+          },
+          performCheckout: testOrderPerformCheckout,
+        });
+        setTestOrderResult(res.result || res);
+      }
+    } catch (err: any) {
+      console.error('Test order failed:', err);
+      setTestOrderError(err.message || 'Failed to place test pickup order');
+    } finally {
+      setPlacingTestOrder(false);
+    }
+  };
 
   const runCommerceDiagnostics = async () => {
     setDiagnosticsLoading(true);
@@ -846,6 +892,183 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
             ) : (
               <div className="p-4 bg-gray-950 border border-gray-800/80 rounded-xl text-xs text-gray-400 text-center">
                 Once a Deliverect Account is selected in Step 3, click &quot;Discover Commerce Stores&quot; to fetch and map live stores.
+              </div>
+            )}
+          </div>
+
+          {/* Step 5: Place Test Pickup Order Probe */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-cyan-900/60 border border-cyan-700/50 text-cyan-300 font-bold text-xs flex items-center justify-center">
+                  5
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <ShoppingCart className="w-4 h-4 text-cyan-400" />
+                    <span>Place Test Pickup Order</span>
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Executes an isolated pickup test order via Deliverect Commerce API without changing live customer checkout
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label className="block text-gray-400 font-medium mb-1">Target Store / Location</label>
+                <select
+                  value={testOrderChannelLinkId || selectedChannelLinkIds[0] || ''}
+                  onChange={(e) => setTestOrderChannelLinkId(e.target.value)}
+                  className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                >
+                  {discoveredStores.length === 0 && <option value="">Auto-select first available store</option>}
+                  {discoveredStores.map((st: any) => (
+                    <option key={st.channelLinkId || st.id} value={st.channelLinkId}>
+                      {st.name || 'Store'} ({st.channelLinkId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-gray-400 font-medium mb-1">Product PLU & Menu ID</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Menu ID (optional)"
+                    value={testOrderMenuId}
+                    onChange={(e) => setTestOrderMenuId(e.target.value)}
+                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="PLU (e.g. LATTE-01)"
+                    value={testOrderPlu}
+                    onChange={(e) => setTestOrderPlu(e.target.value)}
+                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">Leave empty to auto-discover first item from store catalog</p>
+              </div>
+
+              <div>
+                <label className="block text-gray-400 font-medium mb-1">Customer Name & Phone</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Customer Name"
+                    value={testOrderCustomerName}
+                    onChange={(e) => setTestOrderCustomerName(e.target.value)}
+                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Phone Number"
+                    value={testOrderCustomerPhone}
+                    onChange={(e) => setTestOrderCustomerPhone(e.target.value)}
+                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-gray-400 font-medium mb-1">Customer Email</label>
+                <input
+                  type="email"
+                  placeholder="test@bwydi.com"
+                  value={testOrderCustomerEmail}
+                  onChange={(e) => setTestOrderCustomerEmail(e.target.value)}
+                  className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+              <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={testOrderPerformCheckout}
+                  onChange={(e) => setTestOrderPerformCheckout(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-700 text-cyan-500 focus:ring-cyan-500"
+                />
+                <span>Perform Unpaid Checkout (<code className="text-cyan-400">isPrepaid: false</code>)</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={handlePlaceTestOrder}
+                disabled={placingTestOrder}
+                className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 disabled:opacity-50 transition-colors shadow-lg shadow-cyan-900/20"
+              >
+                {placingTestOrder ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Executing Test Order...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Place Test Order</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {testOrderError && (
+              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-xs text-rose-300 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Test Order Failed</div>
+                  <div className="mt-0.5 font-mono text-[11px]">{testOrderError}</div>
+                </div>
+              </div>
+            )}
+
+            {testOrderResult && (
+              <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-800 space-y-3">
+                <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Test Pickup Order Placed Successfully</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRawTestOrderJson(!showRawTestOrderJson)}
+                    className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>{showRawTestOrderJson ? 'Hide Raw Payload' : 'View Raw Deliverect Payload'}</span>
+                    {showRawTestOrderJson ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
+                    <div className="text-gray-500 text-[10px]">BASKET ID</div>
+                    <div className="font-mono font-semibold text-emerald-400 truncate text-[11px]">{testOrderResult.basketId || 'N/A'}</div>
+                  </div>
+                  <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
+                    <div className="text-gray-500 text-[10px]">TOTAL</div>
+                    <div className="font-mono font-bold text-white text-[11px]">
+                      £{(Number(testOrderResult.totalMinor || testOrderResult.basket?.paymentSummary?.basketTotal || 0) / 100).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
+                    <div className="text-gray-500 text-[10px]">CHANNEL ORDER ID</div>
+                    <div className="font-mono font-semibold text-gray-300 truncate text-[11px]">{testOrderResult.channelOrderId || 'N/A'}</div>
+                  </div>
+                  <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
+                    <div className="text-gray-500 text-[10px]">DISPLAY ID</div>
+                    <div className="font-mono font-bold text-amber-400 text-[11px]">{testOrderResult.channelOrderDisplayId || 'N/A'}</div>
+                  </div>
+                </div>
+
+                {showRawTestOrderJson && (
+                  <pre className="p-3 bg-gray-950 border border-gray-800 rounded-xl text-[10px] font-mono text-gray-300 overflow-x-auto max-h-60">
+                    {JSON.stringify(testOrderResult, null, 2)}
+                  </pre>
+                )}
               </div>
             )}
           </div>

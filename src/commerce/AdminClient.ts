@@ -374,6 +374,27 @@ export interface AdminClient {
    * Probes and returns Media Health report for tenant assets.
    */
   getMediaHealth?(tenantId?: string, opts?: { recheck?: boolean }): Promise<{ assets: MediaHealth[]; summary: MediaHealthSummary }>;
+
+  /**
+   * Places an isolated test pickup order via Deliverect Commerce Basket API
+   */
+  placePickupTestOrder?(
+    tenantId: string,
+    options?: {
+      channelLinkId?: string;
+      menuId?: string;
+      plu?: string;
+      quantity?: number;
+      customer?: {
+        name?: string;
+        email?: string;
+        phoneNumber?: string;
+      };
+      pickupNotes?: string;
+      orderNote?: string;
+      performCheckout?: boolean;
+    }
+  ): Promise<any>;
 }
 
 import { defaultHttpAdminClient } from './HttpAdminClient';
