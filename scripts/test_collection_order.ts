@@ -10,8 +10,11 @@
  *     --plu=<PLU> \
  *     --qty=1
  *
- * Add --checkout only when you intentionally want to inject an unpaid pickup order.
- * The script refuses production by default.
+ * By default the script stops after basket reconcile and DOES NOT create an order.
+ * To inject an unpaid pickup order in staging you must pass BOTH:
+ *   --checkout --confirm-checkout=CREATE_STAGING_ORDER
+ *
+ * Production is intentionally refused by this script.
  */
 
 import 'dotenv/config';
@@ -53,13 +56,25 @@ async function main() {
   const plu = required(args, 'plu');
   const qty = Number(typeof args.get('qty') === 'string' ? args.get('qty') : '1');
   const performCheckout = args.get('checkout') === true;
-  const allowProduction = args.get('allow-production') === true;
+  const checkoutConfirmation =
+    typeof args.get('confirm-checkout') === 'string'
+      ? String(args.get('confirm-checkout'))
+      : '';
 
   const environment = String(process.env.DELIVERECT_ENV || 'staging').toLowerCase();
-  if (environment === 'production' && !allowProduction) {
+  if (environment === 'production') {
     throw new Error(
-      'Refusing to run against DELIVERECT_ENV=production. This script is for staging. ' +
-        'Pass --allow-production only if you genuinely intend to create a live order.'
+      'Refusing to run against DELIVERECT_ENV=production. This smoke test is staging-only by design.'
+    );
+  }
+  if (environment !== 'staging') {
+    throw new Error(
+      `Refusing to run with DELIVERECT_ENV=${environment}. Set DELIVERECT_ENV=staging for this smoke test.`
+    );
+  }
+  if (performCheckout && checkoutConfirmation !== 'CREATE_STAGING_ORDER') {
+    throw new Error(
+      'Checkout is armed only when --checkout and --confirm-checkout=CREATE_STAGING_ORDER are both supplied.'
     );
   }
 
@@ -75,7 +90,13 @@ async function main() {
   console.log(`Store/channelLinkId: ${channelLinkId}`);
   console.log(`Menu: ${menuId}`);
   console.log(`PLU: ${plu} x ${qty}`);
-  console.log(`Checkout: ${performCheckout ? 'YES - unpaid pickup order will be injected' : 'NO - stop after reconcile'}`);
+  console.log(
+    `Checkout: ${
+      performCheckout
+        ? 'ARMED - confirmed staging unpaid pickup order will be injected'
+        : 'SAFE MODE - stop after reconcile; no order will be created'
+    }`
+  );
   console.log('');
 
   const result = await api.createPickupTestOrder({
@@ -103,7 +124,10 @@ async function main() {
     console.log(pretty(result.checkout));
     console.log('\nHTTP checkout acceptance is asynchronous; verify the checkout status/webhook or staging order view.');
   } else {
-    console.log('Reconcile succeeded. Re-run with --checkout when ready to inject the unpaid pickup order.');
+    console.log(
+      'Reconcile succeeded safely. To create a staging order, re-run with ' +
+        '--checkout --confirm-checkout=CREATE_STAGING_ORDER.'
+    );
   }
 }
 

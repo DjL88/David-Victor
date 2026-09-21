@@ -56,6 +56,49 @@ describe('DeliverectCommerceBasketApi', () => {
     expect(result.id).toBe('basket_999');
   });
 
+  it('updates basket customer details before checkout', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    let capturedBody: any = null;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      capturedUrl = String(url);
+      capturedMethod = init?.method || 'GET';
+      capturedBody = JSON.parse(String(init?.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            id: 'basket_999',
+            customer: {
+              name: capturedBody.name,
+              email: capturedBody.email,
+              phoneNumber: capturedBody.phoneNumber,
+            },
+          }),
+      } as Response;
+    });
+
+    const api = new DeliverectCommerceBasketApi(tokenManager, accountId);
+    const result = await api.updateCustomer('basket_999', {
+      name: 'Collection Customer',
+      email: 'collection@example.com',
+      phoneNumber: '+447700900123',
+    });
+
+    expect(capturedUrl).toBe(
+      'https://api.staging.deliverect.com/commerce/acc_test_123/baskets/basket_999/customer'
+    );
+    expect(capturedMethod).toBe('PATCH');
+    expect(capturedBody).toEqual({
+      name: 'Collection Customer',
+      email: 'collection@example.com',
+      phoneNumber: '+447700900123',
+    });
+    expect(result.customer.name).toBe('Collection Customer');
+  });
+
   it('PATCH items sends raw complete array with menuId, plu, positive integer quantity', async () => {
     let capturedUrl = '';
     let capturedMethod = '';

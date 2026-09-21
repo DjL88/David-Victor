@@ -91,6 +91,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Local authoritative basket & store state
   const [basket, setBasket] = useState<Basket | null>(initialBasket);
   const [store, setStore] = useState<Store | null>(initialStore);
+  const [customerName, setCustomerName] = useState(initialBasket?.customer?.name || '');
+  const [customerEmail, setCustomerEmail] = useState(initialBasket?.customer?.email || '');
+  const [customerPhone, setCustomerPhone] = useState(initialBasket?.customer?.phone || '');
+  const [customerDetailsError, setCustomerDetailsError] = useState<string | null>(null);
   const { products: storeProducts } = useCatalog(store?.id);
   const [phase, setPhase] = useState<CheckoutPhase>('review');
 
@@ -309,20 +313,62 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!basket) return;
 
-    const isCollection = basket.fulfillmentType === 'pickup' || (basket.fulfillmentType as string) === 'collection';
+    const name = customerName.trim();
+    const email = customerEmail.trim();
+    const phone = customerPhone.trim();
+    const phoneDigits = phone.replace(/\D/g, '');
 
-    // Authoritative check before payment pre-authorisation: never silently assume availability for delivery
-    if (!isCollection) {
-      setIsAuthorizingDirect(true);
-      setRevalidationError(null);
-      try {
+    if (!name) {
+      setCustomerDetailsError('Please enter the name the store should use for this order.');
+      return;
+    }
+    if (!email && !phone) {
+      setCustomerDetailsError('Please provide an email address or phone number so the store can contact you.');
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCustomerDetailsError('Please enter a valid email address.');
+      return;
+    }
+    if (phone && phoneDigits.length < 7) {
+      setCustomerDetailsError('Please enter a valid phone number.');
+      return;
+    }
+    if (!defaultCommerceClient.updateBasketCustomer) {
+      setCustomerDetailsError('Customer details cannot be saved by the current checkout integration.');
+      return;
+    }
+
+    const isCollection =
+      basket.fulfillmentType === 'pickup' ||
+      (basket.fulfillmentType as string) === 'collection';
+
+    setIsAuthorizingDirect(true);
+    setRevalidationError(null);
+    setCustomerDetailsError(null);
+
+    try {
+      // Persist customer identity on the authoritative Deliverect basket before
+      // reconcile/checkout. The subsequent checkout() reads the reconciled basket
+      // and forwards these fields into the unpaid Collection checkout payload.
+      let checkoutBasket = await defaultCommerceClient.updateBasketCustomer(basket.id, {
+        name,
+        email: email || undefined,
+        phone: phone || undefined,
+      });
+      setBasket(checkoutBasket);
+      onBasketUpdated?.(checkoutBasket);
+
+      // Authoritative check before payment pre-authorisation: never silently assume
+      // availability for delivery. Collection intentionally skips Dispatch.
+      if (!isCollection) {
         if (!deliveryAddress) {
           setRevalidationError('Delivery address is required for delivery orders.');
-          setIsAuthorizingDirect(false);
           return;
         }
+
         const quoteCheck = await defaultCommerceClient.revalidateDelivery(
-          basket.id,
+          checkoutBasket.id,
           deliveryAddress
         );
         if (!quoteCheck.available) {
@@ -332,43 +378,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           );
           if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
           setCollectionEligible(quoteCheck.collectionEligible ?? true);
-          setIsAuthorizingDirect(false);
           return;
         }
         if (quoteCheck.dispatchValidationId) {
-          basket.dispatchValidationId = quoteCheck.dispatchValidationId;
-          basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
+          checkoutBasket = {
+            ...checkoutBasket,
+            dispatchValidationId: quoteCheck.dispatchValidationId,
+            dispatchValidationExpiresAt: quoteCheck.dispatchValidationExpiresAt,
+          };
+          setBasket(checkoutBasket);
+          onBasketUpdated?.(checkoutBasket);
         }
-      } catch (err: any) {
-        setRevalidationError(
-          `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
-        );
-        setIsAuthorizingDirect(false);
-        return;
       }
-    }
 
-    setIsAuthorizingDirect(true);
-    setRevalidationError(null);
-
-    try {
       let paymentTokenRef: string | undefined;
       let authorizationMaximum: Money | undefined;
 
       if (!isCollection) {
-        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(basket.storeId);
+        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(checkoutBasket.storeId);
         const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
         const calcMax = calculateAuthorizationMaximum(
-          basket.total,
+          checkoutBasket.total,
           true,
           policyBuffer,
-          basket.currency,
+          checkoutBasket.currency,
           preChosenBufferInfo.extraBufferAmount
         );
         authorizationMaximum = calcMax.authorizationMaximum;
         const token = await defaultPaymentClient.createToken({
           type: 'CARD',
-          cardholderName: 'Valued Customer',
+          cardholderName: name,
           last4: '4242',
         });
         paymentTokenRef = token.token;
@@ -376,23 +415,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       // For Collection, the chosen slot is a real basket property on Deliverect's side
       // (fulfillment.time), not a checkout-time option — update it on the basket first.
-      if (isCollection && schedulingType === 'SCHEDULED' && selectedSlot && defaultCommerceClient.updateBasketFulfillment) {
-        await defaultCommerceClient.updateBasketFulfillment(basket.id, { type: 'pickup', slot: selectedSlot });
+      if (
+        isCollection &&
+        schedulingType === 'SCHEDULED' &&
+        selectedSlot &&
+        defaultCommerceClient.updateBasketFulfillment
+      ) {
+        checkoutBasket = await defaultCommerceClient.updateBasketFulfillment(
+          checkoutBasket.id,
+          { type: 'pickup', slot: selectedSlot }
+        );
+        setBasket(checkoutBasket);
+        onBasketUpdated?.(checkoutBasket);
       }
 
-      const result = await defaultCommerceClient.checkoutBasket(basket.id, {
+      const result = await defaultCommerceClient.checkoutBasket(checkoutBasket.id, {
         paymentTokenRef,
         authorizationMaximum,
         schedulingType,
         slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
         fulfillmentType: isCollection ? 'pickup' : 'delivery',
         deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
-        dispatchValidationId: isCollection ? undefined : basket.dispatchValidationId,
-        dispatchValidationExpiresAt: isCollection ? undefined : basket.dispatchValidationExpiresAt,
+        dispatchValidationId: isCollection ? undefined : checkoutBasket.dispatchValidationId,
+        dispatchValidationExpiresAt: isCollection
+          ? undefined
+          : checkoutBasket.dispatchValidationExpiresAt,
       });
 
       const checkoutId = (result as any)?.checkoutId || (result as any)?.id;
-      if ((result as any)?.status === 'ORDER_CONFIRMED' || ((result as any)?.id && !(result as any)?.checkoutId)) {
+      if (
+        (result as any)?.status === 'ORDER_CONFIRMED' ||
+        ((result as any)?.id && !(result as any)?.checkoutId)
+      ) {
         const order = result as any;
         setConfirmedOrder(order);
         defaultAnalyticsClient.track({
@@ -413,9 +467,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         setPhase('tracking');
       } else if (checkoutId) {
         setSessionId(checkoutId);
-        if (isCollection) {
-          setCheckoutStatus('placing_order');
-        }
+        if (isCollection) setCheckoutStatus('placing_order');
         setPhase('polling_status');
         setStatusMessage(
           isCollection
@@ -450,12 +502,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     } catch (err: any) {
       setRevalidationError(
-        err.message || (isCollection ? 'Could not place collection order' : 'Payment authorization failed')
+        err.message ||
+          (isCollection ? 'Could not place collection order' : 'Payment authorization failed')
       );
     } finally {
       setIsAuthorizingDirect(false);
     }
   };
+
+  useEffect(() => {
+    setCustomerName(initialBasket?.customer?.name || '');
+    setCustomerEmail(initialBasket?.customer?.email || '');
+    setCustomerPhone(initialBasket?.customer?.phone || '');
+    setCustomerDetailsError(null);
+  }, [initialBasket?.id]);
 
   // Keep basket and store synced with props and track CHECKOUT_STARTED
   useEffect(() => {
@@ -1266,6 +1326,69 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 onAddRecommendation={handleAddItemFromRecommendations}
               />
             </ErrorBoundary>
+
+            {/* CUSTOMER CONTACT DETAILS */}
+            <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-3">
+              <div>
+                <h3 className="text-xs font-extrabold text-gray-900">Contact details</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Used by the store for this order. Enter a name plus an email address or phone number.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <label className="text-[11px] font-semibold text-gray-700 sm:col-span-2">
+                  Name
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="Name for collection"
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+
+                <label className="text-[11px] font-semibold text-gray-700">
+                  Email
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={customerEmail}
+                    onChange={(e) => {
+                      setCustomerEmail(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="you@example.com"
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+
+                <label className="text-[11px] font-semibold text-gray-700">
+                  Phone
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={customerPhone}
+                    onChange={(e) => {
+                      setCustomerPhone(e.target.value);
+                      if (customerDetailsError) setCustomerDetailsError(null);
+                    }}
+                    placeholder="+44 ..."
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </label>
+              </div>
+
+              {customerDetailsError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-800">
+                  {customerDetailsError}
+                </div>
+              )}
+            </div>
 
             {/* AUTHORITATIVE TOTALS BREAKDOWN */}
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2 text-xs">
