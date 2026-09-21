@@ -3052,11 +3052,15 @@ export class FirestoreService {
     const ruleId = rule.id || `rule_${Date.now()}`;
     const item = { ...rule, id: ruleId, tenantId, updatedAt: new Date().toISOString() };
     const db = getFirestoreDb();
+    if (!db && !isDemoMode()) {
+      throw new Error('Rule changes were not saved: durable storage is unavailable.');
+    }
     if (db) {
       try {
         await db.collection('searchRules').doc(ruleId).set(item, { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save rule to Firestore:', err);
+        if (!isDemoMode()) throw new Error('Rule changes were not saved: Firestore rejected the write.');
       }
     }
     return item;
@@ -3064,15 +3068,24 @@ export class FirestoreService {
 
   static async deleteTenantRule(tenantId: string, ruleId: string): Promise<boolean> {
     const db = getFirestoreDb();
+    if (!db && !isDemoMode()) {
+      throw new Error('Rule was not deleted: durable storage is unavailable.');
+    }
     if (db) {
       try {
-        await db.collection('searchRules').doc(ruleId).delete();
+        const ref = db.collection('searchRules').doc(ruleId);
+        const existing = await ref.get();
+        if (existing.exists && existing.data()?.tenantId !== tenantId) {
+          throw new Error('Rule does not belong to this brand.');
+        }
+        await ref.delete();
         return true;
       } catch (err) {
         console.warn('[Firestore Admin] Failed to delete rule from Firestore:', err);
+        if (!isDemoMode()) throw err;
       }
     }
-    return true;
+    return isDemoMode();
   }
 
   static async getTenantSearchConfig(tenantId: string = 'brand-alpha'): Promise<any> {
