@@ -76,6 +76,35 @@ export interface RawDeliverectOrder {
 }
 
 /**
+ * Convert Deliverect's fulfilment representation into Bwydi's canonical domain values.
+ *
+ * Deliverect orderType values used by the Ordering Experience order model:
+ *   1 = pickup, 2 = delivery.
+ *
+ * Bwydi uses `pickup` internally and renders the customer-facing label "Collection"
+ * in the UI. Unknown/unsupported fulfilment modes must never silently become delivery.
+ */
+export function normalizeDeliverectFulfillmentType(
+  raw: Pick<RawDeliverectOrder, 'fulfillment' | 'fulfillmentType' | 'orderType'>
+): 'delivery' | 'pickup' {
+  const explicitType = String(raw.fulfillment?.type || raw.fulfillmentType || '')
+    .trim()
+    .toLowerCase();
+
+  if (['pickup', 'collection', 'takeaway'].includes(explicitType)) return 'pickup';
+  if (['delivery', 'online_delivery'].includes(explicitType)) return 'delivery';
+
+  const orderType = Number(raw.orderType);
+  if (orderType === 1) return 'pickup';
+  if (orderType === 2) return 'delivery';
+
+  const detail = explicitType || `orderType:${String(raw.orderType ?? 'missing')}`;
+  const error: any = new Error(`Unsupported Deliverect fulfilment type: ${detail}`);
+  error.code = 'UNSUPPORTED_FULFILLMENT_TYPE';
+  throw error;
+}
+
+/**
  * Normalizes a raw Deliverect order or Bwydi Order into a clean, consistent structure for OrderProjections.
  */
 export class DeliverectOrderMapper {
@@ -140,18 +169,11 @@ export class DeliverectOrderMapper {
     if (status === '50' || status === '5') status = 'DELIVERED';
     if (status === '110' || status === '11') status = 'CANCELLED';
 
-    // Fulfillment type mapping
-    let fulfillmentType: 'delivery' | 'collection' = 'delivery';
-    if (
-      raw.fulfillmentType === 'collection' ||
-      raw.fulfillmentType === 'pickup' ||
-      raw.orderType === 2 ||
-      raw.orderType === 3
-    ) {
-      fulfillmentType = 'collection';
-    }
+    // Fulfilment is canonicalized once. Never default an unknown Deliverect order to delivery.
+    const fulfillmentType = normalizeDeliverectFulfillmentType(raw);
 
     return {
+      ...(raw as any),
       id,
       storeId: raw.channelLinkId || raw.deliverectLocationId || raw.locationId || 'store-alpha',
       status: status as any,
@@ -178,7 +200,6 @@ export class DeliverectOrderMapper {
       },
       orderReference: channelOrderId || id,
       createdAt: raw.createdAt || new Date().toISOString(),
-      ...(raw as any),
     };
   }
 }
