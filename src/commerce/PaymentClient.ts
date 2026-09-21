@@ -32,7 +32,7 @@ export interface DPayPaymentRequest {
   channelLinkId: string;
   gatewayProfileId?: string;
   mode: DPayMode;
-  captureMode: 'manual' | 'automatic';
+  captureMode: 'manual' | 'immediate';
   amount: number; // in minor units (pence/cents)
   currency: string;
   payer?: DPayPayer;
@@ -57,7 +57,7 @@ export interface DPayPaymentResponse {
   authorizedAmount: number;
   capturedAmount: number;
   currency: string;
-  captureMode: 'manual' | 'automatic';
+  captureMode: 'manual' | 'immediate';
   createdAt: string;
 }
 
