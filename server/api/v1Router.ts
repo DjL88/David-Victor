@@ -1659,7 +1659,7 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
     let order = await adapter.getOrder(orderId);
 
     // Merge or fall back to Firestore order projection for authoritative picking updates
-    const proj = await FirestorePlatformService.getOrderProjection(orderId);
+    const proj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
 
     // Section 26 & Item 18: Customer Access Control
     if (proj?.customerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
