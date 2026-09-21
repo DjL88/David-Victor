@@ -43,6 +43,7 @@ import {
   DispatchAvailability,
 } from './models';
 import { BundleProduct, SelectedBundleModifier } from './bundleModels';
+import { auth } from '../firebase';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
@@ -86,6 +87,17 @@ export class HttpCommerceClient implements CommerceClient {
     let lastError: unknown = null;
     const retryDelays = [200, 600, 1200];
 
+    let customerAuthorization: string | undefined;
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const token = await user.getIdToken();
+        if (token) customerAuthorization = `Bearer ${token}`;
+      }
+    } catch (authError) {
+      console.warn('[HttpCommerceClient] Could not refresh customer auth token:', authError);
+    }
+
     for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
       try {
         res = await fetch(url, {
@@ -93,6 +105,7 @@ export class HttpCommerceClient implements CommerceClient {
           headers: {
             'Content-Type': 'application/json',
             'X-Tenant-ID': this.currentTenantId,
+            ...(customerAuthorization ? { Authorization: customerAuthorization } : {}),
             ...(options.headers || {}),
           },
         });
@@ -649,8 +662,12 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getUserOrders(): Promise<Order[]> {
-    // Honest customer data: returns empty array if no authenticated customer orders exist
-    return [];
+    const response = await this.request<{ orders: Order[] }>('/orders');
+    return response.orders || [];
+  }
+
+  async getOrderHistory(): Promise<Order[]> {
+    return this.getUserOrders();
   }
 
   async advanceOrderStatus(orderId: string): Promise<Order> {
