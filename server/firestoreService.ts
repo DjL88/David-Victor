@@ -2058,6 +2058,47 @@ export class FirestoreService {
   }
 
   /**
+   * Finds an existing payment projection by the stable customer order reference.
+   * Used to make DPay pre-authorisation retry-safe when Retail order submission
+   * fails after the PSP has already authorised the card.
+   */
+  static async getPaymentProjectionByOrderReference(
+    orderReference: string,
+    tenantId?: string
+  ): Promise<DomainPaymentProjection | null> {
+    if (!orderReference) return null;
+
+    for (const payment of Object.values(inMemoryPaymentProjections)) {
+      if (
+        payment.orderReference === orderReference &&
+        (!tenantId || payment.tenantId === tenantId)
+      ) {
+        return payment;
+      }
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return null;
+    try {
+      let query: any = db
+        .collection('paymentProjections')
+        .where('orderReference', '==', orderReference);
+      if (tenantId) {
+        query = query.where('tenantId', '==', tenantId);
+      }
+      const snap = await query.limit(1).get();
+      if (!snap.empty) {
+        const payment = snap.docs[0].data() as DomainPaymentProjection;
+        inMemoryPaymentProjections[payment.paymentId] = payment;
+        return payment;
+      }
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not find payment by orderReference:', err);
+    }
+    return null;
+  }
+
+  /**
    * Saves or updates a CheckoutProjection (CHECK-01, CHECK-02).
    */
   static async saveCheckoutProjection(checkout: CheckoutResult): Promise<void> {
