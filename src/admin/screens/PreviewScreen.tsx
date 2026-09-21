@@ -178,7 +178,7 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
                       className="p-2.5 rounded-xl border border-gray-100 bg-gray-50/60 flex flex-col justify-between space-y-2"
                     >
                       <img
-                        src={p.images?.[0] || '/placeholder-product.svg'}
+                        src={p.images?.[0] || config.logoUrl || ''}
                         alt={p.name}
                         className="w-full h-20 object-cover rounded-lg bg-white"
                       />
