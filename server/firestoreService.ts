@@ -1671,7 +1671,9 @@ export class FirestoreService {
       status: order.status,
       itemsCount: order.currentOrder?.itemCount || order.originalBasket?.items?.length || (order as any).itemsCount || 0,
       total: order.currentOrder ? order.currentOrder.total.amount : (order.originalBasket?.total?.amount ?? (order as any).total ?? 0),
-      fulfillmentType: order.fulfillment?.type || (order as any).fulfillmentType || 'delivery',
+      // DeliverectOrderMapper already canonicalizes fulfillment. Unknown values fail
+      // closed there rather than silently turning a pickup order into delivery.
+      fulfillmentType: order.fulfillment.type,
       destinationArea,
       estimatedDeliveryTime: order.delivery?.deliveryOption?.deliveryEta || '',
       checkoutId,
