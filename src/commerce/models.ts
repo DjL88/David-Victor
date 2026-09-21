@@ -931,6 +931,29 @@ export interface TenantFeePolicy {
   reauthorizationTolerancePercent?: number; // Tolerated variance before requiring re-auth
 }
 
+/**
+ * Tenant-level policy controlling whether/how a customer can order from a store
+ * that isn't open right now. Deliberately three distinct switches rather than one:
+ * a store closed right now can still be ASAP-orderable once it opens (next-opening
+ * pre-order), independently of whether customers may pick a specific later slot the
+ * same day while the store is open (same-day scheduled pre-order). Pre-ordering
+ * beyond the current day is intentionally not modeled here (kept simple).
+ */
+export interface TenantSchedulingPolicy {
+  /** When true, disables both pre-order modes below — only ASAP-while-open orders are accepted. */
+  acceptAsapOrdersOnly: boolean;
+  /** Allow building/creating a basket for a closed store, targeting its next real opening time. */
+  allowNextOpeningPreOrder: boolean;
+  /** Allow picking a specific later time slot, same day, while the store is/will be open. */
+  allowSameDayScheduledPreOrder: boolean;
+}
+
+export const DEFAULT_TENANT_SCHEDULING_POLICY: TenantSchedulingPolicy = {
+  acceptAsapOrdersOnly: false,
+  allowNextOpeningPreOrder: true,
+  allowSameDayScheduledPreOrder: true,
+};
+
 export interface VisualRuleMatchCondition {
   field: 'productTag' | 'category' | 'brand' | 'ruleGroup' | 'isAlcohol' | 'plu';
   operator: 'equals' | 'contains' | 'in';

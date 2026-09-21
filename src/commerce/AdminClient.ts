@@ -1,6 +1,7 @@
 import {
   TenantConfig,
   TenantFeePolicy,
+  TenantSchedulingPolicy,
   Story,
   CategoryPromoBanner,
   VisualRule,
@@ -49,6 +50,19 @@ export interface AdminClient {
     policyOrUser?: Partial<TenantFeePolicy> | AdminUser,
     user?: AdminUser
   ): Promise<TenantFeePolicy>;
+
+  /**
+   * Retrieves the ASAP-only / pre-order scheduling policy for this tenant.
+   */
+  getSchedulingPolicy?(tenantId?: string): Promise<TenantSchedulingPolicy>;
+
+  /**
+   * Updates the scheduling policy (requires tenantAdmin or platformSuperAdmin).
+   */
+  updateSchedulingPolicy?(
+    tenantId: string,
+    policy: Partial<TenantSchedulingPolicy>
+  ): Promise<TenantSchedulingPolicy>;
 
   /**
    * Retrieves all stories configured for this tenant.

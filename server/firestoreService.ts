@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
 import { FirestoreRestService } from './firestoreRest';
-import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner } from '../src/commerce/models';
+import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
@@ -1328,6 +1328,61 @@ export class FirestoreService {
         .set(updated, { merge: true });
     } catch (err) {
       console.error('[Firestore Admin] Failed to update fee policy:', err);
+      throw err;
+    }
+    return updated;
+  }
+
+  /**
+   * Retrieves the ASAP/pre-order scheduling policy for tenant. Falls back to
+   * DEFAULT_TENANT_SCHEDULING_POLICY (which preserves today's behavior) rather than
+   * throwing when unconfigured, since an unconfigured tenant should keep working.
+   */
+  static async getTenantSchedulingPolicy(tenantId: string = 'brand-alpha'): Promise<TenantSchedulingPolicy> {
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode()) return DEFAULT_TENANT_SCHEDULING_POLICY;
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Database connection unavailable.', 503);
+    }
+
+    try {
+      const snap = await db.collection('tenants').doc(tenantId).collection('schedulingPolicies').doc('default').get();
+      if (snap.exists) {
+        return { ...DEFAULT_TENANT_SCHEDULING_POLICY, ...(snap.data() as Partial<TenantSchedulingPolicy>) };
+      }
+      return DEFAULT_TENANT_SCHEDULING_POLICY;
+    } catch (err) {
+      if (isDemoMode()) return DEFAULT_TENANT_SCHEDULING_POLICY;
+      throw err;
+    }
+  }
+
+  /**
+   * Updates the scheduling policy for tenant.
+   */
+  static async updateTenantSchedulingPolicy(
+    tenantId: string,
+    policy: Partial<TenantSchedulingPolicy>
+  ): Promise<TenantSchedulingPolicy> {
+    const current = await this.getTenantSchedulingPolicy(tenantId);
+    const updated = { ...current, ...policy };
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode()) {
+        throw new Error(`Database persistence is unavailable. Updating scheduling policy is rejected outside demo mode.`);
+      }
+      return updated;
+    }
+
+    try {
+      await db
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('schedulingPolicies')
+        .doc('default')
+        .set(updated, { merge: true });
+    } catch (err) {
+      console.error('[Firestore Admin] Failed to update scheduling policy:', err);
       throw err;
     }
     return updated;

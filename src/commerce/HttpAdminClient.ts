@@ -4,6 +4,7 @@ import {
   Story,
   CategoryPromoBanner,
   TenantFeePolicy,
+  TenantSchedulingPolicy,
   VisualRule,
   Store,
   AuditLogEntry,
@@ -509,6 +510,36 @@ export class HttpAdminClient implements AdminClient {
     });
 
     if (!res.ok) throw new Error('Failed to update fee policy');
+    return res.json();
+  }
+
+  // ==========================================
+  // SCHEDULING POLICY (ASAP-only / pre-order toggles)
+  // ==========================================
+  async getSchedulingPolicy(tenantId?: string): Promise<TenantSchedulingPolicy> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/scheduling-policy`, {
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to retrieve scheduling policy for tenant ${tId}: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async updateSchedulingPolicy(
+    tenantId: string,
+    policy: Partial<TenantSchedulingPolicy>
+  ): Promise<TenantSchedulingPolicy> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}/scheduling-policy`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(policy),
+    });
+
+    if (!res.ok) throw new Error('Failed to update scheduling policy');
     return res.json();
   }
 

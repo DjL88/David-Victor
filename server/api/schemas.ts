@@ -388,6 +388,14 @@ export const UpdateFeePolicySchema = z
   })
   .passthrough();
 
+export const UpdateSchedulingPolicySchema = z
+  .object({
+    acceptAsapOrdersOnly: z.boolean().optional(),
+    allowNextOpeningPreOrder: z.boolean().optional(),
+    allowSameDayScheduledPreOrder: z.boolean().optional(),
+  })
+  .passthrough();
+
 export const SaveStorySchema = z
   .object({
     id: z.string().optional(),

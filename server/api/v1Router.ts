@@ -70,6 +70,7 @@ import {
   CreateTenantSchema,
   UpdateTenantConfigSchema,
   UpdateFeePolicySchema,
+  UpdateSchedulingPolicySchema,
   SaveStorySchema,
   SaveHeroBannerSchema,
   ReorderHeroBannersSchema,
@@ -2279,6 +2280,36 @@ v1Router.patch('/admin/tenants/:id/fee-policy', requireAdminAuth('tenantAdmin'),
       category: 'Compliance',
       action: 'UPDATE_FEE_POLICY',
       details: `Updated fee policy: smallOrderFeeEnabled=${updated.smallOrderFeeEnabled}, serviceFeeEnabled=${updated.serviceFeeEnabled}`,
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9.5.1 Scheduling Policy (ASAP-only / next-opening pre-order / same-day scheduled pre-order)
+v1Router.get('/admin/tenants/:id/scheduling-policy', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const policy = await FirestorePlatformService.getTenantSchedulingPolicy(req.params.id);
+    res.json(policy);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.patch('/admin/tenants/:id/scheduling-policy', requireAdminAuth('tenantAdmin'), validateBody(UpdateSchedulingPolicySchema), async (req: Request, res: Response) => {
+  try {
+    const updated = await FirestorePlatformService.updateTenantSchedulingPolicy(req.params.id, req.body);
+
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'tenantAdmin',
+      tenantId: req.params.id,
+      category: 'Compliance',
+      action: 'UPDATE_SCHEDULING_POLICY',
+      details: `Updated scheduling policy: acceptAsapOrdersOnly=${updated.acceptAsapOrdersOnly}, allowNextOpeningPreOrder=${updated.allowNextOpeningPreOrder}, allowSameDayScheduledPreOrder=${updated.allowSameDayScheduledPreOrder}`,
     });
 
     res.json(updated);
