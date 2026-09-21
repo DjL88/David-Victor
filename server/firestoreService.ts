@@ -1973,6 +1973,10 @@ export class FirestoreService {
     const projection: OrderProjection = {
       orderId: resolvedOrderId,
       tenantId,
+      customerUid:
+        (order as any).customerUid ||
+        (order as any).metadata?.customerUid ||
+        undefined,
       status: order.status,
       itemsCount: order.currentOrder?.itemCount || order.originalBasket?.items?.length || (order as any).itemsCount || 0,
       total: order.currentOrder ? order.currentOrder.total.amount : (order.originalBasket?.total?.amount ?? (order as any).total ?? 0),
