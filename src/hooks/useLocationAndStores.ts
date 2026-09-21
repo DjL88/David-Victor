@@ -29,7 +29,12 @@ export function useLocationAndStores() {
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
 
   // Fulfillment & journey state
-  const [fulfillmentType, setFulfillmentTypeState] = useState<'delivery' | 'pickup'>('delivery');
+  // Defaults to pickup: delivery checkout is not yet wired to the real Deliverect basket
+  // path outside demo mode (docs/NORTH_STAR.md §11), so a fresh staging/production
+  // session must not land on a fulfilment type that fails at add-to-basket time.
+  // Customers can still switch to delivery where the UI allows it (gated to demo mode
+  // in Header.tsx / FulfilmentModal.tsx).
+  const [fulfillmentType, setFulfillmentTypeState] = useState<'delivery' | 'pickup'>('pickup');
   const [entryStage, setEntryStage] = useState<EntryStage>('SPLASH');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);

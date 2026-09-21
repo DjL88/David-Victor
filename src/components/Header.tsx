@@ -49,6 +49,10 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { tenant, appMode } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
+  // Delivery checkout is not yet wired to the real Deliverect basket path outside demo
+  // mode (see docs/NORTH_STAR.md §11); gate the toggle so customers can't select a
+  // fulfilment type that will fail at add-to-basket/checkout time.
+  const deliveryFulfillmentEnabled = appMode === 'demo';
   const headerRef = useRef<HTMLElement>(null);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -167,11 +171,15 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center bg-gray-100 p-0.5 rounded-xl text-xs font-bold">
               <button
                 type="button"
-                onClick={() => onFulfillmentChange('delivery')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                  fulfillmentType === 'delivery'
-                    ? 'bg-white text-gray-900 shadow-2xs'
-                    : 'text-gray-500 hover:text-gray-800'
+                onClick={deliveryFulfillmentEnabled ? () => onFulfillmentChange('delivery') : undefined}
+                disabled={!deliveryFulfillmentEnabled}
+                title={deliveryFulfillmentEnabled ? undefined : 'Delivery checkout is coming soon — Collection is available now.'}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
+                  !deliveryFulfillmentEnabled
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : fulfillmentType === 'delivery'
+                    ? 'bg-white text-gray-900 shadow-2xs cursor-pointer'
+                    : 'text-gray-500 hover:text-gray-800 cursor-pointer'
                 }`}
               >
                 <Truck className="w-3 h-3" />

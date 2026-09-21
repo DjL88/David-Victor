@@ -9,6 +9,15 @@ interface FulfilmentModalProps {
   deliveryStoresCount: number;
   collectionStoresCount: number;
   hasDeliveryCoverage: boolean;
+  /**
+   * Whether delivery checkout is actually implemented against the real Deliverect basket
+   * path in the current runtime (only true in demo mode today — the live Commerce basket
+   * client rejects delivery baskets/checkout in staging/production; see
+   * docs/NORTH_STAR.md §11). Independent of `hasDeliveryCoverage`, which is a geographic
+   * concept: a store can deliver to this address and delivery checkout can still be
+   * unimplemented.
+   */
+  deliveryEnabled: boolean;
   onSelectFulfillment: (type: 'delivery' | 'pickup') => void;
   onClose?: () => void;
   dismissible?: boolean;
@@ -20,6 +29,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
   deliveryStoresCount,
   collectionStoresCount,
   hasDeliveryCoverage,
+  deliveryEnabled,
   onSelectFulfillment,
   onClose,
   dismissible = true,
@@ -80,11 +90,15 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
           <button
             type="button"
             id="fulfilment-option-delivery"
-            onClick={() => onSelectFulfillment('delivery')}
-            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
-              hasDeliveryCoverage
-                ? 'border-emerald-200 hover:border-emerald-500 bg-white hover:bg-emerald-50/40 shadow-xs'
-                : 'border-gray-200 bg-gray-50 opacity-75'
+            onClick={deliveryEnabled ? () => onSelectFulfillment('delivery') : undefined}
+            disabled={!deliveryEnabled}
+            title={deliveryEnabled ? undefined : 'Delivery checkout is coming soon. Please choose Click & Collect for now.'}
+            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all group ${
+              !deliveryEnabled
+                ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
+                : hasDeliveryCoverage
+                ? 'border-emerald-200 hover:border-emerald-500 bg-white hover:bg-emerald-50/40 shadow-xs cursor-pointer'
+                : 'border-gray-200 bg-gray-50 opacity-75 cursor-pointer'
             }`}
           >
             <div className="flex items-center gap-3.5 min-w-0">
@@ -94,7 +108,11 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-gray-900">Doorstep Delivery</span>
-                  {hasDeliveryCoverage ? (
+                  {!deliveryEnabled ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                      Coming Soon
+                    </span>
+                  ) : hasDeliveryCoverage ? (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                       Available
                     </span>
@@ -105,7 +123,9 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {hasDeliveryCoverage
+                  {!deliveryEnabled
+                    ? 'Not available yet — please choose Click & Collect'
+                    : hasDeliveryCoverage
                     ? `${deliveryStoresCount} nearby ${
                         deliveryStoresCount === 1 ? 'store delivers' : 'stores deliver'
                       } to your address`
