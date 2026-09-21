@@ -5,6 +5,7 @@ import { SubstitutionCallbackService } from '../../server/deliverect/Substitutio
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { PaymentService } from '../../server/deliverect/PaymentService';
 import { AsyncWorkerService } from '../../server/asyncWorkerService';
 import { DispatchOrchestrationService } from '../../server/deliverect/DispatchOrchestrationService';
 
@@ -240,6 +241,68 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
   // QST-03: Quantity Amendments (Catch-weight / Partial Stock)
   // ========================================================
   describe('QST-03: Quantity Amendment (ITEM_QUANTITY_AMENDED)', () => {
+    it('preserves unit price when Quest reduces quantity without sending a replacement price', async () => {
+      const orderId = `quest_ord_${Date.now()}_04_unit_price`;
+      const initialOrder = {
+        orderId,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 900,
+        authorizedMaximum: 900,
+        finalAmount: 900,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS' as const,
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [
+            {
+              id: 'line-unit-price',
+              plu: 'PLU-UNIT-PRICE',
+              name: 'Three Pack Item',
+              orderedQuantity: 3,
+              originalQuantity: 3,
+              pickedQuantity: 0,
+              originalPrice: { amount: 300, currency: 'GBP' },
+              finalPrice: { amount: 300, currency: 'GBP' },
+              state: 'PENDING' as const,
+            },
+          ],
+        },
+      };
+
+      await FirestorePlatformService.saveOrderProjection(initialOrder as any, testTenant);
+
+      const amendPayload = JSON.stringify({
+        event: 'ITEM_QUANTITY_AMENDED',
+        orderId,
+        plu: 'PLU-UNIT-PRICE',
+        amendedQuantity: 2,
+        reason: 'Only two available',
+        timestamp: new Date().toISOString(),
+      });
+
+      const res = await WebhookService.processWebhook(
+        JSON.parse(amendPayload),
+        amendPayload,
+        buildSignatureHeaders(amendPayload),
+        testTenant
+      );
+
+      expect(res.success).toBe(true);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-UNIT-PRICE');
+
+      expect(amended?.pickedQuantity).toBe(2);
+      expect((amended?.finalPrice as any)?.amount).toBe(300);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(600);
+    });
+
     it('updates item quantity and line price', async () => {
       const orderId = `quest_ord_${Date.now()}_04`;
       const initialOrder = {

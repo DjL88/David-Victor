@@ -584,17 +584,27 @@ export class WebhookService {
             payload.amendedQuantity ?? payload.suppliedQuantity ?? payload.quantity ?? payload.newQuantity ?? 0;
           const originalQuantity = existingItem?.originalQuantity || (existingItem as any)?.orderedQuantity || 1;
           const origPriceRaw = existingItem?.originalPrice || { amount: 0, currency: 'GBP' };
-          const origPriceAmount = typeof origPriceRaw === 'number' ? origPriceRaw : origPriceRaw.amount;
-          const unitPrice = originalQuantity > 0 ? origPriceAmount / originalQuantity : origPriceAmount;
-          const finalAmount =
+          const origUnitPrice =
+            typeof origPriceRaw === 'number' ? origPriceRaw : origPriceRaw.amount;
+
+          // Deliverect Retail item prices are unit prices in integer minor units.
+          // Quantity is applied separately by the final-amount calculator. If Quest
+          // amends quantity without sending a replacement unit price, preserve the
+          // original unit price. Dividing by originalQuantity here would undercharge
+          // every multi-quantity amendment.
+          const amendedUnitPrice =
             payload.amendedPrice !== undefined
               ? typeof payload.amendedPrice === 'number'
                 ? payload.amendedPrice
                 : payload.amendedPrice.amount
-              : Math.round(unitPrice * suppliedQuantity);
+              : origUnitPrice;
+
           const finalPrice = typeof existingItem?.originalPrice === 'number'
-            ? finalAmount
-            : { amount: finalAmount, currency: (origPriceRaw as any).currency || 'GBP' };
+            ? Math.round(amendedUnitPrice)
+            : {
+                amount: Math.round(amendedUnitPrice),
+                currency: (origPriceRaw as any).currency || 'GBP',
+              };
 
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'QUANTITY_AMENDED',
