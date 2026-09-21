@@ -1579,7 +1579,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     if (value.includes('FAIL') || value.includes('REJECT')) return 'ORDER_FAILED';
     if (value.includes('CANCEL')) return 'CANCELLED';
-    if (value.includes('CONFIRM') || value.includes('SUCCESS')) return 'ORDER_CONFIRMED';
+    if (
+      value === 'COMPLETED' ||
+      value.includes('CONFIRM') ||
+      value.includes('SUCCESS')
+    ) {
+      return 'ORDER_CONFIRMED';
+    }
 
     return 'CHECKOUT_PENDING_CONFIRMATION';
   }

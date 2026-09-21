@@ -79,7 +79,7 @@ async function main() {
   }
 
   const tokenManager = OAuthTokenManager.getInstance({
-    environment: environment === 'production' ? 'production' : 'staging',
+    environment: 'staging',
   });
 
   const api = new DeliverectCommerceBasketApi(tokenManager, accountId);
