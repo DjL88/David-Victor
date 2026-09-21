@@ -61,6 +61,60 @@ import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocati
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
 
+export type DeliverectChannelNameSource =
+  | 'integration_config'
+  | 'oauth_scope'
+  | 'missing'
+  | 'ambiguous';
+
+export interface DeliverectChannelNameResolution {
+  channelName?: string;
+  source: DeliverectChannelNameSource;
+  grantedChannelScopes: string[];
+}
+
+/**
+ * Resolves the Channel API path segment without treating OAuth scope discovery
+ * as an authorization gate. An explicitly configured Channel Name is
+ * authoritative. OAuth genericChannel:<scope> is only a convenience fallback.
+ */
+export function resolveDeliverectChannelName(
+  configuredChannelName: string | undefined,
+  grantedChannelScopes: string[] = []
+): DeliverectChannelNameResolution {
+  const configured = String(configuredChannelName || '')
+    .trim()
+    .toLowerCase();
+  if (configured) {
+    return {
+      channelName: configured,
+      source: 'integration_config',
+      grantedChannelScopes,
+    };
+  }
+
+  const scopes = Array.from(
+    new Set(
+      grantedChannelScopes
+        .map((scope) => String(scope || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+
+  if (scopes.length === 1) {
+    return {
+      channelName: scopes[0],
+      source: 'oauth_scope',
+      grantedChannelScopes: scopes,
+    };
+  }
+
+  return {
+    source: scopes.length > 1 ? 'ambiguous' : 'missing',
+    grantedChannelScopes: scopes,
+  };
+}
+
 export function applyCategoryFallback(
   categories: Category[],
   products: Product[],
@@ -2606,32 +2660,51 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const basket = await this.mapLiveCommerceBasket(reconciledRaw);
     const context = await IntegrationContext.getContext(this.tenantId);
 
-    let channelName = String(context.channelName || '').trim().toLowerCase();
-    if (!channelName) {
+    // Read the latest persisted integration record as well as the cached
+    // IntegrationContext. This prevents a newly saved channelName from waiting
+    // up to the context-cache TTL before it can be used for an order.
+    const latestIntegration = await FirestorePlatformService
+      .getIntegrationConfig(this.tenantId)
+      .catch(() => null);
+    const configuredChannelName =
+      latestIntegration?.channelName ||
+      context.channelName;
+
+    let channelResolution = resolveDeliverectChannelName(
+      configuredChannelName
+    );
+
+    if (!channelResolution.channelName) {
       const grantedChannelScopes =
         await this.tokenManager.getChannelScopeNames();
+      channelResolution = resolveDeliverectChannelName(
+        configuredChannelName,
+        grantedChannelScopes
+      );
+    }
 
-      if (grantedChannelScopes.length === 1) {
-        channelName = grantedChannelScopes[0];
-        console.log(
-          `[DeliverectApiClient] Derived Channel API name "${channelName}" from OAuth genericChannel scope.`
-        );
-      } else if (grantedChannelScopes.length === 0) {
+    if (!channelResolution.channelName) {
+      if (channelResolution.source === 'ambiguous') {
         throw new CommerceError(
           'INTEGRATION_NOT_CONFIGURED',
-          'Retail/Quest ordering needs a Deliverect Channel API grant. The current OAuth credentials do not expose a genericChannel:<channel_scope> scope. Enable the Channel API scope for these credentials, or configure integration.channelName / DELIVERECT_CHANNEL_NAME if the OAuth provider omits scope metadata.',
-          503
-        );
-      } else {
-        throw new CommerceError(
-          'INTEGRATION_NOT_CONFIGURED',
-          `The OAuth credentials expose multiple Deliverect Channel scopes (${grantedChannelScopes.join(
+          `Retail/Quest ordering cannot choose a Deliverect Channel Name because the OAuth token exposes multiple genericChannel scopes (${channelResolution.grantedChannelScopes.join(
             ', '
-          )}). Configure integration.channelName or DELIVERECT_CHANNEL_NAME to choose the scope used for storefront orders.`,
+          )}). Configure integration.channelName or DELIVERECT_CHANNEL_NAME with the assigned Channel Name to select the order endpoint explicitly.`,
           503
         );
       }
+
+      throw new CommerceError(
+        'INTEGRATION_NOT_CONFIGURED',
+        'Retail/Quest ordering cannot determine the Deliverect Channel Name. No integration.channelName / DELIVERECT_CHANNEL_NAME is configured, and the OAuth token did not expose a readable genericChannel:<channel_scope> value. This does not prove Channel API permission is missing. Configure the assigned Channel Name explicitly so the app can attempt the real Deliverect Channel order endpoint.',
+        503
+      );
     }
+
+    const channelName = channelResolution.channelName;
+    console.log(
+      `[DeliverectApiClient] Retail order channelName="${channelName}" source=${channelResolution.source}`
+    );
 
     const channelLinkId = String(basket.channelLinkId || basket.storeId || '').trim();
     if (!channelLinkId) {
@@ -2786,9 +2859,37 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     if (!response.ok) {
+      const upstreamMessage = responseText || response.statusText;
+      const diagnosticContext =
+        `channelName="${channelName}" (source=${channelResolution.source}), channelLinkId="${channelLinkId}"`;
+
+      if (response.status === 401) {
+        throw new CommerceError(
+          'INTEGRATION_AUTH_FAILED',
+          `Deliverect rejected authentication for the Retail/Quest Channel order endpoint (${diagnosticContext}). Refresh/check the Deliverect credentials. Upstream: ${upstreamMessage}`,
+          401
+        );
+      }
+
+      if (response.status === 403) {
+        throw new CommerceError(
+          'FORBIDDEN',
+          `Deliverect rejected permission to create the Retail/Quest order (${diagnosticContext}). The Channel Name was resolved successfully, so check the genericChannel permission and whether this channelLinkId is accessible to these credentials. Upstream: ${upstreamMessage}`,
+          403
+        );
+      }
+
+      if (response.status === 404) {
+        throw new CommerceError(
+          'CHECKOUT_FAILED',
+          `Deliverect could not find the Retail/Quest Channel order endpoint or channel link (${diagnosticContext}). Verify the assigned Channel Name and channelLinkId. Upstream: ${upstreamMessage}`,
+          404
+        );
+      }
+
       throw new CommerceError(
         'CHECKOUT_FAILED',
-        `Deliverect Retail order submission failed (HTTP ${response.status}): ${responseText || response.statusText}`,
+        `Deliverect Retail order submission failed (HTTP ${response.status}; ${diagnosticContext}): ${upstreamMessage}`,
         response.status
       );
     }
