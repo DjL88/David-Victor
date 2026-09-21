@@ -535,7 +535,10 @@ export interface CommerceClient {
       slotId?: string;
       schedulingType?: FulfillmentSchedulingType;
       paymentTokenRef?: string;
+      paymentId?: string;
       authorizationMaximum?: Money;
+      orderRoute?: 'retail_quest' | 'commerce_checkout';
+      fulfillmentType?: 'delivery' | 'pickup' | 'collection';
       customerNotes?: string;
       deliveryAddress?: Address;
       dispatchValidationId?: string;

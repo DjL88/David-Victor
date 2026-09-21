@@ -2583,6 +2583,259 @@ export class DeliverectApiClient implements DeliverectAdapter {
     };
   }
 
+  /**
+   * Submit the reconciled Commerce basket through Deliverect's Channel/Retail
+   * Create Order API so the order is available to Quest without also creating a
+   * Commerce checkout. The two order creation routes are deliberately exclusive.
+   */
+  async submitRetailOrder(
+    basketId: string,
+    options?: {
+      paymentId?: string;
+      authorizedMaximum?: Money;
+      customerNotes?: string;
+      deliveryAddress?: Address;
+      dispatchValidationId?: string;
+      idempotencyKey?: string;
+      channelOrderReference?: string;
+      tenantId?: string;
+    }
+  ): Promise<CheckoutResult> {
+    const api = await this.getCommerceBasketApi();
+    const reconciledRaw = await api.reconcileBasket(basketId);
+    const basket = await this.mapLiveCommerceBasket(reconciledRaw);
+    const context = await IntegrationContext.getContext(this.tenantId);
+
+    const channelName = String(context.channelName || '').trim().toLowerCase();
+    if (!channelName) {
+      throw new CommerceError(
+        'INTEGRATION_NOT_CONFIGURED',
+        'Retail/Quest order submission requires the Deliverect Channel API scope/name. Configure integration.channelName or DELIVERECT_CHANNEL_NAME.',
+        503
+      );
+    }
+
+    const channelLinkId = String(basket.channelLinkId || basket.storeId || '').trim();
+    if (!channelLinkId) {
+      throw new CommerceError(
+        'VALIDATION_ERROR',
+        'Retail/Quest order submission requires a channelLinkId.',
+        422
+      );
+    }
+
+    if (
+      this.allowedChannelLinkIds &&
+      this.allowedChannelLinkIds.size > 0 &&
+      !this.allowedChannelLinkIds.has(channelLinkId)
+    ) {
+      throw new CommerceError(
+        'FORBIDDEN',
+        `Channel link "${channelLinkId}" is not provisioned for this tenant.`,
+        403
+      );
+    }
+
+    const channelOrderReference =
+      options?.channelOrderReference ||
+      `BWYDI-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const channelOrderDisplayId = channelOrderReference.slice(-24);
+    const now = new Date().toISOString();
+    const hasOnlineAuthorization = Boolean(options?.paymentId);
+
+    const retailItems = basket.items.map((item: any) => {
+      const unitPrice =
+        typeof item?.unitPrice?.amount === 'number'
+          ? Math.round(item.unitPrice.amount)
+          : typeof item?.price?.amount === 'number'
+            ? Math.round(item.price.amount)
+            : typeof item?.price === 'number'
+              ? Math.round(item.price)
+              : 0;
+      const preference = item.substitutionPreference || 'BEST_MATCH';
+      const itemUnavailableActions =
+        Array.isArray(item.itemUnavailableActions) && item.itemUnavailableActions.length > 0
+          ? item.itemUnavailableActions
+          : Array.isArray(item.deliverectUnavailableActions) && item.deliverectUnavailableActions.length > 0
+            ? item.deliverectUnavailableActions
+            : buildQuestItemUnavailableActions(preference);
+      const preferredPlu = String(item.preferredSubstitutePlu || '').trim();
+      const preferredName = String(item.preferredSubstituteName || preferredPlu).trim();
+      const preferredPrice = item.preferredSubstitutePrice;
+      const substituteCandidate =
+        String(preference).toUpperCase() === 'CUSTOMER_SELECTED' && preferredPlu
+          ? [
+              {
+                plu: preferredPlu,
+                name: preferredName || preferredPlu,
+                quantity: item.quantity,
+                ...(preferredPrice && typeof preferredPrice.amount === 'number'
+                  ? { price: Math.round(preferredPrice.amount) }
+                  : {}),
+              },
+            ]
+          : undefined;
+
+      return {
+        plu: item.plu,
+        name: item.name || item.plu,
+        price: unitPrice,
+        quantity: item.quantity,
+        ...(item.note ? { remark: item.note } : {}),
+        itemUnavailableActions,
+        ...(substituteCandidate ? { substituteCandidate } : {}),
+      };
+    });
+
+    const payload: any = {
+      channelOrderId: channelOrderReference,
+      channelOrderDisplayId,
+      orderType: basket.fulfillmentType === 'delivery' ? 2 : 1,
+      deliveryIsAsap: true,
+      placedTime: now,
+      courier: 'restaurant',
+      decimalDigits: 2,
+      payment: {
+        amount: basket.total.amount,
+        type: 0,
+        due: hasOnlineAuthorization ? 0 : basket.total.amount,
+        rebate: 0,
+      },
+      items: retailItems,
+      // This flag tells the operational/POS flow not to collect payment again.
+      // The actual PSP settlement remains AUTHORIZED until Quest finalisation.
+      orderIsAlreadyPaid: hasOnlineAuthorization,
+      note: options?.customerNotes,
+      customer: basket.customer
+        ? {
+            name: basket.customer.name,
+            email: basket.customer.email,
+            phoneNumber: basket.customer.phone,
+            companyName: basket.customer.companyName,
+          }
+        : undefined,
+      validationId: options?.dispatchValidationId,
+    };
+
+    if (basket.fulfillmentType === 'delivery') {
+      const address: any = options?.deliveryAddress || (basket as any)?.fulfillment?.address;
+      if (!address) {
+        throw new CommerceError(
+          'VALIDATION_ERROR',
+          'Delivery address is required for a Retail delivery order.',
+          422
+        );
+      }
+      payload.deliveryAddress = {
+        street: address.street || address.line1 || address.formattedAddress,
+        postalCode: address.postalCode || address.postcode,
+        city: address.city,
+        country: address.country,
+        ...(typeof address.latitude === 'number' && typeof address.longitude === 'number'
+          ? { coordinates: [{ latitude: address.latitude, longitude: address.longitude }] }
+          : {}),
+      };
+    }
+
+    const url = `${this.baseUrl}/${encodeURIComponent(channelName)}/order/${encodeURIComponent(channelLinkId)}`;
+    const send = async () => {
+      const authorization = await this.tokenManager.getAuthorizationHeader();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    };
+
+    let response = await send();
+    if (response.status === 401) {
+      this.tokenManager.invalidateCache();
+      response = await send();
+    }
+
+    const responseText = await response.text();
+    let raw: any = {};
+    if (responseText) {
+      try {
+        raw = JSON.parse(responseText);
+      } catch {
+        raw = { raw: responseText };
+      }
+    }
+
+    if (!response.ok) {
+      throw new CommerceError(
+        'CHECKOUT_FAILED',
+        `Deliverect Retail order submission failed (HTTP ${response.status}): ${responseText || response.statusText}`,
+        response.status
+      );
+    }
+
+    const upstreamOrderId = String(
+      raw?._id || raw?.id || raw?.orderId || raw?.order?._id || raw?.order?.id || channelOrderReference
+    ).trim();
+    const checkoutId = `retail_${channelOrderReference.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    return {
+      checkoutId,
+      channelOrderReference,
+      orderId: upstreamOrderId,
+      tenantId: options?.tenantId || this.tenantId,
+      storeId: basket.storeId,
+      channelLinkId,
+      status: 'ORDER_CONFIRMED',
+      basketId,
+      fulfillmentType: basket.fulfillmentType,
+      total: basket.total,
+      paymentId: options?.paymentId,
+      idempotencyKey: options?.idempotencyKey,
+      dispatchValidationId: options?.dispatchValidationId,
+      order: {
+        id: upstreamOrderId,
+        channelOrderRawId: upstreamOrderId,
+        channelOrderId: channelOrderReference,
+        channelOrderDisplayId,
+        orderReference: channelOrderReference,
+        basketId,
+        channelLinkId,
+        status: 'SUBMITTED',
+        fulfillmentType: basket.fulfillmentType,
+        fulfillment: {
+          type: basket.fulfillmentType,
+          ...(basket.fulfillmentType === 'delivery' && payload.deliveryAddress
+            ? { address: payload.deliveryAddress }
+            : {}),
+        },
+        originalBasket: {
+          id: basket.id,
+          fulfillmentType: basket.fulfillmentType,
+          items: basket.items,
+          total: basket.total,
+          currency: basket.currency,
+        },
+        currentOrder: {
+          itemCount: basket.items.reduce((sum, item) => sum + item.quantity, 0),
+          total: basket.total,
+        },
+        paymentId: options?.paymentId,
+        paymentState: hasOnlineAuthorization ? 'AUTHORIZED' : 'UNPAID',
+        authorizedMaximum: options?.authorizedMaximum?.amount,
+        metadata: {
+          orderRoute: 'retail_quest',
+          dpayCaptureMode: options?.paymentId ? 'manual' : undefined,
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
   async getCheckout(checkoutId: string): Promise<CheckoutResult | null> {
     const api = await this.getCommerceBasketApi();
     const raw = await api.getCheckout(checkoutId);

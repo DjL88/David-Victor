@@ -231,6 +231,8 @@ export interface CheckoutResult {
   fulfillmentType: 'delivery' | 'pickup';
   total: Money;
   paymentId?: string;
+  /** Terminal Deliverect order creation path used for this customer order. */
+  orderRoute?: 'retail_quest' | 'commerce_checkout';
   idempotencyKey?: string;
   createdAt: string;
   updatedAt: string;
@@ -310,7 +312,7 @@ export interface DPayPaymentRequest {
   channelLinkId: string;
   gatewayProfileId?: string;
   mode: DPayMode;
-  captureMode: 'manual' | 'automatic';
+  captureMode: 'manual' | 'immediate';
   amount: number; // in integer minor units (pence/cents)
   currency: string; // ISO-4217
   payer?: DPayPayer;
@@ -328,7 +330,7 @@ export interface DPayPaymentResponse {
   authorizedAmount: number; // integer minor units
   capturedAmount: number; // integer minor units
   currency: string;
-  captureMode: 'manual' | 'automatic';
+  captureMode: 'manual' | 'immediate';
   residualHoldAmount?: number; // integer minor units
   orderReference?: string;
   createdAt: string;
@@ -343,7 +345,7 @@ export interface DomainPaymentProjection {
   amount: Money;
   authorizedAmount: Money;
   capturedAmount: Money;
-  captureMode: 'manual' | 'automatic';
+  captureMode: 'manual' | 'immediate';
   currency: string;
   residualHoldAmount?: Money;
   reauthorizationCount?: number;

@@ -397,39 +397,20 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
   // DV-05 & DV-06: Production Staging Contract Protection
   // ========================================================
   describe('DV-05, DV-06 & Staging Isolation (No Mock Fallback)', () => {
-    it('DeliverectDPayAdapter marks unverified capture/refund/reauthorize/gateways/payments with TODO_DELIVERECT_VERIFY', async () => {
+    it('keeps only unresolved DPay settlement operations guarded', async () => {
       const liveAdapter = new DeliverectDPayAdapter(testTenant);
-      setDPayAdapter(liveAdapter);
+
+      // Gateway discovery, payment request, payment lookup and refund now use
+      // published Deliverect Pay contracts. Manual final capture remains absent
+      // from the public endpoint index, and re-authorisation amount semantics
+      // still require partner confirmation.
+      await expect(
+        liveAdapter.capture('dpay_123', 2000)
+      ).rejects.toThrowError(/manual capture/i);
 
       await expect(
-        PaymentService.getPaymentGateways('chl_123', testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
-
-      await expect(
-        PaymentService.requestPayment({
-          channelLinkId: 'chl_123',
-          mode: { type: 'token', tokenId: 'tok_test' },
-          amount: 1000,
-          currency: 'GBP',
-          captureMode: 'manual',
-        }, testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
-
-      await expect(
-        PaymentService.getPayment('dpay_123', testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
-
-      await expect(
-        PaymentService.capture('dpay_123', 2000, testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
-
-      await expect(
-        PaymentService.refund('dpay_123', 500, undefined, testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
-
-      await expect(
-        PaymentService.reauthorize('dpay_123', 500, testTenant)
-      ).rejects.toThrowError(/TODO_DELIVERECT_VERIFY/);
+        liveAdapter.reauthorize('dpay_123', 500)
+      ).rejects.toThrowError(/amount semantics/i);
     });
 
     it('IntegrationUnavailableDPayAdapter returns 503 INTEGRATION_NOT_CONFIGURED in staging/production without credentials', async () => {

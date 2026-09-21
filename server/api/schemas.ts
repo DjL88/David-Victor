@@ -211,7 +211,15 @@ export const CheckoutBasketOptionsSchema = z
     substitutionPolicy: z.any().optional(),
     scheduledSlot: z.any().optional(),
     paymentMethod: z.any().optional(),
+    paymentTokenRef: z.string().min(1).optional(),
     paymentId: z.string().optional(),
+    orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
+    authorizedMaximum: z
+      .object({
+        amount: z.number().int().nonnegative(),
+        currency: z.string().length(3),
+      })
+      .optional(),
     dispatchValidationId: z.string().optional(),
     dispatchValidationExpiresAt: z.string().optional(),
     selectedQuoteId: z.string().optional(),
@@ -285,7 +293,7 @@ export const DPayRequestPaymentSchema = z.object({
     type: z.enum(['token', 'card', 'hosted']),
     tokenId: z.string().min(1, 'tokenId is required for tokenized payments'),
   }),
-  captureMode: z.enum(['manual', 'automatic']).default('manual'),
+  captureMode: z.enum(['manual', 'immediate']).default('manual'),
   amount: z.number().int('amount must be an integer in minor units').positive('amount must be positive'),
   currency: z.string().length(3, 'currency must be a 3-letter ISO-4217 code'),
   payer: z
@@ -503,6 +511,8 @@ export const ReorderHeroBannersSchema = z
 
 export const UpdateIntegrationSchema = z.object({
   deliverectAccountId: z.string().optional(),
+  channelName: z.string().min(1).optional(),
+  orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
   environment: z.enum(['staging', 'production']).optional(),
   status: z.enum(['connected', 'standalone', 'error']).optional(),
   bffProxyUrl: z.string().optional(),

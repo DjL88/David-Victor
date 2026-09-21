@@ -22,6 +22,12 @@
 | `/orders` | GET | HTTP 200 OK. Returns active orders collection. | VERIFIED LIVE |
 | `/fulfillment/validate` | POST | Endpoint registered (405 on GET). Requires Dispatch payload verification. | IN PROGRESS |
 | `/baskets` | POST | HTTP 403 `insufficient_permissions` with current staging credentials. Requires basket write scope or merchant POS authorization. | BLOCKED ON DELIVERECT PERMISSIONS |
+| `/{channelName}/order/{channelLinkId}` | POST | Published Channel API Create Order contract. Supports Retail `itemUnavailableActions`, `substituteCandidate`, pickup/delivery order types and `orderIsAlreadyPaid`. | VERIFIED CONTRACT; LIVE SCOPE TEST PENDING |
+| `/pay/channel/{channelLinkId}/gatewayProfiles` | GET | Published DPay gateway discovery contract. | VERIFIED CONTRACT; LIVE PAY SCOPE TEST PENDING |
+| `/pay/channel/{channelLinkId}/payments/request` | POST | Published DPay request contract. Supports `captureMode: immediate | manual`; manual leaves the payment authorised for later capture. | VERIFIED CONTRACT; LIVE PAY SCOPE TEST PENDING |
+| `/pay/channel/{channelLinkId}/payments/{paymentId}` | GET | Published DPay payment lookup contract. | VERIFIED CONTRACT; LIVE PAY SCOPE TEST PENDING |
+| `/pay/channel/{channelLinkId}/payments/{paymentId}/refund` | POST | Published DPay refund contract with integer minor-unit `amount`. | VERIFIED CONTRACT; LIVE PAY SCOPE TEST PENDING |
+| `/pay/channel/{channelLinkId}/payments/{paymentId}/reauthorize` | POST | Published re-authorisation route. Exact `amount` semantics still require partner/staging confirmation before automatic use. | ROUTE VERIFIED; SEMANTICS PENDING |
 
 ---
 
@@ -31,10 +37,10 @@
 |---|---|---|---|---|
 | **DV-01** | **OAuth & Baskets** | Basket Write Scope | `POST /baskets` (bare Eve endpoint) returns 403 `{"code":"insufficient_permissions"}`. Confirm which scope or merchant permission must be granted to the client credentials (`4BLXg0gM62Pq...`) to create and update baskets — **and separately confirm whether `POST /commerce/{accountId}/baskets` (the Commerce endpoint the wired storefront path actually uses) requires the same scope or a different one.** | PENDING DELIVERECT TEAM + PENDING LIVE RE-TEST |
 | **DV-02** | **Dispatch** | Dispatch Validation Payload | Confirm exact request schema for `POST /fulfillment/validate` (coordinates vs address vs channelLinkId). | PENDING DISPATCH TEST |
-| **DV-03** | **DPay** | Manual Capture & Token Proxy | Confirm whether Basis Theory token proxy is enabled for account `68517fde1c3ddaa7f6d0275c` and the exact payment request route. | PENDING PAY TEAM CONFIRMATION |
+| **DV-03** | **DPay** | Token Proxy / Pay Scope | Payment request route is now confirmed as `POST /pay/channel/{channelLinkId}/payments/request`. Confirm the Basis Theory token proxy and `payments` scope are enabled for account `68517fde1c3ddaa7f6d0275c`. | ROUTE RESOLVED; ACCOUNT ENABLEMENT PENDING |
 | **DV-04** | **Quest** | Picking Amendments Payload | Confirm Quest webhook payload signature and substitution callback contract. | PENDING QUEST TEST |
 | **DV-05** | **DPay** | Manual Capture Endpoint | Confirm exact endpoint and payload for executing capture of an authorized DPay payment (`/pay/channel/{channelLinkId}/payments/{paymentId}/capture`). | PENDING PAY TEAM CONFIRMATION |
-| **DV-06** | **DPay** | Post-Pick Uplift / Reauthorization | Does DPay support authorising an agreed maximum ceiling above the initial basket total, followed by partial capture of the picked total? If final picked value exceeds authorized amount, what is the verified additional-auth / reauth contract? | PENDING PAY TEAM CONFIRMATION |
+| **DV-06** | **DPay** | Post-Pick Uplift / Reauthorization | Route is now documented as `POST /pay/channel/{channelLinkId}/payments/{paymentId}/reauthorize`. Confirm whether its `amount` is the incremental uplift or the new total authorization, and confirm final capture behaviour. | ROUTE RESOLVED; AMOUNT SEMANTICS PENDING |
 | **DV-07** | **DPay** | Residual Hold Release | When capturing an amount lower than the authorized maximum, does DPay / underlying PSP automatically release the residual hold immediately or upon settlement? | PENDING PAY TEAM CONFIRMATION |
 | **DV-08** | **Dispatch** | Availability & Fee Fields | Confirm exact response fields for `/fulfillment/validate` (`validationId`, `expiresAt`, `deliveryFee`, `etaMinutes`, carrier info). | PENDING DISPATCH TEST |
 | **DV-09** | **Quest** | Substitute Candidate Schema | For `GET /integrations/deliverect/orders/:orderId/substitute/:plu`, confirm the exact JSON schema expected by Quest when returning customer-selected candidate arrays. | PENDING QUEST TEST |

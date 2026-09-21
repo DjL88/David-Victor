@@ -155,6 +155,22 @@ export interface DeliverectAdapter {
     tenantId?: string;
   }): Promise<CheckoutResult>;
 
+  /**
+   * Places a Retail/Channel API order for Quest picking without creating a
+   * Commerce checkout session. This is a mutually-exclusive terminal order
+   * creation route: callers must choose either retail_quest or commerce_checkout.
+   */
+  submitRetailOrder?(basketId: string, options?: {
+    paymentId?: string;
+    authorizedMaximum?: Money;
+    customerNotes?: string;
+    deliveryAddress?: Address;
+    dispatchValidationId?: string;
+    idempotencyKey?: string;
+    channelOrderReference?: string;
+    tenantId?: string;
+  }): Promise<CheckoutResult>;
+
   getCheckout?(checkoutId: string): Promise<CheckoutResult | null>;
   confirmCheckoutDemo?(checkoutId: string): Promise<CheckoutResult | null>;
 

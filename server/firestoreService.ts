@@ -63,6 +63,10 @@ export interface IntegrationConfig {
   channelLinkId?: string;
   /** Explicit tenant storefront allowlist; absent means all stores in the assigned account. */
   allowedChannelLinkIds?: string[];
+  /** Deliverect Channel API scope/name for Retail order creation. */
+  channelName?: string;
+  /** Which Deliverect endpoint creates the live order. */
+  orderRoute?: 'retail_quest' | 'commerce_checkout';
   environment: 'staging' | 'production';
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';
@@ -2049,6 +2053,47 @@ export class FirestoreService {
       }
     } catch (err) {
       console.warn('[Firestore Admin] Could not find order by paymentId:', err);
+    }
+    return null;
+  }
+
+  /**
+   * Finds an existing payment projection by the stable customer order reference.
+   * Used to make DPay pre-authorisation retry-safe when Retail order submission
+   * fails after the PSP has already authorised the card.
+   */
+  static async getPaymentProjectionByOrderReference(
+    orderReference: string,
+    tenantId?: string
+  ): Promise<DomainPaymentProjection | null> {
+    if (!orderReference) return null;
+
+    for (const payment of Object.values(inMemoryPaymentProjections)) {
+      if (
+        payment.orderReference === orderReference &&
+        (!tenantId || payment.tenantId === tenantId)
+      ) {
+        return payment;
+      }
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return null;
+    try {
+      let query: any = db
+        .collection('paymentProjections')
+        .where('orderReference', '==', orderReference);
+      if (tenantId) {
+        query = query.where('tenantId', '==', tenantId);
+      }
+      const snap = await query.limit(1).get();
+      if (!snap.empty) {
+        const payment = snap.docs[0].data() as DomainPaymentProjection;
+        inMemoryPaymentProjections[payment.paymentId] = payment;
+        return payment;
+      }
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not find payment by orderReference:', err);
     }
     return null;
   }
