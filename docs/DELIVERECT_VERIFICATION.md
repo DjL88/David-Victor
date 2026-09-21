@@ -3,6 +3,8 @@
 **Status:** Live Staging Connected & Verified (OAuth, Accounts, Locations, Channel Links, Products & Categories)  
 **Reference:** Deliverect Open API / Eve REST, Deliverect Commerce API, Dispatch, DPay, Quest Picking
 
+**2026-09-21 note:** DV-01 below documents `POST /baskets` (the bare, unprefixed legacy Eve REST endpoint) returning 403. That is a **different endpoint** from `POST /commerce/{accountId}/baskets`, which is what `DeliverectCommerceBasketApiClient` (`server/deliverect/DeliverectCommerceBasketApi.ts`) and the now-wired `DeliverectApiClient.createBasket` actually call (see `docs/DELIVERECT_CAPABILITY_MATRIX.md`'s 2026-09-21 correction). It is plausible the two endpoints have different permission scopes and the Commerce path is unaffected by DV-01's 403 — but this has **not yet been independently re-tested live**; treat DV-01 as still open until that re-test happens with real staging credentials.
+
 ---
 
 ## 1. Verified Live Staging Endpoints
@@ -27,7 +29,7 @@
 
 | ID | Domain | Contract Item | Question / Verification Required | Status |
 |---|---|---|---|---|
-| **DV-01** | **OAuth & Baskets** | Basket Write Scope | `POST /baskets` returns 403 `{"code":"insufficient_permissions"}`. Confirm which scope or merchant permission must be granted to the client credentials (`4BLXg0gM62Pq...`) to create and update baskets. | PENDING DELIVERECT TEAM |
+| **DV-01** | **OAuth & Baskets** | Basket Write Scope | `POST /baskets` (bare Eve endpoint) returns 403 `{"code":"insufficient_permissions"}`. Confirm which scope or merchant permission must be granted to the client credentials (`4BLXg0gM62Pq...`) to create and update baskets — **and separately confirm whether `POST /commerce/{accountId}/baskets` (the Commerce endpoint the wired storefront path actually uses) requires the same scope or a different one.** | PENDING DELIVERECT TEAM + PENDING LIVE RE-TEST |
 | **DV-02** | **Dispatch** | Dispatch Validation Payload | Confirm exact request schema for `POST /fulfillment/validate` (coordinates vs address vs channelLinkId). | PENDING DISPATCH TEST |
 | **DV-03** | **DPay** | Manual Capture & Token Proxy | Confirm whether Basis Theory token proxy is enabled for account `68517fde1c3ddaa7f6d0275c` and the exact payment request route. | PENDING PAY TEAM CONFIRMATION |
 | **DV-04** | **Quest** | Picking Amendments Payload | Confirm Quest webhook payload signature and substitution callback contract. | PENDING QUEST TEST |

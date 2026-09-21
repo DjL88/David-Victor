@@ -4,6 +4,8 @@
 **Target Milestone:** Staging Contract Verification via `dllm` (Phase E & F)  
 **Date:** September 2026
 
+> **2026-09-21 note:** This document self-contradicts on credential status — the line above and many entries below describe live-verified staging results (OAuth, accounts, locations, products), while Section 3 ("Blocked External Items") says staging `client_id`/`client_secret` are still awaited. A source-code read confirms the *code path* is real (see `docs/DELIVERECT_CAPABILITY_MATRIX.md`'s correction note: `DeliverectApiClient`'s basket/checkout methods genuinely call the live Deliverect Commerce API, not a mock), but whether valid credentials are currently configured has not been independently re-confirmed. Don't take either claim in this doc at face value until that's re-tested against `retail-storefront/.env.local`.
+
 ---
 
 ## 1. Executive Status
