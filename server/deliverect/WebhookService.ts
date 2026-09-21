@@ -228,11 +228,95 @@ export class WebhookService {
     }
 
     // In staging / production:
-    // 1. If candidateTenantId was provided, test its secret first
+    // 1. If candidateTenantId was provided, test its configured production/shared
+    // secret first.
     if (candidateTenantId) {
-      const secret = (await TenantSecretResolver.resolveTenantSecret(candidateTenantId, 'DELIVERECT_WEBHOOK_SECRET')) || this.getWebhookSecret(candidateTenantId);
-      if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
+      const secret =
+        (await TenantSecretResolver.resolveTenantSecret(
+          candidateTenantId,
+          'DELIVERECT_WEBHOOK_SECRET'
+        )) || this.getWebhookSecret(candidateTenantId);
+      if (
+        secret &&
+        this.verifyDeliverectHmac(rawBody, signatureHeader, secret)
+      ) {
         return { tenantId: candidateTenantId, secret };
+      }
+
+      // Deliverect staging signs partner webhooks with the channelLinkId until a
+      // dedicated HMAC secret is configured/certified. Do not use this fallback
+      // in production.
+      try {
+        const integration =
+          await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+        const isStaging =
+          integration?.environment !== 'production' &&
+          process.env.DELIVERECT_ENV !== 'production';
+
+        if (isStaging) {
+          const bodyText = Buffer.isBuffer(rawBody)
+            ? rawBody.toString('utf8')
+            : String(rawBody || '');
+          let parsed: any = {};
+          try {
+            parsed = bodyText ? JSON.parse(bodyText) : {};
+          } catch {
+            parsed = {};
+          }
+
+          const correlationId = String(
+            parsed.channelOrderId ||
+              parsed.order?.channelOrderId ||
+              parsed.orderId ||
+              parsed.order?.id ||
+              parsed.data?.orderId ||
+              ''
+          ).trim();
+
+          const projectedOrder = correlationId
+            ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(
+                correlationId
+              )
+            : null;
+
+          const stagingSecrets = Array.from(
+            new Set(
+              [
+                parsed.channelLinkId,
+                parsed.channelLink,
+                parsed.channelLink?._id,
+                parsed.data?.channelLinkId,
+                parsed.order?.channelLinkId,
+                projectedOrder?.channelLinkId,
+              ]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+            )
+          );
+
+          for (const stagingSecret of stagingSecrets) {
+            if (
+              this.verifyDeliverectHmac(
+                rawBody,
+                signatureHeader,
+                stagingSecret
+              )
+            ) {
+              console.log(
+                '[WebhookService] Verified Deliverect staging webhook using channelLinkId HMAC fallback.'
+              );
+              return {
+                tenantId: candidateTenantId,
+                secret: stagingSecret,
+              };
+            }
+          }
+        }
+      } catch (stagingVerifyError) {
+        console.warn(
+          '[WebhookService] Staging channelLinkId HMAC fallback could not be evaluated:',
+          stagingVerifyError
+        );
       }
     }
 
