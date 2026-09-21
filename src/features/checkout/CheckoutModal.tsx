@@ -371,6 +371,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         paymentTokenRef = token.token;
       }
 
+      // For Collection, the chosen slot is a real basket property on Deliverect's side
+      // (fulfillment.time), not a checkout-time option — update it on the basket first.
+      if (isCollection && schedulingType === 'SCHEDULED' && selectedSlot && defaultCommerceClient.updateBasketFulfillment) {
+        await defaultCommerceClient.updateBasketFulfillment(basket.id, { type: 'pickup', slot: selectedSlot });
+      }
+
       const result = await defaultCommerceClient.checkoutBasket(basket.id, {
         paymentTokenRef,
         authorizationMaximum,
