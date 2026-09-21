@@ -6,6 +6,7 @@ import { isDemoMode } from '../runtimeMode';
 import { BFFError } from '../errors';
 import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied } from '../firebase';
 import { FirestorePlatformService, cleanUndefined } from '../firestoreService';
+import { circuitBreakers } from '../circuitBreaker';
 
 function getLocalMappingPath(tenantId: string): string {
   const dir = path.join(process.cwd(), '.data');
@@ -507,9 +508,9 @@ export class LinkedAccountsAdapter {
     let cursor = 'new';
     for (let page = 1; page <= 100; page++) {
       const params = new URLSearchParams({ where: JSON.stringify({ account: accountId }), max_results: '500', cursor, page: String(page) });
-      const res = await fetch(`${activeBaseUrl}/locations?${params}`, {
+      const res = await circuitBreakers.commerce.execute(() => fetch(`${activeBaseUrl}/locations?${params}`, {
         headers: { Authorization: `Bearer ${activeToken}`, Accept: 'application/json' },
-      });
+      }));
       if (!res.ok) throw new Error(`Deliverect locations request failed: HTTP ${res.status}`);
       const body = await res.json() as any;
       const items = Array.isArray(body) ? body : body?._items || body?.items || [];
@@ -555,12 +556,12 @@ export class LinkedAccountsAdapter {
 
     // Query /accounts from official Deliverect reference contract
     try {
-      const accRes = await fetch(`${baseUrl}/accounts`, {
+      const accRes = await circuitBreakers.commerce.execute(() => fetch(`${baseUrl}/accounts`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         },
-      });
+      }));
 
       accHttpStatus = accRes.status;
       if (accRes.ok) {
@@ -767,12 +768,12 @@ export class LinkedAccountsAdapter {
     try {
       while (hasMorePages && page <= 50) {
         const url = `${baseUrl}/commerce/${encodeURIComponent(accountId)}/stores?page=${page}&size=${size}`;
-        const res = await fetch(url, {
+        const res = await circuitBreakers.commerce.execute(() => fetch(url, {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
-        });
+        }));
 
         storesHttpStatus = res.status;
         if (!res.ok) {
@@ -830,9 +831,9 @@ export class LinkedAccountsAdapter {
     )));
     await Promise.all(channelIds.map(async channelLinkId => {
       try {
-        const response = await fetch(`${baseUrl}/channelLinks/${encodeURIComponent(channelLinkId)}`, {
+        const response = await circuitBreakers.commerce.execute(() => fetch(`${baseUrl}/channelLinks/${encodeURIComponent(channelLinkId)}`, {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        });
+        }));
         if (response.ok) {
           const detail = await response.json();
           channelDetails.set(channelLinkId, detail);
