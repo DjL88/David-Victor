@@ -1574,9 +1574,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
     // If the store is closed right now, target its next real opening instead of
     // letting Deliverect default to ASAP (which it correctly rejects with a 422
     // "Fulfillment time is invalid" outside operating hours). This lets a customer
-    // build a basket for pre-order/collection-when-open rather than being blocked.
+    // build a basket for pre-order/collection-when-open rather than being blocked —
+    // unless the tenant's scheduling policy disallows it (acceptAsapOrdersOnly, or
+    // allowNextOpeningPreOrder explicitly off), in which case a closed store stays
+    // genuinely unavailable rather than silently offering a pre-order nobody asked for.
     const openStatus = evaluateStoreOpenNow(store);
-    const pickupTime = openStatus.isOpen ? undefined : computeNextOpeningTime(store)?.toISOString();
+    let pickupTime: string | undefined;
+    if (!openStatus.isOpen) {
+      if (store?.scheduling?.acceptsPreOrders === false) {
+        throw new CommerceError(
+          'STORE_CLOSED',
+          `${store?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
+        );
+      }
+      pickupTime = computeNextOpeningTime(store)?.toISOString();
+    }
 
     const raw = await api.createPickupBasket({ channelLinkId, pickupTime });
     return this.mapLiveCommerceBasket(raw);

@@ -126,10 +126,18 @@ export function useBasket(
           }
           // When the store is currently closed, the server (DeliverectApiClient.
           // createBasket) targets the store's next real opening time instead of
-          // "now", so basket creation still succeeds — let the customer know their
-          // order is being prepared for that time rather than silently proceeding.
+          // "now", so basket creation still succeeds — unless the tenant's
+          // scheduling policy disallows pre-orders entirely, in which case don't
+          // even attempt it (avoids a guaranteed-to-fail round trip, same pattern
+          // as the fulfillment-type check below).
           const openStatus = evaluateStoreOpenNow(selectedStore);
           if (!openStatus.isOpen) {
+            if (selectedStore?.scheduling?.acceptsPreOrders === false) {
+              setSnoozeWarning(
+                `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
+              );
+              return { success: false, reason: 'STORE_CLOSED' };
+            }
             setSnoozeWarning(
               `${selectedStore?.name || 'This store'} is closed right now${
                 openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
@@ -198,9 +206,16 @@ export function useBasket(
           });
         }
         return { success: true };
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to update basket item:', err);
-        return { success: false };
+        // STORE_CLOSED/FULFILLMENT_NOT_SUPPORTED can still surface here even after the
+        // client-side pre-checks above, if the tenant's scheduling policy changed
+        // between page load and this request — show the server's real reason rather
+        // than failing silently.
+        if (err?.code === 'STORE_CLOSED' || err?.code === 'FULFILLMENT_NOT_SUPPORTED') {
+          setSnoozeWarning(err.message || 'This store cannot accept that order right now.');
+        }
+        return { success: false, reason: err?.code };
       }
     },
     [basket, activeStoreId, client, rememberBasket, selectedStore]
@@ -221,6 +236,12 @@ export function useBasket(
         if (!currentBasket) {
           const openStatus = evaluateStoreOpenNow(selectedStore);
           if (!openStatus.isOpen) {
+            if (selectedStore?.scheduling?.acceptsPreOrders === false) {
+              setSnoozeWarning(
+                `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
+              );
+              return;
+            }
             setSnoozeWarning(
               `${selectedStore?.name || 'This store'} is closed right now${
                 openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
@@ -253,8 +274,11 @@ export function useBasket(
           );
         }
         rememberBasket(updatedBasket);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to add multiple items to basket:', err);
+        if (err?.code === 'STORE_CLOSED' || err?.code === 'FULFILLMENT_NOT_SUPPORTED') {
+          setSnoozeWarning(err.message || 'This store cannot accept that order right now.');
+        }
       }
     },
     [basket, activeStoreId, client, rememberBasket, selectedStore]
