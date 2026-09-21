@@ -30,6 +30,7 @@ describe('DeliverectOrderMapper fulfillment normalization', () => {
     expect(order.fulfillment.type).toBe('pickup');
     expect(order.originalBasket.fulfillmentType).toBe('pickup');
     expect(order.originalBasket.total.amount).toBe(210);
+    expect(order.payment.state).toBe('NO_CAPTURE_REQUIRED');
     expect(order.orderReference).toBe('BWYDI-STG-1789971843742-F2FF5F539E');
   });
 
