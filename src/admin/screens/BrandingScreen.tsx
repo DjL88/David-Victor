@@ -631,9 +631,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                   <Type className="w-4 h-4 text-indigo-600" />
-                  <span>Storefront Typography Routing</span>
+                  <span>Storefront typography</span>
                 </h3>
-                <span className="text-[10px] text-gray-400">Zero Hard-coded CSS</span>
+                <span className="text-[10px] text-gray-400">Tenant-specific</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -707,10 +707,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                   <Upload className="w-4 h-4 text-indigo-600" />
-                  <span>Custom Font Upload & WOFF2 Conversion</span>
+                  <span>Custom font upload</span>
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Upload TTF, OTF, WOFF, or WOFF2 files. Backend pipeline validates and optimizes assets before publishing.
+                  Upload a licensed TTF, OTF, WOFF or WOFF2 font for this brand. Files are validated before they are made available to the storefront.
                 </p>
               </div>
             </div>
@@ -803,8 +803,8 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                     className="mt-0.5 rounded border-amber-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   <div className="text-xs text-amber-950 leading-snug">
-                    <span className="font-bold">Licence & Permission Confirmation: </span>
-                    I confirm that I hold the necessary commercial web font licence or distribution permissions to deploy this typography asset through the tenant storefront CDN.
+                    <span className="font-bold">Font licence confirmation: </span>
+                    I confirm that this brand has permission to use and distribute this font on its storefront.
                   </div>
                 </label>
               </div>
@@ -819,7 +819,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               {isUploading && (
                 <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-2 text-xs font-semibold text-indigo-800">
                   <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-                  <span>Processing Stage: {uploadStateStatus}... Converting & Publishing to CDN</span>
+                  <span>Processing: {uploadStateStatus}…</span>
                 </div>
               )}
 
@@ -830,14 +830,14 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Upload & Run Validation Pipeline</span>
+                  <span>Upload font</span>
                 </button>
               </div>
             </form>
 
             {/* INSTALLED FONTS REPOSITORY TABLE */}
             <div>
-              <h4 className="text-xs font-bold text-gray-800 mb-2">Installed Font Assets</h4>
+              <h4 className="text-xs font-bold text-gray-800 mb-2">Installed fonts</h4>
               <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
                 {fontsList.map((f) => (
                   <div key={f.id} className="p-3 flex items-center justify-between text-xs bg-white">
@@ -856,7 +856,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" />
-                        READY (WOFF2)
+                        READY
                       </span>
                     </div>
                   </div>
@@ -878,7 +878,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                 <Type className="w-4 h-4 text-indigo-600" />
-                <span>Live Typography Preview</span>
+                <span>Typography preview</span>
               </h3>
               <span className="text-[10px] font-mono text-gray-500">
                 {headingFamily} / {bodyFamily}
@@ -888,7 +888,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             <div className="space-y-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
               <div>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
-                  Display Heading (H1)
+                  Heading
                 </span>
                 <h1
                   className="text-2xl font-black text-gray-900 leading-tight"
@@ -900,7 +900,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
               <div>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
-                  Section Subheading (H3)
+                  Subheading
                 </span>
                 <h3
                   className="text-base font-bold text-gray-800"
@@ -912,7 +912,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
               <div>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
-                  Body Paragraph & Numerals
+                  Body text
                 </span>
                 <p
                   className="text-xs text-gray-600 leading-relaxed"
@@ -924,7 +924,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
               <div className="pt-2 border-t border-gray-200/60 flex items-center justify-between">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  Commerce Price Tag
+                  Price
                 </span>
                 <span
                   className="text-lg font-black text-gray-900 font-mono"
@@ -939,7 +939,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           {/* REAL-TIME MOBILE UI PREVIEW */}
           <div className="bg-gray-900 p-4 rounded-3xl shadow-xl max-w-sm mx-auto">
             <div className="flex items-center justify-between text-gray-400 text-[11px] mb-3 px-2">
-              <span className="font-semibold">Mobile Storefront Frame</span>
+              <span className="font-semibold">Mobile preview</span>
               <Eye className="w-3.5 h-3.5" />
             </div>
 
