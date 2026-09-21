@@ -136,6 +136,18 @@ export function useBasket(
             setSnoozeWarning(reasonMsg);
             return { success: false, reason: 'STORE_CLOSED' };
           }
+          // Same idea for fulfillment type: some Commerce stores only support one of
+          // delivery/pickup. The BFF enforces this too (server/api/v1Router.ts
+          // POST /baskets), but checking client-side avoids a round trip to a
+          // guaranteed-to-fail request.
+          const supportsRequested =
+            fulfillmentType === 'delivery' ? selectedStore?.supportsDelivery : selectedStore?.supportsPickup;
+          if (supportsRequested === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} doesn't offer ${fulfillmentType === 'delivery' ? 'delivery' : 'collection'} right now.`
+            );
+            return { success: false, reason: 'FULFILLMENT_NOT_SUPPORTED' };
+          }
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
@@ -213,6 +225,14 @@ export function useBasket(
               `${selectedStore?.name || 'This store'} is closed right now${
                 openStatus.nextChangeText ? ` — ${openStatus.nextChangeText.toLowerCase()}` : ''
               }.`
+            );
+            return;
+          }
+          const supportsRequested =
+            fulfillmentType === 'delivery' ? selectedStore?.supportsDelivery : selectedStore?.supportsPickup;
+          if (supportsRequested === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} doesn't offer ${fulfillmentType === 'delivery' ? 'delivery' : 'collection'} right now.`
             );
             return;
           }

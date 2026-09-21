@@ -784,6 +784,23 @@ v1Router.post('/baskets', validateBody(CreateBasketSchema), async (req: Request,
     const { storeId, fulfillmentType } = req.body;
     const tenantId = resolveTenant(req);
     const adapter = await getDeliverectAdapterAsync(tenantId);
+
+    // Fail with a clean, typed error before ever calling Deliverect if this store
+    // genuinely doesn't support the requested fulfillment type — mirrors the same
+    // check already used by the Admin "Place Pickup Test Order" tool (see
+    // POST /admin/.../place-test-order), which was never applied to the real
+    // customer-facing basket route.
+    const store = await adapter.getStore(storeId).catch(() => null);
+    if (store) {
+      const supportsRequested = fulfillmentType === 'delivery' ? store.supportsDelivery : store.supportsPickup;
+      if (supportsRequested === false) {
+        return res.status(400).json({
+          error: `${fulfillmentType === 'delivery' ? 'Delivery' : 'Collection'} is not enabled for this store.`,
+          code: 'FULFILLMENT_NOT_SUPPORTED',
+        });
+      }
+    }
+
     const basket = await adapter.createBasket(storeId, fulfillmentType);
     res.json(basket);
   } catch (err: any) {
