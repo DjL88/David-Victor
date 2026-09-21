@@ -23,6 +23,7 @@ export type PaymentStateStatus =
   | 'FAILED'
   | 'CANCELLED'
   | 'RELEASED'
+  | 'NO_CAPTURE_REQUIRED'
   | 'PAYMENT_ACTION_REQUIRED';
 
 export interface OrderPaymentInfo {
