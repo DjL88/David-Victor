@@ -109,7 +109,17 @@ export function normalizeDeliverectFulfillmentType(
  */
 export class DeliverectOrderMapper {
   static normalizeOrder(raw: RawDeliverectOrder): Order {
-    const id = raw.id || raw._id || raw.orderId || raw.externalOrderId || `ord_${Date.now()}`;
+    // Prefer Deliverect IDs, then the channel order correlation ID. Avoid a
+    // timestamp-generated ID for real orders because Quest callbacks must resolve the
+    // same projection deterministically later.
+    const id =
+      raw.id ||
+      raw._id ||
+      raw.orderId ||
+      raw.externalOrderId ||
+      raw.channelOrderRawId ||
+      raw.channelOrderId ||
+      `ord_${Date.now()}`;
     const channelOrderId = raw.channelOrderId || raw.channelOrderDisplayId || raw.displayId || raw.orderReference;
     const basketId = raw.basketId || raw.originalBasket?.id;
 
