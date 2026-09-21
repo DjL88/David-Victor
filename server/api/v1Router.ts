@@ -1474,6 +1474,7 @@ v1Router.post(
   try {
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
+    const integrationContext = await IntegrationContext.getContext(resolvedTenant);
     const checkoutOptions = {
       ...(options || {}),
       // One Deliverect basket can create one checkout session. Use a stable
@@ -1499,10 +1500,17 @@ v1Router.post(
       return res.status(200).json(existingBasketCheckout);
     }
 
-    // PAY-10: Verify checkout references a valid authorized DPay payment when paymentId provided
+    // Verify an existing DPay payment before creating the live order. Prefer the
+    // locally persisted payment projection from /payments/request so Retail order
+    // creation does not depend on Commerce Checkout or a second payment lookup.
     if (checkoutOptions?.paymentId) {
       try {
-        const payment = await PaymentService.getPayment(checkoutOptions.paymentId, resolvedTenant);
+        const localPayment = await FirestorePlatformService.getPaymentProjection(
+          checkoutOptions.paymentId
+        );
+        const payment =
+          localPayment ||
+          (await PaymentService.getPayment(checkoutOptions.paymentId, resolvedTenant));
         if (!payment) {
           return res.status(404).json({
             error: `Payment ${checkoutOptions.paymentId} not found.`,
@@ -1511,7 +1519,7 @@ v1Router.post(
         }
         if (payment.status !== 'authorized' && payment.status !== 'captured') {
           return res.status(422).json({
-            error: `Payment ${checkoutOptions.paymentId} is in status '${payment.status}', but must be authorized before checkout.`,
+            error: `Payment ${checkoutOptions.paymentId} is in status '${payment.status}', but must be authorized before order submission.`,
             code: 'PAYMENT_NOT_AUTHORISED',
           });
         }
@@ -1595,8 +1603,25 @@ v1Router.post(
 
     const adapter = await getDeliverectAdapterAsync(resolvedTenant);
     let checkoutResult: CheckoutResult;
+    const orderRoute: 'retail_quest' | 'commerce_checkout' =
+      checkoutOptions.orderRoute === 'commerce_checkout' ||
+      integrationContext.orderRoute === 'commerce_checkout'
+        ? 'commerce_checkout'
+        : 'retail_quest';
 
-    if (adapter.checkout) {
+    if (orderRoute === 'retail_quest') {
+      if (!adapter.submitRetailOrder) {
+        throw new BFFError(
+          'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED',
+          'The active Deliverect adapter cannot submit Retail/Quest orders.',
+          501
+        );
+      }
+      checkoutResult = await adapter.submitRetailOrder(basketId, {
+        ...checkoutOptions,
+        tenantId: resolvedTenant,
+      });
+    } else if (adapter.checkout) {
       try {
         checkoutResult = await adapter.checkout(basketId, {
           ...checkoutOptions,
@@ -1703,6 +1728,7 @@ v1Router.post(
 
     checkoutResult = {
       ...checkoutResult,
+      orderRoute,
       idempotencyKey:
         checkoutResult.idempotencyKey ||
         checkoutOptions.idempotencyKey,
@@ -1748,8 +1774,9 @@ v1Router.post(
       });
     }
 
-    // Return 202 Accepted with pending checkout state (CHECK-01)
-    res.status(202).json(checkoutResult);
+    // Retail Channel API creation is immediately acknowledged by Deliverect (201).
+    // Commerce Checkout remains asynchronous and returns 202 pending confirmation.
+    res.status(orderRoute === 'retail_quest' ? 201 : 202).json(checkoutResult);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to checkout basket');
   }
