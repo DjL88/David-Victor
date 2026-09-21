@@ -61,7 +61,7 @@ async function main() {
       ? String(args.get('confirm-checkout'))
       : '';
 
-  const environment = String(process.env.DELIVERECT_ENV || 'staging').toLowerCase();
+  const environment: string = String(process.env.DELIVERECT_ENV || 'staging').toLowerCase();
   if (environment === 'production') {
     throw new Error(
       'Refusing to run against DELIVERECT_ENV=production. This smoke test is staging-only by design.'

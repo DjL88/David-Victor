@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import crypto from 'crypto';
 import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/WebhookService';
 import { SubstitutionCallbackService } from '../../server/deliverect/SubstitutionCallbackService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { AsyncWorkerService } from '../../server/asyncWorkerService';
+import { DispatchOrchestrationService } from '../../server/deliverect/DispatchOrchestrationService';
 
 describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01 to QST-05, WH-04)', () => {
   const testTenant = 'brand-alpha';
@@ -99,8 +101,10 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect(updated?.picking?.status).toBe('IN_PROGRESS');
     });
 
-    it('handles PICKING_COMPLETE and transitions order status to PICKED / ready', async () => {
+    it('handles PICKING_COMPLETE for Collection without Dispatch or payment capture settlement', async () => {
       const orderId = `quest_ord_${Date.now()}_02`;
+      const settlementSpy = vi.spyOn(AsyncWorkerService, 'enqueuePaymentSettlement');
+      const dispatchSpy = vi.spyOn(DispatchOrchestrationService, 'handlePickingCompleted');
       const initialOrder = {
         orderId,
         channelLinkId: 'store-1',
@@ -142,6 +146,14 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.status).toBe('PICKED');
       expect(updated?.picking?.status).toBe('COMPLETED');
+      expect(updated?.fulfillmentType).toBe('pickup');
+      expect(updated?.paymentState).toBe('NO_CAPTURE_REQUIRED');
+      expect(updated?.dispatch).toBeUndefined();
+      expect(settlementSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy).not.toHaveBeenCalled();
+
+      settlementSpy.mockRestore();
+      dispatchSpy.mockRestore();
     });
   });
 
