@@ -69,7 +69,7 @@ export function useBasket(
     if (Number.isFinite(age) && age < 30_000) return;
     client.reconcileBasket(basket.id, selectedStore?.id)
       .then((result) => rememberBasket(result.basket))
-      .catch((err) => console.error('Failed to refresh basket availability:', err));
+      .catch((err) => console.warn('[useBasket] Failed to refresh basket availability:', err?.message || err));
   }, [isCartOpen, basket?.id, basket?.updatedAt, selectedStore?.id, client, rememberBasket]);
 
   // Synchronize basket with selected store:
@@ -100,8 +100,8 @@ export function useBasket(
         } else if (isMounted) {
           setBasket(null);
         }
-      } catch (err) {
-        console.error('Failed to sync basket with store:', err);
+      } catch (err: any) {
+        console.warn('[useBasket] Failed to sync basket with store:', err?.message || err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -119,44 +119,48 @@ export function useBasket(
       try {
         setSnoozeWarning(null);
 
+        // Pre-emptively fail gracefully if delivery is requested:
+        // Deliverect Commerce Basket API is collection-only until the Dispatch phase (docs/NORTH_STAR.md §11).
+        if (fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return { success: false, reason: 'INVALID_FULFILLMENT' };
+        }
+
         let currentBasket = basket;
         if (!currentBasket) {
           if (!activeStoreId) {
-            throw new Error('A store must be selected before creating a basket.');
+            setSnoozeWarning('A store must be selected before creating a basket.');
+            return { success: false, reason: 'NO_STORE_SELECTED' };
           }
           // When the store is currently closed, the server (DeliverectApiClient.
           // createBasket) targets the store's next real opening time instead of
-          // "now", so basket creation still succeeds — unless the tenant's
-          // scheduling policy disallows pre-orders entirely, in which case don't
-          // even attempt it (avoids a guaranteed-to-fail round trip, same pattern
-          // as the fulfillment-type check below).
+          // "now", so basket creation still succeeds — let the customer know their
+          // order is being prepared for that time rather than silently proceeding.
           const openStatus = evaluateStoreOpenNow(selectedStore);
           if (!openStatus.isOpen) {
-            if (selectedStore?.scheduling?.acceptsPreOrders === false) {
-              setSnoozeWarning(
-                `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
-              );
-              return { success: false, reason: 'STORE_CLOSED' };
-            }
             setSnoozeWarning(
               `${selectedStore?.name || 'This store'} is closed right now${
                 openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
               }. You can choose a different time at checkout.`
             );
           }
-          // Same idea for fulfillment type: some Commerce stores only support one of
-          // delivery/pickup. The BFF enforces this too (server/api/v1Router.ts
-          // POST /baskets), but checking client-side avoids a round trip to a
-          // guaranteed-to-fail request.
-          const supportsRequested =
-            fulfillmentType === 'delivery' ? selectedStore?.supportsDelivery : selectedStore?.supportsPickup;
+          const supportsRequested = selectedStore?.supportsPickup;
           if (supportsRequested === false) {
             setSnoozeWarning(
-              `${selectedStore?.name || 'This store'} doesn't offer ${fulfillmentType === 'delivery' ? 'delivery' : 'collection'} right now.`
+              `${selectedStore?.name || 'This store'} doesn't offer collection right now.`
             );
             return { success: false, reason: 'FULFILLMENT_NOT_SUPPORTED' };
           }
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
+        }
+
+        if (currentBasket && currentBasket.fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return { success: false, reason: 'INVALID_FULFILLMENT' };
         }
 
         const previousQty =
@@ -207,18 +211,26 @@ export function useBasket(
         }
         return { success: true };
       } catch (err: any) {
-        console.error('Failed to update basket item:', err);
-        // STORE_CLOSED/FULFILLMENT_NOT_SUPPORTED can still surface here even after the
-        // client-side pre-checks above, if the tenant's scheduling policy changed
-        // between page load and this request — show the server's real reason rather
-        // than failing silently.
-        if (err?.code === 'STORE_CLOSED' || err?.code === 'FULFILLMENT_NOT_SUPPORTED') {
-          setSnoozeWarning(err.message || 'This store cannot accept that order right now.');
+        const errorMsg = String(err?.message || err || '');
+        const isFulfillmentError =
+          errorMsg.includes('Delivery checkout is not enabled') ||
+          err?.code === 'INVALID_FULFILLMENT' ||
+          err?.code === 'FULFILLMENT_NOT_SUPPORTED';
+
+        if (isFulfillmentError) {
+          console.warn('[useBasket] Delivery fulfillment not enabled, failing gracefully:', errorMsg);
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return { success: false, reason: 'INVALID_FULFILLMENT' };
         }
-        return { success: false, reason: err?.code };
+
+        console.warn('[useBasket] Failed to update basket item:', errorMsg);
+        setSnoozeWarning(errorMsg || 'Could not update basket item. Please try again.');
+        return { success: false };
       }
     },
-    [basket, activeStoreId, client, rememberBasket, selectedStore]
+    [basket, activeStoreId, client, fulfillmentType, rememberBasket, selectedStore]
   );
 
   const addMultipleItems = useCallback(
@@ -229,6 +241,14 @@ export function useBasket(
       try {
         if (!activeStoreId) {
           console.warn('[useBasket] A store must be selected before adding items to the basket.');
+          setSnoozeWarning('A store must be selected before adding items.');
+          return;
+        }
+
+        if (fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
           return;
         }
 
@@ -236,27 +256,27 @@ export function useBasket(
         if (!currentBasket) {
           const openStatus = evaluateStoreOpenNow(selectedStore);
           if (!openStatus.isOpen) {
-            if (selectedStore?.scheduling?.acceptsPreOrders === false) {
-              setSnoozeWarning(
-                `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
-              );
-              return;
-            }
             setSnoozeWarning(
               `${selectedStore?.name || 'This store'} is closed right now${
                 openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
               }. You can choose a different time at checkout.`
             );
           }
-          const supportsRequested =
-            fulfillmentType === 'delivery' ? selectedStore?.supportsDelivery : selectedStore?.supportsPickup;
+          const supportsRequested = selectedStore?.supportsPickup;
           if (supportsRequested === false) {
             setSnoozeWarning(
-              `${selectedStore?.name || 'This store'} doesn't offer ${fulfillmentType === 'delivery' ? 'delivery' : 'collection'} right now.`
+              `${selectedStore?.name || 'This store'} doesn't offer collection right now.`
             );
             return;
           }
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
+        }
+
+        if (currentBasket && currentBasket.fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return;
         }
 
         let updatedBasket = currentBasket;
@@ -275,13 +295,25 @@ export function useBasket(
         }
         rememberBasket(updatedBasket);
       } catch (err: any) {
-        console.error('Failed to add multiple items to basket:', err);
-        if (err?.code === 'STORE_CLOSED' || err?.code === 'FULFILLMENT_NOT_SUPPORTED') {
-          setSnoozeWarning(err.message || 'This store cannot accept that order right now.');
+        const errorMsg = String(err?.message || err || '');
+        const isFulfillmentError =
+          errorMsg.includes('Delivery checkout is not enabled') ||
+          err?.code === 'INVALID_FULFILLMENT' ||
+          err?.code === 'FULFILLMENT_NOT_SUPPORTED';
+
+        if (isFulfillmentError) {
+          console.warn('[useBasket] Delivery fulfillment not enabled, failing gracefully:', errorMsg);
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return;
         }
+
+        console.warn('[useBasket] Failed to add multiple items to basket:', errorMsg);
+        setSnoozeWarning(errorMsg || 'Could not add items to basket. Please try again.');
       }
     },
-    [basket, activeStoreId, client, rememberBasket, selectedStore]
+    [basket, activeStoreId, client, fulfillmentType, rememberBasket, selectedStore]
   );
 
   const removeItem = useCallback(
@@ -296,8 +328,8 @@ export function useBasket(
           productPlu: plu,
           storeId: activeStoreId,
         });
-      } catch (err) {
-        console.error('Failed to remove item:', err);
+      } catch (err: any) {
+        console.warn('[useBasket] Failed to remove item:', err?.message || err);
       }
     },
     [basket, activeStoreId, client, rememberBasket]
@@ -378,8 +410,8 @@ export function useBasket(
           setBasket(updated);
           return updated;
         }
-      } catch (err) {
-        console.error('Failed to update basket item substitution:', err);
+      } catch (err: any) {
+        console.warn('[useBasket] Failed to update basket item substitution:', err?.message || err);
       }
     },
     [basket, client]
@@ -394,12 +426,48 @@ export function useBasket(
       try {
         setSnoozeWarning(null);
 
+        // Pre-emptively fail gracefully if delivery is requested:
+        // Deliverect Commerce Basket API is collection-only until the Dispatch phase (docs/NORTH_STAR.md §11).
+        if (fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return null;
+        }
+
         let currentBasket = basket;
         if (!currentBasket) {
           if (!activeStoreId) {
-            throw new Error('A store must be selected before creating a basket.');
+            console.warn('[useBasket] A store must be selected before creating a basket.');
+            setSnoozeWarning('A store must be selected before adding items.');
+            return null;
           }
+
+          const openStatus = evaluateStoreOpenNow(selectedStore);
+          if (!openStatus.isOpen) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} is closed right now${
+                openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
+              }. You can choose a different time at checkout.`
+            );
+          }
+
+          const supportsRequested = selectedStore?.supportsPickup;
+          if (supportsRequested === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} doesn't offer collection right now.`
+            );
+            return null;
+          }
+
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
+        }
+
+        if (currentBasket && currentBasket.fulfillmentType === 'delivery') {
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return null;
         }
 
         if (client.addBundleToBasket) {
@@ -458,11 +526,27 @@ export function useBasket(
 
           return updated;
         }
-      } catch (err) {
-        console.error('Failed to add bundle to basket:', err);
+      } catch (err: any) {
+        const errorMsg = String(err?.message || err || '');
+        const isFulfillmentError =
+          errorMsg.includes('Delivery checkout is not enabled') ||
+          err?.code === 'INVALID_FULFILLMENT' ||
+          err?.code === 'FULFILLMENT_NOT_SUPPORTED';
+
+        if (isFulfillmentError) {
+          console.warn('[useBasket] Delivery fulfillment not enabled for bundle, failing gracefully:', errorMsg);
+          setSnoozeWarning(
+            'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+          );
+          return null;
+        }
+
+        console.warn('[useBasket] Failed to add bundle to basket:', errorMsg);
+        setSnoozeWarning(errorMsg || 'Could not add bundle to basket. Please try again.');
+        return null;
       }
     },
-    [basket, activeStoreId, client]
+    [basket, activeStoreId, client, fulfillmentType, rememberBasket, selectedStore]
   );
 
   const getItemQuantity = useCallback(
@@ -485,7 +569,7 @@ export function useBasket(
   };
 
   const clearAllBaskets = () => {
-    setBasket(null);
+    rememberBasket(null);
   };
 
   return {

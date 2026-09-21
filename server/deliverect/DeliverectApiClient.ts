@@ -1680,16 +1680,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
     );
     const fallbackMenuId = String(catalog.activeMenuId || '').trim();
 
-    const existingByPlu = new Map(
-      current.items.map((item) => [item.plu, item])
-    );
+    // Preserve existing basket items so that updating a subset or adding a bundle does not wipe the basket
+    const desired = toCommerceItemInputs(current);
 
-    const payload: CommerceBasketItemInput[] = items
-      .filter((item) => Number.isInteger(item.quantity) && item.quantity > 0)
-      .map((item) => {
-        const existing = existingByPlu.get(item.plu) as any;
+    for (const item of items) {
+      const existingIndex = desired.findIndex((d) => d.plu === item.plu);
+      if (item.quantity <= 0) {
+        if (existingIndex >= 0) {
+          desired.splice(existingIndex, 1);
+        }
+      } else {
+        const existing = current.items.find((i) => i.plu === item.plu) as any;
         const menuId = String(
-          item.menuId || existing?.deliverect?.menuId || fallbackMenuId
+          item.menuId || existing?.deliverect?.menuId || (existingIndex >= 0 ? desired[existingIndex].menuId : fallbackMenuId)
         ).trim();
 
         if (!menuId) {
@@ -1699,15 +1702,24 @@ export class DeliverectApiClient implements DeliverectAdapter {
           );
         }
 
-        return {
-          menuId,
-          plu: item.plu,
-          quantity: item.quantity,
-        };
-      });
+        if (existingIndex >= 0) {
+          desired[existingIndex] = {
+            ...desired[existingIndex],
+            menuId,
+            quantity: item.quantity,
+          };
+        } else {
+          desired.push({
+            menuId,
+            plu: item.plu,
+            quantity: item.quantity,
+          });
+        }
+      }
+    }
 
     const api = await this.getCommerceBasketApi();
-    const raw = await api.replaceItems(basketId, payload);
+    const raw = await api.replaceItems(basketId, desired);
     return this.mapLiveCommerceBasket(raw);
   }
 

@@ -279,11 +279,14 @@ describe('Phase 15: Platform Hardening, Resilience & Observability', () => {
       const { DeliverectApiClient } = await import('../../server/deliverect/DeliverectApiClient');
       const client = new DeliverectApiClient();
 
+      const stores = await client.getStores();
+      const storeId = stores[0]?.id || 'store-chelmsford-central';
+
       // Basket operations succeed and return an active basket
-      const basket = await client.createBasket('store-01', 'delivery');
+      const basket = await client.createBasket(storeId, 'pickup');
       expect(basket).toBeDefined();
       expect(basket.id).toBeDefined();
-      expect(basket.fulfillmentType).toBe('delivery');
+      expect(basket.fulfillmentType).toBe('pickup');
     });
   });
 

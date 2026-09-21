@@ -5,8 +5,8 @@
     "status": "connected",
     "connectionState": "DISCONNECTED",
     "bffProxyUrl": "/api/v1",
-    "lastSyncAt": "2026-09-21T08:55:37.706Z",
-    "updatedAt": "2026-09-21T08:55:37.706Z"
+    "lastSyncAt": "2026-09-21T12:21:39.215Z",
+    "updatedAt": "2026-09-21T12:21:39.215Z"
   },
   "tenant_platform_oauth_1789925152801": {
     "tenantId": "tenant_platform_oauth_1789925152801",
@@ -158,5 +158,32 @@
     "bffProxyUrl": "/api/v1",
     "lastSyncAt": "2026-09-21T08:55:37.708Z",
     "updatedAt": "2026-09-21T08:55:37.708Z"
+  },
+  "tenant_platform_oauth_1789992673775": {
+    "tenantId": "tenant_platform_oauth_1789992673775",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T12:11:13.775Z",
+    "updatedAt": "2026-09-21T12:11:13.775Z"
+  },
+  "tenant_platform_oauth_1789992690779": {
+    "tenantId": "tenant_platform_oauth_1789992690779",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T12:11:30.779Z",
+    "updatedAt": "2026-09-21T12:11:30.779Z"
+  },
+  "tenant_platform_oauth_1789993299217": {
+    "tenantId": "tenant_platform_oauth_1789993299217",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T12:21:39.218Z",
+    "updatedAt": "2026-09-21T12:21:39.218Z"
   }
 }

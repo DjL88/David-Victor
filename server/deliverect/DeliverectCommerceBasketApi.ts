@@ -303,9 +303,9 @@ export class DeliverectCommerceBasketApiClient {
   }
 
   async replaceItems(basketId: string, items: CommerceBasketItemInput[]): Promise<JsonObject> {
-    if (!Array.isArray(items)) {
+    if (!Array.isArray(items) || items.length === 0) {
       throw new DeliverectCommerceBasketApiError(
-        'replaceItems requires an item array',
+        'replaceItems requires at least one basket item',
         'INVALID_BASKET_ITEMS',
         400,
         undefined,
