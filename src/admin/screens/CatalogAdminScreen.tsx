@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { catalogStore } from '../../commerce/catalogStore';
 import { Product, ProductStockStatus, formatMoney, moneyToMajor, Category, Store } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
+import { DEFAULT_TENANT_ID } from '../../tenant/constants';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import {
   Package,
@@ -29,7 +30,7 @@ interface CatalogAdminScreenProps {
   tenantId?: string;
 }
 
-export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId = 'brand-alpha' }) => {
+export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId = DEFAULT_TENANT_ID }) => {
   const { appMode } = useTenant();
   const isDemoMode = appMode === 'demo';
   const commerceClient = useMemo(() => getCommerceClient(tenantId), [tenantId]);

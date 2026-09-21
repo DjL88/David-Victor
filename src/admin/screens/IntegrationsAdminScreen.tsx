@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { DEFAULT_TENANT_ID } from '../../tenant/constants';
 import {
   Link2,
   Database,
@@ -33,7 +34,7 @@ interface IntegrationsAdminScreenProps {
   tenantId?: string;
 }
 
-export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = ({ tenantId = 'brand-alpha' }) => {
+export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = ({ tenantId = DEFAULT_TENANT_ID }) => {
   const [config, setConfig] = useState<any>({
     status: 'UNCONFIGURED',
     environment: 'staging',

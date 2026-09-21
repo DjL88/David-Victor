@@ -20,6 +20,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { defaultAdminClient } from '../../commerce/AdminClient';
+import { DEFAULT_TENANT_ID } from '../../tenant/constants';
 import {
   ConnectionHealthData,
   ConnectionTraceResult,
@@ -30,7 +31,7 @@ interface ConnectionHealthScreenProps {
   tenantId?: string;
 }
 
-export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ tenantId = 'brand-alpha' }) => {
+export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ tenantId = DEFAULT_TENANT_ID }) => {
   const [health, setHealth] = useState<ConnectionHealthData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);

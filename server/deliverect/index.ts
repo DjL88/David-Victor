@@ -9,16 +9,17 @@ import { IntegrationUnavailableDispatchAdapter } from './IntegrationUnavailableD
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { IntegrationContext } from './IntegrationContext';
 import { getServerRuntimeMode } from '../runtimeMode';
+import { DEFAULT_TENANT_ID } from '../../src/tenant/constants';
 
 const deliverectAdapters = new Map<string, DeliverectAdapter>();
 const dispatchAdapters = new Map<string, DispatchAdapter>();
 
 export function getDeliverectAdapter(
-  tenantId: string = 'brand-alpha',
+  tenantId: string = DEFAULT_TENANT_ID,
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): DeliverectAdapter {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const appMode = getServerRuntimeMode();
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = deliverectAdapters.get(key);
@@ -48,11 +49,11 @@ export function getDeliverectAdapter(
 }
 
 export async function getDeliverectAdapterAsync(
-  tenantId: string = 'brand-alpha',
+  tenantId: string = DEFAULT_TENANT_ID,
   environment?: string,
   deliverectAccountId?: string
 ): Promise<DeliverectAdapter> {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const context = await IntegrationContext.getContext(normalizedTenantId);
   const env = environment || context.environment;
   const accId = deliverectAccountId || context.deliverectAccountId || 'default';
@@ -91,18 +92,18 @@ export function setDeliverectAdapter(
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): void {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const appMode = getServerRuntimeMode();
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   deliverectAdapters.set(key, adapter);
 }
 
 export function getDispatchAdapter(
-  tenantId: string = 'brand-alpha',
+  tenantId: string = DEFAULT_TENANT_ID,
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): DispatchAdapter {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const appMode = getServerRuntimeMode();
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = dispatchAdapters.get(key);
@@ -128,11 +129,11 @@ export function getDispatchAdapter(
 }
 
 export async function getDispatchAdapterAsync(
-  tenantId: string = 'brand-alpha',
+  tenantId: string = DEFAULT_TENANT_ID,
   environment?: string,
   deliverectAccountId?: string
 ): Promise<DispatchAdapter> {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const context = await IntegrationContext.getContext(normalizedTenantId);
   const env = environment || context.environment;
   const accId = deliverectAccountId || context.deliverectAccountId || 'default';
@@ -163,7 +164,7 @@ export function setDispatchAdapter(
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): void {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : DEFAULT_TENANT_ID;
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}`;
   dispatchAdapters.set(key, adapter);
 }
