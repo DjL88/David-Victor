@@ -2609,7 +2609,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const channelName = String(context.channelName || '').trim().toLowerCase();
     if (!channelName) {
       throw new CommerceError(
-        'DELIVERECT_CHANNEL_NAME_REQUIRED',
+        'INTEGRATION_NOT_CONFIGURED',
         'Retail/Quest order submission requires the Deliverect Channel API scope/name. Configure integration.channelName or DELIVERECT_CHANNEL_NAME.',
         503
       );
@@ -2618,7 +2618,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const channelLinkId = String(basket.channelLinkId || basket.storeId || '').trim();
     if (!channelLinkId) {
       throw new CommerceError(
-        'CHANNEL_LINK_REQUIRED',
+        'VALIDATION_ERROR',
         'Retail/Quest order submission requires a channelLinkId.',
         422
       );
@@ -2630,7 +2630,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       !this.allowedChannelLinkIds.has(channelLinkId)
     ) {
       throw new CommerceError(
-        'STORE_NOT_ALLOWED',
+        'FORBIDDEN',
         `Channel link "${channelLinkId}" is not provisioned for this tenant.`,
         403
       );
@@ -2721,7 +2721,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const address: any = options?.deliveryAddress || (basket as any)?.fulfillment?.address;
       if (!address) {
         throw new CommerceError(
-          'DELIVERY_ADDRESS_REQUIRED',
+          'VALIDATION_ERROR',
           'Delivery address is required for a Retail delivery order.',
           422
         );
@@ -2769,7 +2769,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     if (!response.ok) {
       throw new CommerceError(
-        'RETAIL_ORDER_SUBMISSION_FAILED',
+        'CHECKOUT_FAILED',
         `Deliverect Retail order submission failed (HTTP ${response.status}): ${responseText || response.statusText}`,
         response.status
       );
