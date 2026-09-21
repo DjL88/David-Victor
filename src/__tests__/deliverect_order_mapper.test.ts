@@ -47,6 +47,14 @@ describe('DeliverectOrderMapper fulfillment normalization', () => {
     expect(normalizeDeliverectFulfillmentType({ fulfillment: { type: 'pickup' }, orderType: 2 })).toBe('pickup');
   });
 
+  it('preserves canonical fulfillment stored on an internal original basket projection', () => {
+    expect(
+      normalizeDeliverectFulfillmentType({
+        originalBasket: { fulfillmentType: 'pickup' },
+      })
+    ).toBe('pickup');
+  });
+
   it('fails closed for unsupported modes rather than defaulting to delivery', () => {
     expect(() => normalizeDeliverectFulfillmentType({ orderType: 3 })).toThrow(
       'Unsupported Deliverect fulfilment type'
