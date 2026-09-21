@@ -2274,6 +2274,11 @@ export class FirestoreService {
       residualHoldReleased: metadata?.residualHoldReleased !== undefined ? metadata.residualHoldReleased : existing.residualHoldReleased,
       settlementDetails: metadata?.settlementDetails || existing.settlementDetails,
       paymentId: metadata?.paymentId || existing.paymentId,
+      channelOrderId: metadata?.channelOrderId || existing.channelOrderId,
+      channelOrderDisplayId: metadata?.channelOrderDisplayId || existing.channelOrderDisplayId,
+      channelOrderRawId: metadata?.channelOrderRawId || existing.channelOrderRawId,
+      orderReference: metadata?.orderReference || existing.orderReference,
+      channelOrderReference: metadata?.channelOrderReference || existing.channelOrderReference,
       metadata: {
         ...(existing.metadata || {}),
         ...(metadata || {}),

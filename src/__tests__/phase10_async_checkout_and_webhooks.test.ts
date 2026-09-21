@@ -150,6 +150,137 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
   });
 
   // ========================================================
+  // CHECK-04: Checkout Update Webhook Correlation
+  // ========================================================
+  describe('CHECK-04: Checkout update webhook correlation', () => {
+    it('correlates a completed checkout through checkoutId even when the real Deliverect orderId is new', async () => {
+      const suffix = Date.now().toString();
+      const checkoutId = `chk_webhook_${suffix}`;
+      const channelOrderId = `BWYDI-WEBHOOK-${suffix}`;
+      const realOrderId = `deliverect-order-${suffix}`;
+
+      const checkout: CheckoutResult = {
+        checkoutId,
+        channelOrderReference: channelOrderId,
+        tenantId: testTenant,
+        storeId: 'store-chelmsford-central',
+        channelLinkId: 'store-chelmsford-central',
+        status: 'CHECKOUT_PENDING_CONFIRMATION',
+        basketId: `basket_webhook_${suffix}`,
+        fulfillmentType: 'pickup',
+        total: { amount: 425, currency: 'GBP' },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await FirestorePlatformService.saveCheckoutProjection(checkout);
+
+      // This is the provisional order persisted at checkout submission time.
+      const provisional = await FirestorePlatformService.saveOrderProjection(
+        {
+          id: channelOrderId,
+          channelOrderId,
+          orderReference: channelOrderId,
+          basketId: checkout.basketId,
+          channelLinkId: checkout.channelLinkId,
+          status: 'SUBMITTED',
+          fulfillmentType: 'pickup',
+          originalBasket: {
+            id: checkout.basketId,
+            fulfillmentType: 'pickup',
+            currency: 'GBP',
+            total: checkout.total,
+            items: [
+              {
+                id: 'line-1',
+                plu: 'PLU-WEBHOOK-1',
+                name: 'Webhook Test Item',
+                quantity: 1,
+                price: { amount: 425, currency: 'GBP' },
+                substitutionPreference: 'REMOVE_IF_UNAVAILABLE',
+              },
+            ],
+          },
+          currentOrder: { itemCount: 1, total: checkout.total },
+          paymentState: 'NO_CAPTURE_REQUIRED',
+          createdAt: new Date().toISOString(),
+        } as any,
+        testTenant,
+        checkoutId
+      );
+
+      const payload = {
+        eventId: `evt_checkout_completed_${suffix}`,
+        checkoutId,
+        orderId: realOrderId,
+        channelOrderId,
+        status: 'completed',
+      };
+      const rawBody = JSON.stringify(payload);
+      const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+      const result = await WebhookService.processWebhook(
+        payload,
+        rawBody,
+        { 'x-deliverect-signature': signature },
+        testTenant
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.newState).toBe('ORDER_CONFIRMED');
+
+      const updatedCheckout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
+      expect(updatedCheckout?.status).toBe('ORDER_CONFIRMED');
+      expect(updatedCheckout?.orderId).toBe(realOrderId);
+
+      const resolvedByRealOrderId =
+        await FirestorePlatformService.getOrderProjectionByExternalIdentifier(realOrderId);
+      expect(resolvedByRealOrderId?.orderId).toBe(provisional.orderId);
+      expect(resolvedByRealOrderId?.status).toBe('ORDER_CONFIRMED');
+      expect(resolvedByRealOrderId?.channelOrderRawId).toBe(realOrderId);
+      expect(resolvedByRealOrderId?.picking?.items[0]?.substitutionPreference)
+        .toBe('REMOVE_IF_UNAVAILABLE');
+    });
+
+    it('updates a legacy checkout-only projection when a failed checkout webhook arrives', async () => {
+      const suffix = Date.now().toString();
+      const checkoutId = `chk_legacy_failed_${suffix}`;
+      await FirestorePlatformService.saveCheckoutProjection({
+        checkoutId,
+        channelOrderReference: `BWYDI-LEGACY-${suffix}`,
+        tenantId: testTenant,
+        storeId: 'store-chelmsford-central',
+        status: 'CHECKOUT_PENDING_CONFIRMATION',
+        basketId: `basket_legacy_${suffix}`,
+        fulfillmentType: 'pickup',
+        total: { amount: 200, currency: 'GBP' },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      const payload = {
+        eventId: `evt_checkout_failed_${suffix}`,
+        checkoutId,
+        status: 'failed',
+        failureReason: 'POS injection rejected the checkout',
+      };
+      const rawBody = JSON.stringify(payload);
+      const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+      const result = await WebhookService.processWebhook(
+        payload,
+        rawBody,
+        { 'x-deliverect-signature': signature },
+        testTenant
+      );
+
+      expect(result.newState).toBe('ORDER_FAILED');
+      const updatedCheckout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
+      expect(updatedCheckout?.status).toBe('ORDER_FAILED');
+      expect(updatedCheckout?.failureReason).toContain('POS injection rejected');
+    });
+  });
+
+  // ========================================================
   // WH-01: Constant-Time HMAC SHA-256 Verification
   // ========================================================
   describe('WH-01: HMAC SHA-256 Verification (Security & Tamper Resistance)', () => {

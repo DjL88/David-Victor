@@ -368,20 +368,86 @@ export class WebhookService {
       ''
     ).toUpperCase();
 
-    const targetIdentifier = String(
-      payload.orderId ||
-      payload.channelOrderId ||
-      payload.channelOrderDisplayId ||
-      payload.channelOrderRawId ||
-      payload.orderReference ||
-      payload.checkoutId ||
-      payload.channelOrderReference ||
-      ''
-    ).trim();
+    const correlationCandidates = [
+      payload.orderId,
+      payload.order?.id,
+      payload.order?._id,
+      payload.data?.orderId,
+      payload.channelOrderId,
+      payload.order?.channelOrderId,
+      payload.channelOrderDisplayId,
+      payload.order?.channelOrderDisplayId,
+      payload.channelOrderRawId,
+      payload.orderReference,
+      payload.checkoutId,
+      payload.data?.checkoutId,
+      payload.checkout?.id,
+      payload.channelOrderReference,
+    ]
+      .map((value) => String(value || '').trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index);
 
-    let targetOrder = targetIdentifier
-      ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(targetIdentifier)
-      : null;
+    let targetOrder = null;
+    for (const candidate of correlationCandidates) {
+      targetOrder = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(candidate);
+      if (targetOrder) break;
+    }
+
+    // Backward-compatible checkout-only recovery for pending checkouts created before
+    // provisional order projections were introduced.
+    if (!targetOrder) {
+      const explicitCheckoutId = String(
+        payload.checkoutId || payload.data?.checkoutId || payload.checkout?.id || ''
+      ).trim();
+      const channelOrderReference = String(
+        payload.channelOrderId ||
+        payload.order?.channelOrderId ||
+        payload.channelOrderReference ||
+        ''
+      ).trim();
+
+      let checkout = explicitCheckoutId
+        ? await FirestorePlatformService.getCheckoutProjection(explicitCheckoutId)
+        : null;
+      if (!checkout && channelOrderReference) {
+        checkout = await FirestorePlatformService.getCheckoutByReference(channelOrderReference);
+      }
+
+      if (checkout && ['OPEN', 'COMPLETED', 'FAILED'].includes(rawStatus)) {
+        const upstreamOrderId = String(
+          payload.orderId ||
+          payload.order?.id ||
+          payload.order?._id ||
+          payload.data?.orderId ||
+          ''
+        ).trim() || undefined;
+
+        const checkoutState =
+          rawStatus === 'COMPLETED'
+            ? 'ORDER_CONFIRMED'
+            : rawStatus === 'FAILED'
+              ? 'ORDER_FAILED'
+              : 'CHECKOUT_PENDING_CONFIRMATION';
+
+        await FirestorePlatformService.updateCheckoutStatus(
+          checkout.checkoutId,
+          checkoutState,
+          {
+            orderId: upstreamOrderId || checkout.orderId,
+            failureReason: payload.failureReason || payload.reason,
+          }
+        );
+        await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+
+        return {
+          success: true,
+          eventId: webhookEventId,
+          status: 'PROCESSED',
+          orderId: upstreamOrderId || checkout.orderId,
+          newState: checkoutState,
+        };
+      }
+    }
 
     if (targetOrder) {
       const currentState = (targetOrder.status || 'SUBMITTED').toUpperCase();
@@ -805,9 +871,15 @@ export class WebhookService {
         };
       }
 
-      // Map incoming status to canonical customer status
+      // Map incoming status to canonical customer status. Commerce checkout
+      // webhooks use open -> completed/failed; picking/order webhooks use the
+      // order lifecycle states below.
       let canonicalState = rawStatus;
-      if (rawStatus === 'ACCEPTED' || rawStatus === 'STORE_ACCEPTED' || rawStatus === 'ORDER_ACCEPTED') {
+      if (rawStatus === 'OPEN') {
+        canonicalState = 'CHECKOUT_PENDING_CONFIRMATION';
+      } else if (rawStatus === 'COMPLETED') {
+        canonicalState = 'ORDER_CONFIRMED';
+      } else if (rawStatus === 'ACCEPTED' || rawStatus === 'STORE_ACCEPTED' || rawStatus === 'ORDER_ACCEPTED') {
         canonicalState = 'ACCEPTED';
       } else if (rawStatus === 'CONFIRMED' || rawStatus === 'ORDER_CONFIRMED') {
         canonicalState = 'ORDER_CONFIRMED';
@@ -820,11 +892,11 @@ export class WebhookService {
       } else if (rawStatus === 'CANCELLED' || rawStatus === 'ORDER_CANCELLED') {
         canonicalState = 'ORDER_CANCELLED';
       } else if (rawStatus === 'FAILED' || rawStatus === 'ORDER_FAILED') {
-        canonicalState = 'FAILED';
+        canonicalState = 'ORDER_FAILED';
       }
 
       // If order is cancelled or failed, execute settlement cancellation workflow via AsyncWorkerService
-      if (canonicalState === 'ORDER_CANCELLED' || canonicalState === 'FAILED') {
+      if (canonicalState === 'ORDER_CANCELLED' || canonicalState === 'ORDER_FAILED') {
         AsyncWorkerService.enqueueOrderCancellation({
           orderId: targetOrder.orderId,
           tenantId: targetOrder.tenantId,
@@ -875,19 +947,45 @@ export class WebhookService {
         }).catch((err) => console.error('[WebhookService] Analytics error:', err));
       }
 
-      // Update projection state in Firestore
+      const upstreamOrderId = String(
+        payload.orderId ||
+        payload.order?.id ||
+        payload.order?._id ||
+        payload.data?.orderId ||
+        ''
+      ).trim() || undefined;
+      const upstreamChannelOrderId = String(
+        payload.channelOrderId ||
+        payload.order?.channelOrderId ||
+        ''
+      ).trim() || undefined;
+      const upstreamDisplayId = String(
+        payload.channelOrderDisplayId ||
+        payload.order?.channelOrderDisplayId ||
+        ''
+      ).trim() || undefined;
+
+      // Update projection state and searchable correlation aliases in Firestore.
       await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, canonicalState, {
         updatedViaWebhookId: webhookEventId,
         amendments: payload.amendments,
         failureReason: payload.failureReason,
+        channelOrderRawId: upstreamOrderId,
+        channelOrderId: upstreamChannelOrderId,
+        channelOrderDisplayId: upstreamDisplayId,
       });
 
-      // Also update any active checkout projection
+      // Also update any active checkout projection. Prefer the real Deliverect order
+      // id once it is known; the order projection remains resolvable through the
+      // promoted channelOrderRawId alias.
       if (targetOrder.checkoutId) {
         await FirestorePlatformService.updateCheckoutStatus(
           targetOrder.checkoutId,
           canonicalState as any,
-          { orderId: targetOrder.orderId, failureReason: payload.failureReason }
+          {
+            orderId: upstreamOrderId || targetOrder.orderId,
+            failureReason: payload.failureReason || payload.reason,
+          }
         );
       }
 

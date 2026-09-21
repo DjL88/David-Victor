@@ -1420,6 +1420,13 @@ v1Router.post(
       const channelOrderReference = options?.channelOrderReference || order.orderReference || `ORD-${Date.now().toString().slice(-6)}`;
       const now = new Date().toISOString();
 
+      const fallbackFulfillmentType = order.fulfillment?.type;
+      if (fallbackFulfillmentType !== 'pickup' && fallbackFulfillmentType !== 'delivery') {
+        throw new Error(
+          'Checkout order is missing a supported fulfillment type. Refusing to default it to delivery.'
+        );
+      }
+
       checkoutResult = {
         checkoutId,
         channelOrderReference,
@@ -1429,7 +1436,7 @@ v1Router.post(
         channelLinkId: order.storeId,
         status: 'CHECKOUT_PENDING_CONFIRMATION',
         basketId,
-        fulfillmentType: (order.fulfillment?.type as any) || 'delivery',
+        fulfillmentType: fallbackFulfillmentType,
         total: order.originalBasket?.total || { amount: 0, currency: 'GBP' },
         idempotencyKey: options?.idempotencyKey,
         dispatchValidationId: options?.dispatchValidationId,
@@ -1448,16 +1455,21 @@ v1Router.post(
       if (!checkoutResult.order.payment && (options?.paymentId || checkoutResult.paymentId)) {
         (checkoutResult.order as any).paymentId = options?.paymentId || checkoutResult.paymentId;
       }
-      await FirestorePlatformService.saveOrderProjection(checkoutResult.order, resolvedTenant, checkoutResult.checkoutId);
+      const savedOrderProjection = await FirestorePlatformService.saveOrderProjection(
+        checkoutResult.order,
+        resolvedTenant,
+        checkoutResult.checkoutId
+      );
 
-      // Initialize dispatch lifecycle
+      // Initialize dispatch lifecycle from the canonical CheckoutResult fulfillment.
+      // Never infer delivery from a missing raw order field.
       const dispatchAdapter = getDispatchAdapter(resolvedTenant);
       await DispatchOrchestrationService.handleCheckoutCreated(
-        checkoutResult.order.id,
+        savedOrderProjection.orderId,
         resolvedTenant,
         dispatchAdapter,
         {
-          fulfillmentType: (checkoutResult.order.fulfillment?.type as any) || 'delivery',
+          fulfillmentType: checkoutResult.fulfillmentType,
           selectedQuote: (options as any)?.selectedQuote,
           quoteId: options?.selectedQuoteId || options?.dispatchValidationId,
           providerId: options?.selectedProviderId,

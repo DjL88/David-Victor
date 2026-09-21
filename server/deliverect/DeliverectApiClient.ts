@@ -2158,17 +2158,49 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const now = new Date().toISOString();
+    const resolvedChannelOrderReference = result.channelOrderId || channelOrderReference;
+    const channelLinkId = basket.channelLinkId || basket.storeId;
+
     return {
       checkoutId,
-      channelOrderReference: result.channelOrderId || channelOrderReference,
+      channelOrderReference: resolvedChannelOrderReference,
       tenantId: options?.tenantId || this.tenantId,
       storeId: basket.storeId,
-      channelLinkId: basket.channelLinkId || basket.storeId,
+      channelLinkId,
       status: 'CHECKOUT_PENDING_CONFIRMATION',
       basketId,
       fulfillmentType: 'pickup',
       total: basket.total,
       idempotencyKey: options?.idempotencyKey,
+      // Persist a provisional projection immediately. Deliverect creates the real
+      // order asynchronously, but Quest/webhook correlation must already have the
+      // basket lines and customer substitution choices available by checkoutId and
+      // channelOrderId before the first upstream callback arrives.
+      order: {
+        id: resolvedChannelOrderReference,
+        channelOrderId: resolvedChannelOrderReference,
+        channelOrderDisplayId: result.channelOrderDisplayId,
+        orderReference: resolvedChannelOrderReference,
+        basketId,
+        channelLinkId,
+        status: 'SUBMITTED',
+        fulfillmentType: 'pickup',
+        fulfillment: { type: 'pickup' },
+        originalBasket: {
+          id: basket.id,
+          fulfillmentType: 'pickup',
+          items: basket.items,
+          total: basket.total,
+          currency: basket.currency,
+        },
+        currentOrder: {
+          itemCount: basket.items.reduce((sum, item) => sum + item.quantity, 0),
+          total: basket.total,
+        },
+        paymentState: 'NO_CAPTURE_REQUIRED',
+        createdAt: now,
+        updatedAt: now,
+      },
       createdAt: now,
       updatedAt: now,
     };
