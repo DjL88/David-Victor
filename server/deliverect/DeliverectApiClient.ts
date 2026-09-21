@@ -1964,19 +1964,29 @@ export class DeliverectApiClient implements DeliverectAdapter {
       throw new CommerceError('STORE_NOT_FOUND', `Store "${storeId}" was not found.`);
     }
 
+    const days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }> = [];
+    let nextAvailableSlot: DeliverySlot | undefined;
+
+    // Same-day scheduled pre-order is a distinct, independently-toggleable capability
+    // from next-opening pre-order (createBasket) — if the tenant has it off, there are
+    // simply no pickable slots, not an error.
+    if (store.scheduling?.acceptsSameDayPreOrders === false) {
+      return { asapAvailable: evaluateStoreOpenNow(store).isOpen, days, nextAvailableSlot };
+    }
+
     // Deliverect has no "get available slots" endpoint — available pickup times are
     // derived from the store's own real opening hours (never fabricated), matching
-    // what createBasket/updateBasketFulfillment will actually accept.
+    // what createBasket/updateBasketFulfillment will actually accept. Capped to today
+    // only: pre-ordering beyond the current day is intentionally not supported.
     const normalizedMap = normalizeOpeningHours(store.openingHours);
     const now = new Date();
     const dayNames: Array<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday'> =
       ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const SLOT_MINUTES = 30;
 
-    const days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }> = [];
-    let nextAvailableSlot: DeliverySlot | undefined;
-
-    for (let offset = 0; offset <= 6; offset++) {
+    // Loop bound is intentionally 0 (today only), kept as a loop rather than inlined so
+    // this reads the same as the rest of the per-day generation logic below.
+    for (let offset = 0; offset <= 0; offset++) {
       const date = new Date(now);
       date.setDate(date.getDate() + offset);
       const hours = normalizedMap[dayNames[date.getDay()]];
