@@ -2059,7 +2059,7 @@ async function resolveDeliverectWebhookTenant(
     if (resolvedFromDb) return resolvedFromDb;
 
     throw new BFFError(
-      'WEBHOOK_UNROUTABLE',
+      'INVALID_INPUT',
       'Inbound webhook cannot be routed: integrationId or registered domain required.',
       400
     );
