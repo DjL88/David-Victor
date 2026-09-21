@@ -8,6 +8,7 @@ import {
   evaluateBasketSnoozeStatus,
   BasketSnoozeAuditResult,
 } from '../services/snoozeCheckService';
+import { evaluateStoreOpenNow } from '../services/storeOpeningHoursService';
 
 export function useBasket(
   selectedStore: Store | null,
@@ -123,6 +124,18 @@ export function useBasket(
           if (!activeStoreId) {
             throw new Error('A store must be selected before creating a basket.');
           }
+          // Deliverect rejects basket creation with a raw 422 ("Fulfillment time is
+          // invalid...") when the store is currently closed and no future pickup/
+          // delivery time is offered yet. Check first so the customer gets an honest,
+          // friendly message instead of a raw upstream error.
+          const openStatus = evaluateStoreOpenNow(selectedStore);
+          if (!openStatus.isOpen) {
+            const reasonMsg = `${selectedStore?.name || 'This store'} is closed right now${
+              openStatus.nextChangeText ? ` — ${openStatus.nextChangeText.toLowerCase()}` : ''
+            }.`;
+            setSnoozeWarning(reasonMsg);
+            return { success: false, reason: 'STORE_CLOSED' };
+          }
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
@@ -178,7 +191,7 @@ export function useBasket(
         return { success: false };
       }
     },
-    [basket, activeStoreId, client, rememberBasket]
+    [basket, activeStoreId, client, rememberBasket, selectedStore]
   );
 
   const addMultipleItems = useCallback(
@@ -194,6 +207,15 @@ export function useBasket(
 
         let currentBasket = basket;
         if (!currentBasket) {
+          const openStatus = evaluateStoreOpenNow(selectedStore);
+          if (!openStatus.isOpen) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} is closed right now${
+                openStatus.nextChangeText ? ` — ${openStatus.nextChangeText.toLowerCase()}` : ''
+              }.`
+            );
+            return;
+          }
           currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
@@ -216,7 +238,7 @@ export function useBasket(
         console.error('Failed to add multiple items to basket:', err);
       }
     },
-    [basket, activeStoreId, client, rememberBasket]
+    [basket, activeStoreId, client, rememberBasket, selectedStore]
   );
 
   const removeItem = useCallback(
