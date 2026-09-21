@@ -51,8 +51,25 @@ export function hasValidStoreAddress(store: { address?: Address | null } | null 
  * Normalizes any incoming openingHours representation (Deliverect per-day map,
  * string summary, or schedule object) into a standardized per-day map.
  */
+// ISO 8601 weekday numbering used by Deliverect's openingHours array (1=Monday..7=Sunday) —
+// confirmed against src/features/stores/StorePickerModal.tsx's own day-label lookup, which is
+// a different convention from this file's DAY_NAMES (indexed 0=Sunday to match Date.getDay()).
+const ISO_DAY_OF_WEEK: Record<number, DayOfWeek> = {
+  1: 'monday',
+  2: 'tuesday',
+  3: 'wednesday',
+  4: 'thursday',
+  5: 'friday',
+  6: 'saturday',
+  7: 'sunday',
+};
+
 export function normalizeOpeningHours(
-  rawHours?: Record<string, { open: string; close: string }> | string | any
+  rawHours?:
+    | Record<string, { open: string; close: string }>
+    | Array<{ dayOfWeek: number; startTime: string; endTime: string }>
+    | string
+    | any
 ): Record<DayOfWeek, DailyHours | null> {
   const result: Record<DayOfWeek, DailyHours | null> = {
     monday: null,
@@ -70,6 +87,19 @@ export function normalizeOpeningHours(
       result[d] = { open: '07:00', close: '23:00' };
     }
     return result;
+  }
+
+  if (Array.isArray(rawHours)) {
+    // Deliverect's real per-location shape: [{ dayOfWeek: 1-7 (ISO, Mon-Sun), startTime, endTime }]
+    let matchedAny = false;
+    for (const entry of rawHours) {
+      const dayName = ISO_DAY_OF_WEEK[entry?.dayOfWeek];
+      if (dayName && typeof entry.startTime === 'string' && typeof entry.endTime === 'string') {
+        result[dayName] = { open: entry.startTime.trim(), close: entry.endTime.trim() };
+        matchedAny = true;
+      }
+    }
+    if (matchedAny) return result;
   }
 
   if (typeof rawHours === 'object') {

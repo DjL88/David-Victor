@@ -6,6 +6,7 @@ import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
+import { FirestorePlatformService } from '../firestoreService';
 import { randomUUID } from 'node:crypto';
 import {
   DeliverectCommerceBasketApiClient,
@@ -45,6 +46,8 @@ import {
   BundleModifierGroup,
   BundleModifier,
   evaluateBundleStockStatus,
+  TenantSchedulingPolicy,
+  DEFAULT_TENANT_SCHEDULING_POLICY,
 } from '../../src/commerce/models';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
@@ -393,6 +396,17 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const sync = await adapter.getTenantMappings(this.tenantId || 'brand-alpha');
     const locMap = new Map(sync.locations.map((l) => [l.physicalLocationId, l]));
 
+    const schedulingPolicy: TenantSchedulingPolicy = await FirestorePlatformService
+      .getTenantSchedulingPolicy(this.tenantId || 'brand-alpha')
+      .catch(() => DEFAULT_TENANT_SCHEDULING_POLICY);
+    const storeScheduling = schedulingPolicy.acceptAsapOrdersOnly
+      ? { acceptsAsapOrders: true, acceptsPreOrders: false, acceptsSameDayPreOrders: false }
+      : {
+          acceptsAsapOrders: true,
+          acceptsPreOrders: schedulingPolicy.allowNextOpeningPreOrder,
+          acceptsSameDayPreOrders: schedulingPolicy.allowSameDayScheduledPreOrder,
+        };
+
     const accountId = await this.resolveAccountId();
     const accountLinkIds = new Set(sync.accounts.filter(account => account.deliverectAccountId === accountId).map(account => account.accountLinkId));
     const scopedStores = sync.stores
@@ -463,6 +477,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
         deliveryRadiusKm,
         deliveryEta,
         currency: (s as any).currency || (loc as any)?.currency || 'GBP',
+        // Previously never passed through, so every real store silently fell back to
+        // storeOpeningHoursService's demo-only default (07:00-23:00) regardless of its
+        // actual Deliverect hours — fixed here.
+        openingHours: (s as any).openingHours,
+        scheduling: storeScheduling,
       };
     });
   }
