@@ -18,6 +18,7 @@ import {
 } from './DeliverectBasketMapper';
 import type { CheckoutResult } from '../../src/domain/models';
 import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
+import { evaluateStoreOpenNow, computeNextOpeningTime, normalizeOpeningHours } from '../../src/services/storeOpeningHoursService';
 import {
   Store,
   StoreStatus,
@@ -1548,9 +1549,17 @@ export class DeliverectApiClient implements DeliverectAdapter {
       );
     }
 
-    const { channelLinkId } = await this.resolveStoreChannelLinkId(storeId);
+    const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
     const api = await this.getCommerceBasketApi();
-    const raw = await api.createPickupBasket({ channelLinkId });
+
+    // If the store is closed right now, target its next real opening instead of
+    // letting Deliverect default to ASAP (which it correctly rejects with a 422
+    // "Fulfillment time is invalid" outside operating hours). This lets a customer
+    // build a basket for pre-order/collection-when-open rather than being blocked.
+    const openStatus = evaluateStoreOpenNow(store);
+    const pickupTime = openStatus.isOpen ? undefined : computeNextOpeningTime(store)?.toISOString();
+
+    const raw = await api.createPickupBasket({ channelLinkId, pickupTime });
     return this.mapLiveCommerceBasket(raw);
   }
 
@@ -1692,10 +1701,26 @@ export class DeliverectApiClient implements DeliverectAdapter {
   }
 
   async updateBasketFulfillment(
-    _basketId: string,
-    _fulfillment: any
+    basketId: string,
+    fulfillment: { fulfillmentType?: 'delivery' | 'pickup'; type?: 'delivery' | 'pickup'; address?: Address; slot?: DeliverySlot; slotId?: string }
   ): Promise<Basket> {
-    return this.unsupportedLiveCapability('Basket fulfillment update');
+    const requestedType = fulfillment.type || fulfillment.fulfillmentType || 'pickup';
+    if (requestedType !== 'pickup') {
+      return this.unsupportedLiveCapability('Basket fulfillment update for delivery');
+    }
+
+    // Prefer an explicit slot object (dateString + startTime); it's the only reliable
+    // way to recover a real ISO datetime — slotId alone isn't a documented Deliverect
+    // concept, it's this client's own id scheme (see getAvailableSlots).
+    let time: string | undefined;
+    if (fulfillment.slot?.dateString && fulfillment.slot?.startTime) {
+      const parsed = new Date(`${fulfillment.slot.dateString}T${fulfillment.slot.startTime}:00`);
+      if (!Number.isNaN(parsed.getTime())) time = parsed.toISOString();
+    }
+
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.updateFulfillment(basketId, { type: 'pickup', time });
+    return this.mapLiveCommerceBasket(raw);
   }
 
   /**
@@ -1893,13 +1918,83 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return this.unsupportedLiveCapability('Delivery options');
   }
 
-  async getAvailableSlots(_storeId: string, _fulfillmentType?: 'delivery' | 'pickup'): Promise<{
+  async getAvailableSlots(storeId: string, fulfillmentType: 'delivery' | 'pickup' = 'pickup'): Promise<{
     asapAvailable: boolean;
     asapEtaMinutes?: number;
     days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }>;
     nextAvailableSlot?: DeliverySlot;
   }> {
-    return this.unsupportedLiveCapability('Delivery slots');
+    if (fulfillmentType !== 'pickup') {
+      return this.unsupportedLiveCapability('Delivery slots');
+    }
+
+    const store = await this.getStore(storeId);
+    if (!store) {
+      throw new CommerceError('STORE_NOT_FOUND', `Store "${storeId}" was not found.`);
+    }
+
+    // Deliverect has no "get available slots" endpoint — available pickup times are
+    // derived from the store's own real opening hours (never fabricated), matching
+    // what createBasket/updateBasketFulfillment will actually accept.
+    const normalizedMap = normalizeOpeningHours(store.openingHours);
+    const now = new Date();
+    const dayNames: Array<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday'> =
+      ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const SLOT_MINUTES = 30;
+
+    const days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }> = [];
+    let nextAvailableSlot: DeliverySlot | undefined;
+
+    for (let offset = 0; offset <= 6; offset++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() + offset);
+      const hours = normalizedMap[dayNames[date.getDay()]];
+      if (!hours) continue;
+
+      const [openHour, openMinute] = hours.open.split(':').map((n) => parseInt(n, 10));
+      const [closeHour, closeMinute] = hours.close.split(':').map((n) => parseInt(n, 10));
+      if ([openHour, openMinute, closeHour, closeMinute].some((n) => Number.isNaN(n))) continue;
+
+      const dateString = date.toISOString().slice(0, 10);
+      const dayLabel =
+        offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+      const slotsForDay: DeliverySlot[] = [];
+      const cursor = new Date(date);
+      cursor.setHours(openHour, openMinute, 0, 0);
+      const close = new Date(date);
+      close.setHours(closeHour, closeMinute, 0, 0);
+
+      while (cursor < close) {
+        if (cursor > now) {
+          const slotEnd = new Date(Math.min(cursor.getTime() + SLOT_MINUTES * 60_000, close.getTime()));
+          const startTime = cursor.toTimeString().slice(0, 5);
+          const endTime = slotEnd.toTimeString().slice(0, 5);
+          const slot: DeliverySlot = {
+            id: `${dateString}_${startTime}`,
+            dayLabel,
+            dateString,
+            startTime,
+            endTime,
+            formatted: `${startTime} – ${endTime}`,
+            isAvailable: true,
+          };
+          slotsForDay.push(slot);
+          if (!nextAvailableSlot) nextAvailableSlot = slot;
+        }
+        cursor.setMinutes(cursor.getMinutes() + SLOT_MINUTES);
+      }
+
+      if (slotsForDay.length > 0) {
+        days.push({ dayLabel, dateString, slots: slotsForDay });
+      }
+    }
+
+    return {
+      asapAvailable: evaluateStoreOpenNow(store).isOpen,
+      days,
+      nextAvailableSlot,
+    };
   }
 
   async createPaymentSession(_basketId: string, _amount?: Money, _currency?: string): Promise<HostedPaymentSession> {
