@@ -100,6 +100,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Confirmed Order Tracking
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
   const [isAdvancingStatus, setIsAdvancingStatus] = useState<boolean>(false);
 
   // Revalidation state
@@ -447,23 +448,69 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         (result as any)?.status === 'ORDER_CONFIRMED' ||
         ((result as any)?.id && !(result as any)?.checkoutId)
       ) {
-        const order = result as any;
-        setConfirmedOrder(order);
+        const resultAny = result as any;
+        const resolvedOrderId =
+          resultAny.orderId ||
+          resultAny.order?.id ||
+          resultAny.order?._id ||
+          (resultAny.id && !resultAny.checkoutId ? resultAny.id : undefined);
+
+        let order: Order | null =
+          resultAny.order ||
+          (!resultAny.checkoutId && resultAny.id ? resultAny : null);
+
+        if (resolvedOrderId) {
+          setConfirmedOrderId(resolvedOrderId);
+        }
+
+        if (!order && resolvedOrderId) {
+          try {
+            order = await defaultCommerceClient.getOrder(resolvedOrderId);
+          } catch (detailError) {
+            // Checkout confirmation is authoritative. Order detail hydration may lag
+            // behind Deliverect's async order creation and must not turn success into failure.
+            console.warn(
+              '[Checkout] Order confirmed but order details are not available yet:',
+              detailError
+            );
+          }
+        }
+
+        if (order) {
+          setConfirmedOrder(order);
+        }
+
         defaultAnalyticsClient.track({
           type: AnalyticsEventType.ORDER_SUBMITTED,
           storeId: store?.id,
-          orderReferenceHash: order.orderReference || order.id,
+          orderReferenceHash:
+            order?.orderReference ||
+            order?.id ||
+            resolvedOrderId ||
+            checkoutId,
           properties: {
-            totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
-            currency: order.pricing?.total?.currency || 'GBP',
-            itemCount: order.items?.length || 0,
+            totalAmount:
+              order?.currentOrder?.total
+                ? moneyToMajor(order.currentOrder.total)
+                : moneyToMajor(checkoutBasket.total),
+            currency:
+              order?.currentOrder?.total?.currency ||
+              checkoutBasket.currency ||
+              'GBP',
+            itemCount:
+              order?.currentOrder?.itemCount ||
+              checkoutBasket.items.reduce((sum, item) => sum + item.quantity, 0),
             fulfillmentType:
-              order.fulfillment?.type ||
-              order.fulfillmentType ||
+              order?.fulfillment?.type ||
+              (order as any)?.fulfillmentType ||
               (isCollection ? 'pickup' : 'delivery'),
           },
         });
-        onOrderSuccess(order.id);
+
+        if (resolvedOrderId) {
+          onOrderSuccess(resolvedOrderId);
+        }
+        setStatusMessage('Order confirmed!');
         setPhase('tracking');
       } else if (checkoutId) {
         setSessionId(checkoutId);
@@ -483,8 +530,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               clearInterval(pollInterval);
               setStatusMessage('Order confirmed!');
               if (statusRes.orderId) {
-                const order = await defaultCommerceClient.getOrder(statusRes.orderId);
-                setConfirmedOrder(order);
+                setConfirmedOrderId(statusRes.orderId);
+                try {
+                  const order = await defaultCommerceClient.getOrder(statusRes.orderId);
+                  if (order) setConfirmedOrder(order);
+                } catch (detailError) {
+                  console.warn(
+                    '[Checkout] Order confirmed; order details are still syncing:',
+                    detailError
+                  );
+                }
                 onOrderSuccess(statusRes.orderId);
               }
               setPhase('tracking');
@@ -515,6 +570,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setCustomerEmail(initialBasket?.customer?.email || '');
     setCustomerPhone(initialBasket?.customer?.phone || '');
     setCustomerDetailsError(null);
+    setConfirmedOrder(null);
+    setConfirmedOrderId(null);
   }, [initialBasket?.id]);
 
   // Keep basket and store synced with props and track CHECKOUT_STARTED
@@ -692,8 +749,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           clearInterval(pollInterval);
           setStatusMessage('Order confirmed!');
           if (res.orderId) {
-            const order = await defaultCommerceClient.getOrder(res.orderId);
-            setConfirmedOrder(order);
+            setConfirmedOrderId(res.orderId);
+            try {
+              const order = await defaultCommerceClient.getOrder(res.orderId);
+              if (order) setConfirmedOrder(order);
+            } catch (detailError) {
+              console.warn(
+                '[Checkout] Payment/order confirmed; order details are still syncing:',
+                detailError
+              );
+            }
             onOrderSuccess(res.orderId);
           }
           setPhase('tracking');
@@ -709,6 +774,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }, 1200);
   };
+
+  // A confirmed checkout can precede the fully queryable order by a few seconds.
+  // Retry order hydration in the background without ever regressing the checkout
+  // back to a failure state.
+  useEffect(() => {
+    if (phase !== 'tracking' || !confirmedOrderId || confirmedOrder) return;
+
+    let cancelled = false;
+
+    const hydrateConfirmedOrder = async () => {
+      try {
+        const order = await defaultCommerceClient.getOrder(confirmedOrderId);
+        if (!cancelled && order) {
+          setConfirmedOrder(order);
+        }
+      } catch {
+        // Deliverect's async order projection may not be readable immediately.
+        // Keep the confirmed state and retry.
+      }
+    };
+
+    hydrateConfirmedOrder();
+    const interval = window.setInterval(hydrateConfirmedOrder, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [phase, confirmedOrderId, confirmedOrder]);
 
   // Advance Order Status (for live testing)
   const handleAdvanceOrder = async () => {
@@ -1731,6 +1825,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               }}
               onBackToList={onClose}
             />
+          </div>
+        )}
+
+        {phase === 'tracking' && !confirmedOrder && (
+          <div className="p-6 rounded-3xl border border-emerald-200 bg-emerald-50 text-center space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+            <div>
+              <h3 className="text-base font-extrabold text-emerald-950">Order confirmed</h3>
+              <p className="mt-1 text-xs text-emerald-800">
+                The store has received your order. We&apos;re syncing the live order details now.
+              </p>
+              {confirmedOrderId && (
+                <p className="mt-2 text-[11px] font-mono text-emerald-700 break-all">
+                  {confirmedOrderId}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-emerald-800">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading order tracking…</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-2xl bg-white border border-emerald-200 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+            >
+              Close — order will remain confirmed
+            </button>
           </div>
         )}
       </div>
