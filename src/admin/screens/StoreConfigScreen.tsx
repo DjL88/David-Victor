@@ -276,7 +276,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
         <div>
           <h1 className="text-2xl font-bold">Locations</h1>
           <p className="text-sm text-gray-500">
-            Physical locations and their Deliverect Commerce stores. Missing data is shown explicitly.
+            Manage physical locations, opening hours, delivery settings and storefront availability. Missing source data is shown explicitly.
           </p>
         </div>
         <button
@@ -332,7 +332,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            All Locations
+            All locations
           </button>
           <button
             type="button"
@@ -394,7 +394,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
                 onClick={() => exportCsv(false, true)}
                 className="bg-emerald-600 text-white rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-emerald-700 transition-colors"
               >
-                Export Selected CSV ({selectedIds.length})
+                Export selected CSV ({selectedIds.length})
               </button>
               <button
                 type="button"
@@ -662,10 +662,10 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-xl">
             <h3 className="text-lg font-bold text-gray-900">
-              Batch Set Radius ({selectedIds.length} stores)
+              Set delivery radius ({selectedIds.length} locations)
             </h3>
             <p className="text-xs text-gray-600">
-              Set the delivery radius (km) for all {selectedIds.length} currently selected stores.
+              Set the delivery radius (km) for all {selectedIds.length} selected locations.
             </p>
             <label className="block text-xs font-bold text-gray-700">
               Delivery Radius (km)
