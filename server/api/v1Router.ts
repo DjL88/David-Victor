@@ -2027,14 +2027,24 @@ async function resolveDeliverectWebhookTenant(
       await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
     if (resolved) {
       tenantId = resolved;
-    } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      tenantId = identifier;
     } else {
-      throw new BFFError(
-        'INTEGRATION_NOT_CONFIGURED',
-        `No registered integration found for identifier "${identifier}".`,
-        404
-      );
+      // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
+      // rather than the opaque integrationId. This is safe because routing only
+      // selects the candidate tenant; the callback must still pass HMAC
+      // verification before any order state is mutated.
+      const directIntegration =
+        await FirestorePlatformService.getIntegrationConfig(identifier);
+      if (directIntegration?.tenantId === identifier) {
+        tenantId = identifier;
+      } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
+        tenantId = identifier;
+      } else {
+        throw new BFFError(
+          'INTEGRATION_NOT_CONFIGURED',
+          `No registered integration found for identifier "${identifier}".`,
+          404
+        );
+      }
     }
   }
 
