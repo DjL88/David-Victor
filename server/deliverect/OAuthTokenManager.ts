@@ -33,6 +33,8 @@ export interface TokenRecord {
   accessToken: string;
   tokenType: string;
   expiresAt: number; // Unix timestamp in ms
+  /** Space-delimited OAuth scopes returned by Deliverect/Auth0. */
+  scope?: string;
 }
 
 export class OAuthTokenManager {
@@ -125,6 +127,43 @@ export class OAuthTokenManager {
   }
 
   /**
+   * Returns granted OAuth scopes, refreshing the token first when necessary.
+   * Deliverect Channel API credentials include a scope in the form
+   * genericChannel:<channel_scope>.
+   */
+  async getGrantedScopes(): Promise<string[]> {
+    await this.getAccessToken();
+    const rawScope = String(this.cachedToken?.scope || '').trim();
+    if (!rawScope) return [];
+    return Array.from(
+      new Set(
+        rawScope
+          .split(/\s+/)
+          .map((scope) => scope.trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  /**
+   * Returns all channel names granted by genericChannel:<channel_scope>.
+   * The Channel Create Order URL uses only the suffix, in lowercase.
+   */
+  async getChannelScopeNames(): Promise<string[]> {
+    const scopes = await this.getGrantedScopes();
+    return Array.from(
+      new Set(
+        scopes
+          .map((scope) => {
+            const match = scope.match(/^genericChannel:(.+)$/i);
+            return match ? match[1].trim().toLowerCase() : '';
+          })
+          .filter(Boolean)
+      )
+    );
+  }
+
+  /**
    * Retrieves a valid bearer token, reusing the cached token if valid.
    * Prevents token stampede by sharing a single in-flight promise.
    */
@@ -212,15 +251,40 @@ export class OAuthTokenManager {
         access_token: string;
         token_type?: string;
         expires_in: number;
-        scope?: string;
+        scope?: string | string[];
       };
+
+      const decodeJwtScope = (accessToken: string): string => {
+        try {
+          const parts = accessToken.split('.');
+          if (parts.length !== 3) return '';
+          const payload = JSON.parse(
+            Buffer.from(parts[1], 'base64url').toString('utf8')
+          );
+          const jwtScope =
+            payload?.scope ||
+            payload?.scp ||
+            (Array.isArray(payload?.permissions)
+              ? payload.permissions.join(' ')
+              : '');
+          return Array.isArray(jwtScope)
+            ? jwtScope.join(' ')
+            : String(jwtScope || '');
+        } catch {
+          return '';
+        }
+      };
+
+      const normalizedScope = Array.isArray(data.scope)
+        ? data.scope.join(' ')
+        : String(data.scope || decodeJwtScope(data.access_token) || '').trim();
 
       // Scope is capability metadata, not a credential. Logging it is safe and
       // tells us whether this client can use Commerce only or also Retail Channel
       // APIs required for Quest itemUnavailableActions.
       console.log(
         '[Platform OAuth] DELIVERECT_OAUTH_SCOPE:',
-        data.scope || 'not_returned'
+        normalizedScope || 'not_returned'
       );
 
       if (!data.access_token) {
@@ -232,6 +296,7 @@ export class OAuthTokenManager {
         accessToken: data.access_token,
         tokenType: data.token_type || 'Bearer',
         expiresAt: Date.now() + expiresInSec * 1000,
+        scope: normalizedScope || undefined,
       };
 
       return this.cachedToken.accessToken;
