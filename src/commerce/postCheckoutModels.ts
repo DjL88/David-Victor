@@ -186,6 +186,7 @@ export interface PickingItem {
   substitutionPreference?: SubstitutionPreferenceType;
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
+  preferredSubstitutePrice?: Money;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
   unit?: string;

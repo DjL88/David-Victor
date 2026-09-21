@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
 import { FirestoreRestService } from './firestoreRest';
-import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY } from '../src/commerce/models';
+import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Money, SubstitutionPreferenceType } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
@@ -112,6 +112,22 @@ export interface OrderProjection {
   updatedAt: string;
 }
 
+export interface BasketItemSubstitutionPreferenceRecord {
+  preference: SubstitutionPreferenceType;
+  substituteCandidatePlus?: string[];
+  preferredSubstitutePlu?: string;
+  preferredSubstituteName?: string;
+  preferredSubstitutePrice?: Money;
+  updatedAt: string;
+}
+
+interface BasketSubstitutionPreferencesDocument {
+  tenantId: string;
+  basketId: string;
+  items: Record<string, BasketItemSubstitutionPreferenceRecord>;
+  updatedAt: string;
+}
+
 export function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
@@ -213,6 +229,7 @@ function savePersistedIntegrations(integrations: Record<string, IntegrationConfi
 const inMemoryTenants: Record<string, TenantConfig> = { ...MOCK_TENANTS, ...loadPersistedTenants() };
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
+const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
 const inMemoryOrderProjections: Record<string, OrderProjection> = {};
 const inMemoryWebhookEvents: Record<string, WebhookEvent> = {};
 const inMemoryWebhookClaims: Record<string, string> = {};
@@ -1596,11 +1613,111 @@ export class FirestoreService {
   }
 
   /**
+   * Stores a customer's per-item substitution choice outside Deliverect Commerce.
+   * Deliverect baskets do not carry this Retail/Quest-specific metadata, so it must
+   * survive independently across basket refresh/reconcile and server restarts.
+   */
+  static async saveBasketItemSubstitutionPreference(
+    tenantId: string,
+    basketId: string,
+    plu: string,
+    input: Omit<BasketItemSubstitutionPreferenceRecord, 'updatedAt'>
+  ): Promise<BasketItemSubstitutionPreferenceRecord> {
+    if (!tenantId || !basketId || !plu) {
+      throw new Error('tenantId, basketId and plu are required to persist a substitution preference.');
+    }
+
+    const currentItems = await this.getBasketSubstitutionPreferences(tenantId, basketId);
+    const updatedAt = new Date().toISOString();
+    const record: BasketItemSubstitutionPreferenceRecord = cleanUndefined({
+      ...input,
+      updatedAt,
+    });
+    const document: BasketSubstitutionPreferencesDocument = {
+      tenantId,
+      basketId,
+      items: { ...currentItems, [plu]: record },
+      updatedAt,
+    };
+
+    const key = `${tenantId}:${basketId}`;
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    const db = getFirestoreDb();
+
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error(
+          'Database persistence is unavailable. Substitution preference saving rejected outside demo/test mode.'
+        );
+      }
+      inMemoryBasketSubstitutionPreferences[key] = document;
+      return record;
+    }
+
+    try {
+      await db.collection('basketSubstitutionPreferences').doc(documentId).set(cleanUndefined(document), { merge: true });
+      inMemoryBasketSubstitutionPreferences[key] = document;
+      return record;
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not save basket substitution preference:', err);
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
+      inMemoryBasketSubstitutionPreferences[key] = document;
+      return record;
+    }
+  }
+
+  static async getBasketSubstitutionPreferences(
+    tenantId: string,
+    basketId: string
+  ): Promise<Record<string, BasketItemSubstitutionPreferenceRecord>> {
+    if (!tenantId || !basketId) return {};
+
+    const key = `${tenantId}:${basketId}`;
+    const cached = inMemoryBasketSubstitutionPreferences[key];
+    if (cached) return { ...cached.items };
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error(
+          'Database persistence is unavailable. Substitution preference lookup rejected outside demo/test mode.'
+        );
+      }
+      return {};
+    }
+
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    try {
+      const snap = await db.collection('basketSubstitutionPreferences').doc(documentId).get();
+      if (!snap.exists) return {};
+      const document = snap.data() as BasketSubstitutionPreferencesDocument;
+      if (document.tenantId !== tenantId || document.basketId !== basketId) {
+        throw new Error('Basket substitution preference tenant/basket scope mismatch.');
+      }
+      inMemoryBasketSubstitutionPreferences[key] = document;
+      return { ...(document.items || {}) };
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not read basket substitution preferences:', err);
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
+      return {};
+    }
+  }
+
+  /**
    * Saves a GDPR-safe order projection in Firestore for customer status tracking.
    */
   static async saveOrderProjection(rawOrderInput: Order | any, tenantId: string = 'brand-alpha', checkoutId?: string): Promise<OrderProjection> {
     const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
+    const checkoutProjection = checkoutId ? await this.getCheckoutProjection(checkoutId) : null;
+    const basketId =
+      (order as any).basketId ||
+      (order as any).basket?.id ||
+      (order as any).originalBasket?.id ||
+      checkoutProjection?.basketId;
+    const persistedSubstitutionPreferences = basketId
+      ? await this.getBasketSubstitutionPreferences(tenantId, basketId)
+      : {};
     const fullAddress = order.fulfillment?.address?.formattedAddress || '';
     const postcodeMatch = fullAddress.match(/[A-Z]{1,2}[0-9][A-Z0-9]?/i);
     const destinationArea = postcodeMatch ? postcodeMatch[0].toUpperCase() : 'Local Area';
@@ -1642,16 +1759,29 @@ export class FirestoreService {
             substitutionPreference: item.substitutionPreference || 'BEST_MATCH',
             preferredSubstitutePlu: (item as any).substituteCandidates?.[0]?.plu || (item as any).preferredSubstitutePlu,
             preferredSubstituteName: (item as any).substituteCandidates?.[0]?.name || (item as any).preferredSubstituteName,
+            preferredSubstitutePrice: (item as any).preferredSubstitutePrice,
           };
         }),
       };
     }
 
-    const basketId =
-      (order as any).basketId ||
-      (order as any).basket?.id ||
-      (order as any).originalBasket?.id ||
-      (checkoutId ? inMemoryCheckouts[checkoutId]?.basketId : undefined);
+    if (picking?.items?.length && Object.keys(persistedSubstitutionPreferences).length > 0) {
+      picking = {
+        ...picking,
+        items: picking.items.map((item) => {
+          const persisted = persistedSubstitutionPreferences[item.plu];
+          if (!persisted) return item;
+          return cleanUndefined({
+            ...item,
+            substitutionPreference: persisted.preference,
+            preferredSubstitutePlu: persisted.preferredSubstitutePlu,
+            preferredSubstituteName: persisted.preferredSubstituteName,
+            preferredSubstitutePrice: persisted.preferredSubstitutePrice,
+          });
+        }),
+      };
+    }
+
     const channelOrderId =
       (order as any).channelOrderId ||
       (order as any).channelOrderReference ||
@@ -1687,7 +1817,7 @@ export class FirestoreService {
       channelOrderReference: order.orderReference || channelOrderId,
       picking,
       paymentState: order.payment?.state || (order as any).paymentState,
-      paymentId: order.payment?.paymentId || (order as any).paymentId || (checkoutId ? inMemoryCheckouts[checkoutId]?.paymentId : undefined),
+      paymentId: order.payment?.paymentId || (order as any).paymentId || checkoutProjection?.paymentId,
       authorizedMaximum: order.payment?.authorizationMaximum?.amount || (order as any).authorizedMaximum,
       finalAmount: (order as any).finalAmount !== undefined ? (order as any).finalAmount : undefined,
       capturedAmount: (order as any).capturedAmount !== undefined ? (order as any).capturedAmount : undefined,

@@ -70,6 +70,26 @@ export const UpdateBasketItemsSchema = z.object({
   preferredSubstitutePrice: z.any().optional(),
 });
 
+export const UpdateBasketItemSubstitutionSchema = z.object({
+  preference: z.enum([
+    'BEST_MATCH',
+    'CUSTOMER_SELECTED',
+    'REMOVE_IF_UNAVAILABLE',
+    'CANCEL_ORDER_IF_UNAVAILABLE',
+    'DO_NOT_SUBSTITUTE',
+  ]),
+  substituteCandidatePlus: z.array(z.string()).optional(),
+  preferredSubstitutePlu: z.string().optional(),
+  preferredSubstituteName: z.string().optional(),
+  preferredSubstitutePrice: z
+    .object({
+      amount: z.number().int().min(0),
+      currency: z.string().min(1),
+      fractionalDigits: z.number().int().min(0).max(6).optional(),
+    })
+    .optional(),
+});
+
 export const UpdateBasketCustomerSchema = z.object({
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),

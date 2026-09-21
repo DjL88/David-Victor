@@ -13,6 +13,7 @@ export interface RawDeliverectOrderItem {
   substituteCandidates?: Array<{ plu: string; name?: string; price?: number | Money }>;
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
+  preferredSubstitutePrice?: Money;
   [key: string]: any;
 }
 
@@ -159,6 +160,7 @@ export class DeliverectOrderMapper {
         substituteCandidates: item.substituteCandidates as any,
         preferredSubstitutePlu: item.preferredSubstitutePlu,
         preferredSubstituteName: item.preferredSubstituteName,
+        preferredSubstitutePrice: item.preferredSubstitutePrice,
       };
     });
 

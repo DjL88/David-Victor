@@ -741,14 +741,26 @@ export class HttpCommerceClient implements CommerceClient {
 
   async setBasketItemSubstitution(
     basketId: string,
-    _plu: string,
-    _preference: SubstitutionPreferenceType,
-    _candidatePlus?: string[],
-    _preferredSubstitutePlu?: string,
-    _preferredSubstituteName?: string,
-    _preferredSubstitutePrice?: Money
+    plu: string,
+    preference: SubstitutionPreferenceType,
+    candidatePlus?: string[],
+    preferredSubstitutePlu?: string,
+    preferredSubstituteName?: string,
+    preferredSubstitutePrice?: Money
   ): Promise<Basket> {
-    return this.getBasket(basketId);
+    return this.request<Basket>(
+      `/baskets/${encodeURIComponent(basketId)}/items/${encodeURIComponent(plu)}/substitution`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          preference,
+          substituteCandidatePlus: candidatePlus,
+          preferredSubstitutePlu,
+          preferredSubstituteName,
+          preferredSubstitutePrice,
+        }),
+      }
+    );
   }
 
   async checkoutBasket(

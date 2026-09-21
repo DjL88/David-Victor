@@ -12,6 +12,7 @@ import {
   calculateAuthorizationMaximum,
   calculatePreChosenAlternativeExtraBuffer,
   moneyToMajor,
+  moneyFromMajor,
 } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
@@ -189,7 +190,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         undefined,
         preferredSubstitutePlu,
         preferredSubstituteName,
-        preferredSubstitutePrice
+        preferredSubstitutePrice !== undefined
+          ? moneyFromMajor(preferredSubstitutePrice, basket.currency)
+          : undefined
       );
       setBasket(updated);
       onBasketUpdated?.(updated);

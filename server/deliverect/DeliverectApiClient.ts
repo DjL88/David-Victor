@@ -1530,10 +1530,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
       fallbackMenuId = String(catalog.activeMenuId || '').trim();
     }
 
-    return mapDeliverectBasket(raw, {
+    const mapped = mapDeliverectBasket(raw, {
       storeName: store?.name || storeId,
       fallbackMenuId,
     });
+
+    const persistedPreferences =
+      await FirestorePlatformService.getBasketSubstitutionPreferences(this.tenantId, mapped.id);
+
+    if (Object.keys(persistedPreferences).length > 0) {
+      mapped.items = mapped.items.map((item) => {
+        const persisted = persistedPreferences[item.plu];
+        if (!persisted) return item;
+        return {
+          ...item,
+          substitutionPreference: persisted.preference,
+          substituteCandidatePlus: persisted.substituteCandidatePlus,
+          preferredSubstitutePlu: persisted.preferredSubstitutePlu,
+          preferredSubstituteName: persisted.preferredSubstituteName,
+          preferredSubstitutePrice: persisted.preferredSubstitutePrice,
+        };
+      });
+    }
+
+    return mapped;
   }
 
   private async getMappedCommerceBasket(basketId: string): Promise<MappedBasket> {
@@ -1685,6 +1705,24 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }>
   ): Promise<Basket> {
     const current = await this.getMappedCommerceBasket(basketId);
+
+    for (const item of items) {
+      if (item.substitutionPreference) {
+        await FirestorePlatformService.saveBasketItemSubstitutionPreference(
+          this.tenantId,
+          basketId,
+          item.plu,
+          {
+            preference: item.substitutionPreference,
+            substituteCandidatePlus: item.substituteCandidatePlus,
+            preferredSubstitutePlu: item.preferredSubstitutePlu,
+            preferredSubstituteName: item.preferredSubstituteName,
+            preferredSubstitutePrice: item.preferredSubstitutePrice,
+          }
+        );
+      }
+    }
+
     const catalog = await this.getStoreCatalog(
       current.storeId,
       current.fulfillmentType
@@ -1731,32 +1769,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
-    const mapped = await this.mapLiveCommerceBasket(raw);
-
-    // Deliverect's real Commerce basket item schema has no substitution-preference
-    // field at all (confirmed against the official API reference) — so nothing we
-    // send here reaches Deliverect, and the basket Deliverect returns can't echo it
-    // back either. Without this merge, a customer's chosen substitution preference
-    // would be silently lost the moment this basket is re-fetched/re-mapped, and
-    // checkout would always persist the BEST_MATCH default (server/firestoreService.ts
-    // getOrderProjection... reads item.substitutionPreference || 'BEST_MATCH').
-    // Quest itself still learns the real preference live via SubstitutionCallbackService,
-    // which reads this same local Firestore-persisted value, not Deliverect's basket.
-    const preferenceByPlu = new Map(items.map((item) => [item.plu, item]));
-    mapped.items = mapped.items.map((mappedItem) => {
-      const source = preferenceByPlu.get(mappedItem.plu);
-      if (!source) return mappedItem;
-      return {
-        ...mappedItem,
-        substitutionPreference: source.substitutionPreference ?? mappedItem.substitutionPreference,
-        substituteCandidatePlus: source.substituteCandidatePlus ?? mappedItem.substituteCandidatePlus,
-        preferredSubstitutePlu: source.preferredSubstitutePlu ?? mappedItem.preferredSubstitutePlu,
-        preferredSubstituteName: source.preferredSubstituteName ?? mappedItem.preferredSubstituteName,
-        preferredSubstitutePrice: source.preferredSubstitutePrice ?? mappedItem.preferredSubstitutePrice,
-      };
-    });
-
-    return mapped;
+    return this.mapLiveCommerceBasket(raw);
   }
 
   async updateBasketCustomer(

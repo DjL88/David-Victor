@@ -45,6 +45,7 @@ import {
   CreateBasketSchema,
   UpdateBasketItemSchema,
   UpdateBasketItemsSchema,
+  UpdateBasketItemSubstitutionSchema,
   UpdateBasketCustomerSchema,
   UpdateBasketFulfillmentSchema,
   UpdateBasketStoreSchema,
@@ -847,6 +848,69 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
     handleCommerceError(res, err, 'Failed to update basket items');
   }
 });
+
+v1Router.patch(
+  '/baskets/:basketId/items/:plu/substitution',
+  validateBody(UpdateBasketItemSubstitutionSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
+      const basket = await adapter.getBasket(req.params.basketId);
+      if (!basket) {
+        return res.status(404).json({ error: 'Basket not found', code: 'BASKET_NOT_FOUND' });
+      }
+
+      const item = basket.items.find((candidate) => candidate.plu === req.params.plu);
+      if (!item) {
+        return res.status(404).json({
+          error: `Item ${req.params.plu} was not found in this basket.`,
+          code: 'BASKET_ITEM_NOT_FOUND',
+        });
+      }
+
+      const {
+        preference,
+        substituteCandidatePlus,
+        preferredSubstitutePlu,
+        preferredSubstituteName,
+        preferredSubstitutePrice,
+      } = req.body;
+
+      await FirestorePlatformService.saveBasketItemSubstitutionPreference(
+        tenantId,
+        req.params.basketId,
+        req.params.plu,
+        {
+          preference,
+          substituteCandidatePlus,
+          preferredSubstitutePlu,
+          preferredSubstituteName,
+          preferredSubstitutePrice,
+        }
+      );
+
+      res.json({
+        ...basket,
+        items: basket.items.map((candidate) =>
+          candidate.plu === req.params.plu
+            ? {
+                ...candidate,
+                substitutionPreference: preference,
+                substituteCandidatePlus,
+                preferredSubstitutePlu,
+                preferredSubstituteName,
+                preferredSubstitutePrice,
+              }
+            : candidate
+        ),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to update basket substitution preference');
+    }
+  }
+);
 
 v1Router.patch('/baskets/:basketId/customer', validateBody(UpdateBasketCustomerSchema), async (req: Request, res: Response) => {
   try {
