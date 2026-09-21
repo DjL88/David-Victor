@@ -385,6 +385,11 @@ export interface AdminClient {
       menuId?: string;
       plu?: string;
       quantity?: number;
+      items?: Array<{
+        menuId?: string;
+        plu?: string;
+        quantity?: number;
+      }>;
       customer?: {
         name?: string;
         email?: string;

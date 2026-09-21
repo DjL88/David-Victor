@@ -165,8 +165,20 @@ export function evaluateBasketRules(
     warnings.push('Courier ID verification required on delivery (Challenge 25 policy).');
   }
 
+  const groupViolations = Object.values(groupTotals)
+    .filter((gt) => gt.exceeded)
+    .map((gt) => ({
+      groupId: gt.groupId,
+      maxAllowed: gt.maxQuantity,
+      totalQuantity: gt.currentQuantity,
+    }));
+
+  const isValid = blockingIssues.length === 0;
+
   return {
-    valid: blockingIssues.length === 0,
+    valid: isValid,
+    isValid,
+    groupViolations,
     blockingIssues,
     warnings,
     requiresCourierAgeCheck,

@@ -94,4 +94,22 @@ describe('Checkout Flow, Dispatch Expiry and Asynchronous Status', () => {
     expect(status.status).toBe('order_failed');
     expect(status.failureReason).toContain('Declined');
   });
+
+  it('allows collection order submission without a delivery address', async () => {
+    const storeId = 'store-chelmsford-central';
+    const basket = await client.createBasket(storeId);
+    basket.fulfillmentType = 'collection';
+    const bread = MOCK_PRODUCTS.find((p) => p.plu === 'PLU-ART-001')!;
+    await client.updateBasketItem(basket.id, bread, 1);
+
+    // Checkout collection basket with null/undefined deliveryAddress and fulfillmentType 'collection'
+    const order = await client.checkoutBasket(basket.id, {
+      fulfillmentType: 'collection',
+      deliveryAddress: undefined,
+    });
+
+    expect(order).toBeDefined();
+    expect(order.id).toBeDefined();
+    expect(['collection', 'pickup']).toContain(order.fulfillment?.type || (order as any).fulfillmentType);
+  });
 });

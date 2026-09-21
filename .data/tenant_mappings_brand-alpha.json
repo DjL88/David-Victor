@@ -15,7 +15,15 @@
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
       "deliverectLocationId": "68518012a666af2e7849bf04",
       "name": "Victor's Vapes",
+      "addressProjection": {
+        "street": "Bradnor View Close",
+        "city": "Kington",
+        "postcode": "HR5 3UA",
+        "country": "GB"
+      },
       "statusProjection": "ACTIVE",
+      "phone": "+447923171553",
+      "email": "David@leitch.me.uk",
       "services": [
         {
           "id": "68518012a666af2e7849bf08",
@@ -136,13 +144,31 @@
       "accountLinkId": "acclink_68517fde1c3ddaa7f6d0275c",
       "physicalLocationId": "loc_68518012a666af2e7849bf04",
       "channelLinkId": "6aae58da8596ac8a7730c048",
-      "name": "Victor's Vapes",
-      "stateProjection": "closed",
+      "name": "Vics",
+      "stateProjection": "open",
+      "coordinates": {
+        "latitude": 52.2056289,
+        "longitude": -3.0350248
+      },
+      "address": {
+        "street": "24 Bradnor View Close HR5 3UA Kington",
+        "city": "Kington",
+        "postcode": "HR5 3UA",
+        "country": "GB"
+      },
       "openingHours": {
         "timezone": "Europe/London",
-        "dayTimeRanges": [],
+        "dayTimeRanges": [
+          {
+            "dayOfWeek": 1,
+            "startTime": "07:00:00",
+            "endTime": "12:00:00"
+          }
+        ],
         "specialHours": []
       },
+      "phone": "+447923171553",
+      "email": "David@leitch.me.uk",
       "services": [
         {
           "id": "68518012a666af2e7849bf08",
@@ -158,8 +184,8 @@
         }
       ],
       "currency": "EUR",
-      "status": "closed",
-      "lastSeenAt": "2026-09-21T05:56:29.736Z"
+      "status": "open",
+      "lastSeenAt": "2026-09-21T07:22:26.527Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c418596ac8a7730c052",
@@ -204,7 +230,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-21T05:56:29.736Z"
+      "lastSeenAt": "2026-09-21T07:22:26.528Z"
     },
     {
       "commerceStoreId": "cstore_6aae5c0885ccd3ab9ac0adec",
@@ -239,7 +265,7 @@
       ],
       "currency": "EUR",
       "status": "closed",
-      "lastSeenAt": "2026-09-21T05:56:29.736Z"
+      "lastSeenAt": "2026-09-21T07:22:26.528Z"
     },
     {
       "commerceStoreId": "cstore_6aadaa0cb3aef90f42ab345d",
@@ -329,10 +355,10 @@
       ],
       "currency": "EUR",
       "status": "open",
-      "lastSeenAt": "2026-09-21T05:56:29.736Z"
+      "lastSeenAt": "2026-09-21T07:22:26.528Z"
     }
   ],
-  "syncedAt": "2026-09-21T05:56:29.738Z",
+  "syncedAt": "2026-09-21T07:22:26.529Z",
   "status": "DISCOVERY_SUCCEEDED_PERSISTENCE_FAILED",
   "persistenceStatus": "FAILED",
   "persistenceCode": "DATABASE_PERMISSION_DENIED",

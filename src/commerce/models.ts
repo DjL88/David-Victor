@@ -66,6 +66,28 @@ export function moneyToMinor(money?: Money | number | null): number {
   return 0;
 }
 
+export function policyFeeToMinor(val: Money | number | undefined | null, fallbackMinor: number = 0): number {
+  if (val === undefined || val === null) return fallbackMinor;
+  if (typeof val === 'object' && typeof (val as any).amount === 'number') {
+    const amt = (val as any).amount;
+    return !isNaN(amt) && isFinite(amt) ? Math.round(amt) : fallbackMinor;
+  }
+  if (typeof val === 'number') {
+    if (isNaN(val) || !isFinite(val)) return fallbackMinor;
+    // Legacy mock data support: if val is a float (e.g. 1.99, 0.5) or a small float/int (< 50) that looks like major pounds, convert to minor
+    if (!Number.isInteger(val) || (val > 0 && val < 50)) {
+      return Math.round(val * 100);
+    }
+    return Math.round(val);
+  }
+  return fallbackMinor;
+}
+
+export function policyFeeToMajor(val: Money | number | undefined | null, fallbackMinor: number = 0): number {
+  const minor = policyFeeToMinor(val, fallbackMinor);
+  return minor / 100;
+}
+
 export function addMoney(a: Money, b: Money): Money {
   const aAmt = moneyToMinor(a);
   const bAmt = moneyToMinor(b);

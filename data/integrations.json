@@ -5,8 +5,8 @@
     "status": "connected",
     "connectionState": "DISCONNECTED",
     "bffProxyUrl": "/api/v1",
-    "lastSyncAt": "2026-09-21T05:56:45.341Z",
-    "updatedAt": "2026-09-21T05:56:45.341Z"
+    "lastSyncAt": "2026-09-21T07:22:44.270Z",
+    "updatedAt": "2026-09-21T07:22:44.270Z"
   },
   "tenant_platform_oauth_1789925152801": {
     "tenantId": "tenant_platform_oauth_1789925152801",
@@ -70,5 +70,75 @@
     "bffProxyUrl": "/api/v1",
     "lastSyncAt": "2026-09-21T05:56:45.344Z",
     "updatedAt": "2026-09-21T05:56:45.344Z"
+  },
+  "brand-alpha": {
+    "tenantId": "brand-alpha",
+    "environment": "staging",
+    "status": "COMMERCE_VERIFIED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T06:14:38.009Z",
+    "deliverectAccountId": "68517fde1c3ddaa7f6d0275c",
+    "allowedChannelLinkIds": [
+      "6aae58da8596ac8a7730c048",
+      "6aae5c418596ac8a7730c052",
+      "6aae5c0885ccd3ab9ac0adec",
+      "6aadaa0cb3aef90f42ab345d"
+    ],
+    "updatedAt": "2026-09-21T06:14:38.009Z"
+  },
+  "tenant_platform_oauth_1789971708966": {
+    "tenantId": "tenant_platform_oauth_1789971708966",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T06:21:48.966Z",
+    "updatedAt": "2026-09-21T06:21:48.967Z"
+  },
+  "tenant_platform_oauth_1789971816450": {
+    "tenantId": "tenant_platform_oauth_1789971816450",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T06:23:36.450Z",
+    "updatedAt": "2026-09-21T06:23:36.450Z"
+  },
+  "tenant_platform_oauth_1789974098108": {
+    "tenantId": "tenant_platform_oauth_1789974098108",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T07:01:38.108Z",
+    "updatedAt": "2026-09-21T07:01:38.108Z"
+  },
+  "tenant_platform_oauth_1789974933831": {
+    "tenantId": "tenant_platform_oauth_1789974933831",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T07:15:33.831Z",
+    "updatedAt": "2026-09-21T07:15:33.831Z"
+  },
+  "tenant_platform_oauth_1789975345384": {
+    "tenantId": "tenant_platform_oauth_1789975345384",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T07:22:25.384Z",
+    "updatedAt": "2026-09-21T07:22:25.384Z"
+  },
+  "tenant_platform_oauth_1789975364283": {
+    "tenantId": "tenant_platform_oauth_1789975364283",
+    "environment": "staging",
+    "status": "UNCONFIGURED",
+    "connectionState": "DISCONNECTED",
+    "bffProxyUrl": "/api/v1",
+    "lastSyncAt": "2026-09-21T07:22:44.283Z",
+    "updatedAt": "2026-09-21T07:22:44.284Z"
   }
 }

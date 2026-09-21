@@ -1,13 +1,37 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MockCommerceClient } from '../commerce/MockCommerceClient';
 import { MOCK_PRODUCTS, MOCK_FEE_POLICIES } from '../commerce/mockData';
-import { moneyToMajor } from '../commerce/models';
+import { moneyToMajor, policyFeeToMajor, policyFeeToMinor } from '../commerce/models';
 
 describe('Authoritative Fee Policies and Calculations', () => {
   let client: MockCommerceClient;
 
   beforeEach(() => {
     client = new MockCommerceClient('brand-alpha');
+  });
+
+  it('policyFeeToMajor and policyFeeToMinor handle minor units, major units, and objects cleanly', () => {
+    // Integer minor units (pence): 300p = £3.00
+    expect(policyFeeToMinor(300)).toBe(300);
+    expect(policyFeeToMajor(300)).toBe(3.00);
+
+    // Legacy float major units: 1.99 = £1.99
+    expect(policyFeeToMinor(1.99)).toBe(199);
+    expect(policyFeeToMajor(1.99)).toBe(1.99);
+
+    // Money object: { amount: 250, currency: 'GBP' }
+    expect(policyFeeToMinor({ amount: 250, currency: 'GBP' })).toBe(250);
+    expect(policyFeeToMajor({ amount: 250, currency: 'GBP' })).toBe(2.50);
+
+    // Undefined/null fallback
+    expect(policyFeeToMinor(undefined, 199)).toBe(199);
+    expect(policyFeeToMajor(null, 199)).toBe(1.99);
+
+    // Verify £3.00 entered as pounds (300 minor units) produces £3.00 major, NEVER £0.03
+    const savedMinor = Math.round(3.00 * 100); // 300
+    expect(savedMinor).toBe(300);
+    expect(policyFeeToMajor(savedMinor)).toBe(3.00);
+    expect(policyFeeToMajor(savedMinor)).not.toBe(0.03);
   });
 
   it('calculates fixed delivery fee, service charge, bag fee, and deposit correctly', async () => {

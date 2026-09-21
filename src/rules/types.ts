@@ -137,6 +137,12 @@ export interface ProductRuleDecision {
   canAddToCart: boolean;
   isGreyedOut: boolean;
 
+  /** Convenience aliases for age restrictions */
+  minimumAge?: number;
+  requiresAgeGate?: boolean;
+  requiresCourierAgeCheck?: boolean;
+  badge?: string;
+
   /**
    * Effective maximum quantity.
    * Computed using the LOWEST applicable explicit limit among:
@@ -200,11 +206,19 @@ export interface ProductRuleDecision {
  */
 export interface BasketRuleDecision {
   valid: boolean;
+  /** Alias for valid */
+  isValid?: boolean;
   blockingIssues: string[];
   warnings: string[];
   requiresCourierAgeCheck: boolean;
   highestMinimumAge: number;
   unacknowledgedAgeRequirement?: number;
+  /** Active group violations list */
+  groupViolations?: Array<{
+    groupId: string;
+    maxAllowed: number;
+    totalQuantity: number;
+  }>;
   itemDecisions: Record<
     string,
     {

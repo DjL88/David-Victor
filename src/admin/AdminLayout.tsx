@@ -88,7 +88,6 @@ interface NavSection {
     id: AdminTab;
     label: string;
     icon: React.FC<{ className?: string }>;
-    badge?: string;
   }>;
 }
 
@@ -161,8 +160,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     navSections.push({
       title: 'Platform Architecture',
       items: [
-        { id: 'brands', label: 'Brands & Provisioning', icon: Building2, badge: 'SuperAdmin' },
-        { id: 'memberships', label: 'Team & RBAC', icon: Users, badge: 'RBAC' },
+        { id: 'brands', label: 'Brands & Provisioning', icon: Building2 },
+        { id: 'memberships', label: 'Team & RBAC', icon: Users },
       ],
     });
   } else {
@@ -181,7 +180,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         { id: 'catalog', label: 'Catalog & Stock', icon: Package },
         { id: 'stores', label: 'Locations', icon: Store },
         { id: 'fees', label: 'Fee Policies', icon: Coins },
-        { id: 'media_health', label: 'Media Health', icon: ImageIcon, badge: 'Demo' },
+        { id: 'media_health', label: 'Media Health', icon: ImageIcon },
         { id: 'country_rules', label: 'Country Rules', icon: Globe },
         { id: 'product_rules', label: 'Product Rules', icon: ShieldCheck },
         { id: 'preview', label: 'Live Preview', icon: Eye },
@@ -191,17 +190,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Marketing Settings',
       items: [
         { id: 'branding', label: 'Branding & Fonts', icon: Palette },
-        { id: 'hero_banners', label: 'Hero Banners & Content', icon: Sparkles, badge: 'Live' },
+        { id: 'hero_banners', label: 'Hero Banners & Content', icon: Sparkles },
         { id: 'stories', label: 'Stories Drops', icon: Film },
-        { id: 'pages', label: 'Pages (CMS)', icon: FileText, badge: 'Live' },
+        { id: 'pages', label: 'Pages (CMS)', icon: FileText },
         { id: 'search_merch', label: 'Search Merchandising', icon: Search },
-        { id: 'insights', label: 'Insights & Funnel', icon: BarChart3, badge: 'Demo' },
+        { id: 'insights', label: 'Insights & Funnel', icon: BarChart3 },
       ],
     },
     {
       title: 'Technical Settings',
       items: [
-        { id: 'connection_health', label: 'Connection Health', icon: Activity, badge: 'Live' },
+        { id: 'connection_health', label: 'Connection Health', icon: Activity },
         { id: 'integrations', label: 'POS & API Sync', icon: Link2 },
         { id: 'domains', label: 'Domains & Routing', icon: Globe },
         { id: 'notifications', label: 'Notifications & Live', icon: Bell },
@@ -294,12 +293,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                           />
                           <span className="truncate">{item.label}</span>
                         </div>
-                        {item.badge && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-300 font-bold border border-purple-400/30">
-                            {item.badge}
-                          </span>
-                        )}
-                        {isActive && !item.badge && (
+                        {isActive && (
                           <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-70" />
                         )}
                       </button>

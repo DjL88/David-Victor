@@ -232,6 +232,62 @@ describe('DeliverectCommerceBasketApi', () => {
     expect(res.id).toBe('basket_recovered');
   });
 
+  it('createPickupTestOrder handles multi-item arrays and uses reconciled payment total', async () => {
+    const calls: { url: string; method: string; body: any }[] = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const u = String(url);
+      const m = init?.method || 'GET';
+      const b = init?.body ? JSON.parse(String(init?.body)) : null;
+      calls.push({ url: u, method: m, body: b });
+
+      if (u.endsWith('/baskets') && m === 'POST') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ id: 'basket_multi_1' }) } as Response;
+      }
+      if (u.endsWith('/items') && m === 'PATCH') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ id: 'basket_multi_1', items: b }) } as Response;
+      }
+      if (u.endsWith('/reconcile') && m === 'POST') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ id: 'basket_multi_1', payment: { total: 3250 } }) } as Response;
+      }
+      if (u.endsWith('/v2/checkouts') && m === 'POST') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ status: 'ACCEPTED', checkoutId: 'chk_multi_1' }) } as Response;
+      }
+      return { ok: false, status: 400, text: async () => 'Bad Request' } as Response;
+    });
+
+    const api = new DeliverectCommerceBasketApi(tokenManager, accountId);
+
+    const testOrderItems = [
+      { menuId: 'm1', plu: 'LATTE-01', quantity: 2 },
+      { menuId: 'm1', plu: 'CROISSANT-02', quantity: 3 },
+    ];
+
+    const result = await api.createPickupTestOrder({
+      channelLinkId: 'store_1',
+      items: testOrderItems,
+      customerName: 'Multi Item Tester',
+      performCheckout: true,
+    });
+
+    // Verify PATCH items payload was sent as raw array of both items
+    const patchCall = calls.find((c) => c.url.endsWith('/items') && c.method === 'PATCH');
+    expect(patchCall).toBeDefined();
+    expect(patchCall?.body).toEqual([
+      { menuId: 'm1', plu: 'LATTE-01', quantity: 2 },
+      { menuId: 'm1', plu: 'CROISSANT-02', quantity: 3 },
+    ]);
+
+    // Verify total is 3250 minor (from reconcile payment.total)
+    expect(result.totalMinor).toBe(3250);
+    expect(result.basket.items).toEqual(testOrderItems);
+
+    // Verify checkout payload uses 3250
+    const checkoutCall = calls.find((c) => c.url.endsWith('/v2/checkouts') && c.method === 'POST');
+    expect(checkoutCall).toBeDefined();
+    expect(checkoutCall?.body.payments[0].amount).toBe(3250);
+  });
+
   it('throws after second HTTP 401 without looping infinitely', async () => {
     let callCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {

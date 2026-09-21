@@ -58,7 +58,7 @@ interface CheckoutModalProps {
   isOpen: boolean;
   basket: Basket | null;
   store: Store | null;
-  deliveryAddress: Address;
+  deliveryAddress?: Address | null;
   onClose: () => void;
   onOrderSuccess: (orderId: string) => void;
   onBasketUpdated?: (basket: Basket) => void;
@@ -255,12 +255,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Revalidate Delivery function
   const handleRevalidateDelivery = useCallback(async () => {
-    if (!basket) return;
+    if (!basket || basket.fulfillmentType === 'pickup' || basket.fulfillmentType === 'collection') return;
     setIsRevalidating(true);
     setRevalidationError(null);
     setAlternativeStores([]);
 
     try {
+      if (!deliveryAddress) {
+        setRevalidationError('Delivery address is required for delivery orders.');
+        return;
+      }
       const result = await defaultCommerceClient.revalidateDelivery(
         basket.id,
         deliveryAddress
@@ -301,11 +305,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!basket) return;
 
-    // Authoritative check before payment pre-authorisation: never silently assume availability
-    if (basket.fulfillmentType !== 'pickup') {
+    const isCollection = basket.fulfillmentType === 'pickup' || basket.fulfillmentType === 'collection';
+
+    // Authoritative check before payment pre-authorisation: never silently assume availability for delivery
+    if (!isCollection) {
       setIsAuthorizingDirect(true);
       setRevalidationError(null);
       try {
+        if (!deliveryAddress) {
+          setRevalidationError('Delivery address is required for delivery orders.');
+          setIsAuthorizingDirect(false);
+          return;
+        }
         const quoteCheck = await defaultCommerceClient.revalidateDelivery(
           basket.id,
           deliveryAddress
@@ -356,9 +367,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         authorizationMaximum,
         schedulingType,
         slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
-        deliveryAddress,
-        dispatchValidationId: basket.dispatchValidationId,
-        dispatchValidationExpiresAt: basket.dispatchValidationExpiresAt,
+        fulfillmentType: isCollection ? 'collection' : 'delivery',
+        deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
+        dispatchValidationId: isCollection ? undefined : basket.dispatchValidationId,
+        dispatchValidationExpiresAt: isCollection ? undefined : basket.dispatchValidationExpiresAt,
       });
       setConfirmedOrder(order);
       defaultAnalyticsClient.track({
@@ -804,22 +816,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Delivery address & store card */}
             <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100 space-y-2.5 text-xs">
-              <div className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <span className="font-bold text-gray-900 block">Delivery Address</span>
-                  <span className="text-gray-600 truncate block">
-                    {deliveryAddress.formattedAddress}
-                  </span>
+              {basket?.fulfillmentType !== 'pickup' && basket?.fulfillmentType !== 'collection' ? (
+                <div className="flex items-start gap-2.5">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-gray-900 block">Delivery Address</span>
+                    <span className="text-gray-600 truncate block">
+                      {deliveryAddress?.formattedAddress ||
+                        (deliveryAddress?.street
+                          ? `${deliveryAddress.street}, ${deliveryAddress.postcode || deliveryAddress.postalCode || ''}`
+                          : 'No delivery address provided')}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-start gap-2.5">
+                  <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-gray-900 block">Fulfillment Method</span>
+                    <span className="text-gray-600 truncate block">
+                      In-Store Collection ({store?.name || 'Selected Store'})
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-start gap-2.5 pt-2 border-t border-gray-200/60">
                 <StoreIcon className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <span className="font-bold text-gray-900 block">Fulfilling Store</span>
                   <span className="text-gray-600 block">
-                    {store?.name} {store?.deliveryEta ? `• ETA ${store.deliveryEta}` : ''}
+                    {store?.name} {basket?.fulfillmentType !== 'pickup' && basket?.fulfillmentType !== 'collection' && store?.deliveryEta ? `• ETA ${store.deliveryEta}` : ''}
                   </span>
                 </div>
               </div>

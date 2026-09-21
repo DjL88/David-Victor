@@ -25,6 +25,8 @@ import {
   Play,
   ChevronDown,
   ChevronUp,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 interface IntegrationsAdminScreenProps {
@@ -76,6 +78,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [testOrderMenuId, setTestOrderMenuId] = useState<string>('');
   const [testOrderPlu, setTestOrderPlu] = useState<string>('');
   const [testOrderQuantity, setTestOrderQuantity] = useState<number>(1);
+  const [testOrderAdditionalItems, setTestOrderAdditionalItems] = useState<
+    Array<{ id: string; menuId: string; plu: string; quantity: number }>
+  >([]);
   const [testOrderCustomerName, setTestOrderCustomerName] = useState<string>('Staging Test Customer');
   const [testOrderCustomerEmail, setTestOrderCustomerEmail] = useState<string>('test@bwydi.com');
   const [testOrderCustomerPhone, setTestOrderCustomerPhone] = useState<string>('+447700900123');
@@ -85,17 +90,61 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [testOrderError, setTestOrderError] = useState<string | null>(null);
   const [showRawTestOrderJson, setShowRawTestOrderJson] = useState<boolean>(false);
 
+  const addTestOrderItem = () => {
+    setTestOrderAdditionalItems((prev) => [
+      ...prev,
+      { id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, menuId: '', plu: '', quantity: 1 },
+    ]);
+  };
+
+  const updateTestOrderItem = (id: string, field: 'menuId' | 'plu' | 'quantity', value: any) => {
+    setTestOrderAdditionalItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const removeTestOrderItem = (id: string) => {
+    setTestOrderAdditionalItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const handlePlaceTestOrder = async () => {
     setPlacingTestOrder(true);
     setTestOrderError(null);
     setTestOrderResult(null);
+
+    const targetCh = testOrderChannelLinkId || selectedChannelLinkIds[0] || discoveredStores[0]?.channelLinkId;
+    const selectedStore = discoveredStores.find((s) => s.channelLinkId === targetCh);
+    if (selectedStore && selectedStore.fulfillmentCapabilitiesProjection && !selectedStore.fulfillmentCapabilitiesProjection.pickup) {
+      setTestOrderError('Collection is not enabled for this Deliverect Commerce store.');
+      setPlacingTestOrder(false);
+      return;
+    }
+
     try {
       if (defaultAdminClient.placePickupTestOrder) {
+        let itemsPayload: Array<{ menuId?: string; plu?: string; quantity: number }> | undefined = undefined;
+
+        if (testOrderAdditionalItems.length > 0) {
+          itemsPayload = [
+            {
+              menuId: testOrderMenuId || undefined,
+              plu: testOrderPlu || undefined,
+              quantity: Math.max(1, Number(testOrderQuantity) || 1),
+            },
+            ...testOrderAdditionalItems.map((item) => ({
+              menuId: item.menuId || undefined,
+              plu: item.plu || undefined,
+              quantity: Math.max(1, Number(item.quantity) || 1),
+            })),
+          ];
+        }
+
         const res = await defaultAdminClient.placePickupTestOrder(tenantId, {
-          channelLinkId: testOrderChannelLinkId || selectedChannelLinkIds[0] || discoveredStores[0]?.channelLinkId,
+          channelLinkId: targetCh,
           menuId: testOrderMenuId || undefined,
           plu: testOrderPlu || undefined,
-          quantity: Number(testOrderQuantity) || 1,
+          quantity: Math.max(1, Number(testOrderQuantity) || 1),
+          items: itemsPayload,
           customer: {
             name: testOrderCustomerName,
             email: testOrderCustomerEmail,
@@ -916,7 +965,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-gray-400 font-medium mb-1">Target Store / Location</label>
                 <select
                   value={testOrderChannelLinkId || selectedChannelLinkIds[0] || ''}
@@ -932,25 +981,84 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 </select>
               </div>
 
-              <div>
-                <label className="block text-gray-400 font-medium mb-1">Product PLU & Menu ID</label>
-                <div className="flex gap-2">
+              <div className="md:col-span-2 space-y-2">
+                <label className="block text-gray-400 font-medium">Test Basket Items</label>
+                
+                {/* Primary Item */}
+                <div className="flex gap-2 items-center">
                   <input
                     type="text"
                     placeholder="Menu ID (optional)"
                     value={testOrderMenuId}
                     onChange={(e) => setTestOrderMenuId(e.target.value)}
-                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    className="w-2/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
                   />
                   <input
                     type="text"
                     placeholder="PLU (e.g. LATTE-01)"
                     value={testOrderPlu}
                     onChange={(e) => setTestOrderPlu(e.target.value)}
-                    className="w-1/2 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    className="w-2/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={testOrderQuantity}
+                    onChange={(e) => setTestOrderQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-1/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    placeholder="Qty"
                   />
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1">Leave empty to auto-discover first item from store catalog</p>
+
+                {/* Additional Items */}
+                {testOrderAdditionalItems.map((item) => (
+                  <div key={item.id} className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Menu ID (optional)"
+                      value={item.menuId}
+                      onChange={(e) => updateTestOrderItem(item.id, 'menuId', e.target.value)}
+                      className="w-2/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="PLU (e.g. ESPRESSO-02)"
+                      value={item.plu}
+                      onChange={(e) => updateTestOrderItem(item.id, 'plu', e.target.value)}
+                      className="w-2/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={item.quantity}
+                      onChange={(e) => updateTestOrderItem(item.id, 'quantity', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-1/5 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                      placeholder="Qty"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeTestOrderItem(item.id)}
+                      className="p-2 text-gray-500 hover:text-rose-400 transition-colors"
+                      title="Remove Item"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={addTestOrderItem}
+                    className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Item Row</span>
+                  </button>
+                  <p className="text-[10px] text-gray-500">Leave PLU empty to auto-discover first item from store catalog</p>
+                </div>
               </div>
 
               <div>
@@ -1049,9 +1157,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                     <div className="font-mono font-semibold text-emerald-400 truncate text-[11px]">{testOrderResult.basketId || 'N/A'}</div>
                   </div>
                   <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
-                    <div className="text-gray-500 text-[10px]">TOTAL</div>
+                    <div className="text-gray-500 text-[10px]">AUTHORITATIVE TOTAL</div>
                     <div className="font-mono font-bold text-white text-[11px]">
-                      £{(Number(testOrderResult.totalMinor || testOrderResult.basket?.paymentSummary?.basketTotal || 0) / 100).toFixed(2)}
+                      £{(Number(testOrderResult.totalMinor || testOrderResult.reconciledBasket?.payment?.total || testOrderResult.basket?.paymentSummary?.basketTotal || 0) / 100).toFixed(2)}
                     </div>
                   </div>
                   <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
@@ -1061,6 +1169,45 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <div className="p-2 bg-gray-950/80 rounded-lg border border-gray-800">
                     <div className="text-gray-500 text-[10px]">DISPLAY ID</div>
                     <div className="font-mono font-bold text-amber-400 text-[11px]">{testOrderResult.channelOrderDisplayId || 'N/A'}</div>
+                  </div>
+                </div>
+
+                {/* Requested vs Reconciled items view */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs border-t border-emerald-900/40">
+                  <div className="p-3 bg-gray-950/80 rounded-xl border border-gray-800/80 space-y-1.5">
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Requested Items</div>
+                    <ul className="space-y-1 font-mono text-[11px] text-gray-300">
+                      {(testOrderResult.resolved?.items || [
+                        { menuId: testOrderResult.resolved?.menuId, plu: testOrderResult.resolved?.plu, quantity: testOrderResult.resolved?.quantity || 1 }
+                      ]).map((item: any, idx: number) => (
+                        <li key={idx} className="flex justify-between items-center bg-gray-900/60 px-2.5 py-1 rounded border border-gray-800/50">
+                          <span className="truncate">{item.plu || 'Auto-Discovered PLU'}</span>
+                          <span className="text-cyan-400 font-bold ml-2">x{item.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="p-3 bg-gray-950/80 rounded-xl border border-gray-800/80 space-y-1.5">
+                    <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex justify-between">
+                      <span>Deliverect Reconciled Items</span>
+                    </div>
+                    {(() => {
+                      const reconciledItems = testOrderResult.reconciledBasket?.items || testOrderResult.basket?.items || [];
+                      if (!reconciledItems.length) {
+                        return <div className="text-[11px] text-gray-500 italic">No reconciled item details returned</div>;
+                      }
+                      return (
+                        <ul className="space-y-1 font-mono text-[11px] text-gray-300">
+                          {reconciledItems.map((item: any, idx: number) => (
+                            <li key={idx} className="flex justify-between items-center bg-gray-900/60 px-2.5 py-1 rounded border border-gray-800/50">
+                              <span className="truncate">{item.name || item.plu || item.itemPlu || `Item #${idx + 1}`}</span>
+                              <span className="text-emerald-400 font-bold ml-2">x{item.quantity || item.qty || 1}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
                   </div>
                 </div>
 

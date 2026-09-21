@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { TenantConfig, AdminUser } from '../../commerce/models';
 import { BwydiLogo } from '../../components/BwydiLogo';
+import { FeatureSwitchesPanel } from '../components/FeatureSwitchesPanel';
 import {
   Building2,
   Plus,
@@ -18,6 +19,7 @@ import {
   Layers,
   Store,
   Trash2,
+  Sliders,
 } from 'lucide-react';
 
 interface BrandsScreenProps {
@@ -49,6 +51,9 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
   const [initialIntegration, setInitialIntegration] = useState<'standalone' | 'deliverect'>('standalone');
+
+  // Feature Flags Modal state
+  const [selectedFeatureFlagsTenant, setSelectedFeatureFlagsTenant] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser.role === 'platformSuperAdmin';
 
@@ -253,6 +258,14 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                   className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold rounded-xl transition-colors text-center"
                 >
                   Manage Brand
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFeatureFlagsTenant(t.tenantId)}
+                  className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
+                  title="Feature Flags & Capabilities"
+                >
+                  <Sliders className="w-4 h-4" />
                 </button>
                 <a
                   href={`?brand=${t.tenantId}`}
@@ -617,6 +630,32 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Feature Flags Modal */}
+      {selectedFeatureFlagsTenant && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-indigo-600" />
+                <span>Feature Flags — {selectedFeatureFlagsTenant}</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setSelectedFeatureFlagsTenant(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                &times;
+              </button>
+            </div>
+
+            <FeatureSwitchesPanel
+              tenantId={selectedFeatureFlagsTenant}
+              currentUser={currentUser}
+              compact={true}
+            />
           </div>
         </div>
       )}

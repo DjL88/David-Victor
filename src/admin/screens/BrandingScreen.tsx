@@ -11,6 +11,7 @@ import { applyTenantFonts, simulateBackendFontPipeline } from '../../tenant/font
 import { GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../../commerce/googleFonts';
 import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
+import { FeatureSwitchesPanel } from '../components/FeatureSwitchesPanel';
 import {
   Palette,
   Check,
@@ -862,6 +863,11 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* TENANT FEATURE FLAGS & CAPABILITIES PANEL */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs">
+            <FeatureSwitchesPanel tenantId={tenantId} currentUser={currentUser} />
           </div>
         </div>
 

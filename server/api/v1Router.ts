@@ -1277,8 +1277,15 @@ v1Router.post(
       }
     }
 
+    const isExplicitCollection =
+      options?.fulfillmentType === 'collection' ||
+      options?.fulfillmentType === 'pickup';
+    const isDelivery =
+      options?.fulfillmentType === 'delivery' ||
+      (!options?.fulfillmentType && Boolean(options?.deliveryAddress));
+
     // DSP-03 & Dispatch Orchestration: Authoritative dispatch quote/availability check
-    if (options?.fulfillmentType === 'delivery' || !options?.fulfillmentType) {
+    if (isDelivery && !isExplicitCollection) {
       if (options?.dispatchValidationExpiresAt) {
         const expiry = new Date(options.dispatchValidationExpiresAt).getTime();
         if (Number.isFinite(expiry) && Date.now() > expiry) {
@@ -3480,6 +3487,7 @@ v1Router.post('/admin/tenants/:id/integration/test-order', requireAdminAuth('pla
       menuId,
       plu,
       quantity,
+      items,
       customer,
       pickupNotes,
       orderNote,
@@ -3496,17 +3504,26 @@ v1Router.post('/admin/tenants/:id/integration/test-order', requireAdminAuth('pla
     }
 
     const environment = integration?.environment || 'staging';
-    const tokenManager = OAuthTokenManager.getInstance(environment);
+    const tokenManager = OAuthTokenManager.getInstance({
+      environment: environment === 'production' ? 'production' : 'staging',
+    });
     const basketApi = new DeliverectCommerceBasketApi(tokenManager, deliverectAccountId);
 
-    let targetChannelLinkId = channelLinkId;
+    // Deliverect Commerce uses channelLinkId as the store-channel identifier. In the
+    // basket API this same value may be supplied as storeId.
+    let targetChannelLinkId = typeof channelLinkId === 'string' ? channelLinkId.trim() : '';
+    const assignedChannelLinks = Array.isArray(integration?.allowedChannelLinkIds)
+      ? integration.allowedChannelLinkIds.map(String).filter(Boolean)
+      : [];
+
     if (!targetChannelLinkId) {
-      targetChannelLinkId = integration?.allowedChannelLinkIds?.[0];
+      targetChannelLinkId = assignedChannelLinks[0] || '';
     }
+
     if (!targetChannelLinkId) {
-      const adapter = new LinkedAccountsAdapter({ environment });
-      const storesRes = await adapter.getCommerceStores(deliverectAccountId, tenantId);
-      targetChannelLinkId = storesRes?.stores?.[0]?.channelLinkId;
+      const linkedAccounts = new LinkedAccountsAdapter({ environment });
+      const storesRes = await linkedAccounts.getCommerceStores(deliverectAccountId, tenantId);
+      targetChannelLinkId = String(storesRes?.stores?.[0]?.channelLinkId || '');
     }
 
     if (!targetChannelLinkId) {
@@ -3516,36 +3533,114 @@ v1Router.post('/admin/tenants/:id/integration/test-order', requireAdminAuth('pla
       });
     }
 
-    let targetMenuId = menuId;
-    let targetPlu = plu;
-
-    if (!targetMenuId || !targetPlu) {
-      const discovery = CommerceDiscoveryService.getInstance();
-      const catalog = await discovery.getStoreCatalog({
-        tenantId,
-        storeId: targetChannelLinkId,
-        fulfillmentType: 'pickup',
-        appMode: environment,
+    // Fail closed when the tenant has an explicit provisioning boundary.
+    if (assignedChannelLinks.length > 0 && !assignedChannelLinks.includes(targetChannelLinkId)) {
+      return res.status(403).json({
+        error: `Channel link "${targetChannelLinkId}" is not assigned to tenant "${tenantId}".`,
+        code: 'CHANNEL_LINK_NOT_ASSIGNED',
       });
-      const item = catalog?.products?.[0];
-      if (item) {
-        targetMenuId = targetMenuId || (item as any).menuId || catalog?.menus?.[0]?.menuId || 'main';
-        targetPlu = targetPlu || item.plu;
+    }
+
+    // Inspect the selected store's authoritative fulfillment capabilities BEFORE posting the basket.
+    const linkedAccountsAdapter = new LinkedAccountsAdapter({ environment });
+    const storesRes = await linkedAccountsAdapter.getCommerceStores(deliverectAccountId, tenantId);
+    const selectedStore = storesRes?.stores?.find((s: any) => String(s.channelLinkId) === String(targetChannelLinkId));
+
+    if (selectedStore && selectedStore.fulfillmentCapabilitiesProjection) {
+      const supportsPickup = Boolean(selectedStore.fulfillmentCapabilitiesProjection.pickup);
+      if (!supportsPickup) {
+        return res.status(400).json({
+          error: 'Collection is not enabled for this Deliverect Commerce store.',
+          code: 'FULFILLMENT_NOT_SUPPORTED',
+        });
       }
     }
 
+    let targetMenuId = typeof menuId === 'string' ? menuId.trim() : '';
+    let targetPlu = typeof plu === 'string' ? plu.trim() : '';
+
+    // IMPORTANT: use the tenant-scoped live Deliverect adapter here. The generic
+    // CommerceDiscoveryService store-catalog helper only has a concrete data provider
+    // in demo mode; using it in staging caused valid channelLinkIds to fail with
+    // `Store not found: <channelLinkId>` before Deliverect was ever called.
     if (!targetMenuId || !targetPlu) {
-      return res.status(400).json({
-        error: 'Could not resolve menuId and plu for test order. Please specify menuId and plu explicitly.',
-        code: 'PRODUCT_REQUIRED',
-      });
+      const liveAdapter = await getDeliverectAdapterAsync(tenantId);
+      const catalog = await liveAdapter.getStoreCatalog(
+        targetChannelLinkId,
+        'pickup',
+        targetMenuId || undefined
+      );
+
+      if (!targetMenuId) {
+        targetMenuId = String(
+          catalog.activeMenuId ||
+          catalog.menus?.find((menu: any) => Number(menu.menuType) === 2 || Number(menu.menuType) === 0)?.menuId ||
+          catalog.menus?.[0]?.menuId ||
+          ''
+        );
+      }
+
+      if (!targetPlu) {
+        const candidate = (catalog.products || []).find((product: any) => {
+          const candidatePlu = String(product?.plu || '').trim();
+          if (!candidatePlu || candidatePlu.includes('#')) return false;
+          if (product?.active === false) return false;
+          if (product?.snoozed === true || product?.isSnoozed === true) return false;
+          if (String(product?.stockStatus || '').toUpperCase() === 'OUT_OF_STOCK') return false;
+          return true;
+        });
+        targetPlu = String(candidate?.plu || '');
+      }
+    }
+
+    let parsedItems: Array<{ menuId: string; plu: string; quantity: number }> | undefined = undefined;
+
+    if (Array.isArray(items) && items.length > 0) {
+      parsedItems = [];
+      for (const rawItem of items) {
+        const qty = Number(rawItem.quantity);
+        if (!Number.isInteger(qty) || qty <= 0) {
+          return res.status(400).json({
+            error: 'quantity must be a positive integer.',
+            code: 'INVALID_QUANTITY',
+          });
+        }
+        const itemMenuId = rawItem.menuId ? String(rawItem.menuId).trim() : targetMenuId;
+        const itemPlu = rawItem.plu ? String(rawItem.plu).trim() : targetPlu;
+        if (!itemMenuId || !itemPlu) {
+          return res.status(400).json({
+            error: 'Each item must have a valid menuId and plu.',
+            code: 'PRODUCT_REQUIRED',
+          });
+        }
+        parsedItems.push({
+          menuId: itemMenuId,
+          plu: itemPlu,
+          quantity: qty,
+        });
+      }
+    } else {
+      if (!targetMenuId || !targetPlu) {
+        return res.status(400).json({
+          error: 'Could not resolve a pickup-compatible menuId and orderable PLU from the live Deliverect store menu. Specify menuId and plu explicitly or verify that a pickup menu is published.',
+          code: 'PRODUCT_REQUIRED',
+        });
+      }
+
+      const parsedQuantity = quantity == null ? 1 : Number(quantity);
+      if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+        return res.status(400).json({
+          error: 'quantity must be a positive integer.',
+          code: 'INVALID_QUANTITY',
+        });
+      }
+
+      parsedItems = [{ menuId: targetMenuId, plu: targetPlu, quantity: parsedQuantity }];
     }
 
     const testOrderResult = await basketApi.createPickupTestOrder({
       channelLinkId: targetChannelLinkId,
-      menuId: targetMenuId,
-      plu: targetPlu,
-      quantity: quantity ? Number(quantity) : 1,
+      items: parsedItems,
       customer: customer || {
         name: 'Staging Test Customer',
         email: 'test@bwydi.com',
@@ -3553,12 +3648,21 @@ v1Router.post('/admin/tenants/:id/integration/test-order', requireAdminAuth('pla
       },
       pickupNotes: pickupNotes || 'Test order via Admin UI',
       orderNote: orderNote || 'Deliverect Commerce Staging Test',
-      performCheckout: performCheckout !== false,
+      // Checkout is destructive (it injects an order), so only run it when explicitly true.
+      performCheckout: performCheckout === true,
     });
 
     res.json({
       success: true,
       tenantId,
+      resolved: {
+        accountId: deliverectAccountId,
+        channelLinkId: targetChannelLinkId,
+        items: parsedItems,
+        menuId: targetMenuId,
+        plu: targetPlu,
+        performedCheckout: performCheckout === true,
+      },
       result: testOrderResult,
     });
   } catch (err: any) {

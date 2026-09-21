@@ -80,6 +80,10 @@ export class HttpAdminClient implements AdminClient {
     this.currentTenantId = initialTenantId;
   }
 
+  public setBaseUrl(url: string) {
+    this.baseUrl = url;
+  }
+
   public isDemoMode(): boolean {
     return getRuntimeMode() === 'DEMO';
   }
@@ -954,6 +958,11 @@ export class HttpAdminClient implements AdminClient {
       menuId?: string;
       plu?: string;
       quantity?: number;
+      items?: Array<{
+        menuId?: string;
+        plu?: string;
+        quantity?: number;
+      }>;
       customer?: {
         name?: string;
         email?: string;

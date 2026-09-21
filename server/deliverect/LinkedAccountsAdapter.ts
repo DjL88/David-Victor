@@ -85,6 +85,115 @@ export interface LinkedAccountsSyncResult {
   message?: string;
 }
 
+export interface NormalizedFulfillmentCapabilities {
+  delivery: boolean;
+  pickup: boolean;
+  scheduling: boolean;
+  provenance?: 'fulfillmentTypes' | 'settings' | 'fulfillmentCapabilities' | 'unknown';
+}
+
+export function normalizeFulfillmentCapabilities(rawObj: any): NormalizedFulfillmentCapabilities | undefined {
+  if (!rawObj || typeof rawObj !== 'object') {
+    return undefined;
+  }
+
+  // Priority 1: Explicit `fulfillmentTypes` or `fulfillmentType`
+  const rawTypes = rawObj.fulfillmentTypes !== undefined ? rawObj.fulfillmentTypes : rawObj.fulfillmentType;
+  if (rawTypes !== undefined && rawTypes !== null) {
+    const typesArray = Array.isArray(rawTypes)
+      ? rawTypes
+      : typeof rawTypes === 'string' || typeof rawTypes === 'number'
+        ? [rawTypes]
+        : [];
+
+    const delivery = typesArray.some((t: any) => String(t).toUpperCase() === 'DELIVERY');
+    const pickup = typesArray.some((t: any) => {
+      const u = String(t).toUpperCase();
+      return u === 'PICKUP' || u === 'COLLECTION' || u === 'CURBSIDE' || u === 'TAKEAWAY' || u === 'EATIN' || u === 'EAT_IN';
+    });
+    const scheduling = typesArray.some((t: any) => String(t).toUpperCase() === 'SCHEDULING');
+
+    return {
+      delivery,
+      pickup,
+      scheduling,
+      provenance: 'fulfillmentTypes',
+    };
+  }
+
+  // Priority 2: Explicit `settings.<type>.enabled` (or `.active`)
+  if (rawObj.settings && typeof rawObj.settings === 'object') {
+    const s = rawObj.settings;
+    const hasPickup = s.pickup !== undefined || s.collection !== undefined || s.curbside !== undefined || s.takeaway !== undefined || s.eatIn !== undefined || s.eat_in !== undefined;
+    const hasDelivery = s.delivery !== undefined;
+    const hasScheduling = s.scheduling !== undefined;
+
+    if (hasPickup || hasDelivery || hasScheduling) {
+      const checkSetting = (settingVal: any): boolean => {
+        if (settingVal == null) return false;
+        if (typeof settingVal === 'boolean') return settingVal;
+        if (typeof settingVal === 'object') {
+          if (settingVal.enabled !== undefined) return Boolean(settingVal.enabled);
+          if (settingVal.active !== undefined) return Boolean(settingVal.active);
+        }
+        return false;
+      };
+
+      const delivery = checkSetting(s.delivery);
+      const pickup = checkSetting(s.pickup) || checkSetting(s.collection) || checkSetting(s.curbside) || checkSetting(s.takeaway) || checkSetting(s.eatIn) || checkSetting(s.eat_in);
+      const scheduling = checkSetting(s.scheduling);
+
+      return {
+        delivery,
+        pickup,
+        scheduling,
+        provenance: 'settings',
+      };
+    }
+  }
+
+  // Priority 3: Legacy `fulfillmentCapabilities` (array or object) or top-level flags (`deliveryEnabled`/`pickupEnabled`/`schedulingEnabled`)
+  if (rawObj.fulfillmentCapabilities !== undefined && rawObj.fulfillmentCapabilities !== null) {
+    if (Array.isArray(rawObj.fulfillmentCapabilities)) {
+      const caps = rawObj.fulfillmentCapabilities;
+      const delivery = caps.some((c: any) => String(c).toUpperCase() === 'DELIVERY');
+      const pickup = caps.some((c: any) => {
+        const u = String(c).toUpperCase();
+        return u === 'PICKUP' || u === 'COLLECTION' || u === 'CURBSIDE' || u === 'TAKEAWAY';
+      });
+      const scheduling = caps.some((c: any) => String(c).toUpperCase() === 'SCHEDULING');
+      return {
+        delivery,
+        pickup,
+        scheduling,
+        provenance: 'fulfillmentCapabilities',
+      };
+    } else if (typeof rawObj.fulfillmentCapabilities === 'object') {
+      const caps = rawObj.fulfillmentCapabilities;
+      if (caps.delivery !== undefined || caps.pickup !== undefined || caps.collection !== undefined || caps.scheduling !== undefined) {
+        return {
+          delivery: Boolean(caps.delivery),
+          pickup: Boolean(caps.pickup ?? caps.collection),
+          scheduling: Boolean(caps.scheduling),
+          provenance: 'fulfillmentCapabilities',
+        };
+      }
+    }
+  }
+
+  if (rawObj.deliveryEnabled !== undefined || rawObj.pickupEnabled !== undefined || rawObj.schedulingEnabled !== undefined) {
+    return {
+      delivery: Boolean(rawObj.deliveryEnabled),
+      pickup: Boolean(rawObj.pickupEnabled),
+      scheduling: Boolean(rawObj.schedulingEnabled),
+      provenance: 'fulfillmentCapabilities',
+    };
+  }
+
+  // Priority 4: Missing / unknown capability data -> UNKNOWN/FALSE (never default to true)
+  return undefined;
+}
+
 export interface CommerceStoresDiscoveryResult {
   success: boolean;
   stores: CommerceStore[];
@@ -235,6 +344,7 @@ export class LinkedAccountsAdapter {
           const cl = typeof rawLink === 'string' ? { channelLinkId: rawLink } : rawLink;
           const chLinkId = cl.channelLinkId || cl._id;
           if (!chLinkId) continue;
+          const fulfillmentCapabilitiesProjection = normalizeFulfillmentCapabilities(cl) || normalizeFulfillmentCapabilities(rawLink);
           stores.push({
             commerceStoreId: `cstore_${chLinkId}`,
             accountLinkId: locAccountId,
@@ -242,22 +352,7 @@ export class LinkedAccountsAdapter {
             channelLinkId: chLinkId,
             name: cl.name || `${rawLoc.name} (${cl.channel || 'Online'})`,
             stateProjection: this.mapStoreState(cl.status !== undefined ? String(cl.status) : undefined),
-            fulfillmentCapabilitiesProjection: cl.fulfillmentCapabilities
-              ? Array.isArray(cl.fulfillmentCapabilities)
-                ? {
-                    delivery: cl.fulfillmentCapabilities.some((c: any) => String(c).toUpperCase() === 'DELIVERY'),
-                    pickup: cl.fulfillmentCapabilities.some((c: any) => {
-                      const u = String(c).toUpperCase();
-                      return u === 'PICKUP' || u === 'COLLECTION';
-                    }),
-                    scheduling: cl.fulfillmentCapabilities.some((c: any) => String(c).toUpperCase() === 'SCHEDULING'),
-                  }
-                : {
-                    delivery: Boolean(cl.fulfillmentCapabilities.delivery),
-                    pickup: Boolean(cl.fulfillmentCapabilities.pickup || cl.fulfillmentCapabilities.collection),
-                    scheduling: Boolean(cl.fulfillmentCapabilities.scheduling),
-                  }
-              : undefined,
+            ...(fulfillmentCapabilitiesProjection ? { fulfillmentCapabilitiesProjection } : {}),
             lastSeenAt: new Date().toISOString(),
           });
         }

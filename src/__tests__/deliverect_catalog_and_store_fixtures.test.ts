@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DeliverectApiClient, evaluateDeliverectSnooze } from '../../server/deliverect/DeliverectApiClient';
+import { DeliverectApiClient, evaluateDeliverectSnooze, applyCategoryFallback, FALLBACK_CATEGORY_ID, FALLBACK_CATEGORY_NAME } from '../../server/deliverect/DeliverectApiClient';
 import { LinkedAccountsAdapter } from '../../server/deliverect/LinkedAccountsAdapter';
 import { OAuthTokenManager } from '../../server/deliverect/OAuthTokenManager';
 import { formatCurrency, formatMoney } from '../utils/formatters';
@@ -405,6 +405,35 @@ describe('Deliverect Pricing, Multi-Store Menus, Snooze & Store Isolation Fixtur
       const unlinkedStore = result.stores.find((s) => s.channelLinkId === 'cl_channel_unlinked');
       expect(unlinkedStore).toBeDefined();
       expect(unlinkedStore?.physicalLocationId).toBeNull();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 9. FIXTURE: Root catalogue "Other" fallback for unmapped / location-only items
+  // --------------------------------------------------------------------------
+  describe('Fixture 9: Root catalogue "Other" fallback category', () => {
+    it('creates "Store Specials & Local Products" category and assigns unmapped or location-only products to it', () => {
+      const mockRawMenu = {
+        _id: 'menu_with_unmapped',
+        categories: [
+          { _id: 'cat_bakery', name: 'Bakery', subCategories: [], productIds: ['prod_bread'] }
+        ],
+        products: [
+          { _id: 'prod_bread', name: 'Sourdough', categoryId: 'cat_bakery', active: true, price: 250 },
+          { _id: 'prod_local_honey', name: 'Local Honey', categoryId: 'cat_unknown_location_only', active: true, price: 500 }
+        ]
+      };
+
+      const parsed = DeliverectApiClient.parseDeliverectMenu(mockRawMenu, true);
+      const fallbackCat = parsed.categories.find(c => c.id === FALLBACK_CATEGORY_ID);
+      expect(fallbackCat).toBeDefined();
+      expect(fallbackCat?.name).toBe(FALLBACK_CATEGORY_NAME);
+
+      const bread = parsed.products.find(p => p.id === 'prod_bread');
+      expect(bread?.categoryIds).toEqual(['cat_bakery']);
+
+      const honey = parsed.products.find(p => p.id === 'prod_honey' || p.name === 'Local Honey');
+      expect(honey?.categoryIds).toEqual([FALLBACK_CATEGORY_ID]);
     });
   });
 });

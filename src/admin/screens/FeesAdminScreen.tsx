@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { TenantFeePolicy, AdminUser, moneyToMajor } from '../../commerce/models';
+import {
+  TenantFeePolicy,
+  AdminUser,
+  policyFeeToMajor,
+  policyFeeToMinor,
+} from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { Coins, Check, RefreshCw, AlertCircle, Info } from 'lucide-react';
 
@@ -31,6 +36,27 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     }
   };
 
+  const handleServiceFeeModeChange = (newMode: 'FIXED' | 'PERCENT' | 'NONE') => {
+    if (!policy) return;
+    let newAmount = policy.serviceFeeAmount;
+    if (newMode === 'FIXED') {
+      // If switching from PERCENT or if current value is percentage range, set default minor units (49p = £0.49)
+      if (policy.serviceFeeMode === 'PERCENT' || newAmount <= 20) {
+        newAmount = 49;
+      }
+    } else if (newMode === 'PERCENT') {
+      // If switching from FIXED or if current value is minor units (>20), set default percentage (3.5%)
+      if (policy.serviceFeeMode === 'FIXED' || newAmount > 20) {
+        newAmount = 3.5;
+      }
+    }
+    setPolicy({
+      ...policy,
+      serviceFeeMode: newMode,
+      serviceFeeAmount: newAmount,
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!policy) return;
@@ -38,7 +64,23 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     setSaveSuccess(false);
 
     try {
-      const updated = await defaultAdminClient.updateFeePolicy(tenantId, policy, currentUser);
+      // Ensure all monetary fields saved to server are normalized minor units
+      const normalizedPolicy: TenantFeePolicy = {
+        ...policy,
+        fixedDeliveryFee: policy.fixedDeliveryFee !== undefined ? policyFeeToMinor(policy.fixedDeliveryFee, 199) : undefined,
+        dispatchFixedSurcharge: policy.dispatchFixedSurcharge !== undefined ? policyFeeToMinor(policy.dispatchFixedSurcharge, 50) : undefined,
+        freeDeliveryThreshold: policy.freeDeliveryThreshold !== undefined ? policyFeeToMinor(policy.freeDeliveryThreshold, 3500) : undefined,
+        serviceFeeAmount: policy.serviceFeeMode === 'PERCENT'
+          ? (policy.serviceFeeAmount ?? 0)
+          : policyFeeToMinor(policy.serviceFeeAmount, 49),
+        serviceFeeMinCap: policy.serviceFeeMinCap !== undefined ? policyFeeToMinor(policy.serviceFeeMinCap, 49) : undefined,
+        serviceFeeMaxCap: policy.serviceFeeMaxCap !== undefined ? policyFeeToMinor(policy.serviceFeeMaxCap, 350) : undefined,
+        bagFee: policyFeeToMinor(policy.bagFee, 30),
+        minimumBasketThreshold: policy.minimumBasketThreshold !== undefined ? policyFeeToMinor(policy.minimumBasketThreshold, 1000) : undefined,
+        smallOrderFee: policy.smallOrderFee !== undefined ? policyFeeToMinor(policy.smallOrderFee, 150) : undefined,
+      };
+
+      const updated = await defaultAdminClient.updateFeePolicy(tenantId, normalizedPolicy, currentUser);
       setPolicy(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -108,9 +150,12 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  value={moneyToMajor(policy.fixedDeliveryFee ?? 1.99)}
+                  value={policyFeeToMajor(policy.fixedDeliveryFee, 199)}
                   onChange={(e) =>
-                    setPolicy({ ...policy, fixedDeliveryFee: parseFloat(e.target.value) || 0 })
+                    setPolicy({
+                      ...policy,
+                      fixedDeliveryFee: Math.round((parseFloat(e.target.value) || 0) * 100),
+                    })
                   }
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
                 />
@@ -123,11 +168,11 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  value={moneyToMajor(policy.dispatchFixedSurcharge ?? 0.5)}
+                  value={policyFeeToMajor(policy.dispatchFixedSurcharge, 50)}
                   onChange={(e) =>
                     setPolicy({
                       ...policy,
-                      dispatchFixedSurcharge: parseFloat(e.target.value) || 0,
+                      dispatchFixedSurcharge: Math.round((parseFloat(e.target.value) || 0) * 100),
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
@@ -158,11 +203,11 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               <input
                 type="number"
                 step="1.00"
-                value={moneyToMajor(policy.freeDeliveryThreshold ?? 35.0)}
+                value={policyFeeToMajor(policy.freeDeliveryThreshold, 3500)}
                 onChange={(e) =>
                   setPolicy({
                     ...policy,
-                    freeDeliveryThreshold: parseFloat(e.target.value) || 0,
+                    freeDeliveryThreshold: Math.round((parseFloat(e.target.value) || 0) * 100),
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
@@ -176,16 +221,27 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
         {/* SERVICE FEE & BAG FEE */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-gray-900">2. Service Fee & Packaging Charges</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-900">2. Service Fee & Packaging Charges</h3>
+            <label className="flex items-center gap-2 font-bold text-xs text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={policy.serviceFeeEnabled ?? true}
+                onChange={(e) =>
+                  setPolicy({ ...policy, serviceFeeEnabled: e.target.checked })
+                }
+                className="rounded text-indigo-600 w-4 h-4"
+              />
+              <span>Enable Service Fee</span>
+            </label>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             <div>
               <label className="block font-bold text-gray-700 mb-1">Service Fee Mode</label>
               <select
                 value={policy.serviceFeeMode}
-                onChange={(e) =>
-                  setPolicy({ ...policy, serviceFeeMode: e.target.value as any })
-                }
+                onChange={(e) => handleServiceFeeModeChange(e.target.value as any)}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold bg-white"
               >
                 <option value="FIXED">Fixed Service Fee</option>
@@ -200,10 +256,20 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               </label>
               <input
                 type="number"
-                step="0.01"
-                value={policy.serviceFeeAmount}
+                step={policy.serviceFeeMode === 'PERCENT' ? '0.1' : '0.01'}
+                value={
+                  policy.serviceFeeMode === 'PERCENT'
+                    ? (policy.serviceFeeAmount ?? 0)
+                    : policyFeeToMajor(policy.serviceFeeAmount, 49)
+                }
                 onChange={(e) =>
-                  setPolicy({ ...policy, serviceFeeAmount: parseFloat(e.target.value) || 0 })
+                  setPolicy({
+                    ...policy,
+                    serviceFeeAmount:
+                      policy.serviceFeeMode === 'PERCENT'
+                        ? (parseFloat(e.target.value) || 0)
+                        : Math.round((parseFloat(e.target.value) || 0) * 100),
+                  })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
               />
@@ -214,9 +280,12 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               <input
                 type="number"
                 step="0.05"
-                value={moneyToMajor(policy.bagFee)}
+                value={policyFeeToMajor(policy.bagFee, 30)}
                 onChange={(e) =>
-                  setPolicy({ ...policy, bagFee: parseFloat(e.target.value) || 0 })
+                  setPolicy({
+                    ...policy,
+                    bagFee: Math.round((parseFloat(e.target.value) || 0) * 100),
+                  })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
               />
@@ -225,11 +294,60 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               </span>
             </div>
           </div>
+
+          {policy.serviceFeeMode === 'PERCENT' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2 border-t border-gray-100">
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Service Fee Min Cap (£)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={policyFeeToMajor(policy.serviceFeeMinCap, 49)}
+                  onChange={(e) =>
+                    setPolicy({
+                      ...policy,
+                      serviceFeeMinCap: Math.round((parseFloat(e.target.value) || 0) * 100),
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Service Fee Max Cap (£)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={policyFeeToMajor(policy.serviceFeeMaxCap, 350)}
+                  onChange={(e) =>
+                    setPolicy({
+                      ...policy,
+                      serviceFeeMaxCap: Math.round((parseFloat(e.target.value) || 0) * 100),
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* SMALL ORDER THRESHOLD */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-gray-900">3. Basket Minimums & Small Order Surcharges</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-900">3. Basket Minimums & Small Order Surcharges</h3>
+            <label className="flex items-center gap-2 font-bold text-xs text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={policy.smallOrderFeeEnabled ?? true}
+                onChange={(e) =>
+                  setPolicy({ ...policy, smallOrderFeeEnabled: e.target.checked })
+                }
+                className="rounded text-indigo-600 w-4 h-4"
+              />
+              <span>Enable Small Order Surcharge</span>
+            </label>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
@@ -237,11 +355,11 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               <input
                 type="number"
                 step="1.00"
-                value={moneyToMajor(policy.minimumBasketThreshold ?? 10.0)}
+                value={policyFeeToMajor(policy.minimumBasketThreshold, 1000)}
                 onChange={(e) =>
                   setPolicy({
                     ...policy,
-                    minimumBasketThreshold: parseFloat(e.target.value) || 0,
+                    minimumBasketThreshold: Math.round((parseFloat(e.target.value) || 0) * 100),
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
@@ -253,14 +371,45 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               <input
                 type="number"
                 step="0.10"
-                value={moneyToMajor(policy.smallOrderFee ?? 1.5)}
+                value={policyFeeToMajor(policy.smallOrderFee, 150)}
                 onChange={(e) =>
-                  setPolicy({ ...policy, smallOrderFee: parseFloat(e.target.value) || 0 })
+                  setPolicy({
+                    ...policy,
+                    smallOrderFee: Math.round((parseFloat(e.target.value) || 0) * 100),
+                  })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
               />
               <span className="text-[10px] text-gray-400 block mt-1">
                 Applied when order subtotal is below the minimum basket threshold
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* REAUTHORIZATION & PAYMENT TOLERANCE */}
+        <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
+          <h3 className="text-sm font-bold text-gray-900">4. Payment Reauthorization & Catch-Weight Tolerance</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">Reauthorization Variance Tolerance (%)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                value={policy.reauthorizationTolerancePercent ?? 10}
+                onChange={(e) =>
+                  setPolicy({
+                    ...policy,
+                    reauthorizationTolerancePercent: parseFloat(e.target.value) || 0,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
+              />
+              <span className="text-[10px] text-gray-400 block mt-1">
+                Tolerated percentage variance for substituted or weighted picking items before triggering full customer re-authentication
               </span>
             </div>
           </div>

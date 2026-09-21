@@ -56,9 +56,14 @@ export interface UnpaidPickupCheckoutInput {
 
 export interface PickupTestOrderInput {
   channelLinkId: string;
-  menuId: string;
-  plu: string;
+  menuId?: string;
+  plu?: string;
   quantity?: number;
+  items?: Array<{
+    menuId?: string;
+    plu?: string;
+    quantity: number;
+  }>;
   customer?: CommercePickupCustomerInput;
   pickupNotes?: string;
   orderNote?: string;
@@ -332,9 +337,30 @@ export class DeliverectCommerceBasketApi {
    * It deliberately stops before checkout unless performCheckout=true.
    */
   async createPickupTestOrder(input: PickupTestOrderInput): Promise<PickupTestOrderResult> {
-    const quantity = input.quantity ?? 1;
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      throw new Error('quantity must be a positive integer');
+    let itemsToReplace: Array<{ menuId: string; plu: string; quantity: number }> = [];
+
+    if (Array.isArray(input.items) && input.items.length > 0) {
+      for (const item of input.items) {
+        const qty = Number(item.quantity);
+        if (!Number.isInteger(qty) || qty <= 0) {
+          throw new Error('quantity must be a positive integer');
+        }
+        itemsToReplace.push({
+          menuId: String(item.menuId || input.menuId || '').trim(),
+          plu: String(item.plu || input.plu || '').trim(),
+          quantity: qty,
+        });
+      }
+    } else {
+      const quantity = input.quantity == null ? 1 : Number(input.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error('quantity must be a positive integer');
+      }
+      itemsToReplace.push({
+        menuId: String(input.menuId || '').trim(),
+        plu: String(input.plu || '').trim(),
+        quantity,
+      });
     }
 
     const created = await this.createPickupBasket({
@@ -348,13 +374,7 @@ export class DeliverectCommerceBasketApi {
       throw new Error('Create Basket succeeded but Deliverect returned no basket id');
     }
 
-    const withItems = await this.replaceItems(basketId, [
-      {
-        menuId: input.menuId,
-        plu: input.plu,
-        quantity,
-      },
-    ]);
+    const withItems = await this.replaceItems(basketId, itemsToReplace);
 
     const reconciledBasket = await this.reconcileBasket(basketId);
     const totalMinor = this.getAuthoritativeTotalMinor(reconciledBasket);

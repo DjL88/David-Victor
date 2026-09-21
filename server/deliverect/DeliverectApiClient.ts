@@ -36,6 +36,61 @@ import {
   evaluateBundleStockStatus,
 } from '../../src/commerce/models';
 
+export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
+export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
+
+export function applyCategoryFallback(
+  categories: Category[],
+  products: Product[],
+  bundleProducts: BundleProduct[] = []
+): void {
+  const knownCatIds = new Set<string>();
+  const collectCatIds = (cats: Category[]) => {
+    for (const c of cats) {
+      if (c && c.id) {
+        knownCatIds.add(String(c.id));
+        if (Array.isArray(c.subcategories) && c.subcategories.length > 0) {
+          collectCatIds(c.subcategories);
+        }
+      }
+    }
+  };
+  collectCatIds(categories);
+
+  let unmappedCount = 0;
+
+  for (const p of products) {
+    const validCategoryIds = (p.categoryIds || []).filter((cid) => knownCatIds.has(cid));
+    if (validCategoryIds.length === 0) {
+      p.categoryIds = [FALLBACK_CATEGORY_ID];
+      unmappedCount++;
+    } else {
+      p.categoryIds = validCategoryIds;
+    }
+  }
+
+  for (const b of bundleProducts) {
+    const validCategoryIds = (b.categoryIds || []).filter((cid) => knownCatIds.has(cid));
+    if (validCategoryIds.length === 0) {
+      b.categoryIds = [FALLBACK_CATEGORY_ID];
+      unmappedCount++;
+    } else {
+      b.categoryIds = validCategoryIds;
+    }
+  }
+
+  if (unmappedCount > 0 && !knownCatIds.has(FALLBACK_CATEGORY_ID)) {
+    categories.push({
+      id: FALLBACK_CATEGORY_ID,
+      name: FALLBACK_CATEGORY_NAME,
+      description: 'Store-specific items and local products',
+      parentId: null,
+      level: 1,
+      productCount: unmappedCount,
+    });
+  }
+}
+
 /**
  * Directive 3: Normalize a product as snoozed only when the actual Deliverect value means
  * it is currently snoozed. Check lookup by both Deliverect product ID and PLU.
@@ -348,8 +403,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
           ? { latitude: loc.coordinates.latitude, longitude: loc.coordinates.longitude }
           : undefined;
 
-      const supportsDelivery = Boolean(s.fulfillmentCapabilitiesProjection?.delivery ?? true);
-      const supportsPickup = Boolean(s.fulfillmentCapabilitiesProjection?.pickup ?? true);
+      const supportsDelivery = Boolean(s.fulfillmentCapabilitiesProjection?.delivery ?? false);
+      const supportsPickup = Boolean(s.fulfillmentCapabilitiesProjection?.pickup ?? false);
 
       const override = getStoreOverride(s.commerceStoreId) || (s.channelLinkId ? getStoreOverride(s.channelLinkId) : undefined);
       const isOpen = override?.isOpen !== undefined ? override.isOpen : (s.stateProjection === 'paused' ? false : true);
@@ -925,6 +980,8 @@ export class DeliverectApiClient implements DeliverectAdapter {
       updatedAt: new Date().toISOString(),
     };
 
+    applyCategoryFallback(categories, standardProducts, bundleProducts);
+
     return { categories, products: standardProducts, bundleCatalog };
   }
 
@@ -958,14 +1015,20 @@ export class DeliverectApiClient implements DeliverectAdapter {
         }
         for (const bundle of catalog.bundleCatalog?.bundles || []) if (!bundles.has(bundle.plu)) bundles.set(bundle.plu, { ...bundle, price: undefined, priceMinor: undefined, stockStatus: undefined } as BundleProduct);
       }
+
+      const finalCategories = Array.from(categories.values());
+      const finalProducts = Array.from(products.values());
+      const finalBundles = Array.from(bundles.values());
+      applyCategoryFallback(finalCategories, finalProducts, finalBundles);
+
       return {
         id: `scoped_catalog_${accountId}`,
         type: 'ROOT',
         menus: storeCatalogs.flatMap((catalog) => catalog.menus || []),
-        categories: Array.from(categories.values()),
-        products: Array.from(products.values()),
-        totalProducts: products.size,
-        bundleCatalog: { id: `scoped_bundles_${accountId}`, accountId, bundles: Array.from(bundles.values()), totalBundles: bundles.size, updatedAt: new Date().toISOString() },
+        categories: finalCategories,
+        products: finalProducts,
+        totalProducts: finalProducts.length,
+        bundleCatalog: { id: `scoped_bundles_${accountId}`, accountId, bundles: finalBundles, totalBundles: finalBundles.length, updatedAt: new Date().toISOString() },
         updatedAt: new Date().toISOString(),
       };
     }
