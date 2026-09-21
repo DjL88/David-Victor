@@ -208,14 +208,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-gray-900">Custom Domains & Brand Routing</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Production Ready
-                </span>
+                <h1 className="text-xl font-bold text-gray-900">Domains & brand routing</h1>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Associate published URLs and custom domains (e.g. <code>1bwydi.ai.studio</code>, <code>www.shop1.com</code>, <code>www.shop2.com</code>) with your multi-tenant brands.
+                Associate published hostnames and custom domains with the correct storefront brand.
               </p>
             </div>
           </div>
@@ -229,7 +225,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             className="px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 flex items-center gap-1.5 shadow-2xs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh Domains</span>
+            <span>Refresh domains</span>
           </button>
         </div>
       </div>
@@ -240,12 +236,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
           <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
           <div className="text-xs space-y-1 text-gray-700 leading-relaxed">
             <p className="font-bold text-indigo-950">
-              Automatic Hostname-Based Storefront Resolution
+              How domain routing works
             </p>
             <p>
-              When a customer visits your storefront, the server automatically reads the incoming <strong>HTTP Host header</strong> to resolve the mapped brand.
-              Shoppers <strong>never need to log in</strong> to view the store, and <strong>no <code>/?tenantId=...</code> query parameters</strong> are required.
-              Published AI Studio URLs (such as <code>1bwydi.ai.studio</code>) and custom domains (e.g. <code>www.shop1.com</code>) will automatically render their assigned brand.
+              Each configured hostname resolves to its assigned brand automatically. Customers can open the storefront normally without selecting a tenant or adding brand parameters to the URL.
             </p>
           </div>
         </div>
@@ -271,7 +265,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Plus className="w-4 h-4 text-indigo-600" />
-            <span>Map New Domain to a Brand</span>
+            <span>Map a domain to a brand</span>
           </h2>
           <button
             type="button"
@@ -368,7 +362,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
               ) : (
                 <>
                   <Plus className="w-4 h-4" />
-                  <span>Bind Domain</span>
+                  <span>Add domain</span>
                 </>
               )}
             </button>
@@ -381,7 +375,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600" />
-            <span>Configured Brand Domain Mappings ({domains.length})</span>
+            <span>Configured domains ({domains.length})</span>
           </h2>
         </div>
 
@@ -432,7 +426,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                         )}
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                           <CheckCircle2 className="w-2.5 h-2.5" />
-                          Active Routing
+                          Configured
                         </span>
                       </div>
 
@@ -484,37 +478,6 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         )}
       </div>
 
-      {/* QUICK PRESETS GUIDE */}
-      <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
-        <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
-          Suggested Multi-Tenant Brand Bindings
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1">
-            <span className="font-bold text-gray-900 block">AI Studio Published Host</span>
-            <span className="font-mono text-indigo-600 block text-[11px]">1bwydi.ai.studio</span>
-            <p className="text-gray-500 text-[11px]">
-              Automatically presents your default brand (Chelmsford Artisan Grocer or first brand) without query parameters.
-            </p>
-          </div>
-
-          <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1">
-            <span className="font-bold text-gray-900 block">Store 1 Custom Domain</span>
-            <span className="font-mono text-indigo-600 block text-[11px]">www.shop1.com</span>
-            <p className="text-gray-500 text-[11px]">
-              Presents Brand Alpha. Shoppers directly see Brand 1 catalog and theme.
-            </p>
-          </div>
-
-          <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1">
-            <span className="font-bold text-gray-900 block">Store 2 Custom Domain</span>
-            <span className="font-mono text-indigo-600 block text-[11px]">www.shop2.com</span>
-            <p className="text-gray-500 text-[11px]">
-              Presents Brand Beta. Shoppers directly see Brand 2 catalog and theme.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
