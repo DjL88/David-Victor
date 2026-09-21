@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConnectionHealthService } from '../../server/deliverect/ConnectionHealthService';
 import { linkedAccountsAdapter } from '../../server/deliverect/LinkedAccountsAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
-import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
 import { resetDeliverectAdapter, setDeliverectAdapter } from '../../server/deliverect';
 
 describe('Connection Health & 5-Stage Request Tracing', () => {
@@ -73,7 +72,48 @@ describe('Connection Health & 5-Stage Request Tracing', () => {
         ],
       } as any);
       setDeliverectAdapter(
-        new MockDeliverectAdapter(),
+        {
+          adapterName: 'ConnectionTraceFixtureAdapter',
+          isConnected: true,
+          getStoreCatalog: vi.fn().mockResolvedValue({
+            id: 'menu-demo-store-01',
+            type: 'STORE',
+            menus: [{ id: 'menu-demo-store-01', name: 'Demo Store Menu' }],
+            categories: [{ id: 'cat-demo', name: 'Demo' }],
+            products: [
+              {
+                id: 'prod-demo-1',
+                plu: 'DEMO-1',
+                name: 'Demo Product',
+                active: true,
+                stockStatus: 'IN_STOCK',
+                price: { amount: 199, currency: 'GBP' },
+                categoryIds: ['cat-demo'],
+              },
+            ],
+            totalProducts: 1,
+            updatedAt: new Date().toISOString(),
+          }),
+          getRootCatalog: vi.fn().mockResolvedValue({
+            id: 'root-demo',
+            type: 'ROOT',
+            menus: [{ id: 'root-demo', name: 'Demo Root Menu' }],
+            categories: [{ id: 'cat-demo', name: 'Demo' }],
+            products: [
+              {
+                id: 'prod-demo-1',
+                plu: 'DEMO-1',
+                name: 'Demo Product',
+                active: true,
+                stockStatus: 'IN_STOCK',
+                price: { amount: 199, currency: 'GBP' },
+                categoryIds: ['cat-demo'],
+              },
+            ],
+            totalProducts: 1,
+            updatedAt: new Date().toISOString(),
+          }),
+        } as any,
         'brand-alpha',
         'staging',
         'demo-account'
