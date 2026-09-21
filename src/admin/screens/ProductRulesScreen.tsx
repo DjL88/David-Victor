@@ -116,6 +116,9 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRule) return;
+    const invalidCondition = editingRule.matchConditions.some((condition) => !String(condition.value ?? '').trim());
+    if (invalidCondition) { setRuleError('Every Where condition needs a value before this rule can be saved.'); return; }
+    if (editingRule.actions.length === 0) { setRuleError('Add at least one action before saving this rule.'); return; }
     setSaving(true);
     setRuleError(null);
     try {
@@ -738,7 +741,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Applies in</label>
+                  <input type="text" value={editingRule.countries.join(', ')} onChange={(e)=>setEditingRule({...editingRule,countries:e.target.value.split(',').map(v=>v.trim().toUpperCase()).filter(Boolean)})} className="w-full px-3 py-2 border border-gray-200 rounded-xl uppercase" placeholder="GB, IE" />
+                  <p className="text-[10px] text-gray-400 mt-1">Country codes, separated by commas</p>
+                </div>
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Priority (higher runs first)</label>
                   <input
