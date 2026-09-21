@@ -2408,21 +2408,25 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
     const isStaging =
       integration?.environment !== 'production' &&
       process.env.DELIVERECT_ENV !== 'production';
-    const configuredWebhookSecret =
-      WebhookService.getWebhookSecret(tenantId);
-    const stagingChannelLinkSecret =
-      isStaging && !configuredWebhookSecret
-        ? orderProj?.channelLinkId
-        : undefined;
-
-    const isSignatureValid =
+    const configuredSignatureValid =
+      SubstitutionCallbackService.verifyGetSignature(
+        req.path,
+        req.query,
+        req.headers,
+        tenantId
+      );
+    const stagingChannelLinkSignatureValid =
+      Boolean(isStaging && orderProj?.channelLinkId) &&
       SubstitutionCallbackService.verifyGetSignature(
         req.path,
         req.query,
         req.headers,
         tenantId,
-        stagingChannelLinkSecret
+        orderProj?.channelLinkId
       );
+    const isSignatureValid =
+      configuredSignatureValid ||
+      stagingChannelLinkSignatureValid;
 
     if (!isSignatureValid) {
       return res.status(401).json({
