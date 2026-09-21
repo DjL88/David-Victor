@@ -194,7 +194,13 @@ export class DeliverectOrderMapper {
         total: { amount: totalAmount, currency },
       },
       payment: {
-        state: raw.payment?.state || raw.paymentState || 'AUTHORIZED',
+        // Real unpaid Collection orders use third_party/isPrepaid:false and have
+        // orderIsAlreadyPaid:false. They have nothing to capture after Quest picking.
+        // Never fabricate AUTHORIZED when Deliverect did not provide an authorization.
+        state:
+          raw.payment?.state ||
+          raw.paymentState ||
+          ((raw as any).orderIsAlreadyPaid === false ? 'NO_CAPTURE_REQUIRED' : 'NO_CAPTURE_REQUIRED'),
         paymentId: raw.payment?.paymentId || raw.paymentId,
         authorizationMaximum: raw.payment?.authorizationMaximum || { amount: totalAmount, currency },
       },
