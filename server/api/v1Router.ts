@@ -2401,17 +2401,33 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
       });
     }
 
-    // WH-04: Verify GET signature if present
-    const isSignatureValid = SubstitutionCallbackService.verifyGetSignature(
-      req.path,
-      req.query,
-      req.headers,
-      tenantId
-    );
+    // WH-04: Verify GET signature. Deliverect staging uses channelLinkId as
+    // the temporary HMAC secret until a dedicated partner HMAC secret is set.
+    const integration =
+      await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const isStaging =
+      integration?.environment !== 'production' &&
+      process.env.DELIVERECT_ENV !== 'production';
+    const configuredWebhookSecret =
+      WebhookService.getWebhookSecret(tenantId);
+    const stagingChannelLinkSecret =
+      isStaging && !configuredWebhookSecret
+        ? orderProj?.channelLinkId
+        : undefined;
+
+    const isSignatureValid =
+      SubstitutionCallbackService.verifyGetSignature(
+        req.path,
+        req.query,
+        req.headers,
+        tenantId,
+        stagingChannelLinkSecret
+      );
 
     if (!isSignatureValid) {
       return res.status(401).json({
-        error: 'Invalid webhook signature for substitute callback.',
+        error:
+          'Invalid webhook signature for substitute callback. In staging, Deliverect should sign this GET using the order channelLinkId when no dedicated HMAC secret is configured.',
         code: 'INVALID_SIGNATURE',
       });
     }
