@@ -26,7 +26,7 @@ export interface TenantIntegrationConfig {
   /** Channel API scope/name used by POST /{channelName}/order/{channelLinkId}. */
   channelName?: string;
   /** Terminal Deliverect order-creation route. Exactly one route may run per order. */
-  orderRoute: 'retail_quest' | 'commerce_checkout';
+  orderRoute?: 'retail_quest' | 'commerce_checkout';
   tokenManager: OAuthTokenManager;
   isConfigured: boolean;
 }
