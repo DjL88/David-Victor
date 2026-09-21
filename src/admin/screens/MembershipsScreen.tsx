@@ -144,7 +144,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
             <ShieldAlert className="w-3.5 h-3.5 text-purple-600" />
-            Platform SuperAdmin
+            Platform administrator
           </span>
         );
       case 'tenantAdmin':
@@ -152,19 +152,19 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-            Tenant Admin
+            Brand administrator
           </span>
         );
       case 'operationsEditor':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
-            Operations Editor
+            Operations editor
           </span>
         );
       case 'marketingEditor':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-            Marketing Editor
+            Marketing editor
           </span>
         );
       case 'viewer':
@@ -239,14 +239,14 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
       {isSuperAdmin && (
         <div className="flex items-center gap-3 bg-white p-4 rounded-xl border border-gray-200 text-xs">
           <Building2 className="w-4 h-4 text-gray-500 shrink-0" />
-          <span className="font-semibold text-gray-700">Filter Tenant Scope:</span>
+          <span className="font-semibold text-gray-700">Filter access:</span>
           <select
             value={selectedTenantFilter}
             onChange={(e) => setSelectedTenantFilter(e.target.value)}
             className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
           >
-            <option value="all">All Scopes (Platform + All Brands)</option>
-            <option value="platform">Platform SuperAdmins Only</option>
+            <option value="all">All brands and platform</option>
+            <option value="platform">Platform administrators Only</option>
             {tenants.map((t, idx) => (
               <option key={`membership-filter-${t.tenantId}-${idx}`} value={t.tenantId}>
                 {t.brandName} ({t.tenantId})
@@ -268,9 +268,9 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
             <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto text-gray-400">
               <Users className="w-6 h-6" />
             </div>
-            <p className="text-sm font-bold text-gray-800">No Memberships Found</p>
+            <p className="text-sm font-bold text-gray-800">No teammates found</p>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              No memberships configured for this filter scope. Add your first administrator above.
+              No teammates match this filter. Add someone to give them access.
             </p>
           </div>
         ) : (
@@ -278,11 +278,11 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-500 uppercase tracking-wider font-semibold text-[10px]">
-                  <th className="px-6 py-3.5">User Identity</th>
-                  <th className="px-6 py-3.5">Assigned Role</th>
-                  <th className="px-6 py-3.5">Tenant / Brand Scope</th>
+                  <th className="px-6 py-3.5">Person</th>
+                  <th className="px-6 py-3.5">Role</th>
+                  <th className="px-6 py-3.5">Brand access</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5">Assigned By</th>
+                  <th className="px-6 py-3.5">Added by</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -315,7 +315,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                       <td className="px-6 py-4">{getRoleBadge(m.role)}</td>
                       <td className="px-6 py-4">
                         <span className="font-mono text-gray-700 bg-gray-100 px-2 py-0.5 rounded text-[11px]">
-                          {m.tenantId === 'platform' ? 'Global Platform' : m.tenantId}
+                          {m.tenantId === 'platform' ? 'All brands' : m.tenantId}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -324,18 +324,18 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                         </span>
                       </td>
                       <td className="px-6 py-4 text-gray-500 text-[11px]">
-                        {m.assignedBy || 'System Bootstrap'}
+                        {m.assignedBy || 'System'}
                       </td>
                       <td className="px-6 py-4 text-right">
                         {deleteConfirmId === m.membershipId ? (
                           <div className="flex items-center justify-end gap-2">
-                            <span className="text-[11px] text-red-600 font-bold">Confirm revoke?</span>
+                            <span className="text-[11px] text-red-600 font-bold">Remove access?</span>
                             <button
                               type="button"
                               onClick={() => handleDeleteMember(m.membershipId)}
                               className="px-2 py-1 bg-red-600 text-white rounded text-[11px] font-bold hover:bg-red-700"
                             >
-                              Yes
+                              Remove
                             </button>
                             <button
                               type="button"
@@ -408,7 +408,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Display Name (Optional)</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Display name (optional)</label>
                 <input
                   type="text"
                   value={newName}
@@ -435,7 +435,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
 
               {newRole !== 'platformSuperAdmin' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Tenant Scope *</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Brand *</label>
                   {isSuperAdmin ? (
                     <select
                       value={newTenantId}
