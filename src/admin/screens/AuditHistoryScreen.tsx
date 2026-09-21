@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AuditLogEntry, AdminUser } from '../../commerce/models';
+import { AuditLogEntry } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
-import { History, RefreshCw, Filter, Clock, User, FileText, Download } from 'lucide-react';
+import { History, RefreshCw, Filter, Clock, User, Download } from 'lucide-react';
 
 interface AuditHistoryScreenProps {
   tenantId: string;
@@ -12,6 +12,7 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
   const [loading, setLoading] = useState<boolean>(true);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [exporting, setExporting] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     loadLogs();
@@ -19,9 +20,14 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
 
   const loadLogs = async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await defaultAdminClient.getAuditLogs(tenantId);
       setLogs(data);
+    } catch (err) {
+      console.error('Failed to load audit history:', err);
+      setLogs([]);
+      setError('Audit history could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -47,7 +53,7 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
     return (
       <div className="p-8 flex items-center justify-center text-gray-500">
         <RefreshCw className="w-6 h-6 animate-spin mr-2" />
-        <span>Loading immutable audit ledger...</span>
+        <span>Loading audit history…</span>
       </div>
     );
   }
@@ -58,10 +64,10 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <History className="w-5 h-5 text-indigo-600" />
-            <span>Tenant Administrative Audit Trail</span>
+            <span>Audit history</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Tamper-evident record of all policy updates, fee modifications, and visual configuration changes.
+            Review recorded administrative changes for this brand.
           </p>
         </div>
 
@@ -72,13 +78,13 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-bold bg-white"
           >
-            <option value="ALL">All Categories</option>
+            <option value="ALL">All categories</option>
             <option value="Branding">Branding & Style</option>
             <option value="Fees">Fee Policies</option>
             <option value="Stories">Stories & Drops</option>
             <option value="Rules">Product & Country Rules</option>
             <option value="Features">Feature Flags</option>
-            <option value="Stores">Store Fleet</option>
+            <option value="Stores">Locations</option>
           </select>
 
           <button
@@ -115,6 +121,8 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
           </button>
         </div>
       </div>
+
+      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between"><span>{error}</span><button type="button" onClick={loadLogs} className="font-bold underline">Retry</button></div>}
 
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
         <div className="divide-y divide-gray-100">
