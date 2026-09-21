@@ -2173,7 +2173,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const basket = await this.getMappedCommerceBasket(basketId);
     const orderId = String(
-      raw?.orderId || raw?.order?.id || raw?.order?._id || ''
+      raw?.orderId ||
+      raw?.order?.id ||
+      raw?.order?._id ||
+      raw?.order?.channelOrderRawId ||
+      raw?.order?.channelOrderId ||
+      raw?.channelOrderId ||
+      ''
     ).trim() || undefined;
 
     const now = new Date().toISOString();
