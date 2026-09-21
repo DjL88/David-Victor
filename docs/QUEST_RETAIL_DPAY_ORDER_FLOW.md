@@ -49,7 +49,7 @@ Tenant integration configuration supports:
 - `orderRoute: "retail_quest" | "commerce_checkout"`
 - optional `channelName` override for the Channel API scope
 
-The normal Retail/Quest path derives `channelName` automatically from the OAuth grant `genericChannel:<channel_scope>`. A manual `channelName` is only required when the OAuth provider omits scope metadata or the credentials expose more than one Channel scope.
+The normal Retail/Quest path first uses an explicitly configured `channelName`, then falls back to deriving it from the OAuth grant `genericChannel:<channel_scope>`. OAuth scope discovery is advisory: missing readable scope metadata does **not** prove the credentials lack Channel permission. When scope metadata is absent, configure the assigned Channel Name explicitly and let Deliverect's Channel order endpoint return the authoritative permission result.
 
 Environment fallbacks:
 
