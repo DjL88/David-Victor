@@ -206,12 +206,21 @@ export class DispatchOrchestrationService {
 
     const dispatch = order.dispatch;
 
+    // Picking has genuinely finished right now — this is real data, not the item-count
+    // estimate calculateDispatchTiming made back at checkout (handleCheckoutCreated).
+    // Target the courier's arrival for readyBufferMinutes after this real completion
+    // moment (default 1 minute), overriding whatever stale estimate is on the record.
+    const realPickCompletionTargetTime = new Date(
+      Date.now() + Math.max(0, tenantRules.readyBufferMinutes) * 60_000
+    ).toISOString();
+
     // 1. If courier assignment was SCHEDULED, now is the time to trigger final assignment
     if (dispatch.state === 'SCHEDULED') {
       const idempotencyKey = eventId || `picking_complete_scheduled_${orderId}`;
       return this.assignCourierForOrder(orderId, tenantId, adapter, {
         idempotencyKey,
         force: true,
+        customTargetPickupTime: realPickCompletionTargetTime,
       });
     }
 
@@ -221,6 +230,7 @@ export class DispatchOrchestrationService {
       return this.assignCourierForOrder(orderId, tenantId, adapter, {
         idempotencyKey,
         force: true,
+        customTargetPickupTime: realPickCompletionTargetTime,
       });
     }
 
