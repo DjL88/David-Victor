@@ -12,6 +12,7 @@ import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
 import {
   DeliverectCommerceBasketApiClient,
   CommerceBasketItemInput,
+  CommerceBasketDiscountInput,
 } from './DeliverectCommerceBasketApi';
 import {
   mapDeliverectBasket,
@@ -50,6 +51,11 @@ import {
   TenantSchedulingPolicy,
   DEFAULT_TENANT_SCHEDULING_POLICY,
 } from '../../src/commerce/models';
+import type {
+  AddBundleToBasketRequest,
+  SelectedBundleModifier,
+} from '../../src/commerce/bundleModels';
+import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocation';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
@@ -1833,6 +1839,286 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
     return this.mapLiveCommerceBasket(raw);
+  }
+
+  async addBundleToBasket(
+    basketId: string,
+    request: AddBundleToBasketRequest
+  ): Promise<Basket> {
+    const api = await this.getCommerceBasketApi();
+    const rawBefore = await api.getBasket(basketId);
+    const current = await this.mapLiveCommerceBasket(rawBefore);
+
+    const catalog = await this.getStoreCatalog(
+      current.storeId,
+      current.fulfillmentType
+    );
+    const bundle = catalog.bundleCatalog?.bundles.find(
+      (candidate) =>
+        (request.bundleId && candidate.id === request.bundleId) ||
+        (request.bundlePlu && candidate.plu === request.bundlePlu)
+    );
+
+    if (!bundle) {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        'The selected bundle is not available in the current store catalogue.'
+      );
+    }
+    if (bundle.stockStatus === 'OUT_OF_STOCK') {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        bundle.outOfStockReason || `${bundle.name} is currently unavailable.`
+      );
+    }
+
+    const menuId = String(catalog.activeMenuId || '').trim();
+    if (!menuId) {
+      throw new CommerceError(
+        'MENU_NOT_AVAILABLE',
+        'Could not resolve the active Deliverect menu for this basket.'
+      );
+    }
+
+    const normalProducts = catalog.products || [];
+    const priceMinor = (product: Product): number | undefined => {
+      const price = product.price ?? product.basePrice;
+      if (typeof price === 'number' && Number.isInteger(price)) return price;
+      if (
+        price &&
+        typeof price === 'object' &&
+        Number.isInteger((price as Money).amount)
+      ) {
+        return (price as Money).amount;
+      }
+      if (Number.isInteger(product.priceMinor)) return product.priceMinor;
+      return undefined;
+    };
+
+    // Re-resolve every component's normal PLU + shelf price from the selected
+    // store catalogue. Client-supplied prices or normal-product PLUs are ignored.
+    const authoritativeBundle: BundleProduct = {
+      ...bundle,
+      sections: (bundle.sections || bundle.modifierGroups || []).map((section) => ({
+        ...section,
+        modifiers: section.modifiers.map((modifier) => {
+          const standalonePlu = String(modifier.standalonePlu || '').trim();
+          const product = standalonePlu
+            ? normalProducts.find((candidate) => candidate.plu === standalonePlu)
+            : undefined;
+
+          if (!standalonePlu || !product) {
+            return {
+              ...modifier,
+              standalonePlu: undefined,
+              standalonePriceMinor: undefined,
+            };
+          }
+
+          const shelfPrice = priceMinor(product);
+          if (
+            product.active === false ||
+            product.stockStatus === 'OUT_OF_STOCK' ||
+            shelfPrice === undefined
+          ) {
+            return {
+              ...modifier,
+              standalonePriceMinor: undefined,
+            };
+          }
+
+          return {
+            ...modifier,
+            standalonePlu: product.plu,
+            standalonePriceMinor: shelfPrice,
+          };
+        }),
+      })),
+    };
+    authoritativeBundle.modifierGroups = authoritativeBundle.sections;
+
+    const selectionByKey = new Map(
+      request.selections.map((selection) => [
+        `${selection.sectionId}:${selection.modifierId}`,
+        selection,
+      ])
+    );
+    const selectedModifiers: SelectedBundleModifier[] = [];
+
+    for (const section of authoritativeBundle.sections) {
+      for (const modifier of section.modifiers) {
+        const selected = selectionByKey.get(`${section.id}:${modifier.id}`);
+        if (!selected) continue;
+        selectedModifiers.push({
+          modifierId: modifier.id,
+          plu: modifier.plu,
+          name: modifier.name,
+          quantity: selected.quantity,
+          price: modifier.priceMinor ?? modifier.price ?? 0,
+          priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+          standalonePlu: modifier.standalonePlu,
+          standalonePriceMinor: modifier.standalonePriceMinor,
+          sectionId: section.id,
+          sectionName: section.name,
+        });
+      }
+    }
+
+    if (selectedModifiers.length !== request.selections.length) {
+      throw new CommerceError(
+        'INVALID_BUNDLE_SELECTION',
+        'One or more selected bundle components are not valid for this store.'
+      );
+    }
+
+    let allocation;
+    try {
+      allocation = allocateProtectedBundlePrices(
+        authoritativeBundle,
+        selectedModifiers,
+        request.quantity || 1
+      );
+    } catch (error: any) {
+      throw new CommerceError(
+        'INVALID_BUNDLE_SELECTION',
+        error?.message || 'Bundle selection could not be priced safely.'
+      );
+    }
+
+    const desired = toCommerceItemInputs(current);
+
+    // The bundle parent is deliberately NOT added to Deliverect. Every chosen
+    // component becomes a normal product line so Quest can amend/remove/substitute
+    // it independently.
+    for (const component of allocation.components) {
+      const product = normalProducts.find(
+        (candidate) => candidate.plu === component.componentPlu
+      );
+      if (
+        !product ||
+        product.active === false ||
+        product.stockStatus === 'OUT_OF_STOCK'
+      ) {
+        throw new CommerceError(
+          'PRODUCT_NOT_AVAILABLE',
+          `${component.componentName} is no longer available at this store.`
+        );
+      }
+
+      const existing = desired.find(
+        (candidate) => candidate.plu === component.componentPlu
+      );
+      if (existing) {
+        existing.quantity += component.quantity;
+      } else {
+        desired.push({
+          menuId,
+          plu: component.componentPlu,
+          quantity: component.quantity,
+        });
+      }
+    }
+
+    const bundleInstanceId = randomUUID();
+    const existingLedger = await FirestorePlatformService.getBasketBundleAllocations(
+      this.tenantId,
+      basketId
+    );
+
+    const isManagedBundleDiscount = (discount: any): boolean => {
+      const externalId = String(discount?.externalId || '');
+      const name = String(discount?.name || discount?.title || '');
+      return (
+        externalId.startsWith('bwydi-bundle:') ||
+        name.startsWith('Bwydi bundle:')
+      );
+    };
+
+    const originalDiscounts: CommerceBasketDiscountInput[] = Array.isArray(
+      rawBefore?.discounts
+    )
+      ? rawBefore.discounts
+      : [];
+    const nonBundleDiscounts = originalDiscounts.filter(
+      (discount) => !isManagedBundleDiscount(discount)
+    );
+
+    const managedDiscounts: CommerceBasketDiscountInput[] = [
+      ...existingLedger,
+      {
+        ...allocation,
+        bundleInstanceId,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+      .filter((entry) => entry.discountTotalMinor > 0)
+      .map((entry) => ({
+        type: 'order_flat_off',
+        provider: 'restaurant',
+        amount: entry.discountTotalMinor,
+        name: `Bwydi bundle: ${entry.bundleName}`,
+        externalId: `bwydi-bundle:${entry.bundleInstanceId}`,
+      }));
+
+    let itemsWritten = false;
+    let discountsWritten = false;
+    try {
+      const afterItems = await api.replaceItems(basketId, desired);
+      itemsWritten = true;
+
+      let afterPricing = afterItems;
+      const desiredDiscounts = [...nonBundleDiscounts, ...managedDiscounts];
+      if (
+        desiredDiscounts.length > 0 ||
+        originalDiscounts.length > 0
+      ) {
+        afterPricing = await api.updateDiscounts(
+          basketId,
+          desiredDiscounts
+        );
+        discountsWritten = true;
+      }
+
+      await FirestorePlatformService.saveBasketBundleAllocation(
+        this.tenantId,
+        basketId,
+        {
+          ...allocation,
+          bundleInstanceId,
+          createdAt: new Date().toISOString(),
+        }
+      );
+
+      const mapped = await this.mapLiveCommerceBasket(afterPricing);
+      if (
+        allocation.discountTotalMinor > 0 &&
+        mapped.discountTotal.amount < allocation.discountTotalMinor
+      ) {
+        throw new CommerceError(
+          'BUNDLE_DISCOUNT_NOT_APPLIED',
+          'Deliverect did not return the expected bundle discount. Basket was not accepted as safely priced.'
+        );
+      }
+
+      return mapped;
+    } catch (error) {
+      // Best-effort compensation. Do not knowingly leave an individual-item bundle
+      // half-applied if discount/ledger persistence failed after the item write.
+      if (itemsWritten) {
+        try {
+          await api.replaceItems(basketId, toCommerceItemInputs(current));
+          if (discountsWritten || originalDiscounts.length > 0) {
+            await api.updateDiscounts(basketId, originalDiscounts);
+          }
+        } catch (rollbackError) {
+          console.error(
+            '[DeliverectApiClient] Bundle basket rollback failed:',
+            rollbackError
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   async updateBasketCustomer(

@@ -20,6 +20,7 @@ import {
   BundleCatalog,
 } from '../../src/commerce/models';
 import { CheckoutResult } from '../../src/domain/models';
+import type { AddBundleToBasketRequest } from '../../src/commerce/bundleModels';
 
 export interface DeliverectAdapter {
   readonly adapterName: string;
@@ -64,6 +65,10 @@ export interface DeliverectAdapter {
       preferredSubstituteName?: string;
       preferredSubstitutePrice?: Money;
     }>
+  ): Promise<Basket>;
+  addBundleToBasket?(
+    basketId: string,
+    request: AddBundleToBasketRequest
   ): Promise<Basket>;
   updateBasketCustomer?(
     basketId: string,

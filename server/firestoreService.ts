@@ -8,6 +8,7 @@ import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
 import { BFFError } from './errors';
 import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
+import type { ProtectedBundleAllocation } from '../src/commerce/bundleAllocation';
 
 export enum OperationType {
   CREATE = 'create',
@@ -128,6 +129,18 @@ interface BasketSubstitutionPreferencesDocument {
   updatedAt: string;
 }
 
+export interface BasketBundleAllocationRecord extends ProtectedBundleAllocation {
+  bundleInstanceId: string;
+  createdAt: string;
+}
+
+interface BasketBundleAllocationsDocument {
+  tenantId: string;
+  basketId: string;
+  instances: BasketBundleAllocationRecord[];
+  updatedAt: string;
+}
+
 export function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
@@ -230,6 +243,7 @@ const inMemoryTenants: Record<string, TenantConfig> = { ...MOCK_TENANTS, ...load
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
+const inMemoryBasketBundleAllocations: Record<string, BasketBundleAllocationsDocument> = {};
 const inMemoryOrderProjections: Record<string, OrderProjection> = {};
 const inMemoryWebhookEvents: Record<string, WebhookEvent> = {};
 const inMemoryWebhookClaims: Record<string, string> = {};
@@ -1700,6 +1714,98 @@ export class FirestoreService {
       console.warn('[Firestore Admin] Could not read basket substitution preferences:', err);
       if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
       return {};
+    }
+  }
+
+  /**
+   * Persists the pricing ledger for one merchandising bundle instance. The
+   * Deliverect basket itself contains normal standalone product lines; this ledger
+   * is what preserves the customer's protected bundle allocation through Quest.
+   */
+  static async saveBasketBundleAllocation(
+    tenantId: string,
+    basketId: string,
+    record: BasketBundleAllocationRecord
+  ): Promise<BasketBundleAllocationRecord> {
+    if (!tenantId || !basketId || !record?.bundleInstanceId) {
+      throw new Error('tenantId, basketId and bundleInstanceId are required for bundle allocation persistence.');
+    }
+
+    const current = await this.getBasketBundleAllocations(tenantId, basketId);
+    if (current.some((entry) => entry.bundleInstanceId === record.bundleInstanceId)) {
+      return record;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const document: BasketBundleAllocationsDocument = cleanUndefined({
+      tenantId,
+      basketId,
+      instances: [...current, record],
+      updatedAt,
+    });
+    const key = `${tenantId}:${basketId}`;
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    const db = getFirestoreDb();
+
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error(
+          'Database persistence is unavailable. Bundle allocation saving rejected outside demo/test mode.'
+        );
+      }
+      inMemoryBasketBundleAllocations[key] = document;
+      return record;
+    }
+
+    try {
+      await db
+        .collection('basketBundleAllocations')
+        .doc(documentId)
+        .set(cleanUndefined(document), { merge: false });
+      inMemoryBasketBundleAllocations[key] = document;
+      return record;
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not save basket bundle allocation:', err);
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
+      inMemoryBasketBundleAllocations[key] = document;
+      return record;
+    }
+  }
+
+  static async getBasketBundleAllocations(
+    tenantId: string,
+    basketId: string
+  ): Promise<BasketBundleAllocationRecord[]> {
+    if (!tenantId || !basketId) return [];
+
+    const key = `${tenantId}:${basketId}`;
+    const cached = inMemoryBasketBundleAllocations[key];
+    if (cached) return [...cached.instances];
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error(
+          'Database persistence is unavailable. Bundle allocation lookup rejected outside demo/test mode.'
+        );
+      }
+      return [];
+    }
+
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    try {
+      const snap = await db.collection('basketBundleAllocations').doc(documentId).get();
+      if (!snap.exists) return [];
+      const document = snap.data() as BasketBundleAllocationsDocument;
+      if (document.tenantId !== tenantId || document.basketId !== basketId) {
+        throw new Error('Basket bundle allocation tenant/basket scope mismatch.');
+      }
+      inMemoryBasketBundleAllocations[key] = document;
+      return [...(document.instances || [])];
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not read basket bundle allocations:', err);
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
+      return [];
     }
   }
 

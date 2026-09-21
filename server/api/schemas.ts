@@ -70,6 +70,25 @@ export const UpdateBasketItemsSchema = z.object({
   preferredSubstitutePrice: z.any().optional(),
 });
 
+export const AddBasketBundleSchema = z
+  .object({
+    bundleId: z.string().min(1).optional(),
+    bundlePlu: z.string().min(1).optional(),
+    quantity: z.number().int().min(1).max(99).optional().default(1),
+    selections: z
+      .array(
+        z.object({
+          sectionId: z.string().min(1),
+          modifierId: z.string().min(1),
+          quantity: z.number().int().min(1).max(99),
+        })
+      )
+      .min(1),
+  })
+  .refine((value) => Boolean(value.bundleId || value.bundlePlu), {
+    message: 'bundleId or bundlePlu is required',
+  });
+
 export const UpdateBasketItemSubstitutionSchema = z.object({
   preference: z.enum([
     'BEST_MATCH',

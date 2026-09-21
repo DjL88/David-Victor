@@ -85,6 +85,19 @@ export interface SelectedBundleModifier {
   sectionName: string;
 }
 
+export interface AddBundleSelectionInput {
+  sectionId: string;
+  modifierId: string;
+  quantity: number;
+}
+
+export interface AddBundleToBasketRequest {
+  bundleId?: string;
+  bundlePlu?: string;
+  quantity?: number;
+  selections: AddBundleSelectionInput[];
+}
+
 export interface BundleSectionValidation {
   sectionId: string;
   sectionName: string;

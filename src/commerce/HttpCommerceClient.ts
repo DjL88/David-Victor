@@ -38,12 +38,11 @@ import {
   Order,
   PickingEvent,
   Money,
-  toMoney,
   FulfillmentSchedulingType,
   DemoScenario,
   DispatchAvailability,
 } from './models';
-import { BundleProduct, SelectedBundleModifier, calculateBundlePrice } from './bundleModels';
+import { BundleProduct, SelectedBundleModifier } from './bundleModels';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
@@ -286,40 +285,22 @@ export class HttpCommerceClient implements CommerceClient {
     selectedModifiers: SelectedBundleModifier[],
     quantity: number = 1
   ): Promise<Basket> {
-    const currency = bundle.currency || 'GBP';
-    const computedPrice = calculateBundlePrice(bundle, selectedModifiers);
-    const itemPrice: Money = toMoney(computedPrice.totalPriceMinor, currency);
-
-    const subItems = selectedModifiers.map((mod, idx) => ({
-      id: `${mod.modifierId}_${idx}`,
-      modifierId: mod.modifierId,
-      plu: mod.plu,
-      name: mod.name,
-      price: toMoney(mod.priceMinor || mod.price, currency),
-      priceMinor: mod.priceMinor || mod.price,
-      quantity: mod.quantity,
-      sectionId: mod.sectionId,
-      sectionName: mod.sectionName,
-    }));
-
-    return this.request<Basket>(`/baskets/${encodeURIComponent(basketId)}/items`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        items: [
-          {
-            plu: bundle.plu,
-            name: bundle.name,
-            quantity: Math.max(1, quantity),
-            price: itemPrice,
-            isCombo: true,
-            bundleId: bundle.id,
-            bundlePlu: bundle.plu,
-            bundleName: bundle.name,
-            subItems,
-          },
-        ],
-      }),
-    });
+    return this.request<Basket>(
+      `/baskets/${encodeURIComponent(basketId)}/bundles`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          bundleId: bundle.id,
+          bundlePlu: bundle.plu,
+          quantity: Math.max(1, quantity),
+          selections: selectedModifiers.map((modifier) => ({
+            sectionId: modifier.sectionId,
+            modifierId: modifier.modifierId,
+            quantity: modifier.quantity,
+          })),
+        }),
+      }
+    );
   }
 
   async selectStore(storeId: string, existingBasketId?: string): Promise<{

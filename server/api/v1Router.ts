@@ -46,6 +46,7 @@ import {
   CreateBasketSchema,
   UpdateBasketItemSchema,
   UpdateBasketItemsSchema,
+  AddBasketBundleSchema,
   UpdateBasketItemSubstitutionSchema,
   UpdateBasketCustomerSchema,
   UpdateBasketFulfillmentSchema,
@@ -849,6 +850,31 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
     handleCommerceError(res, err, 'Failed to update basket items');
   }
 });
+
+v1Router.post(
+  '/baskets/:basketId/bundles',
+  validateBody(AddBasketBundleSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
+      if (!adapter.addBundleToBasket) {
+        return res.status(501).json({
+          error: 'Individual-line bundle basket writes are not implemented by the current commerce adapter.',
+          code: 'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED',
+        });
+      }
+
+      const basket = await adapter.addBundleToBasket(
+        req.params.basketId,
+        req.body
+      );
+      res.json(basket);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to add bundle to basket');
+    }
+  }
+);
 
 v1Router.patch(
   '/baskets/:basketId/items/:plu/substitution',
