@@ -8,6 +8,7 @@ import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { FirestorePlatformService } from '../firestoreService';
 import { randomUUID } from 'node:crypto';
+import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
 import {
   DeliverectCommerceBasketApiClient,
   CommerceBasketItemInput,
@@ -457,7 +458,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
       return {
         id: s.channelLinkId || s.commerceStoreId,
         channelLinkId: s.channelLinkId,
+        channelLocationId: s.channelLocationId || undefined,
         physicalLocationId: s.physicalLocationId || undefined,
+        deliverectLocationId: loc?.deliverectLocationId || undefined,
+        // Friendly retailer/POS store number (for example 1234). This is display
+        // metadata only: Commerce APIs must continue to use channelLinkId.
+        brandStoreId: s.brandStoreId || loc?.brandStoreId || undefined,
         name: override?.name || s.name,
         address: {
           street: street || line1,
@@ -477,10 +483,14 @@ export class DeliverectApiClient implements DeliverectAdapter {
         deliveryRadiusKm,
         deliveryEta,
         currency: (s as any).currency || (loc as any)?.currency || 'GBP',
+        phone: s.phone || loc?.phone || undefined,
+        email: s.email || loc?.email || undefined,
+        timezone: s.timezone || loc?.timezone || undefined,
+        services: s.services?.length ? s.services : loc?.services || undefined,
         // Previously never passed through, so every real store silently fell back to
         // storeOpeningHoursService's demo-only default (07:00-23:00) regardless of its
         // actual Deliverect hours — fixed here.
-        openingHours: (s as any).openingHours,
+        openingHours: (s as any).openingHours || loc?.openingHours,
         scheduling: storeScheduling,
       };
     });
@@ -515,8 +525,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
       return await response.json() as any;
     });
-    const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?._items) ? raw._items : Object.entries(raw || {}).map(([id, value]) => typeof value === 'string' ? { id, name: value } : { ...(value as any), id: (value as any)?.id ?? id });
-    const definitions = items.map((item: any) => { const id = String(item.id ?? item._id ?? item.value ?? item.tagId ?? ''); const name = String(item.name ?? item.label ?? item.title ?? item.code ?? id); const type = item.type ?? item.category ?? item.group; const typeText = String(type ?? '').toLowerCase(); return { id, name, ...(type ? { type: String(type) } : {}), isAllergen: item.isAllergen === true || typeText.includes('allergen') }; }).filter((definition: ProductTagDefinition) => definition.id && definition.name);
+    // Normalize the known Deliverect response variants and merge documented standard
+    // IDs so customer-facing UI never falls back to raw numeric productTags.
+    const definitions = mergeDeliverectTagDefinitions(raw);
     this.tagDefinitionsCache = { definitions, loadedAt: Date.now() };
     return definitions;
   }
