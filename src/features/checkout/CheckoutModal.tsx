@@ -410,6 +410,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         setPhase('tracking');
       } else if (checkoutId) {
         setSessionId(checkoutId);
+        if (isCollection) {
+          setCheckoutStatus('placing_order');
+        }
         setPhase('polling_status');
         setStatusMessage(
           isCollection
@@ -546,6 +549,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Initiate Hosted Payment Session
   const handleInitiatePayment = async () => {
     if (!basket) return;
+
+    if (
+      basket.fulfillmentType === 'pickup' ||
+      (basket.fulfillmentType as string) === 'collection'
+    ) {
+      setRevalidationError(
+        'Hosted payment is not used for Collection orders on the current live checkout path.'
+      );
+      return;
+    }
 
     if (snoozeAudit.hasSnoozedOrUnavailableItems) {
       setRevalidationError('Please swap or remove out-of-stock items before proceeding to payment.');
@@ -684,6 +697,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       defaultCommerceClient.setSimulationFlags({ simulatePaymentFailure: value });
     }
   };
+
+  const isCollectionBasket =
+    basket?.fulfillmentType === 'pickup' ||
+    (basket?.fulfillmentType as string | undefined) === 'collection';
 
   if (!isOpen || !basket) return null;
 
@@ -1293,33 +1310,47 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* GROCERY AUTHORIZATION NOTICE */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
-              <div className="flex items-center gap-1.5 font-bold">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Retail Grocery Payment Model</span>
+            {/* PAYMENT / COLLECTION CHECKOUT NOTICE */}
+            {isCollectionBasket ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Collection Order</span>
+                </div>
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  This Collection checkout is submitted directly to the store. No card
+                  pre-authorisation, payment capture, or courier dispatch is created on
+                  this order path.
+                </p>
               </div>
-              <p className="text-[11px] text-emerald-900 leading-relaxed">
-                You are <strong>not charged immediately</strong>. We pre-authorize up to{' '}
-                <strong>
-                  {formatCurrency(
-                    calculateAuthorizationMaximum(
-                      basket.total,
-                      true,
-                      0,
-                      basket.currency,
-                      preChosenBufferInfo.extraBufferAmount
-                    ).authorizationMaximum,
-                    currencySymbol
-                  )}
-                </strong>{' '}
-                (estimated total
-                {preChosenBufferInfo.extraBufferMajor > 0 ? (
-                  <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} pre-chosen alternative buffer</>
-                ) : null}
-                ). The final amount will only be captured when store picking completes.
-              </p>
-            </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1 text-emerald-950">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Retail Grocery Payment Model</span>
+                </div>
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  You are <strong>not charged immediately</strong>. We pre-authorize up to{' '}
+                  <strong>
+                    {formatCurrency(
+                      calculateAuthorizationMaximum(
+                        basket.total,
+                        true,
+                        0,
+                        basket.currency,
+                        preChosenBufferInfo.extraBufferAmount
+                      ).authorizationMaximum,
+                      currencySymbol
+                    )}
+                  </strong>{' '}
+                  (estimated total
+                  {preChosenBufferInfo.extraBufferMajor > 0 ? (
+                    <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} pre-chosen alternative buffer</>
+                  ) : null}
+                  ). The final amount will only be captured when store picking completes.
+                </p>
+              </div>
+            )}
 
             {/* ACTION BUTTONS */}
             <div className="space-y-2 pt-1">
@@ -1341,16 +1372,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {isAuthorizingDirect ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Authorizing & Submitting...</span>
+                    <span>
+                      {isCollectionBasket ? 'Placing Collection Order...' : 'Authorizing & Submitting...'}
+                    </span>
                   </>
                 ) : (
                   <>
-                    <CreditCard className="w-4 h-4" />
+                    {isCollectionBasket ? (
+                      <ShoppingBag className="w-4 h-4" />
+                    ) : (
+                      <CreditCard className="w-4 h-4" />
+                    )}
                     <span>
                       {snoozeAudit.hasSnoozedOrUnavailableItems
                         ? 'Resolve Out of Stock Items Above'
                         : revalidationError || (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0)
                         ? 'Courier Dispatch Unavailable - Retry Above'
+                        : isCollectionBasket
+                        ? 'Place Collection Order'
                         : `Authorize & Place Order (up to ${formatCurrency(
                             calculateAuthorizationMaximum(
                               basket.total,
@@ -1366,27 +1405,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </button>
 
-              <button
-                type="button"
-                id="initiate-pay-btn"
-                onClick={handleInitiatePayment}
-                disabled={
-                  isAuthorizingDirect ||
-                  isRevalidating ||
-                  Boolean(revalidationError) ||
-                  (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0) ||
-                  snoozeAudit.hasSnoozedOrUnavailableItems ||
-                  isSwapping
-                }
-                className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <span>Or use Deliverect Pay Hosted Session</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {!isCollectionBasket && (
+                <button
+                  type="button"
+                  id="initiate-pay-btn"
+                  onClick={handleInitiatePayment}
+                  disabled={
+                    isAuthorizingDirect ||
+                    isRevalidating ||
+                    Boolean(revalidationError) ||
+                    secondsRemaining <= 0 ||
+                    snoozeAudit.hasSnoozedOrUnavailableItems ||
+                    isSwapping
+                  }
+                  className="w-full py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Or use Deliverect Pay Hosted Session</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
 
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-gray-400">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Zero raw card exposure • PCI Tokenized Pre-Authorization</span>
+                <span>
+                  {isCollectionBasket
+                    ? 'No payment authorisation or courier dispatch for Collection'
+                    : 'Zero raw card exposure • PCI Tokenized Pre-Authorization'}
+                </span>
               </div>
             </div>
           </div>
@@ -1460,21 +1505,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Stepper showing async states */}
             <div className="max-w-xs mx-auto text-left space-y-2 text-xs">
-              {[
-                { key: 'preparing_payment', label: 'Preparing payment' },
-                { key: 'payment_authorised', label: 'Payment authorised' },
-                { key: 'placing_order', label: 'Placing order with store' },
-                { key: 'order_confirmed', label: 'Order confirmed' },
-              ].map((step, idx) => {
+              {(isCollectionBasket
+                ? [
+                    { key: 'placing_order', label: 'Placing collection order with store' },
+                    { key: 'order_confirmed', label: 'Order confirmed' },
+                  ]
+                : [
+                    { key: 'preparing_payment', label: 'Preparing payment' },
+                    { key: 'payment_authorised', label: 'Payment authorised' },
+                    { key: 'placing_order', label: 'Placing order with store' },
+                    { key: 'order_confirmed', label: 'Order confirmed' },
+                  ]
+              ).map((step, idx, steps) => {
                 const isCurrent = checkoutStatus === step.key;
-                const isPassed =
-                  (step.key === 'preparing_payment' &&
-                    ['payment_authorised', 'placing_order', 'order_confirmed'].includes(
-                      checkoutStatus
-                    )) ||
-                  (step.key === 'payment_authorised' &&
-                    ['placing_order', 'order_confirmed'].includes(checkoutStatus)) ||
-                  (step.key === 'placing_order' && checkoutStatus === 'order_confirmed');
+                const currentIndex = steps.findIndex((candidate) => candidate.key === checkoutStatus);
+                const isPassed = currentIndex > idx;
 
                 return (
                   <div key={step.key} className="flex items-center gap-2.5">
@@ -1515,10 +1560,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-gray-900">Payment Unsuccessful</h3>
+              <h3 className="text-lg font-black text-gray-900">
+                {isCollectionBasket ? 'Order Unsuccessful' : 'Payment Unsuccessful'}
+              </h3>
               <p className="text-xs text-red-700 font-semibold mt-1">{failureReason}</p>
               <p className="text-xs text-gray-500 mt-2 max-w-xs mx-auto">
-                No charges were captured on your account. Your basket items have been preserved.
+                {isCollectionBasket
+                  ? 'No payment was taken. Your basket items have been preserved.'
+                  : 'No charges were captured on your account. Your basket items have been preserved.'}
               </p>
             </div>
 
@@ -1533,7 +1582,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 style={primaryBtnStyle}
                 className="w-full py-3.5 rounded-2xl font-bold text-sm shadow-md"
               >
-                Try Payment Again
+                {isCollectionBasket ? 'Try Placing Order Again' : 'Try Payment Again'}
               </button>
 
               <button
