@@ -93,6 +93,26 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     setEditingRule(newRule);
   };
 
+  const createAction = (type: string): any =>
+    type === 'MINIMUM_AGE' ? { type, minimumAge: 18 } :
+    type === 'MAX_QUANTITY_PER_ORDER' ? { type, maximum: 1 } :
+    type === 'COMBINED_GROUP_LIMIT' ? { type, groupId: 'group', maximum: 1 } :
+    type === 'BADGE' ? { type, label: 'Featured' } :
+    type === 'WARNING' ? { type, text: 'Important information' } :
+    type === 'PREVENT_PURCHASE' ? { type, reason: 'Unavailable' } :
+    { type };
+
+  const applyTemplate = (template: 'age' | 'alcohol' | 'quantity' | 'recommendations') => {
+    const base = editingRule || {
+      id: `rule-${Date.now()}`, name: 'New rule', enabled: true, countries: ['GB'], priority: 50,
+      matchConditions: [], actions: [],
+    } as VisualRule;
+    if (template === 'age') setEditingRule({ ...base, name: 'Age restricted products', matchConditions: [{ field: 'productTag', operator: 'equals', value: 'AGE_RESTRICTED_18' }], actions: [{ type: 'MINIMUM_AGE', minimumAge: 18 }, { type: 'REQUIRES_COURIER_VERIFICATION', verificationType: 'AGE' }] });
+    if (template === 'alcohol') setEditingRule({ ...base, name: 'Alcohol controls', matchConditions: [{ field: 'isAlcohol', operator: 'equals', value: 'true' }], actions: [{ type: 'MINIMUM_AGE', minimumAge: 18 }, { type: 'PREVENT_UPSELL' }] });
+    if (template === 'quantity') setEditingRule({ ...base, name: 'Quantity cap', matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }], actions: [{ type: 'MAX_QUANTITY_PER_ORDER', maximum: 2 }] });
+    if (template === 'recommendations') setEditingRule({ ...base, name: 'Exclude from promotion', matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }], actions: [{ type: 'PREVENT_UPSELL' }, { type: 'PREVENT_RECOMMENDATION' }] });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRule) return;
@@ -603,6 +623,17 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {activeTab === 'product' && (
       <div className="grid grid-cols-1 gap-4">
         {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{ruleError}</div>}
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div><h3 className="text-sm font-bold text-gray-900">Quick templates</h3><p className="text-xs text-gray-500 mt-0.5">Start with a common retail control, then customise it.</p></div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => applyTemplate('age')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">18+ products</button>
+              <button type="button" onClick={() => applyTemplate('alcohol')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">Alcohol controls</button>
+              <button type="button" onClick={() => applyTemplate('quantity')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">Quantity cap</button>
+              <button type="button" onClick={() => applyTemplate('recommendations')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">No promotion</button>
+            </div>
+          </div>
+        </div>
         {rules.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center"><ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-3"/><h3 className="text-sm font-bold text-gray-900">No product rules yet</h3><p className="text-xs text-gray-500 mt-1">Create a rule to control matching products by tag, category, brand, group, alcohol status or PLU.</p><button type="button" onClick={handleCreateNew} className="mt-4 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">Create first rule</button></div>}
         {rules.map((r) => (
           <div
@@ -692,9 +723,9 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
                 <span className="font-bold text-gray-500">Rule preview</span>
-                <span className="px-2 py-1 rounded-lg bg-white border border-gray-200">WHERE {editingRule.matchConditions[0]?.field || 'condition'} {editingRule.matchConditions[0]?.operator || 'equals'} “{String(editingRule.matchConditions[0]?.value || '…')}”</span>
+                <span className="px-2 py-1 rounded-lg bg-white border border-gray-200">WHERE {editingRule.matchConditions.length} condition{editingRule.matchConditions.length === 1 ? '' : 's'}</span>
                 <span className="text-gray-400">→</span>
-                <span className="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-800 font-bold">ACTION {editingRule.actions[0]?.type || '…'}</span>
+                <span className="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-800 font-bold">{editingRule.actions.length} action{editingRule.actions.length === 1 ? '' : 's'}</span>
               </div>
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Rule name</label>
@@ -734,90 +765,27 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               </div>
 
               {/* Where Editor */}
-              <div className="p-3 bg-gray-50 rounded-xl space-y-2 border border-gray-100">
-                <span className="font-bold text-gray-700 block">Where</span>
-                <div className="grid grid-cols-3 gap-2">
-                  <select
-                    value={editingRule.matchConditions[0]?.field || 'productTag'}
-                    onChange={(e) => {
-                      const updated = [...editingRule.matchConditions];
-                      updated[0] = { ...updated[0], field: e.target.value as any };
-                      setEditingRule({ ...editingRule, matchConditions: updated });
-                    }}
-                    className="px-2 py-1.5 border border-gray-200 rounded-lg bg-white"
-                  >
-                    <option value="productTag">Product tag</option>
-                    <option value="category">Category</option>
-                    <option value="brand">Brand</option>
-                    <option value="ruleGroup">Rule group</option>
-                    <option value="isAlcohol">Alcohol product</option>
-                    <option value="plu">PLU</option>
-                  </select>
-
-                  <select
-                    value={editingRule.matchConditions[0]?.operator || 'equals'}
-                    onChange={(e) => {
-                      const updated = [...editingRule.matchConditions];
-                      updated[0] = { ...updated[0], operator: e.target.value as any };
-                      setEditingRule({ ...editingRule, matchConditions: updated });
-                    }}
-                    className="px-2 py-1.5 border border-gray-200 rounded-lg bg-white"
-                  >
-                    <option value="equals">is</option>
-                    <option value="contains">contains</option>
-                    <option value="in">is one of</option>
-                  </select>
-
-                  <input
-                    type="text"
-                    value={String(editingRule.matchConditions[0]?.value || '')}
-                    onChange={(e) => {
-                      const updated = [...editingRule.matchConditions];
-                      updated[0] = { ...updated[0], value: e.target.value };
-                      setEditingRule({ ...editingRule, matchConditions: updated });
-                    }}
-                    className="px-2 py-1.5 border border-gray-200 rounded-lg bg-white font-mono"
-                    placeholder="e.g. AGE_RESTRICTED_18"
-                  />
-                </div>
+              <div className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
+                <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
+                {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
+                  <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
+                  <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
+                  <input type="text" value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white" placeholder={condition.field==='isAlcohol'?'true':'Value'} />
+                  <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
+                </div>)}
               </div>
 
-              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-2">
-                <span className="font-bold text-gray-700 block">Action</span>
-                <select
-                  value={editingRule.actions[0]?.type || 'HIDE_PRODUCT'}
-                  onChange={(e) => {
-                    const type = e.target.value as any;
-                    const action: any =
-                      type === 'MINIMUM_AGE' ? { type, minimumAge: 18 } :
-                      type === 'MAX_QUANTITY_PER_ORDER' ? { type, maximum: 1 } :
-                      type === 'COMBINED_GROUP_LIMIT' ? { type, groupId: 'group', maximum: 1 } :
-                      type === 'BADGE' ? { type, label: 'Featured' } :
-                      type === 'WARNING' ? { type, text: 'Important information' } :
-                      type === 'PREVENT_PURCHASE' ? { type, reason: 'Unavailable' } :
-                      { type };
-                    setEditingRule({ ...editingRule, actions: [action] });
-                  }}
-                  className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-semibold"
-                >
-                  <option value="HIDE_PRODUCT">Hide product</option>
-                  <option value="PREVENT_PURCHASE">Prevent purchase</option>
-                  <option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option>
-                  <option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option>
-                  <option value="MINIMUM_AGE">Require minimum age</option>
-                  <option value="PREVENT_UPSELL">Exclude from upsells</option>
-                  <option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option>
-                  <option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option>
-                  <option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option>
-                  <option value="BADGE">Show badge</option>
-                  <option value="WARNING">Show warning</option>
-                </select>
-                {editingRule.actions[0]?.type === 'COMBINED_GROUP_LIMIT' && <div className="grid grid-cols-2 gap-2"><input type="text" value={(editingRule.actions[0] as any).groupId || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], groupId:e.target.value} as any]})} className="px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Group ID" /><input type="number" min="1" value={(editingRule.actions[0] as any).maximum || 1} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], maximum:Math.max(1,Number(e.target.value)||1)} as any]})} className="px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Combined limit" /></div>}
-                {editingRule.actions[0]?.type === 'PREVENT_PURCHASE' && <input type="text" value={(editingRule.actions[0] as any).reason || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], reason:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Reason shown to customer" />}
-                {editingRule.actions[0]?.type === 'MAX_QUANTITY_PER_ORDER' && <input type="number" min="1" value={(editingRule.actions[0] as any).maximum || 1} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], maximum: Math.max(1, Number(e.target.value)||1)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Maximum quantity" />}
-                {editingRule.actions[0]?.type === 'MINIMUM_AGE' && <input type="number" min="1" max="100" value={(editingRule.actions[0] as any).minimumAge || 18} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], minimumAge: Math.max(1, Number(e.target.value)||18)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" />}
-                {editingRule.actions[0]?.type === 'BADGE' && <input type="text" value={(editingRule.actions[0] as any).label || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], label:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Badge text" />}
-                {editingRule.actions[0]?.type === 'WARNING' && <input type="text" value={(editingRule.actions[0] as any).text || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], text:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Warning message" />}
+              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">
+                <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Actions <span className="font-normal text-gray-400">apply all</span></span><button type="button" onClick={()=>setEditingRule({...editingRule,actions:[...editingRule.actions,{type:'HIDE_PRODUCT'}]})} className="text-[11px] font-bold text-indigo-700">+ Add action</button></div>
+                {editingRule.actions.map((action,index)=><div key={index} className="rounded-xl bg-white border border-indigo-100 p-2 space-y-2">
+                  <div className="flex gap-2"><select value={action.type} onChange={(e)=>{const a=[...editingRule.actions];a[index]=createAction(e.target.value);setEditingRule({...editingRule,actions:a})}} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white font-semibold"><option value="HIDE_PRODUCT">Hide product</option><option value="PREVENT_PURCHASE">Prevent purchase</option><option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option><option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option><option value="MINIMUM_AGE">Require minimum age</option><option value="PREVENT_UPSELL">Exclude from upsells</option><option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option><option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option><option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option><option value="BADGE">Show badge</option><option value="WARNING">Show warning</option></select><button type="button" disabled={editingRule.actions.length===1} onClick={()=>setEditingRule({...editingRule,actions:editingRule.actions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></div>
+                  {action.type==='MAX_QUANTITY_PER_ORDER'&&<input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
+                  {action.type==='MINIMUM_AGE'&&<input type="number" min="1" max="100" value={(action as any).minimumAge||18} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],minimumAge:Math.max(1,Number(e.target.value)||18)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
+                  {action.type==='COMBINED_GROUP_LIMIT'&&<div className="grid grid-cols-2 gap-2"><input value={(action as any).groupId||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],groupId:e.target.value};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Group ID"/><input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Limit"/></div>}
+                  {action.type==='PREVENT_PURCHASE'&&<input value={(action as any).reason||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],reason:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Reason shown to customer"/>}
+                  {action.type==='BADGE'&&<input value={(action as any).label||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],label:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Badge text"/>}
+                  {action.type==='WARNING'&&<input value={(action as any).text||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],text:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Warning message"/>}
+                </div>)}
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
