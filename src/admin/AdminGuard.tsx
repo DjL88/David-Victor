@@ -577,19 +577,6 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
             </div>
           )}
 
-          {/* BOOTSTRAP EMAIL HELPER */}
-          <div className="flex items-center justify-between text-[11px] bg-indigo-50/70 border border-indigo-100/80 px-2.5 py-1.5 rounded-lg text-indigo-900">
-            <span className="font-medium text-indigo-700">Allowlisted Admin:</span>
-            <button
-              type="button"
-              onClick={() => setEmail('dleitch22@gmail.com')}
-              className="font-mono text-[10px] bg-white border border-indigo-200 px-1.5 py-0.5 rounded text-indigo-600 hover:bg-indigo-50 font-semibold cursor-pointer transition-colors"
-              title="Click to fill email"
-            >
-              dleitch22@gmail.com
-            </button>
-          </div>
-
           <form onSubmit={handleEmailAuth} className="space-y-3.5">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Work Email</label>
