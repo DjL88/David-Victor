@@ -101,6 +101,72 @@ export function getFirestoreDb(): AdminFirestore | null {
 
 let firestorePermissionDeniedDetected = false;
 let lastFirestorePermissionError: string | null = null;
+let firestorePermissionDiagnosticsLogged = false;
+
+function safeFirestoreErrorDetails(err: any): Record<string, unknown> {
+  return {
+    code: err?.code ?? null,
+    status: err?.status ?? null,
+    message: err?.message ?? String(err || ''),
+    details: err?.details ?? null,
+  };
+}
+
+async function getCloudRunRuntimeIdentity(): Promise<string | null> {
+  // Cloud Run exposes the service identity through the metadata server. Only
+  // attempt this in Cloud Run so local/test environments never make a metadata
+  // network call.
+  if (!process.env.K_SERVICE && !process.env.K_REVISION) return null;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    try {
+      const response = await fetch(
+        'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email',
+        {
+          headers: { 'Metadata-Flavor': 'Google' },
+          signal: controller.signal,
+        }
+      );
+      if (!response.ok) return null;
+      return (await response.text()).trim() || null;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function logFirestorePermissionDiagnostics(err?: any): Promise<void> {
+  if (firestorePermissionDiagnosticsLogged) return;
+  firestorePermissionDiagnosticsLogged = true;
+
+  const config = getFirebaseConfig();
+  const projectId =
+    config?.projectId ||
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    null;
+  const databaseId =
+    config?.firestoreDatabaseId ||
+    process.env.FIRESTORE_DATABASE_ID ||
+    '(default)';
+  const runtimeIdentity = await getCloudRunRuntimeIdentity();
+
+  console.error(
+    '[Firestore IAM Diagnostics]',
+    JSON.stringify({
+      projectId,
+      databaseId,
+      runtimeIdentity,
+      cloudRunService: process.env.K_SERVICE || null,
+      cloudRunRevision: process.env.K_REVISION || null,
+      error: safeFirestoreErrorDetails(err),
+    })
+  );
+}
 
 export function isFirestorePermissionDenied(): boolean {
   return firestorePermissionDeniedDetected;
@@ -130,10 +196,11 @@ export function markFirestorePermissionDenied(err?: any): void {
     firestorePermissionDeniedDetected = true;
     lastFirestorePermissionError =
       err?.message ||
-      'Missing or insufficient permissions (PERMISSION_DENIED). Cloud Run service account requires roles/datastore.user.';
-    console.info(
-      '[Firestore IAM] Note: Service account lacks roles/datastore.user permission on Firestore. Operating safely in graceful in-memory and disk cache fallback mode.'
+      'Firestore returned PERMISSION_DENIED. Inspect [Firestore IAM Diagnostics] for the actual runtime identity and Google error.';
+    console.warn(
+      '[Firestore IAM] Firestore returned PERMISSION_DENIED. Persistence is disabled for this container instance; see [Firestore IAM Diagnostics] for the actual Google error and runtime identity.'
     );
+    void logFirestorePermissionDiagnostics(err);
   }
 }
 
