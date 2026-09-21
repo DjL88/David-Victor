@@ -1043,6 +1043,17 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async inspectStoreMenu(tenantId: string, storeId: string, menuId?: string): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const query = menuId ? `?menuId=${encodeURIComponent(menuId)}` : '';
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/menu-inspector/${encodeURIComponent(storeId)}${query}`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Menu inspection failed (HTTP ${res.status})`);
+    }
+    return res.json();
+  }
+
   // ==========================================
   // DOMAIN MAPPINGS
   // ==========================================
