@@ -17,6 +17,7 @@ import {
 import {
   mapDeliverectBasket,
   toCommerceItemInputs,
+  buildQuestItemUnavailableActions,
   type MappedBasket,
 } from './DeliverectBasketMapper';
 import type { CheckoutResult } from '../../src/domain/models';
@@ -1750,6 +1751,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         menuId,
         plu: product.plu,
         quantity,
+        itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
       });
     }
 
@@ -1820,17 +1822,48 @@ export class DeliverectApiClient implements DeliverectAdapter {
           );
         }
 
+        const preference =
+          item.substitutionPreference ||
+          existing?.substitutionPreference ||
+          'BEST_MATCH';
+        const itemUnavailableActions =
+          buildQuestItemUnavailableActions(preference);
+        const preferredPrice = item.preferredSubstitutePrice;
+        const substituteCandidate =
+          String(preference).toUpperCase() === 'CUSTOMER_SELECTED' &&
+          item.preferredSubstitutePlu
+            ? [
+                {
+                  plu: item.preferredSubstitutePlu,
+                  name:
+                    item.preferredSubstituteName ||
+                    item.preferredSubstitutePlu,
+                  quantity: item.quantity,
+                  ...(preferredPrice &&
+                  typeof preferredPrice.amount === 'number'
+                    ? { price: Math.round(preferredPrice.amount) }
+                    : {}),
+                },
+              ]
+            : undefined;
+
         if (existingIndex >= 0) {
           desired[existingIndex] = {
             ...desired[existingIndex],
             menuId,
             quantity: item.quantity,
+            itemUnavailableActions,
+            ...(substituteCandidate
+              ? { substituteCandidate }
+              : { substituteCandidate: undefined }),
           };
         } else {
           desired.push({
             menuId,
             plu: item.plu,
             quantity: item.quantity,
+            itemUnavailableActions,
+            ...(substituteCandidate ? { substituteCandidate } : {}),
           });
         }
       }
@@ -2015,6 +2048,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           menuId,
           plu: component.componentPlu,
           quantity: component.quantity,
+          itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
         });
       }
     }
@@ -2565,7 +2599,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
       );
     }
 
-    const basket = await this.getMappedCommerceBasket(basketId);
+    let basket: MappedBasket | null = null;
+    try {
+      basket = await this.getMappedCommerceBasket(basketId);
+    } catch (basketError) {
+      // A Commerce checkout is asynchronous and the source basket may no longer
+      // be readable once POS order injection has begun. Checkout status/order
+      // correlation must not depend on re-fetching that consumed basket.
+      console.warn(
+        '[DeliverectApiClient] Checkout status available but source basket could not be re-read:',
+        basketError
+      );
+    }
+
     const orderId = String(
       raw?.orderId ||
       raw?.order?.id ||
@@ -2575,6 +2621,23 @@ export class DeliverectApiClient implements DeliverectAdapter {
       raw?.channelOrderId ||
       ''
     ).trim() || undefined;
+
+    const rawStoreId = String(
+      raw?.storeId ||
+      raw?.channelLinkId ||
+      raw?.order?.channelLinkId ||
+      ''
+    ).trim();
+    const rawFulfillment = String(
+      raw?.fulfillment?.type ||
+      raw?.order?.fulfillment?.type ||
+      raw?.order?.fulfillmentType ||
+      ''
+    ).trim().toLowerCase();
+    const rawTotal =
+      typeof raw?.payment?.total === 'number'
+        ? { amount: Math.round(raw.payment.total), currency: raw?.currency || 'GBP' }
+        : undefined;
 
     const now = new Date().toISOString();
     return {
@@ -2587,17 +2650,23 @@ export class DeliverectApiClient implements DeliverectAdapter {
       ),
       orderId,
       tenantId: this.tenantId,
-      storeId: basket.storeId,
-      channelLinkId: basket.channelLinkId || basket.storeId,
+      storeId: basket?.storeId || rawStoreId,
+      channelLinkId: basket?.channelLinkId || rawStoreId || undefined,
       status: this.mapCommerceCheckoutStatus(raw),
       basketId,
-      fulfillmentType: basket.fulfillmentType,
-      total: basket.total,
+      fulfillmentType:
+        basket?.fulfillmentType ||
+        (rawFulfillment === 'pickup' || rawFulfillment === 'collection'
+          ? 'pickup'
+          : rawFulfillment === 'delivery'
+            ? 'delivery'
+            : undefined),
+      total: basket?.total || rawTotal,
       createdAt: raw?.createdAt || now,
       updatedAt: raw?.updatedAt || now,
       failureReason: raw?.failureReason || raw?.error?.message,
       order: raw?.order,
-    };
+    } as CheckoutResult;
   }
 
   async checkoutBasket(): Promise<Order> {

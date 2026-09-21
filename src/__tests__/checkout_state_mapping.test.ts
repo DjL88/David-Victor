@@ -7,6 +7,7 @@ import {
 
 describe('checkout lifecycle mapping', () => {
   it.each([
+    'COMPLETED',
     'ORDER_CONFIRMED',
     'STORE_ACCEPTED',
     'ACCEPTED',

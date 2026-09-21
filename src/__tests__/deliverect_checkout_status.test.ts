@@ -19,6 +19,37 @@ describe('Deliverect checkout status mapping', () => {
     expect(mapStatus({ status: 'mystery_state' })).toBe('CHECKOUT_PENDING_CONFIRMATION');
   });
 
+  it('confirms a completed checkout even when the consumed basket can no longer be fetched', async () => {
+    const client = new DeliverectApiClient('brand-alpha') as any;
+
+    client.getCommerceBasketApi = async () => ({
+      getCheckout: async () => ({
+        id: 'checkout-complete-1',
+        status: 'completed',
+        basket: { id: 'basket-consumed-1' },
+        channelOrderId: 'BWYDI-COMPLETE-1',
+        orderId: 'deliverect-order-1',
+      }),
+    });
+    client.getMappedCommerceBasket = async () => {
+      const error: any = new Error('Basket is no longer readable after checkout');
+      error.statusCode = 404;
+      throw error;
+    };
+
+    const result = await client.getCheckout('checkout-complete-1');
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        checkoutId: 'checkout-complete-1',
+        status: 'ORDER_CONFIRMED',
+        basketId: 'basket-consumed-1',
+        orderId: 'deliverect-order-1',
+        channelOrderReference: 'BWYDI-COMPLETE-1',
+      })
+    );
+  });
+
   it('returns a provisional pickup order with full basket lines for async webhook and Quest correlation', async () => {
     const client = new DeliverectApiClient('brand-alpha') as any;
     const basket = {
