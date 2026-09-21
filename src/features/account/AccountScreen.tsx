@@ -5,12 +5,9 @@ import { CmsPageView } from '../cms/CmsPageView';
 import { CmsPage } from '../../commerce/cmsModels';
 import { auth, onAuthStateChanged, User as FirebaseUser, signInWithGoogle, signOutUser } from '../../firebase';
 import {
-  User,
   MapPin,
   CreditCard,
   Bell,
-  HelpCircle,
-  Shield,
   Phone,
   Mail,
   Settings,
@@ -153,15 +150,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-2xs divide-y divide-gray-50 overflow-hidden text-xs font-semibold text-gray-800">
         <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
           <MapPin className="w-4 h-4 text-gray-400" />
-          <span>Saved Delivery Addresses (Chelmsford, Essex)</span>
+          <span>Saved delivery addresses</span>
         </div>
         <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
           <CreditCard className="w-4 h-4 text-gray-400" />
-          <span>Payment Methods & Deliverect Pay</span>
+          <span>Payment methods</span>
         </div>
         <div className="p-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
           <Bell className="w-4 h-4 text-gray-400" />
-          <span>Order Notification & Delivery Alerts</span>
+          <span>Order notifications & delivery alerts</span>
         </div>
       </div>
 
@@ -200,7 +197,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
             <span>{tenant?.supportDetails.phone}</span>
           </div>
           <div className="flex items-center gap-2 text-gray-500 text-[11px] pt-1">
-            <span>Hours: {tenant?.supportDetails.openingHours}</span>
+            <span>Hours: {tenant?.supportDetails?.openingHours || 'See store information for opening hours'}</span>
           </div>
         </div>
       </div>
