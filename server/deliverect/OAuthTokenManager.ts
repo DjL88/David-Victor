@@ -212,7 +212,16 @@ export class OAuthTokenManager {
         access_token: string;
         token_type?: string;
         expires_in: number;
+        scope?: string;
       };
+
+      // Scope is capability metadata, not a credential. Logging it is safe and
+      // tells us whether this client can use Commerce only or also Retail Channel
+      // APIs required for Quest itemUnavailableActions.
+      console.log(
+        '[Platform OAuth] DELIVERECT_OAUTH_SCOPE:',
+        data.scope || 'not_returned'
+      );
 
       if (!data.access_token) {
         throw new Error('Deliverect OAuth response did not contain an access_token');
