@@ -336,7 +336,13 @@ export interface Store {
   email?: string;
   openingHours?: Record<string, { open: string; close: string }> | Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
   channelLinkId?: string;
+  /** Channel-side store/location identifier when Deliverect exposes one. */
+  channelLocationId?: string;
+  /** Bwydi's normalized reference to the Deliverect physical location record. */
   physicalLocationId?: string;
+  /** Raw Deliverect location ID, kept separate from the Commerce channelLinkId. */
+  deliverectLocationId?: string;
+  /** Retailer/POS-friendly store number, e.g. "1234". Never use this as Commerce storeId. */
   brandStoreId?: string;
   currency?: string;
   timezone?: string;
