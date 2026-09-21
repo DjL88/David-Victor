@@ -27,6 +27,7 @@ interface BundleSelectionDialogProps {
   bundle: BundleProduct | null;
   isOpen: boolean;
   onClose: () => void;
+  selectedStoreName?: string;
   onAddBundleToBasket: (
     bundle: BundleProduct,
     selectedModifiers: SelectedBundleModifier[],
@@ -38,6 +39,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
   bundle,
   isOpen,
   onClose,
+  selectedStoreName,
   onAddBundleToBasket,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
@@ -255,14 +257,24 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
           {/* Modifier Groups / Sections */}
           <div className="flex-1 overflow-y-auto p-6 space-y-7 divide-y divide-neutral-100">
             {groups.map((group, groupIdx) => {
+              const isRequired = group.min > 0;
+              const isOptionalUpsell = group.isUpsell || group.min === 0;
+
+              // Hide optional upsell section if all modifiers in it are out of stock / snoozed
+              const isAllModifiersOutOfStock =
+                group.modifiers.length > 0 &&
+                group.modifiers.every((m) => m.snoozed || m.active === false);
+
+              if (isOptionalUpsell && isAllModifiersOutOfStock) {
+                return null;
+              }
+
               const currentGroupCount = group.modifiers.reduce(
                 (sum, m) => sum + (selections[m.id] || 0),
                 0
               );
-              const isRequired = group.min > 0;
               const isComplete =
                 isRequired && currentGroupCount >= group.min && currentGroupCount <= group.max;
-              const isOptionalUpsell = group.isUpsell || group.min === 0;
 
               return (
                 <div key={group.id} className={groupIdx > 0 ? 'pt-6' : ''}>
@@ -477,6 +489,8 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
               <span>
                 {isBundleOutOfStock
                   ? 'Currently Unavailable'
+                  : !selectedStoreName
+                  ? 'Select Store for Price'
                   : `Add to Basket • ${formatMoney(totalPriceMinor, currency)}`}
               </span>
             </button>

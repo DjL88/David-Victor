@@ -545,6 +545,7 @@ export interface Product {
   isSnoozed?: boolean;
   snoozeEndTime?: string;
   isUpsell?: boolean;
+  inStock?: boolean;
 }
 
 /**
@@ -754,7 +755,9 @@ export interface BasketItem {
   name: string;
   brand?: string;
   unitPrice?: Money;
+  itemPrice?: Money;
   totalPrice?: Money;
+  channelLinkId?: string;
   price: Money;
   originalPrice?: Money;
   quantity: number;
@@ -827,6 +830,9 @@ export interface Restriction {
 
 export interface Basket {
   id: string;
+  basketId?: string;
+  tenantId?: string;
+  channelLinkId?: string;
   storeId: string;
   storeName: string;
   fulfillmentType: 'delivery' | 'pickup';
@@ -837,6 +843,7 @@ export interface Basket {
   depositTotal?: Money;
   tax?: Money;
   total: Money; // Authoritative minor-unit money
+  totalPrice?: Money;
   discountTotal: Money;
   tip?: Money;
   // Local estimated values for UX rendering prior to server roundtrip

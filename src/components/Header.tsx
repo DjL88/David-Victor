@@ -186,7 +186,7 @@ export const Header: React.FC<HeaderProps> = ({
                     : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
-                <Package className="w-3 h-3" />
+                <ShoppingBag className="w-3 h-3" />
                 <span>Collect</span>
               </button>
             </div>

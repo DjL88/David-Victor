@@ -14,37 +14,43 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
   isManualPreview = false,
 }) => {
   const [progress, setProgress] = useState(15);
-  const [statusText, setStatusText] = useState('Connecting to local stores...');
+  const [statusText, setStatusText] = useState('');
   const [isFadingOut, setIsFadingOut] = useState(false);
 
-  const brandName = tenant?.brandName || 'Storefront';
-  const tagline = tenant?.tagline || 'Delivery & Collection in Minutes';
+  const brandName = tenant?.brandName || '';
+  const tagline = tenant?.tagline || '';
   const primaryColor = tenant?.primaryColour || '#059669';
   const secondaryColor = tenant?.secondaryColour || '#f59e0b';
   const fontFamily = tenant?.fontFamily || 'Plus Jakarta Sans, sans-serif';
 
   // Extract initials for the brand emblem
   const brandInitials = brandName
-    .split(' ')
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase() || 'SF';
+    ? brandName
+        .split(' ')
+        .slice(0, 2)
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase()
+    : '';
 
   useEffect(() => {
+    if (tenant) {
+      setStatusText('Connecting to local stores...');
+    }
+
     const t1 = setTimeout(() => {
       setProgress(45);
-      setStatusText('Checking fresh inventory & local specials...');
+      if (tenant) setStatusText('Checking inventory & local specials...');
     }, 400);
 
     const t2 = setTimeout(() => {
       setProgress(85);
-      setStatusText('Finding your nearest stores & delivery routes...');
+      if (tenant) setStatusText('Finding nearest stores & delivery routes...');
     }, 900);
 
     const t3 = setTimeout(() => {
       setProgress(100);
-      setStatusText('Ready! Welcome to ' + brandName);
+      if (tenant) setStatusText('Ready' + (brandName ? `! Welcome to ${brandName}` : ''));
     }, 1400);
 
     const t4 = setTimeout(() => {
@@ -60,7 +66,7 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
       clearTimeout(t3);
       clearTimeout(t4);
     };
-  }, [brandName, onFinish, isManualPreview]);
+  }, [tenant, brandName, onFinish, isManualPreview]);
 
   return (
     <div
@@ -82,10 +88,14 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
 
       {/* Top Bar / Preview Dismiss */}
       <div className="w-full max-w-md flex items-center justify-between z-10 pt-4">
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md text-[11px] font-semibold text-gray-300">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Local Freshness Guaranteed</span>
-        </div>
+        {tenant ? (
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md text-[11px] font-semibold text-gray-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{tenant.brandName}</span>
+          </div>
+        ) : (
+          <div />
+        )}
 
         <div className="flex items-center gap-2">
           {onFinish && (
@@ -133,21 +143,21 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
-            ) : (
+            ) : brandInitials ? (
               <span className="text-3xl font-black tracking-wider text-white">
                 {brandInitials}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
 
         {/* Brand Name */}
-        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-2">
+        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-2 min-h-[36px]">
           {brandName}
         </h1>
 
         {/* Tagline */}
-        <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed max-w-xs mb-8">
+        <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed max-w-xs mb-8 min-h-[20px]">
           {tagline}
         </p>
 
@@ -164,27 +174,35 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
         </div>
 
         {/* Dynamic Status Text */}
-        <p className="text-[11px] font-medium text-gray-400 animate-fade-in flex items-center justify-center gap-1.5">
-          {progress === 100 ? (
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
-          ) : (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+        <p className="text-[11px] font-medium text-gray-400 animate-fade-in flex items-center justify-center gap-1.5 min-h-[16px]">
+          {statusText && (
+            <>
+              {progress === 100 ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              )}
+              <span>{statusText}</span>
+            </>
           )}
-          <span>{statusText}</span>
         </p>
       </div>
 
       {/* Footer Badges */}
-      <div className="w-full max-w-md flex items-center justify-center gap-4 text-[11px] text-gray-500 pb-4 z-10">
-        <span className="flex items-center gap-1">
-          <Truck className="w-3.5 h-3.5" />
-          On-Demand Dispatch
-        </span>
-        <span>•</span>
-        <span className="flex items-center gap-1">
-          <ShoppingBag className="w-3.5 h-3.5" />
-          Multi-Location Shopping
-        </span>
+      <div className="w-full max-w-md flex items-center justify-center gap-4 text-[11px] text-gray-500 pb-4 z-10 min-h-[24px]">
+        {tenant && (
+          <>
+            <span className="flex items-center gap-1">
+              <Truck className="w-3.5 h-3.5" />
+              On-Demand Dispatch
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <ShoppingBag className="w-3.5 h-3.5" />
+              Multi-Location Shopping
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

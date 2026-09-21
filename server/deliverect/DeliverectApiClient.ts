@@ -5,8 +5,18 @@ import { IntegrationContext } from './IntegrationContext';
 import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
-import { defaultBasketService } from '../basket/BasketService';
 import { CommerceError } from '../errors';
+import { randomUUID } from 'node:crypto';
+import {
+  DeliverectCommerceBasketApiClient,
+  CommerceBasketItemInput,
+} from './DeliverectCommerceBasketApi';
+import {
+  mapDeliverectBasket,
+  toCommerceItemInputs,
+  type MappedBasket,
+} from './DeliverectBasketMapper';
+import type { CheckoutResult } from '../../src/domain/models';
 import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
 import {
   Store,
@@ -1454,52 +1464,154 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return { products: filtered, summaries, diagnostics: catalog.diagnostics };
   }
 
-  async createBasket(storeId?: string, fulfillmentType?: 'delivery' | 'pickup'): Promise<Basket> {
-    if (!storeId) throw new Error('storeId is required to create a basket');
-    let store = await this.getStore(storeId).catch(() => null);
-    const storeName = store?.name || storeId;
-    const currency = store?.currency || 'GBP';
-    return defaultBasketService.createBasket(store?.id || storeId, fulfillmentType, currency, storeName);
+  private async getCommerceBasketApi(): Promise<DeliverectCommerceBasketApiClient> {
+    const accountId = await this.resolveAccountId();
+    return new DeliverectCommerceBasketApiClient(
+      this.tokenManager,
+      accountId,
+      this.baseUrl
+    );
+  }
+
+  private async mapLiveCommerceBasket(raw: any): Promise<MappedBasket> {
+    const storeId = String(raw?.storeId || raw?.channelLinkId || '').trim();
+    if (!storeId) {
+      throw new Error('Deliverect basket response is missing storeId/channelLinkId.');
+    }
+
+    const store = await this.getStore(storeId).catch(() => null);
+
+    let fallbackMenuId = String(raw?.menuId || raw?.menu || '').trim();
+    const needsFallbackMenu =
+      Array.isArray(raw?.items) &&
+      raw.items.some((item: any) => !item?.menuId && !item?.menu);
+
+    if (!fallbackMenuId && needsFallbackMenu) {
+      const fulfillmentType =
+        String(raw?.fulfillment?.type || '').toLowerCase() === 'delivery'
+          ? 'delivery'
+          : 'pickup';
+      const catalog = await this.getStoreCatalog(storeId, fulfillmentType);
+      fallbackMenuId = String(catalog.activeMenuId || '').trim();
+    }
+
+    return mapDeliverectBasket(raw, {
+      storeName: store?.name || storeId,
+      fallbackMenuId,
+    });
+  }
+
+  private async getMappedCommerceBasket(basketId: string): Promise<MappedBasket> {
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.getBasket(basketId);
+    return this.mapLiveCommerceBasket(raw);
+  }
+
+  private unsupportedLiveCapability(name: string): never {
+    throw new CommerceError(
+      'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED',
+      `${name} is not yet implemented on the live Deliverect path.`
+    );
+  }
+
+  private mapCommerceCheckoutStatus(raw: any): CheckoutResult['status'] {
+    const value = String(
+      raw?.status || raw?.state || raw?.checkoutStatus || ''
+    ).toUpperCase();
+
+    const orderId = raw?.orderId || raw?.order?.id || raw?.order?._id;
+    if (orderId) return 'ORDER_CONFIRMED';
+
+    if (value.includes('FAIL') || value.includes('REJECT')) return 'ORDER_FAILED';
+    if (value.includes('CANCEL')) return 'CANCELLED';
+    if (value.includes('CONFIRM') || value.includes('SUCCESS')) return 'ORDER_CONFIRMED';
+
+    return 'CHECKOUT_PENDING_CONFIRMATION';
+  }
+
+  async createBasket(
+    storeId?: string,
+    fulfillmentType: 'delivery' | 'pickup' = 'pickup'
+  ): Promise<Basket> {
+    if (!storeId) {
+      throw new CommerceError('STORE_NOT_FOUND', 'A store is required before creating a basket.');
+    }
+
+    if (fulfillmentType !== 'pickup') {
+      throw new CommerceError(
+        'INVALID_FULFILLMENT',
+        'Delivery checkout is not enabled on the real Deliverect basket path yet. Please choose collection.'
+      );
+    }
+
+    const { channelLinkId } = await this.resolveStoreChannelLinkId(storeId);
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.createPickupBasket({ channelLinkId });
+    return this.mapLiveCommerceBasket(raw);
   }
 
   async getBasket(basketId: string): Promise<Basket | null> {
-    return defaultBasketService.getBasket(basketId);
-  }
-
-  async updateBasketItem(basketId: string, productId: string, quantity: number): Promise<Basket> {
-    const basket = await defaultBasketService.getBasket(basketId);
-    if (!basket) throw new Error(`Basket ${basketId} not found`);
-
-    let productDetails: { name?: string; price?: Money; imageUrl?: string; taxRate?: number; bundleId?: string; tags?: string[] } | undefined;
-
-    if (quantity > 0 && !basket.items.some((i) => i.plu === productId || i.id === productId)) {
-      try {
-        const catalog = await this.getStoreCatalog(basket.storeId);
-        const product = catalog?.products?.find((p) => p.plu === productId || p.id === productId);
-        if (product && this.isAvailableProduct(product) && product.price != null) {
-          const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
-          const price: Money =
-            typeof product.price === 'object' && product.price && 'amount' in product.price
-              ? product.price
-              : toMoney(product.priceMinor || (typeof product.price === 'number' ? product.price : 0), currency);
-          productDetails = {
-            name: product.name,
-            price,
-            imageUrl: product.imageUrl,
-            bundleId: (product as any).bundleId,
-            tags: product.tags,
-          };
-        }
-      } catch (e: any) {
-        if (e instanceof CommerceError) throw e;
-        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Unable to verify ${productId} against the selected store catalogue.`, 503, true, { plu: productId, storeId: basket.storeId });
-      }
-      if (!productDetails) {
-        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Product ${productId} is not orderable at the selected store.`, 409, false, { plu: productId, storeId: basket.storeId });
-      }
+    if (!basketId || basketId.startsWith('bsk_')) {
+      return null;
     }
 
-    return defaultBasketService.updateBasketItem(basketId, productId, quantity, productDetails);
+    try {
+      return await this.getMappedCommerceBasket(basketId);
+    } catch (error: any) {
+      if (error?.status === 404 || error?.statusCode === 404) return null;
+      throw error;
+    }
+  }
+
+  async updateBasketItem(
+    basketId: string,
+    productId: string,
+    quantity: number
+  ): Promise<Basket> {
+    const current = await this.getMappedCommerceBasket(basketId);
+    const desired = toCommerceItemInputs(current);
+
+    const existingIndex = desired.findIndex((item) => item.plu === productId);
+
+    if (quantity <= 0) {
+      if (existingIndex >= 0) desired.splice(existingIndex, 1);
+    } else if (existingIndex >= 0) {
+      desired[existingIndex] = {
+        ...desired[existingIndex],
+        quantity,
+      };
+    } else {
+      const catalog = await this.getStoreCatalog(
+        current.storeId,
+        current.fulfillmentType
+      );
+      const product = catalog.products?.find((p) => p.plu === productId || p.id === productId);
+
+      if (!product) {
+        throw new CommerceError(
+          'PRODUCT_NOT_AVAILABLE',
+          `Product ${productId} is not available at the selected store.`
+        );
+      }
+
+      const menuId = String(catalog.activeMenuId || '').trim();
+      if (!menuId) {
+        throw new CommerceError(
+          'MENU_NOT_AVAILABLE',
+          'Could not resolve the active Deliverect menu for this basket.'
+        );
+      }
+
+      desired.push({
+        menuId,
+        plu: product.plu,
+        quantity,
+      });
+    }
+
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.replaceItems(basketId, desired);
+    return this.mapLiveCommerceBasket(raw);
   }
 
   async updateBasketItems(
@@ -1517,171 +1629,289 @@ export class DeliverectApiClient implements DeliverectAdapter {
       price?: Money;
     }>
   ): Promise<Basket> {
-    const basket = await defaultBasketService.getBasket(basketId);
-    if (!basket) throw new Error(`Basket ${basketId} not found`);
+    const current = await this.getMappedCommerceBasket(basketId);
+    const catalog = await this.getStoreCatalog(
+      current.storeId,
+      current.fulfillmentType
+    );
+    const fallbackMenuId = String(catalog.activeMenuId || '').trim();
 
-    let catalog: Catalog | null = null;
-
-    const enrichedItems: Array<{
-      plu: string;
-      quantity: number;
-      name?: string;
-      price?: Money;
-      menuId?: string;
-      substitutionPreference?: any;
-      substituteCandidatePlus?: string[];
-      preferredSubstitutePlu?: string;
-      preferredSubstituteName?: string;
-      preferredSubstitutePrice?: Money;
-    }> = await Promise.all(
-      items.map(async (item) => {
-        if (item.name && item.price) return item;
-        const existing = basket.items.find((i) => i.plu === item.plu);
-        if (existing) {
-          return {
-            ...item,
-            name: existing.name,
-            price: existing.price,
-          };
-        }
-        if (!catalog) {
-          catalog = await this.getStoreCatalog(basket.storeId);
-        }
-        const product = catalog?.products?.find((p) => p.plu === item.plu || p.id === item.plu);
-        if (product && this.isAvailableProduct(product) && product.price != null) {
-          const currency = basket.currency || (typeof product.price === 'object' && product.price ? product.price.currency : 'GBP');
-          const price: Money =
-            typeof product.price === 'object' && product.price && 'amount' in product.price
-              ? product.price
-              : toMoney(product.priceMinor || (typeof product.price === 'number' ? product.price : 0), currency);
-          return {
-            ...item,
-            name: product.name,
-            price,
-          };
-        }
-        throw new CommerceError('PRODUCT_NOT_AVAILABLE', `Product ${item.plu} is not orderable at the selected store.`, 409, false, { plu: item.plu, storeId: basket.storeId });
-      })
+    const existingByPlu = new Map(
+      current.items.map((item) => [item.plu, item])
     );
 
-    return defaultBasketService.updateBasketItems(basketId, enrichedItems);
+    const payload: CommerceBasketItemInput[] = items
+      .filter((item) => Number.isInteger(item.quantity) && item.quantity > 0)
+      .map((item) => {
+        const existing = existingByPlu.get(item.plu) as any;
+        const menuId = String(
+          item.menuId || existing?.deliverect?.menuId || fallbackMenuId
+        ).trim();
+
+        if (!menuId) {
+          throw new CommerceError(
+            'MENU_NOT_AVAILABLE',
+            `No menuId is available for ${item.plu}.`
+          );
+        }
+
+        return {
+          menuId,
+          plu: item.plu,
+          quantity: item.quantity,
+        };
+      });
+
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.replaceItems(basketId, payload);
+    return this.mapLiveCommerceBasket(raw);
   }
 
   async updateBasketCustomer(
     basketId: string,
-    customer: { name?: string; email?: string; phone?: string; companyName?: string; notes?: string }
+    customer: {
+      name?: string;
+      email?: string;
+      phone?: string;
+      companyName?: string;
+      notes?: string;
+    }
   ): Promise<Basket> {
-    return defaultBasketService.updateBasketCustomer(basketId, customer);
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.updateCustomer(basketId, {
+      name: customer.name,
+      email: customer.email,
+      phoneNumber: customer.phone,
+      companyName: customer.companyName,
+    });
+    return this.mapLiveCommerceBasket(raw);
   }
 
   async updateBasketFulfillment(
-    basketId: string,
-    fulfillment: { fulfillmentType?: 'delivery' | 'pickup'; type?: 'delivery' | 'pickup'; address?: Address; slot?: DeliverySlot; slotId?: string }
+    _basketId: string,
+    _fulfillment: any
   ): Promise<Basket> {
-    return defaultBasketService.updateBasketFulfillment(basketId, fulfillment);
+    return this.unsupportedLiveCapability('Basket fulfillment update');
   }
 
   async updateBasketStore(
     basketId: string,
     storeId: string,
-    options?: { confirmMigration?: boolean }
+    _options?: { confirmMigration?: boolean }
   ): Promise<{ basket: Basket; storeSwitchDiff: any }> {
-    const result = await this.reconcileBasket(basketId, storeId);
-    return { basket: result.basket, storeSwitchDiff: { changes: result.changes } };
+    const before = await this.getMappedCommerceBasket(basketId);
+    const { channelLinkId } = await this.resolveStoreChannelLinkId(storeId);
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.updateStore(basketId, channelLinkId);
+    const after = await this.mapLiveCommerceBasket(raw);
+
+    return {
+      basket: after,
+      storeSwitchDiff: {
+        fromStoreId: before.storeId,
+        toStoreId: after.storeId,
+        changed: before.storeId !== after.storeId,
+      },
+    };
   }
 
-  async updateDiscounts(
-    basketId: string,
-    options: { code?: string; remove?: boolean; discounts?: any[] }
-  ): Promise<Basket> {
-    return defaultBasketService.updateDiscounts(basketId, options);
+  async updateDiscounts(_basketId: string, _options: any): Promise<Basket> {
+    return this.unsupportedLiveCapability('Basket discounts');
   }
 
-  async updateCharges(
-    basketId: string,
-    charges: any[]
-  ): Promise<Basket> {
-    return defaultBasketService.updateCharges(basketId, charges);
+  async updateCharges(_basketId: string, _charges: any[]): Promise<Basket> {
+    return this.unsupportedLiveCapability('Basket charges');
   }
 
-  async updateTip(
-    basketId: string,
-    tip: Money
-  ): Promise<Basket> {
-    return defaultBasketService.updateTip(basketId, tip);
+  async updateTip(_basketId: string, _tip: Money): Promise<Basket> {
+    return this.unsupportedLiveCapability('Basket tip');
   }
 
   async validateBasket(
     basketId: string
   ): Promise<{ valid: boolean; issues: string[]; errors?: any[] }> {
-    return defaultBasketService.validateBasket(basketId);
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.validateBasket(basketId);
+
+    const errors = Array.isArray(raw?.errors)
+      ? raw.errors
+      : Array.isArray(raw?.validationErrors)
+      ? raw.validationErrors
+      : [];
+
+    return {
+      valid: errors.length === 0,
+      issues: errors.map((e: any) => String(e?.message || e?.description || e?.code || e)),
+      errors,
+    };
   }
 
   async reconcileBasket(
     basketId: string,
-    destinationStoreId?: string
+    _destinationStoreId?: string
   ): Promise<{
     reconciled: boolean;
     basket: Basket;
-    changes: any[];
+    changes: Array<{
+      plu: string;
+      name: string;
+      type: 'PRICE_CHANGED' | 'OUT_OF_STOCK' | 'ITEM_REMOVED' | 'QUANTITY_ADJUSTED';
+      oldPrice?: Money;
+      newPrice?: Money;
+      oldQuantity?: number;
+      newQuantity?: number;
+      message: string;
+    }>;
   }> {
-    const basket = await defaultBasketService.getBasket(basketId);
-    if (!basket) throw new CommerceError('BASKET_VALIDATION_FAILED', 'Basket not found.', 404, false, { basketId });
-    const storeId = destinationStoreId || basket.storeId;
-    const catalog = await this.getStoreCatalog(storeId);
-    const authoritativeProducts = new Map<string, { name: string; price: Money; available: boolean; maxQuantity?: number }>();
-    for (const product of catalog.products || []) {
-      if (!product.plu || product.price == null) continue;
-      const currency = basket.currency || (typeof product.price === 'object' ? product.price.currency : 'GBP');
-      const price = typeof product.price === 'object'
-        ? product.price
-        : toMoney(product.priceMinor ?? product.price, currency);
-      authoritativeProducts.set(product.plu, {
-        name: product.name,
-        price,
-        available: this.isAvailableProduct(product),
-        maxQuantity: typeof product.stockQuantity === 'number' ? product.stockQuantity : undefined,
-      });
-    }
-    return defaultBasketService.reconcileBasket(basketId, storeId, authoritativeProducts);
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.reconcileBasket(basketId);
+    const after = await this.mapLiveCommerceBasket(raw);
+
+    return {
+      reconciled: true,
+      basket: after,
+      changes: [],
+    };
   }
 
-  async getDeliveryOptions(basketId: string, address: Address, fulfillmentType?: 'delivery' | 'pickup'): Promise<DeliveryOption[]> {
-    return defaultBasketService.getDeliveryOptions(basketId, address, fulfillmentType);
+  async getDeliveryOptions(_basketId: string, _address: Address, _fulfillmentType?: 'delivery' | 'pickup'): Promise<DeliveryOption[]> {
+    return this.unsupportedLiveCapability('Delivery options');
   }
 
-  async getAvailableSlots(storeId: string, fulfillmentType?: 'delivery' | 'pickup'): Promise<{
+  async getAvailableSlots(_storeId: string, _fulfillmentType?: 'delivery' | 'pickup'): Promise<{
     asapAvailable: boolean;
     asapEtaMinutes?: number;
     days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }>;
     nextAvailableSlot?: DeliverySlot;
   }> {
-    return defaultBasketService.getAvailableSlots(storeId, fulfillmentType);
+    return this.unsupportedLiveCapability('Delivery slots');
   }
 
-  async createPaymentSession(basketId: string, amount?: Money, currency?: string): Promise<HostedPaymentSession> {
-    return defaultBasketService.createPaymentSession(basketId, amount, currency);
+  async createPaymentSession(_basketId: string, _amount?: Money, _currency?: string): Promise<HostedPaymentSession> {
+    return this.unsupportedLiveCapability('Payment session');
   }
 
-  async checkoutBasket(basketId: string, options?: {
-    deliveryOptionId?: string;
-    slotId?: string;
-    schedulingType?: FulfillmentSchedulingType;
-    paymentTokenRef?: string;
-    authorizationMaximum?: Money;
-    customerNotes?: string;
-    deliveryAddress?: Address;
-    dispatchValidationId?: string;
-    dispatchValidationExpiresAt?: string;
-  }): Promise<Order> {
-    return defaultBasketService.checkoutBasket(basketId, options);
+  async checkout(
+    basketId: string,
+    options?: {
+      customerNotes?: string;
+      idempotencyKey?: string;
+      channelOrderReference?: string;
+      tenantId?: string;
+    }
+  ): Promise<CheckoutResult> {
+    const api = await this.getCommerceBasketApi();
+
+    const reconciledRaw = await api.reconcileBasket(basketId);
+    const basket = await this.mapLiveCommerceBasket(reconciledRaw);
+
+    if (basket.fulfillmentType !== 'pickup') {
+      throw new CommerceError(
+        'INVALID_FULFILLMENT',
+        'The first real Bwydi checkout milestone supports Collection only.'
+      );
+    }
+
+    const channelOrderReference =
+      options?.channelOrderReference ||
+      `BWYDI-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+
+    const result = await api.checkoutUnpaidPickup({
+      basketId,
+      amountMinor: basket.total.amount,
+      channelOrderId: channelOrderReference,
+      customer: basket.customer
+        ? {
+            name: basket.customer.name,
+            email: basket.customer.email,
+            phoneNumber: basket.customer.phone,
+            companyName: basket.customer.companyName,
+          }
+        : undefined,
+      orderNote: options?.customerNotes,
+    });
+
+    const checkoutId = String(result.checkoutId || '').trim();
+    if (!checkoutId) {
+      throw new CommerceError(
+        'CHECKOUT_FAILED',
+        'Deliverect accepted checkout but did not return a checkout ID.'
+      );
+    }
+
+    const now = new Date().toISOString();
+    return {
+      checkoutId,
+      channelOrderReference: result.channelOrderId || channelOrderReference,
+      tenantId: options?.tenantId || this.tenantId,
+      storeId: basket.storeId,
+      channelLinkId: basket.channelLinkId || basket.storeId,
+      status: 'CHECKOUT_PENDING_CONFIRMATION',
+      basketId,
+      fulfillmentType: 'pickup',
+      total: basket.total,
+      idempotencyKey: options?.idempotencyKey,
+      createdAt: now,
+      updatedAt: now,
+    };
   }
 
-  async getOrder(orderId: string): Promise<Order | null> {
-    return defaultBasketService.getOrder(orderId);
+  async getCheckout(checkoutId: string): Promise<CheckoutResult | null> {
+    const api = await this.getCommerceBasketApi();
+    const raw = await api.getCheckout(checkoutId);
+    if (!raw) return null;
+
+    const basketId = String(
+      raw?.basket?.id || raw?.basketId || raw?.basket?._id || ''
+    ).trim();
+
+    if (!basketId) {
+      throw new CommerceError(
+        'CHECKOUT_FAILED',
+        'Deliverect checkout response is missing its basket reference.'
+      );
+    }
+
+    const basket = await this.getMappedCommerceBasket(basketId);
+    const orderId = String(
+      raw?.orderId || raw?.order?.id || raw?.order?._id || ''
+    ).trim() || undefined;
+
+    const now = new Date().toISOString();
+    return {
+      checkoutId: String(raw?.id || raw?._id || raw?.checkoutId || checkoutId),
+      channelOrderReference: String(
+        raw?.channelOrderId ||
+        raw?.order?.channelOrderId ||
+        raw?.channelOrderReference ||
+        ''
+      ),
+      orderId,
+      tenantId: this.tenantId,
+      storeId: basket.storeId,
+      channelLinkId: basket.channelLinkId || basket.storeId,
+      status: this.mapCommerceCheckoutStatus(raw),
+      basketId,
+      fulfillmentType: basket.fulfillmentType,
+      total: basket.total,
+      createdAt: raw?.createdAt || now,
+      updatedAt: raw?.updatedAt || now,
+      failureReason: raw?.failureReason || raw?.error?.message,
+      order: raw?.order,
+    };
   }
 
-  async advancePickingDemo(orderId: string): Promise<Order | null> {
-    return defaultBasketService.advancePickingDemo(orderId);
+  async checkoutBasket(): Promise<Order> {
+    return this.unsupportedLiveCapability(
+      'Legacy synchronous checkoutBasket; use async checkout()'
+    );
+  }
+
+  async getOrder(_orderId: string): Promise<Order | null> {
+    return null;
+  }
+
+  async advancePickingDemo(_orderId: string): Promise<Order | null> {
+    return null;
   }
 }

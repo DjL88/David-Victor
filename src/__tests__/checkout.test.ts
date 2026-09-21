@@ -97,14 +97,12 @@ describe('Checkout Flow, Dispatch Expiry and Asynchronous Status', () => {
 
   it('allows collection order submission without a delivery address', async () => {
     const storeId = 'store-chelmsford-central';
-    const basket = await client.createBasket(storeId);
-    basket.fulfillmentType = 'collection';
+    const basket = await client.createBasket(storeId, 'pickup');
     const bread = MOCK_PRODUCTS.find((p) => p.plu === 'PLU-ART-001')!;
     await client.updateBasketItem(basket.id, bread, 1);
 
-    // Checkout collection basket with null/undefined deliveryAddress and fulfillmentType 'collection'
+    // Checkout collection basket with null/undefined deliveryAddress
     const order = await client.checkoutBasket(basket.id, {
-      fulfillmentType: 'collection',
       deliveryAddress: undefined,
     });
 

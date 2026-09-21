@@ -1404,11 +1404,32 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
     const { checkoutId } = req.params;
     let checkout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
 
-    if (!checkout) {
+    const shouldRefreshFromDeliverect =
+      !checkout ||
+      checkout.status === 'CHECKOUT_PENDING_CONFIRMATION' ||
+      checkout.status === 'CHECKOUT_SUBMITTING';
+
+    if (shouldRefreshFromDeliverect) {
       const resolvedTenant = resolveTenant(req);
       const adapter = await getDeliverectAdapterAsync(resolvedTenant);
       if (adapter.getCheckout) {
-        checkout = await adapter.getCheckout(checkoutId);
+        try {
+          const upstream = await adapter.getCheckout(checkoutId);
+          if (upstream) {
+            checkout = upstream;
+            await FirestorePlatformService.saveCheckoutProjection(upstream);
+            if (upstream.order) {
+              await FirestorePlatformService.saveOrderProjection(
+                upstream.order,
+                resolvedTenant,
+                checkoutId
+              );
+            }
+          }
+        } catch (error) {
+          if (!checkout) throw error;
+          console.warn('[Checkout Poll] Upstream refresh failed:', error);
+        }
       }
     }
 
@@ -1445,6 +1466,75 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
     res.json(checkout);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to retrieve checkout');
+  }
+});
+
+v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response) => {
+  try {
+    const { checkoutId } = req.params;
+    let checkout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
+
+    const shouldRefreshFromDeliverect =
+      !checkout ||
+      checkout.status === 'CHECKOUT_PENDING_CONFIRMATION' ||
+      checkout.status === 'CHECKOUT_SUBMITTING';
+
+    if (shouldRefreshFromDeliverect) {
+      const resolvedTenant = resolveTenant(req);
+      const adapter = await getDeliverectAdapterAsync(resolvedTenant);
+      if (adapter.getCheckout) {
+        try {
+          const upstream = await adapter.getCheckout(checkoutId);
+          if (upstream) {
+            checkout = upstream;
+            await FirestorePlatformService.saveCheckoutProjection(upstream);
+            if (upstream.order) {
+              await FirestorePlatformService.saveOrderProjection(
+                upstream.order,
+                resolvedTenant,
+                checkoutId
+              );
+            }
+          }
+        } catch (error) {
+          if (!checkout) throw error;
+          console.warn('[Checkout Status Poll] Upstream refresh failed:', error);
+        }
+      }
+    }
+
+    if (!checkout) {
+      return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
+    }
+
+    // CHECK-03: Webhook recovery check
+    if (checkout.orderId && (checkout.status === 'CHECKOUT_PENDING_CONFIRMATION' || checkout.status === 'CHECKOUT_SUBMITTING')) {
+      const orderProj = await FirestorePlatformService.getOrderProjection(checkout.orderId);
+      if (orderProj && orderProj.status !== 'CHECKOUT_PENDING_CONFIRMATION' && orderProj.status !== 'SUBMITTED') {
+        checkout = (await FirestorePlatformService.updateCheckoutStatus(
+          checkoutId,
+          orderProj.status as any,
+          { orderId: checkout.orderId }
+        )) || checkout;
+      }
+    }
+
+    let mappedStatus = 'PENDING_CONFIRMATION';
+    const rawStatus = String(checkout.status);
+    if (rawStatus === 'ORDER_CONFIRMED' || rawStatus === 'CONFIRMED' || rawStatus === 'STORE_ACCEPTED') {
+      mappedStatus = 'CONFIRMED';
+    } else if (rawStatus === 'FAILED' || rawStatus === 'CANCELLED' || rawStatus === 'ORDER_FAILED') {
+      mappedStatus = 'FAILED';
+    }
+
+    res.json({
+      checkoutId: checkout.checkoutId,
+      status: mappedStatus,
+      orderId: checkout.orderId,
+      failureReason: checkout.failureReason,
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve checkout status');
   }
 });
 
@@ -1695,7 +1785,7 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
     let tenantId: string | undefined;
 
     // Resolve tenant authoritatively through stored order projection
-    const orderProj = await FirestorePlatformService.getOrderProjection(orderId);
+    const orderProj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
     if (orderProj?.tenantId) {
       tenantId = orderProj.tenantId;
     } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
@@ -1722,16 +1812,8 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
       });
     }
 
-    const result = await SubstitutionCallbackService.getSubstitutionForPlu(orderId, plu, tenantId);
-
-    if (!result) {
-      return res.status(404).json({
-        error: `Item with PLU '${plu}' or order '${orderId}' not found.`,
-        code: 'ITEM_NOT_FOUND',
-      });
-    }
-
-    res.json(result);
+    const candidates = await SubstitutionCallbackService.getQuestSubstituteCandidates(orderId, plu, tenantId);
+    res.status(200).json(candidates);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to resolve substitution callback');
   }

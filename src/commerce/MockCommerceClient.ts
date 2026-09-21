@@ -762,7 +762,9 @@ export class MockCommerceClient implements CommerceClient {
 
     let basket = activeBaskets.get(basketId);
     if (!basket) {
-      basket = await this.createBasket(MOCK_STORES[0].id);
+      const storeIdMatch = basketId?.match(/^basket_([^_]+)_/);
+      const targetStoreId = storeIdMatch ? storeIdMatch[1] : MOCK_STORES[0].id;
+      basket = await this.createBasket(targetStoreId);
     }
 
     const clampedQuantity = Math.max(1, quantity);
@@ -866,6 +868,11 @@ export class MockCommerceClient implements CommerceClient {
     const reconciledItems: BasketItem[] = [];
 
     for (const item of currentBasket.items) {
+      if (item.isCombo) {
+        reconciledItems.push(item);
+        availableUnchanged.push({ plu: item.plu, name: item.name, quantity: item.quantity, price: item.price });
+        continue;
+      }
       const rawProduct = this.currentProducts.find((p) => p.plu === item.plu);
       if (!rawProduct || rawProduct.active === false) {
         unavailableItems.push({ plu: item.plu, name: item.name, reason: 'Not carried in this store' });
@@ -985,6 +992,10 @@ export class MockCommerceClient implements CommerceClient {
     const reconciledItems: BasketItem[] = [];
 
     for (const item of basket.items) {
+      if (item.isCombo) {
+        reconciledItems.push(item);
+        continue;
+      }
       const rawProduct = this.currentProducts.find((p) => p.plu === item.plu);
       if (!rawProduct || rawProduct.active === false) {
         changes.push({
@@ -1949,7 +1960,7 @@ export class MockCommerceClient implements CommerceClient {
       dispatchValidationId?: string;
       dispatchValidationExpiresAt?: string;
     } = {}
-  ): Promise<Order> {
+  ): Promise<any> {
     await this.simulateLatency(200);
     const basket = activeBaskets.get(basketId);
     if (!basket || basket.items.length === 0) {

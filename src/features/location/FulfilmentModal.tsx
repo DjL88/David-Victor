@@ -1,7 +1,7 @@
 import React from 'react';
 import { Address, EligibleStore } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
-import { Truck, Package, MapPin, ChevronRight, X, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Truck, ShoppingBag, MapPin, ChevronRight, X, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface FulfilmentModalProps {
   isOpen: boolean;
@@ -125,7 +125,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
           >
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                <Package className="w-5 h-5" />
+                <ShoppingBag className="w-5 h-5" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">

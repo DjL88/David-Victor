@@ -92,6 +92,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     selectStore,
   } = useLocationAndStores();
 
+  const isSelectingLocationOrProduct =
+    isLocationModalOpen ||
+    isStorePickerOpen ||
+    isFulfilmentModalOpen ||
+    selectedProduct !== null ||
+    pendingStoreProductAdd !== null ||
+    storePickerTargetProduct !== null ||
+    entryStage === 'LOCATION' ||
+    entryStage === 'FULFILMENT' ||
+    entryStage === 'STORE_SELECTION';
+
   // Stories hook (filters stories based on selected store or nearby eligible stores)
   const {
     stories,
@@ -101,7 +112,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     closeStory,
     nextStory,
     prevStory,
-  } = useStories(selectedStore?.id);
+  } = useStories(selectedStore?.id, !isSelectingLocationOrProduct);
 
   // Auto-prompt location picker when initial splash completes and customer has no location yet (guarded by location_prompted and location_prompt_dismissed)
   React.useEffect(() => {
@@ -135,8 +146,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     }
   }, [tenant?.tenantId]);
 
-  // Auto-launch Story index 0 exactly once upon reaching READY state
+  // Auto-launch Story index 0 on initial app load ONLY if not in location selection or product flows
   React.useEffect(() => {
+    if (isSelectingLocationOrProduct) {
+      sessionStorage.setItem('__retail_entry_story_shown', 'true');
+      return;
+    }
+
     if (entryStage === 'READY' && stories.length > 0) {
       const alreadyLaunched = sessionStorage.getItem('__retail_entry_story_shown');
       if (!alreadyLaunched) {
@@ -152,7 +168,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         });
       }
     }
-  }, [entryStage, stories, openStory]);
+  }, [
+    entryStage,
+    stories,
+    openStory,
+    isSelectingLocationOrProduct,
+  ]);
 
   // Catalog hook (root vs store, arbitrary nested categories)
   const {
@@ -195,7 +216,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     storeSwitchDiff,
     clearStoreSwitchDiff,
     addBundleToBasket,
-  } = useBasket(selectedStore);
+  } = useBasket(selectedStore, fulfillmentType);
 
   React.useEffect(() => {
     if (!pendingStoreProductAdd || selectedStore?.id !== pendingStoreProductAdd.storeId) return;
@@ -494,7 +515,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         bundle={activeBundleForModal}
         isOpen={activeBundleForModal !== null}
         onClose={() => setActiveBundleForModal(null)}
+        selectedStoreName={selectedStore?.name}
         onAddBundleToBasket={async (bundle, selectedModifiers, quantity) => {
+          if (!selectedStore) {
+            setActiveBundleForModal(null);
+            setIsStorePickerOpen(true);
+            return;
+          }
           await addBundleToBasket(bundle, selectedModifiers, quantity);
           setActiveBundleForModal(null);
           setDealToastMessage(`Added "${bundle.name}" meal combo to your basket!`);
@@ -568,6 +595,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           setIsLocationModalOpen(false);
         }}
         onSelectAddress={async (q) => {
+          sessionStorage.setItem('__retail_entry_story_shown', 'true');
           await resolveAndSetLocation(q);
         }}
         loading={storesLoading}
@@ -592,7 +620,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         selectedStore={selectedStore}
         userCoordinates={coordinates}
         userAddress={currentAddress}
-        onSelectStore={selectStore}
+        onSelectStore={(store) => {
+          sessionStorage.setItem('__retail_entry_story_shown', 'true');
+          selectStore(store);
+        }}
         onClose={() => {
           setIsStorePickerOpen(false);
           setStorePickerTargetProduct(null);

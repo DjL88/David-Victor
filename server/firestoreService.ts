@@ -7,6 +7,7 @@ import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
 import { BFFError } from './errors';
+import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
 
 export enum OperationType {
   CREATE = 'create',
@@ -89,6 +90,12 @@ export interface OrderProjection {
   destinationArea?: string; // Masked postcode area (e.g., 'CM1' or 'SW1'), NO private street address
   estimatedDeliveryTime?: string;
   checkoutId?: string;
+  basketId?: string;
+  channelOrderId?: string;
+  channelOrderDisplayId?: string;
+  channelOrderRawId?: string;
+  deliverectAccountId?: string;
+  deliverectLocationId?: string;
   orderReference?: string;
   channelOrderReference?: string;
   picking?: PickingState;
@@ -1536,7 +1543,8 @@ export class FirestoreService {
   /**
    * Saves a GDPR-safe order projection in Firestore for customer status tracking.
    */
-  static async saveOrderProjection(order: Order | any, tenantId: string = 'brand-alpha', checkoutId?: string): Promise<OrderProjection> {
+  static async saveOrderProjection(rawOrderInput: Order | any, tenantId: string = 'brand-alpha', checkoutId?: string): Promise<OrderProjection> {
+    const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
     const fullAddress = order.fulfillment?.address?.formattedAddress || '';
     const postcodeMatch = fullAddress.match(/[A-Z]{1,2}[0-9][A-Z0-9]?/i);
@@ -1551,10 +1559,21 @@ export class FirestoreService {
         itemsPicked: 0,
         hasChanges: false,
         items: order.originalBasket.items.map((item, idx) => {
+          // Deliverect sends integer MINOR UNITS. VIC1011 price 210 = £2.10;
+          // DLV1016 price 1615 x qty 3 = payment.amount 4845. Multiplying by
+          // 100 here previously turned £2.10 into £210.00.
           const rawPrice = item.price;
-          const priceObj = typeof rawPrice === 'object' && rawPrice !== null && 'amount' in rawPrice
-            ? rawPrice
-            : { amount: Math.round(Number(rawPrice || 0) * 100), currency };
+          let priceObj: { amount: number; currency: string };
+          if (typeof rawPrice === 'object' && rawPrice !== null && 'amount' in rawPrice) {
+            priceObj = rawPrice as { amount: number; currency: string };
+          } else if (Number.isInteger(rawPrice)) {
+            priceObj = { amount: rawPrice as unknown as number, currency };
+          } else {
+            throw new Error(
+              `Order projection money mapping failed for plu "${item.plu}": expected integer minor units ` +
+                `or a Money object, received ${JSON.stringify(rawPrice)}. Refusing to guess a currency scale.`
+            );
+          }
 
           return {
             id: item.id || `item_${item.plu || idx}`,
@@ -1573,6 +1592,24 @@ export class FirestoreService {
       };
     }
 
+    const basketId =
+      (order as any).basketId ||
+      (order as any).basket?.id ||
+      (order as any).originalBasket?.id ||
+      (checkoutId ? inMemoryCheckouts[checkoutId]?.basketId : undefined);
+    const channelOrderId =
+      (order as any).channelOrderId ||
+      (order as any).channelOrderReference ||
+      order.orderReference ||
+      (order as any).displayId ||
+      (order as any).channelOrderDisplayId;
+    const channelOrderDisplayId =
+      (order as any).channelOrderDisplayId || (order as any).displayId || order.orderReference;
+    const channelOrderRawId =
+      (order as any).channelOrderRawId || (order as any).rawId || (order as any).externalId || (order as any)._id;
+    const deliverectAccountId = (order as any).deliverectAccountId || (order as any).accountId || (order as any).account;
+    const deliverectLocationId = (order as any).deliverectLocationId || (order as any).locationId || (order as any).location;
+
     const projection: OrderProjection = {
       orderId: resolvedOrderId,
       tenantId,
@@ -1583,8 +1620,14 @@ export class FirestoreService {
       destinationArea,
       estimatedDeliveryTime: order.delivery?.deliveryOption?.deliveryEta || '',
       checkoutId,
+      basketId,
+      channelOrderId,
+      channelOrderDisplayId,
+      channelOrderRawId,
+      deliverectAccountId,
+      deliverectLocationId,
       orderReference: order.orderReference || (order as any).displayId,
-      channelOrderReference: order.orderReference,
+      channelOrderReference: order.orderReference || channelOrderId,
       picking,
       paymentState: order.payment?.state || (order as any).paymentState,
       paymentId: order.payment?.paymentId || (order as any).paymentId || (checkoutId ? inMemoryCheckouts[checkoutId]?.paymentId : undefined),
@@ -1917,6 +1960,52 @@ export class FirestoreService {
     } catch (err) {
       console.warn('[Firestore Admin] Could not query order by checkoutId:', err);
     }
+    return null;
+  }
+
+  /**
+   * Universal resolver for finding an order projection by any external or internal correlation identifier.
+   */
+  static async getOrderProjectionByExternalIdentifier(value: string): Promise<OrderProjection | null> {
+    if (!value) return null;
+
+    const direct = await this.getOrderProjection(value);
+    if (direct) return direct;
+
+    const byCheckout = await this.getOrderProjectionByCheckoutId(value);
+    if (byCheckout) return byCheckout;
+
+    const byReference = await this.getOrderProjectionByReference(value);
+    if (byReference) return byReference;
+
+    for (const p of Object.values(inMemoryOrderProjections)) {
+      if (
+        p.basketId === value ||
+        p.channelOrderId === value ||
+        p.channelOrderDisplayId === value ||
+        p.channelOrderRawId === value
+      ) {
+        return p;
+      }
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return null;
+
+    const fields = ['basketId', 'channelOrderId', 'channelOrderDisplayId', 'channelOrderRawId'];
+    for (const field of fields) {
+      try {
+        const snap = await db.collection('orderProjections').where(field, '==', value).limit(1).get();
+        if (!snap.empty) {
+          const data = snap.docs[0].data() as OrderProjection;
+          inMemoryOrderProjections[data.orderId] = data;
+          return data;
+        }
+      } catch (err) {
+        console.warn(`[Firestore Admin] Could not query order by ${field}:`, err);
+      }
+    }
+
     return null;
   }
 

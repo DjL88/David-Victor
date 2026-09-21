@@ -128,6 +128,11 @@ export class OAuthTokenManager {
    * Retrieves a valid bearer token, reusing the cached token if valid.
    * Prevents token stampede by sharing a single in-flight promise.
    */
+  async getAuthorizationHeader(): Promise<string> {
+    const token = await this.getAccessToken();
+    return `Bearer ${token}`;
+  }
+
   async getAccessToken(): Promise<string> {
     if (!this.clientId) {
       this.clientId = (await SecretManager.getSecret('DELIVERECT_CLIENT_ID')) || '';

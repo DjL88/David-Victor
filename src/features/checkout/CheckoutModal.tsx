@@ -4,6 +4,7 @@ import {
   Store,
   Address,
   Order,
+  Money,
   OrderTrackingStatus,
   CheckoutStatus,
   DeliverySlot,
@@ -255,7 +256,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Revalidate Delivery function
   const handleRevalidateDelivery = useCallback(async () => {
-    if (!basket || basket.fulfillmentType === 'pickup' || basket.fulfillmentType === 'collection') return;
+    if (!basket || basket.fulfillmentType === 'pickup' || (basket.fulfillmentType as string) === 'collection') return;
     setIsRevalidating(true);
     setRevalidationError(null);
     setAlternativeStores([]);
@@ -305,7 +306,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!basket) return;
 
-    const isCollection = basket.fulfillmentType === 'pickup' || basket.fulfillmentType === 'collection';
+    const isCollection = basket.fulfillmentType === 'pickup' || (basket.fulfillmentType as string) === 'collection';
 
     // Authoritative check before payment pre-authorisation: never silently assume availability for delivery
     if (!isCollection) {
@@ -348,22 +349,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setRevalidationError(null);
 
     try {
-      const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(basket.storeId);
-      const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
-      const { authorizationMaximum } = calculateAuthorizationMaximum(
-        basket.total,
-        true,
-        policyBuffer,
-        basket.currency,
-        preChosenBufferInfo.extraBufferAmount
-      );
-      const token = await defaultPaymentClient.createToken({
-        type: 'CARD',
-        cardholderName: 'Valued Customer',
-        last4: '4242',
-      });
-      const order = await defaultCommerceClient.checkoutBasket(basket.id, {
-        paymentTokenRef: token.token,
+      let paymentTokenRef: string | undefined;
+      let authorizationMaximum: Money | undefined;
+
+      if (!isCollection) {
+        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(basket.storeId);
+        const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
+        const calcMax = calculateAuthorizationMaximum(
+          basket.total,
+          true,
+          policyBuffer,
+          basket.currency,
+          preChosenBufferInfo.extraBufferAmount
+        );
+        authorizationMaximum = calcMax.authorizationMaximum;
+        const token = await defaultPaymentClient.createToken({
+          type: 'CARD',
+          cardholderName: 'Valued Customer',
+          last4: '4242',
+        });
+        paymentTokenRef = token.token;
+      }
+
+      const result = await defaultCommerceClient.checkoutBasket(basket.id, {
+        paymentTokenRef,
         authorizationMaximum,
         schedulingType,
         slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
@@ -372,20 +381,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         dispatchValidationId: isCollection ? undefined : basket.dispatchValidationId,
         dispatchValidationExpiresAt: isCollection ? undefined : basket.dispatchValidationExpiresAt,
       });
-      setConfirmedOrder(order);
-      defaultAnalyticsClient.track({
-        type: AnalyticsEventType.ORDER_SUBMITTED,
-        storeId: store?.id,
-        orderReferenceHash: order.orderReference || order.id,
-        properties: {
-          totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
-          currency: order.pricing?.total?.currency || 'GBP',
-          itemCount: order.items?.length || 0,
-          fulfillmentType: order.fulfillmentType || 'DELIVERY',
-        },
-      });
-      onOrderSuccess(order.id);
-      setPhase('tracking');
+
+      const checkoutId = (result as any)?.checkoutId || (result as any)?.id;
+      if ((result as any)?.status === 'ORDER_CONFIRMED' || ((result as any)?.id && !(result as any)?.checkoutId)) {
+        const order = result as any;
+        setConfirmedOrder(order);
+        defaultAnalyticsClient.track({
+          type: AnalyticsEventType.ORDER_SUBMITTED,
+          storeId: store?.id,
+          orderReferenceHash: order.orderReference || order.id,
+          properties: {
+            totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
+            currency: order.pricing?.total?.currency || 'GBP',
+            itemCount: order.items?.length || 0,
+            fulfillmentType: order.fulfillmentType || 'DELIVERY',
+          },
+        });
+        onOrderSuccess(order.id);
+        setPhase('tracking');
+      } else if (checkoutId) {
+        setSessionId(checkoutId);
+        setPhase('polling_status');
+        setStatusMessage('Placing order with store & dispatching courier...');
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await defaultCommerceClient.getCheckoutStatus(checkoutId);
+            setCheckoutStatus(statusRes.status);
+            if (statusRes.status === 'order_confirmed') {
+              clearInterval(pollInterval);
+              setStatusMessage('Order confirmed!');
+              if (statusRes.orderId) {
+                const order = await defaultCommerceClient.getOrder(statusRes.orderId);
+                setConfirmedOrder(order);
+                onOrderSuccess(statusRes.orderId);
+              }
+              setPhase('tracking');
+            } else if (statusRes.status === 'order_failed') {
+              clearInterval(pollInterval);
+              setFailureReason(statusRes.failureReason || 'Order placement failed');
+              setPhase('order_failed');
+            }
+          } catch (err: any) {
+            clearInterval(pollInterval);
+            setFailureReason(err.message || 'Error checking order status');
+            setPhase('order_failed');
+          }
+        }, 1500);
+      }
     } catch (err: any) {
       setRevalidationError(err.message || 'Payment authorization failed');
     } finally {
@@ -816,7 +859,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Delivery address & store card */}
             <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100 space-y-2.5 text-xs">
-              {basket?.fulfillmentType !== 'pickup' && basket?.fulfillmentType !== 'collection' ? (
+              {basket?.fulfillmentType !== 'pickup' && (basket?.fulfillmentType as string) !== 'collection' ? (
                 <div className="flex items-start gap-2.5">
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
@@ -846,7 +889,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="flex-1 min-w-0">
                   <span className="font-bold text-gray-900 block">Fulfilling Store</span>
                   <span className="text-gray-600 block">
-                    {store?.name} {basket?.fulfillmentType !== 'pickup' && basket?.fulfillmentType !== 'collection' && store?.deliveryEta ? `• ETA ${store.deliveryEta}` : ''}
+                    {store?.name} {basket?.fulfillmentType !== 'pickup' && (basket?.fulfillmentType as string) !== 'collection' && store?.deliveryEta ? `• ETA ${store.deliveryEta}` : ''}
                   </span>
                 </div>
               </div>

@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Package,
+  ShoppingBag,
   Truck,
   CreditCard,
   ArrowRight,
@@ -272,7 +273,11 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
         {/* Fulfillment & Scheduling Summary */}
         <div className="flex flex-wrap items-center justify-between p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs gap-3">
           <div className="flex items-center gap-2">
-            <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+            {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? (
+              <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
             <div>
               <span className="font-bold text-gray-900">
                 {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? 'Courier Delivery' : 'Store Collection'}

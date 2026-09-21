@@ -5,6 +5,13 @@ import { getDeliverectAdapter } from './index';
 import { Money } from '../../src/domain/models';
 import { isDemoMode } from '../runtimeMode';
 
+export interface QuestSubstituteItem {
+  plu: string;
+  quantity: number;
+  name: string;
+  price: number;
+}
+
 export interface SubstitutionCallbackResponse {
   orderId: string;
   plu: string;
@@ -102,13 +109,13 @@ export class SubstitutionCallbackService {
     plu: string,
     tenantId: string = 'brand-alpha'
   ): Promise<SubstitutionCallbackResponse | null> {
-    // 1. Fetch from Firestore order projection
-    let orderProj = await FirestorePlatformService.getOrderProjection(orderId);
+    // 1. Fetch from Firestore order projection via universal correlation identifier lookup
+    let orderProj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
     if (!orderProj) {
       // Try by checkout ID or channel order reference
       const checkouts = await FirestorePlatformService.getCheckoutByReference(orderId);
       if (checkouts?.orderId) {
-        orderProj = await FirestorePlatformService.getOrderProjection(checkouts.orderId);
+        orderProj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(checkouts.orderId);
       }
     }
 
@@ -166,7 +173,29 @@ export class SubstitutionCallbackService {
 
     // 4. Build response according to platform rules
     switch (pref) {
-      case 'BEST_MATCH':
+      case 'BEST_MATCH': {
+        const bestMatchCandidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
+        const rawBestMatchCandidates =
+          (pickingItem as any).substituteCandidates ||
+          (pickingItem as any).candidates ||
+          [];
+        for (const c of rawBestMatchCandidates) {
+          bestMatchCandidates.push({
+            plu: c.plu,
+            name: c.name,
+            approvedPrice:
+              typeof c.price === 'number'
+                ? { amount: c.price, currency: 'GBP' }
+                : c.approvedPrice || (typeof c.price === 'object' ? c.price : undefined),
+          });
+        }
+        if (bestMatchCandidates.length === 0 && pickingItem.preferredSubstitutePlu) {
+          bestMatchCandidates.push({
+            plu: pickingItem.preferredSubstitutePlu,
+            name: pickingItem.preferredSubstituteName,
+            approvedPrice: originalPrice,
+          });
+        }
         return {
           orderId,
           plu,
@@ -176,9 +205,11 @@ export class SubstitutionCallbackService {
           pricePolicy: 'LOWER_OF_ORIGINAL_OR_SUBSTITUTE',
           originalPrice: originalPrice || { amount: 0, currency: 'GBP' },
           allowPriceIncrease: false,
+          candidates: bestMatchCandidates.length > 0 ? bestMatchCandidates : undefined,
           instructions:
             'Select best matching alternative. Customer pays lower of original or substitute price (Best-Match Price Guarantee).',
         };
+      }
 
       case 'CUSTOMER_SELECTED': {
         const candidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
@@ -253,5 +284,39 @@ export class SubstitutionCallbackService {
           instructions: 'Select best matching alternative.',
         };
     }
+  }
+
+  static async getQuestSubstituteCandidates(
+    orderId: string,
+    plu: string,
+    tenantId: string = 'brand-alpha'
+  ): Promise<QuestSubstituteItem[]> {
+    const policy = await this.getSubstitutionForPlu(orderId, plu, tenantId);
+    if (!policy) return [];
+
+    const candidates = Array.isArray((policy as any)?.candidates)
+      ? (policy as any).candidates
+      : [];
+
+    return candidates
+      .map((candidate: any) => {
+        const amount =
+          candidate?.price?.amount ??
+          candidate?.approvedPrice?.amount ??
+          candidate?.priceMinor;
+
+        if (!candidate?.plu || !Number.isInteger(amount)) return null;
+
+        return {
+          plu: String(candidate.plu),
+          quantity:
+            Number.isInteger(candidate.quantity) && candidate.quantity > 0
+              ? candidate.quantity
+              : 1,
+          name: String(candidate.name || candidate.plu),
+          price: amount,
+        } satisfies QuestSubstituteItem;
+      })
+      .filter(Boolean) as QuestSubstituteItem[];
   }
 }

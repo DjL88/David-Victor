@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Basket, Store, Product, SubstitutionPreferenceType, Money, moneyFromMajor } from '../commerce/models';
-import { BundleProduct, SelectedBundleModifier } from '../commerce/bundleModels';
+import { Basket, Store, Product, SubstitutionPreferenceType, Money, moneyFromMajor, toMoney } from '../commerce/models';
+import { BundleProduct, SelectedBundleModifier, calculateBundlePrice } from '../commerce/bundleModels';
 import { useTenant } from '../tenant/TenantContext';
 import { defaultAnalyticsClient } from '../analytics';
 import {
@@ -9,8 +9,12 @@ import {
   BasketSnoozeAuditResult,
 } from '../services/snoozeCheckService';
 
-export function useBasket(selectedStore: Store | null) {
-  const { client } = useTenant();
+export function useBasket(
+  selectedStore: Store | null,
+  fulfillmentType: 'delivery' | 'pickup' = 'pickup'
+) {
+  const { client, tenant } = useTenant();
+  const tenantId = tenant?.tenantId || 'brand-alpha';
 
   // Authoritative single-store basket state
   const [basket, setBasket] = useState<Basket | null>(null);
@@ -25,7 +29,7 @@ export function useBasket(selectedStore: Store | null) {
   } | null>(null);
 
   const activeStoreId = selectedStore?.id ?? '';
-  const basketStorageKey = activeStoreId ? `bwydi:basket:${activeStoreId}` : '';
+  const basketStorageKey = `bwydi:basket:${tenantId}`;
 
   const rememberBasket = useCallback((nextBasket: Basket | null) => {
     setBasket(nextBasket);
@@ -88,13 +92,12 @@ export function useBasket(selectedStore: Store | null) {
             if (switchResult.basket) rememberBasket(switchResult.basket);
             if (switchResult.storeSwitchDiff) setStoreSwitchDiff(switchResult.storeSwitchDiff);
           }
-        } else if (!currentBasket || currentBasket.storeId !== selectedStore.id) {
-          const newBasket = await client.createBasket(selectedStore.id);
-          if (isMounted && newBasket) {
-            rememberBasket(newBasket);
+        } else if (currentBasket && currentBasket.storeId === selectedStore.id) {
+          if (isMounted) {
+            rememberBasket(currentBasket);
           }
         } else if (isMounted) {
-          rememberBasket(currentBasket);
+          setBasket(null);
         }
       } catch (err) {
         console.error('Failed to sync basket with store:', err);
@@ -108,7 +111,7 @@ export function useBasket(selectedStore: Store | null) {
     return () => {
       isMounted = false;
     };
-  }, [selectedStore?.id, client, basketStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStore?.id, client, basketStorageKey, fulfillmentType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateQuantity = useCallback(
     async (product: Product, newQuantity: number, _targetStoreId?: string) => {
@@ -120,7 +123,7 @@ export function useBasket(selectedStore: Store | null) {
           if (!activeStoreId) {
             throw new Error('A store must be selected before creating a basket.');
           }
-          currentBasket = await client.createBasket(activeStoreId);
+          currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
         const previousQty =
@@ -191,7 +194,7 @@ export function useBasket(selectedStore: Store | null) {
 
         let currentBasket = basket;
         if (!currentBasket) {
-          currentBasket = await client.createBasket(activeStoreId);
+          currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
         let updatedBasket = currentBasket;
@@ -331,7 +334,7 @@ export function useBasket(selectedStore: Store | null) {
           if (!activeStoreId) {
             throw new Error('A store must be selected before creating a basket.');
           }
-          currentBasket = await client.createBasket(activeStoreId);
+          currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
         }
 
         if (client.addBundleToBasket) {
@@ -341,7 +344,46 @@ export function useBasket(selectedStore: Store | null) {
             selectedModifiers,
             quantity
           );
-          setBasket(updated);
+          rememberBasket(updated);
+
+          defaultAnalyticsClient.track({
+            type: 'ADD_TO_BASKET',
+            productPlu: bundle.plu,
+            storeId: activeStoreId,
+          });
+
+          return updated;
+        } else {
+          const currency = bundle.currency || currentBasket.currency || 'GBP';
+          const computedPrice = calculateBundlePrice(bundle, selectedModifiers);
+          const itemPrice: Money = toMoney(computedPrice.totalPriceMinor, currency);
+
+          const subItems = selectedModifiers.map((mod, idx) => ({
+            id: `${mod.modifierId}_${idx}`,
+            modifierId: mod.modifierId,
+            plu: mod.plu,
+            name: mod.name,
+            price: toMoney(mod.priceMinor || mod.price, currency),
+            priceMinor: mod.priceMinor || mod.price,
+            quantity: mod.quantity,
+            sectionId: mod.sectionId,
+            sectionName: mod.sectionName,
+          }));
+
+          const updated = await client.updateBasketItems(currentBasket.id, [
+            {
+              plu: bundle.plu,
+              name: bundle.name,
+              quantity: Math.max(1, quantity),
+              price: itemPrice,
+              isCombo: true,
+              bundleId: bundle.id,
+              bundlePlu: bundle.plu,
+              bundleName: bundle.name,
+              subItems,
+            } as any,
+          ]);
+          rememberBasket(updated);
 
           defaultAnalyticsClient.track({
             type: 'ADD_TO_BASKET',

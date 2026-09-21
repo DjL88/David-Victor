@@ -1,3 +1,4 @@
+import { CheckoutResult } from '../domain/models';
 import {
   BootstrapResponse,
   Store,
@@ -540,7 +541,7 @@ export interface CommerceClient {
       dispatchValidationId?: string;
       dispatchValidationExpiresAt?: string;
     }
-  ): Promise<Order>;
+  ): Promise<CheckoutResult>;
 
   /**
    * Retrieves checkout / order state by checkout or order reference.

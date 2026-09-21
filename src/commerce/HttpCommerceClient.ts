@@ -11,6 +11,7 @@
  * - Single-store basket semantics enforced.
  */
 
+import { CheckoutResult } from '../domain/models';
 import {
   CommerceClient,
   LocationResolutionResult,
@@ -37,10 +38,12 @@ import {
   Order,
   PickingEvent,
   Money,
+  toMoney,
   FulfillmentSchedulingType,
   DemoScenario,
   DispatchAvailability,
 } from './models';
+import { BundleProduct, SelectedBundleModifier, calculateBundlePrice } from './bundleModels';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
@@ -277,6 +280,48 @@ export class HttpCommerceClient implements CommerceClient {
     return this.updateBasketItem(basketId, plu, 0);
   }
 
+  async addBundleToBasket(
+    basketId: string,
+    bundle: BundleProduct,
+    selectedModifiers: SelectedBundleModifier[],
+    quantity: number = 1
+  ): Promise<Basket> {
+    const currency = bundle.currency || 'GBP';
+    const computedPrice = calculateBundlePrice(bundle, selectedModifiers);
+    const itemPrice: Money = toMoney(computedPrice.totalPriceMinor, currency);
+
+    const subItems = selectedModifiers.map((mod, idx) => ({
+      id: `${mod.modifierId}_${idx}`,
+      modifierId: mod.modifierId,
+      plu: mod.plu,
+      name: mod.name,
+      price: toMoney(mod.priceMinor || mod.price, currency),
+      priceMinor: mod.priceMinor || mod.price,
+      quantity: mod.quantity,
+      sectionId: mod.sectionId,
+      sectionName: mod.sectionName,
+    }));
+
+    return this.request<Basket>(`/baskets/${encodeURIComponent(basketId)}/items`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        items: [
+          {
+            plu: bundle.plu,
+            name: bundle.name,
+            quantity: Math.max(1, quantity),
+            price: itemPrice,
+            isCombo: true,
+            bundleId: bundle.id,
+            bundlePlu: bundle.plu,
+            bundleName: bundle.name,
+            subItems,
+          },
+        ],
+      }),
+    });
+  }
+
   async selectStore(storeId: string, existingBasketId?: string): Promise<{
     store: Store;
     basket?: Basket;
@@ -295,23 +340,17 @@ export class HttpCommerceClient implements CommerceClient {
     let basket: Basket | undefined;
     if (existingBasketId) {
       try {
-        const reconciled = await this.reconcileBasket(existingBasketId, storeId);
-        basket = reconciled.basket;
+        const switchRes = await this.updateBasketStore(existingBasketId, storeId, { confirmMigration: true });
         return {
           store,
-          basket,
-          storeSwitchDiff: {
-            availableUnchanged: [],
-            priceChanges: reconciled.changes.filter((c) => c.type === 'PRICE_CHANGED').map((c) => ({ plu: c.plu, name: c.name, oldPrice: c.oldPrice!, newPrice: c.newPrice! })),
-            unavailableItems: reconciled.changes.filter((c) => c.type === 'OUT_OF_STOCK').map((c) => ({ plu: c.plu, name: c.name, reason: c.message })),
-            quantityAdjusted: reconciled.changes.filter((c) => c.type === 'QUANTITY_ADJUSTED').map((c) => ({ plu: c.plu, name: c.name, requested: c.oldQuantity || 0, adjustedTo: c.newQuantity || 0, reason: c.message })),
-          },
+          basket: switchRes.basket,
+          storeSwitchDiff: switchRes.storeSwitchDiff,
         };
       } catch (error: any) {
-        throw new Error(error?.message || 'The basket could not be reconciled with the selected store. Please retry.');
+        throw new Error(error?.message || 'The basket could not be migrated to the selected store. Please retry.');
       }
     } else {
-      basket = await this.createBasket(storeId, 'delivery');
+      basket = undefined;
     }
 
     return {
@@ -594,7 +633,7 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getCheckoutStatus(
-    _sessionId: string
+    checkoutId: string
   ): Promise<{
     status:
       | 'preparing_payment'
@@ -605,7 +644,23 @@ export class HttpCommerceClient implements CommerceClient {
     orderId?: string;
     failureReason?: string;
   }> {
-    return { status: 'order_confirmed' };
+    const response = await this.request<{
+      status: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED' | 'UNKNOWN';
+      orderId?: string;
+      failureReason?: string;
+    }>(`/checkouts/${encodeURIComponent(checkoutId)}/status`, { method: 'GET' });
+
+    switch (response.status) {
+      case 'CONFIRMED':
+        return { status: 'order_confirmed', orderId: response.orderId };
+      case 'FAILED':
+      case 'CANCELLED':
+        return { status: 'order_failed', failureReason: response.failureReason };
+      default:
+        // PENDING_CONFIRMATION and UNKNOWN both mean "not yet confirmed".
+        // Never map an unrecognised state to success.
+        return { status: 'placing_order' };
+    }
   }
 
   async getOrder(orderId: string): Promise<Order | null> {
@@ -709,8 +764,8 @@ export class HttpCommerceClient implements CommerceClient {
       dispatchValidationId?: string;
       dispatchValidationExpiresAt?: string;
     }
-  ): Promise<Order> {
-    return this.request<Order>('/checkouts', {
+  ): Promise<CheckoutResult> {
+    return this.request<CheckoutResult>('/checkouts', {
       method: 'POST',
       body: JSON.stringify({
         basketId,

@@ -13,6 +13,9 @@ import { MediaHealth, MediaHealthSummary } from './mediaHealthModels';
 import { TenantDispatchRules } from '../rules/types';
 
 export interface AdminClient {
+  /** Configures client base API URL */
+  setBaseUrl?(baseUrl: string): void;
+
   /**
    * Returns current authenticated admin user and their tenant context.
    * Server-controlled: tenantId is determined by server authentication.

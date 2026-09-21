@@ -88,17 +88,58 @@ export const AislesModal: React.FC<AislesModalProps> = ({
   }, [visibleCategories, rootCategories, searchQuery]);
 
   const categoryFallbackImages = useMemo(() => {
+    if (!isOpen) return new Map<string, string>();
     const result = new Map<string, string>();
-    const collectIds = (category: Category): string[] => [category.id, ...(category.subcategories || []).flatMap(collectIds)];
+    const collectIds = (category: Category): string[] => [
+      category.id,
+      ...(category.subcategories || []).flatMap(collectIds),
+    ];
     const visit = (category: Category) => {
-      const ids = new Set(collectIds(category));
-      const product = products.find((candidate) => candidate.active !== false && candidate.stockStatus !== 'OUT_OF_STOCK' && Boolean(candidate.imageUrl) && (candidate.categoryIds || []).some((id) => ids.has(id)));
+      const ids = new Set(collectIds(category).map((id) => id.toLowerCase()));
+      const product = products.find(
+        (candidate) =>
+          candidate.active !== false &&
+          Boolean(candidate.imageUrl) &&
+          (candidate.categoryIds || []).some((id) => ids.has(id.toLowerCase()))
+      );
       if (product?.imageUrl) result.set(category.id, product.imageUrl);
       (category.subcategories || []).forEach(visit);
     };
-    categories.forEach(visit);
+    rootCategories.forEach(visit);
     return result;
-  }, [categories, products]);
+  }, [isOpen, rootCategories, products]);
+
+  const categoryItemCounts = useMemo(() => {
+    if (!isOpen) return new Map<string, number>();
+    const counts = new Map<string, number>();
+
+    // Pre-group active product counts by category ID for fast O(P + C) lookups
+    const productCountByCatId = new Map<string, number>();
+    for (const p of products) {
+      if (p.active === false) continue;
+      for (const cid of p.categoryIds || []) {
+        const lower = cid.toLowerCase();
+        productCountByCatId.set(lower, (productCountByCatId.get(lower) || 0) + 1);
+      }
+    }
+
+    const collectIds = (category: Category): string[] => [
+      category.id,
+      ...(category.subcategories || []).flatMap(collectIds),
+    ];
+    const visit = (category: Category) => {
+      const ids = new Set(collectIds(category).map((id) => id.toLowerCase()));
+      let total = 0;
+      // Sum counts for unique category IDs in this sub-tree
+      for (const id of ids) {
+        total += productCountByCatId.get(id) || 0;
+      }
+      counts.set(category.id, total);
+      (category.subcategories || []).forEach(visit);
+    };
+    rootCategories.forEach(visit);
+    return counts;
+  }, [isOpen, rootCategories, products]);
 
   if (!isOpen) return null;
 
@@ -115,11 +156,11 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     >
       <div
         id="aisles-directory-dialog-container"
-        className="bg-white w-full max-w-2xl max-h-[85vh] sm:max-h-[82vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-250 border border-gray-100"
+        className="bg-white w-full max-w-2xl h-[580px] max-h-[85vh] sm:max-h-[82vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-gray-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Search */}
-        <div className="p-4 sm:p-5 border-b border-gray-100 bg-white sticky top-0 z-10">
+        <div className="p-4 sm:p-5 border-b border-gray-100 bg-white shrink-0">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
@@ -146,7 +187,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
             </button>
           </div>
 
-          {/* Search Input within Aisles Modal */}
+          {/* Search Input within Aisles Modal (autoFocus removed to prevent keyboard engaging) */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -156,7 +197,6 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search aisles, dairy, bakery, produce..."
               className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
-              autoFocus
             />
             {searchQuery && (
               <button
@@ -175,10 +215,10 @@ export const AislesModal: React.FC<AislesModalProps> = ({
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 no-scrollbar flex-1 bg-gray-50/50">
           {browsePath.length > 0 && (
             <div className="flex gap-2">
-              <button type="button" onClick={() => { setBrowsePath((path) => path.slice(0, -1)); setSearchQuery(''); }} className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 flex items-center gap-1.5">
+              <button type="button" onClick={() => { setBrowsePath((path) => path.slice(0, -1)); setSearchQuery(''); }} className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 flex items-center gap-1.5 cursor-pointer shadow-2xs hover:bg-gray-50">
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </button>
-              <button type="button" onClick={() => handleSelect(browsePath[browsePath.length - 1].id)} className="flex-1 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
+              <button type="button" onClick={() => handleSelect(browsePath[browsePath.length - 1].id)} className="flex-1 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 cursor-pointer hover:bg-emerald-100/80">
                 View all in {browsePath[browsePath.length - 1].name}
               </button>
             </div>
@@ -186,47 +226,47 @@ export const AislesModal: React.FC<AislesModalProps> = ({
 
           {/* Quick "All Aisles" option */}
           {browsePath.length === 0 && (
-          <button
-            type="button"
-            id="aisles-modal-select-all-btn"
-            onClick={() => handleSelect(null)}
-            className={`w-full p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 text-left cursor-pointer shadow-2xs ${
-              selectedCategoryId === null
-                ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20'
-                : 'bg-white hover:bg-gray-50 border-gray-200'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
-                  selectedCategoryId === null
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                <Layers className="w-5 h-5" />
+            <button
+              type="button"
+              id="aisles-modal-select-all-btn"
+              onClick={() => handleSelect(null)}
+              className={`w-full p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 text-left cursor-pointer shadow-2xs ${
+                selectedCategoryId === null
+                  ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20'
+                  : 'bg-white hover:bg-gray-50 border-gray-200'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm ${
+                    selectedCategoryId === null
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-extrabold text-xs sm:text-sm text-gray-950 block">
+                    All Aisles
+                  </span>
+                  <span className="text-[11px] text-gray-500 block">
+                    Browse entire catalog without category filters
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="font-extrabold text-xs sm:text-sm text-gray-950 block">
-                  All Supermarket Aisles
-                </span>
-                <span className="text-[11px] text-gray-500 block">
-                  Browse entire catalog without category filters
-                </span>
-              </div>
-            </div>
 
-            {selectedCategoryId === null ? (
-              <span className="px-2 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center gap-1">
-                <Check className="w-3 h-3" /> Selected
-              </span>
-            ) : (
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-            )}
-          </button>
+              {selectedCategoryId === null ? (
+                <span className="px-2 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Selected
+                </span>
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              )}
+            </button>
           )}
 
-          {/* Filtered Aisles */}
+          {/* Filtered Aisles Grid */}
           {filteredCategories.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-sm font-bold text-gray-700">No aisles matching &quot;{searchQuery}&quot;</p>
@@ -240,79 +280,47 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               </button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {filteredCategories.map((cat) => {
                 const isSelected = selectedCategoryId === cat.id;
                 const hasSubs = cat.subcategories && cat.subcategories.length > 0;
                 const categoryImage = cat.imageUrl || categoryFallbackImages.get(cat.id);
+                const count = categoryItemCounts.get(cat.id) || 0;
 
                 return (
-                  <div
+                  <button
                     key={cat.id}
+                    type="button"
                     id={`aisles-modal-cat-${cat.id}`}
-                    className={`rounded-2xl border transition-all p-3 sm:p-4 bg-white shadow-2xs ${
+                    onClick={() =>
+                      hasSubs
+                        ? (setBrowsePath((path) => [...path, cat]), setSearchQuery(''))
+                        : handleSelect(cat.id)
+                    }
+                    className={`group flex flex-col items-center text-center p-3 rounded-2xl border transition-all bg-white shadow-2xs hover:shadow-md cursor-pointer ${
                       isSelected
-                        ? 'border-emerald-300 ring-2 ring-emerald-500/20'
-                        : 'border-gray-200/90 hover:border-gray-300'
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30'
+                        : 'border-gray-200/90 hover:border-emerald-300'
                     }`}
                   >
-                    {/* Main Category Header Row */}
-                    <div className="flex items-center justify-between gap-3">
-                      <div
-                        onClick={() => hasSubs ? (setBrowsePath((path) => [...path, cat]), setSearchQuery('')) : handleSelect(cat.id)}
-                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
-                      >
-                        {categoryImage ? (
-                          <img
-                            src={categoryImage}
-                            alt={cat.name}
-                            className="w-11 h-11 rounded-xl object-cover border border-gray-100 shadow-2xs shrink-0 group-hover:scale-105 transition-transform"
-                          />
-                        ) : (
-                          <div className="w-11 h-11 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-xs shrink-0">
-                            {cat.name.substring(0, 2).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <span className="font-extrabold text-xs sm:text-sm text-gray-950 block truncate group-hover:text-emerald-700 transition-colors">
-                            {cat.name}
-                          </span>
-                          {cat.description && (
-                            <span className="text-[11px] text-gray-400 block truncate">
-                              {cat.description}
-                            </span>
-                          )}
-                        </div>
+                    {categoryImage ? (
+                      <img
+                        src={categoryImage}
+                        alt={cat.name}
+                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover border border-gray-100 shadow-2xs group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-black text-lg group-hover:scale-105 transition-transform">
+                        {cat.name.substring(0, 2).toUpperCase()}
                       </div>
-
-                      <button
-                        type="button"
-                        id={`aisle-select-btn-${cat.id}`}
-                        onClick={() => hasSubs ? (setBrowsePath((path) => [...path, cat]), setSearchQuery('')) : handleSelect(cat.id)}
-                        style={isSelected ? primaryBtnStyle : undefined}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
-                          isSelected
-                            ? 'shadow-xs'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {hasSubs ? (
-                          <><span>Open</span><ChevronRight className="w-3.5 h-3.5" /></>
-                        ) : isSelected ? (
-                          <>
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Active</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>All</span>
-                            <ArrowRight className="w-3 h-3" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                  </div>
+                    )}
+                    <span className="font-extrabold text-xs sm:text-sm text-gray-900 group-hover:text-emerald-700 transition-colors mt-2 line-clamp-2 leading-tight">
+                      {cat.name}
+                    </span>
+                    <span className="text-[11px] font-medium text-gray-400 mt-0.5">
+                      {count} {count === 1 ? 'item' : 'items'}
+                    </span>
+                  </button>
                 );
               })}
             </div>

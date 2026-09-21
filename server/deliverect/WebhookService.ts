@@ -368,22 +368,20 @@ export class WebhookService {
       ''
     ).toUpperCase();
 
-    const targetOrderId =
+    const targetIdentifier = String(
       payload.orderId ||
       payload.channelOrderId ||
+      payload.channelOrderDisplayId ||
+      payload.channelOrderRawId ||
       payload.orderReference ||
       payload.checkoutId ||
-      payload.channelOrderReference;
+      payload.channelOrderReference ||
+      ''
+    ).trim();
 
-    let targetOrder = targetOrderId ? await FirestorePlatformService.getOrderProjection(targetOrderId) : null;
-
-    if (!targetOrder && payload.checkoutId) {
-      targetOrder = await FirestorePlatformService.getOrderProjectionByCheckoutId(payload.checkoutId);
-    }
-
-    if (!targetOrder && payload.channelOrderReference) {
-      targetOrder = await FirestorePlatformService.getOrderProjectionByReference(payload.channelOrderReference);
-    }
+    let targetOrder = targetIdentifier
+      ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(targetIdentifier)
+      : null;
 
     if (targetOrder) {
       const currentState = (targetOrder.status || 'SUBMITTED').toUpperCase();
@@ -663,14 +661,22 @@ export class WebhookService {
           updatedViaWebhookId: webhookEventId,
         });
 
-        // Trigger dispatch courier assignment/scheduling according to tenant rules
-        const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
-        DispatchOrchestrationService.handlePickingStarted(
-          targetOrder.orderId,
-          targetOrder.tenantId,
-          dispatchAdapter,
-          webhookEventId
-        ).catch((err) => console.warn('[WebhookService] Dispatch picking started error:', err));
+        // Dispatch orchestration is DELIVERY ONLY. A Collection/pickup order has
+        // no courier to assign; invoking Dispatch here previously created phantom
+        // delivery jobs against pickup orders.
+        if (targetOrder.fulfillmentType === 'delivery') {
+          const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
+          DispatchOrchestrationService.handlePickingStarted(
+            targetOrder.orderId,
+            targetOrder.tenantId,
+            dispatchAdapter,
+            webhookEventId
+          ).catch((err) => console.warn('[WebhookService] Dispatch picking started error:', err));
+        } else {
+          console.log(
+            `[WebhookService] Skipping Dispatch for ${targetOrder.orderId}: fulfillmentType=${targetOrder.fulfillmentType}`
+          );
+        }
 
         // Emit notification & analytics (Phase 14)
         NotificationService.notifyPickingStarted(targetOrder).catch((err) =>
@@ -710,26 +716,49 @@ export class WebhookService {
           completedAt: new Date().toISOString(),
         });
 
-        // Trigger dispatch courier assignment confirmation or retry upon picking completion
-        const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
-        DispatchOrchestrationService.handlePickingCompleted(
-          targetOrder.orderId,
-          targetOrder.tenantId,
-          dispatchAdapter,
-          webhookEventId
-        ).catch((err) => console.warn('[WebhookService] Dispatch picking completed error:', err));
+        // Dispatch orchestration is DELIVERY ONLY.
+        if (targetOrder.fulfillmentType === 'delivery') {
+          const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
+          DispatchOrchestrationService.handlePickingCompleted(
+            targetOrder.orderId,
+            targetOrder.tenantId,
+            dispatchAdapter,
+            webhookEventId
+          ).catch((err) => console.warn('[WebhookService] Dispatch picking completed error:', err));
+        }
 
-        // Enqueue Phase 13 Final Payment Settlement via AsyncWorkerService (PAY-07, PAY-08)
-        // Decoupled from the synchronous webhook response to prevent upstream gateway timeouts
-        AsyncWorkerService.enqueuePaymentSettlement({
-          orderId: targetOrder.orderId,
-          tenantId: targetOrder.tenantId,
-          webhookEventId,
-        });
+        // Payment settlement requires an actual authorised payment to capture.
+        // An unpaid Collection order (third_party, isPrepaid:false,
+        // orderIsAlreadyPaid:false) has no authorisation, so enqueuing
+        // settlement and setting CAPTURE_PENDING would strand it in a payment
+        // state it can never leave.
+        const requiresSettlement = Boolean(
+          (targetOrder as any).paymentAuthorisationId ||
+            (targetOrder as any).paymentAuthorizationId ||
+            (targetOrder as any).dpayAuthorisationId ||
+            (targetOrder as any).dpayAuthorizationId ||
+            targetOrder.paymentId ||
+            targetOrder.paymentState === 'AUTHORISED' ||
+            targetOrder.paymentState === 'AUTHORIZED'
+        );
+
+        if (requiresSettlement) {
+          AsyncWorkerService.enqueuePaymentSettlement({
+            orderId: targetOrder.orderId,
+            tenantId: targetOrder.tenantId,
+            webhookEventId,
+          });
+        } else {
+          console.log(
+            `[WebhookService] Skipping payment settlement for ${targetOrder.orderId}: no authorised payment to capture.`
+          );
+        }
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKED', {
           updatedViaWebhookId: webhookEventId,
-          paymentState: 'CAPTURE_PENDING',
+          ...(requiresSettlement
+            ? { paymentState: 'CAPTURE_PENDING' }
+            : { paymentState: 'NO_CAPTURE_REQUIRED' }),
         });
 
         if (targetOrder.checkoutId) {
@@ -783,14 +812,16 @@ export class WebhookService {
           reason: payload.failureReason || payload.reason,
         });
 
-        // Cancel active courier dispatch
-        const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
-        DispatchOrchestrationService.handleOrderCancelled(
-          targetOrder.orderId,
-          targetOrder.tenantId,
-          dispatchAdapter,
-          payload.failureReason || payload.reason
-        ).catch((err) => console.warn('[WebhookService] Dispatch cancel error:', err));
+        // Cancel active courier dispatch (delivery only)
+        if (targetOrder.fulfillmentType === 'delivery') {
+          const dispatchAdapter = getDispatchAdapter(targetOrder.tenantId);
+          DispatchOrchestrationService.handleOrderCancelled(
+            targetOrder.orderId,
+            targetOrder.tenantId,
+            dispatchAdapter,
+            payload.failureReason || payload.reason
+          ).catch((err) => console.warn('[WebhookService] Dispatch cancel error:', err));
+        }
 
         NotificationService.notifyOrderCancelled(targetOrder, payload.failureReason || payload.reason).catch(
           (err) => console.error('[WebhookService] Notification error:', err)

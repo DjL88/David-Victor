@@ -1,14 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { RuleEngine } from '../rules/RuleEngine';
 import { RetailRule } from '../rules/types';
-import { Product, Basket, BasketItem } from '../commerce/models';
+import { Product, Basket, BasketItem, Money } from '../commerce/models';
 
 describe('Prompt 9 — Product Rules Engine Phase 1', () => {
+  const basePrice: Money = { amount: 120, currency: 'GBP' };
+  const aspirinPrice: Money = { amount: 150, currency: 'GBP' };
+
   const baseProduct: Product = {
+    id: 'prod-paracetamol',
     plu: 'PLU-PARACETAMOL-500MG',
+    gtin: ['5000000000001'],
+    allergens: [],
     name: 'Paracetamol 500mg Tablets 16 Pack',
     description: 'Pain relief tablets',
-    price: { amount: 120, currency: 'GBP' },
+    price: basePrice,
     categoryIds: ['cat-pharmacy'],
     productTags: ['PHARMACY', 'PAIN_RELIEF', 'PARACETAMOL'],
     displayLabels: ['Pharmacy'],
@@ -16,9 +22,12 @@ describe('Prompt 9 — Product Rules Engine Phase 1', () => {
   };
 
   const aspirinProduct: Product = {
+    id: 'prod-aspirin',
     plu: 'PLU-ASPIRIN-300MG',
+    gtin: ['5000000000002'],
+    allergens: [],
     name: 'Aspirin 300mg Tablets 16 Pack',
-    price: { amount: 150, currency: 'GBP' },
+    price: aspirinPrice,
     categoryIds: ['cat-pharmacy'],
     productTags: ['PHARMACY', 'PAIN_RELIEF', 'ASPIRIN'],
     displayLabels: ['Pharmacy'],
@@ -26,7 +35,10 @@ describe('Prompt 9 — Product Rules Engine Phase 1', () => {
   };
 
   const vodkaProduct: Product = {
+    id: 'prod-vodka',
     plu: 'PLU-VODKA-70CL',
+    gtin: ['5000000000003'],
+    allergens: [],
     name: 'Premium Vodka 70cl',
     price: { amount: 1800, currency: 'GBP' },
     categoryIds: ['cat-spirits'],
@@ -40,7 +52,10 @@ describe('Prompt 9 — Product Rules Engine Phase 1', () => {
   };
 
   const hfssChipsProduct: Product = {
+    id: 'prod-chips',
     plu: 'PLU-CHIPS-LARGE',
+    gtin: ['5000000000004'],
+    allergens: [],
     name: 'Large Salted Potato Crisps 150g',
     price: { amount: 200, currency: 'GBP' },
     categoryIds: ['cat-snacks'],
@@ -126,28 +141,46 @@ describe('Prompt 9 — Product Rules Engine Phase 1', () => {
 
     const basketItems: BasketItem[] = [
       {
+        id: 'item-1',
+        name: baseProduct.name,
+        price: basePrice,
         channelLinkId: 'store-1',
         plu: baseProduct.plu,
         quantity: 2,
-        itemPrice: baseProduct.price,
+        itemPrice: basePrice,
         totalPrice: { amount: 240, currency: 'GBP' },
       },
       {
+        id: 'item-2',
+        name: aspirinProduct.name,
+        price: aspirinPrice,
         channelLinkId: 'store-1',
         plu: aspirinProduct.plu,
         quantity: 1,
-        itemPrice: aspirinProduct.price,
+        itemPrice: aspirinPrice,
         totalPrice: { amount: 150, currency: 'GBP' },
       },
     ];
 
     const basket: Basket = {
+      id: 'bsk-test-1',
       basketId: 'bsk-test-1',
       tenantId: 'brand-alpha',
+      storeId: 'store-1',
+      storeName: 'Test Store',
+      fulfillmentType: 'delivery',
       channelLinkId: 'store-1',
       items: basketItems,
       subtotal: { amount: 390, currency: 'GBP' },
+      total: { amount: 390, currency: 'GBP' },
       totalPrice: { amount: 390, currency: 'GBP' },
+      discountTotal: { amount: 0, currency: 'GBP' },
+      discounts: [],
+      charges: [],
+      currency: 'GBP',
+      validationErrors: [],
+      restrictions: [],
+      updatedAt: new Date().toISOString(),
     };
 
     const decision = engine.evaluateBasket(

@@ -115,6 +115,7 @@ export interface RetailRule {
   description?: string;
   enabled: boolean;
   priority?: number;
+  countries?: string[];
   conditions: RuleCondition;
   actions: RuleActions;
 }

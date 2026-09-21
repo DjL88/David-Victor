@@ -2,8 +2,6 @@
  * Deliverect Commerce Basket API
  *
  * Narrow, raw-contract client for the Deliverect Commerce basket -> checkout path.
- * This file intentionally does NOT map into Bwydi's Basket/Order domain models yet.
- * It exists so staging behaviour can be verified without falling back to BasketService.
  *
  * Verified Deliverect Commerce contracts used here:
  *   POST  /commerce/{accountId}/baskets
@@ -11,12 +9,6 @@
  *   PATCH /commerce/{accountId}/baskets/{basketId}/items
  *   POST  /commerce/{accountId}/baskets/{basketId}/reconcile
  *   POST  /commerce/{accountId}/v2/checkouts
- *
- * IMPORTANT:
- * - PATCH /items REPLACES the complete basket item list.
- * - Pickup is Deliverect's `pickup` fulfilment type (Bwydi UI may call this Collection).
- * - An unpaid pickup checkout can use third_party + isPrepaid:false.
- * - A 200 checkout response means the checkout was accepted; final order creation is async.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -36,6 +28,19 @@ export interface CommerceBasketItemInput {
   }>;
 }
 
+export interface CommerceBasketCustomerInput {
+  name?: string;
+  companyName?: string;
+  phoneNumber?: string;
+  email?: string;
+  externalId?: string;
+}
+
+export interface CommerceBasketStoreInput {
+  storeId?: string;
+  channelLinkId?: string;
+}
+
 export interface CommercePickupCustomerInput {
   name?: string;
   companyName?: string;
@@ -44,365 +49,414 @@ export interface CommercePickupCustomerInput {
   externalId?: string;
 }
 
+export interface CreatePickupBasketParams {
+  channelLinkId?: string;
+  storeId?: string;
+  pickupTime?: string;
+  pickupNotes?: string;
+  items?: CommerceBasketItemInput[];
+  customer?: CommercePickupCustomerInput;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+}
+
 export interface UnpaidPickupCheckoutInput {
   basketId: string;
   amountMinor: number;
   channelOrderId?: string;
   channelOrderDisplayId?: string;
-  orderSource?: string;
-  note?: string;
   externalPaymentId?: string;
+  by?: string;
+  includeCutlery?: boolean;
+  customer?: CommercePickupCustomerInput;
+  note?: string;
+  orderNote?: string;
 }
 
-export interface PickupTestOrderInput {
+export interface CommerceCheckoutResult {
+  accepted: boolean;
+  rawResponse: JsonObject;
+  checkout: JsonObject;
+  checkoutId?: string;
+  channelOrderId?: string;
+  channelOrderDisplayId?: string;
+  statusUrl?: string;
+}
+
+export interface CreatePickupTestOrderParams {
   channelLinkId: string;
   menuId?: string;
   plu?: string;
   quantity?: number;
-  items?: Array<{
-    menuId?: string;
-    plu?: string;
-    quantity: number;
-  }>;
-  customer?: CommercePickupCustomerInput;
+  items?: CommerceBasketItemInput[];
+  pickupTime?: string;
   pickupNotes?: string;
   orderNote?: string;
+  customer?: CommercePickupCustomerInput;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
   performCheckout?: boolean;
 }
 
-export interface PickupTestOrderResult {
-  accountId: string;
-  channelLinkId: string;
+export interface CreatePickupTestOrderResult {
   basketId: string;
-  totalMinor: number;
   basket: JsonObject;
-  reconciledBasket: JsonObject;
+  totalMinor: number;
+  reconcileResponse: JsonObject;
   checkout?: JsonObject;
+  checkoutResult?: CommerceCheckoutResult;
   channelOrderId?: string;
   channelOrderDisplayId?: string;
 }
 
-export class DeliverectCommerceApiError extends Error {
-  readonly status: number;
+export class DeliverectCommerceBasketApiError extends Error {
   readonly code: string;
-  readonly operation: string;
+  readonly statusCode?: number;
+  readonly status?: number;
+  readonly responseBody?: unknown;
   readonly upstreamBody?: unknown;
+  readonly operation?: string;
 
-  constructor(options: {
-    message: string;
-    status: number;
-    code: string;
-    operation: string;
-    upstreamBody?: unknown;
-  }) {
-    super(options.message);
-    this.name = 'DeliverectCommerceApiError';
-    this.status = options.status;
-    this.code = options.code;
-    this.operation = options.operation;
-    this.upstreamBody = options.upstreamBody;
+  constructor(
+    message: string,
+    code = 'DELIVERECT_COMMERCE_API_FAILED',
+    statusCode?: number,
+    responseBody?: unknown,
+    operation?: string
+  ) {
+    super(message);
+    this.name = 'DeliverectCommerceBasketApiError';
+    this.code = code;
+    this.statusCode = statusCode;
+    this.status = statusCode;
+    this.responseBody = responseBody;
+    this.upstreamBody = responseBody;
+    this.operation = operation;
   }
 }
 
-export class DeliverectCommerceBasketApi {
+export class DeliverectCommerceBasketApiClient {
+  private readonly baseUrl: string;
+
   constructor(
     private readonly tokenManager: OAuthTokenManager,
-    private readonly accountId: string
+    private readonly accountId: string,
+    baseUrl?: string
   ) {
-    if (!accountId?.trim()) {
-      throw new Error('DeliverectCommerceBasketApi requires a Deliverect accountId');
-    }
-  }
-
-  private get baseUrl(): string {
-    return this.tokenManager.config.baseUrl.replace(/\/$/, '');
-  }
-
-  private accountPath(path: string): string {
-    return `/commerce/${encodeURIComponent(this.accountId)}${path}`;
+    this.baseUrl = (baseUrl || 'https://api.staging.deliverect.com').replace(/\/+$/, '');
   }
 
   private async request<T = JsonObject>(
-    operation: string,
+    method: string,
     path: string,
-    init: RequestInit,
-    retryOn401 = true
+    body?: unknown,
+    operationName = 'Deliverect Commerce API Request',
+    isRetry = false
   ): Promise<T> {
     const token = await this.tokenManager.getAccessToken();
-    const headers = new Headers(init.headers || {});
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set('Accept', 'application/json');
-    if (init.body != null && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
+    const url = `${this.baseUrl}${path}`;
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+
+    const init: RequestInit = {
+      method,
+      headers,
+    };
+
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers,
-    });
-
-    if (response.status === 401 && retryOn401) {
-      this.tokenManager.invalidateCache();
-      return this.request<T>(operation, path, init, false);
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } catch (err: any) {
+      throw new DeliverectCommerceBasketApiError(
+        `Network error calling Deliverect Commerce API (${method} ${path}): ${err?.message || err}`,
+        'DELIVERECT_NETWORK_ERROR',
+        undefined,
+        undefined,
+        operationName
+      );
     }
 
     const text = await response.text();
-    let payload: unknown = undefined;
+    let json: JsonObject = {};
     if (text) {
       try {
-        payload = JSON.parse(text);
+        json = JSON.parse(text);
       } catch {
-        payload = text;
+        json = { rawText: text };
       }
+    }
+
+    if (response.status === 401) {
+      if (!isRetry) {
+        this.tokenManager.invalidateCache();
+        return this.request<T>(method, path, body, operationName, true);
+      }
+      const detail = json?.message || json?.error || response.statusText;
+      throw new DeliverectCommerceBasketApiError(
+        `${operationName} failed with Deliverect HTTP 401: ${detail}`,
+        'DELIVERECT_UNAUTHORIZED',
+        401,
+        json,
+        operationName
+      );
     }
 
     if (!response.ok) {
-      const upstreamCode =
-        payload && typeof payload === 'object' && 'code' in payload
-          ? String((payload as any).code)
-          : '';
-
-      let code = upstreamCode || `DELIVERECT_HTTP_${response.status}`;
-      if (response.status === 403 && upstreamCode === 'insufficient_permissions') {
-        code = 'BASKET_WRITE_PERMISSION_REQUIRED';
+      const detail = json?.message || json?.error || response.statusText;
+      let errorCode = 'DELIVERECT_HTTP_ERROR';
+      if (response.status === 403 || json?.code === 'insufficient_permissions') {
+        errorCode = 'BASKET_WRITE_PERMISSION_REQUIRED';
       }
-
-      throw new DeliverectCommerceApiError({
-        message: `${operation} failed with Deliverect HTTP ${response.status}${
-          upstreamCode ? ` (${upstreamCode})` : ''
-        }`,
-        status: response.status,
-        code,
-        operation,
-        upstreamBody: payload,
-      });
+      throw new DeliverectCommerceBasketApiError(
+        `${operationName} failed with Deliverect HTTP ${response.status}: ${detail}`,
+        errorCode,
+        response.status,
+        json,
+        operationName
+      );
     }
 
-    return payload as T;
+    return json as T;
   }
 
-  /**
-   * Creates an empty pickup/collection basket for one Commerce store/channel link.
-   */
-  async createPickupBasket(options: {
-    channelLinkId: string;
-    customer?: CommercePickupCustomerInput;
-    pickupNotes?: string;
-  }): Promise<JsonObject> {
-    if (!options.channelLinkId?.trim()) {
-      throw new Error('channelLinkId is required');
+  async createPickupBasket(params: CreatePickupBasketParams): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/baskets`;
+    const storeId = params.channelLinkId || params.storeId;
+
+    let customerObj: CommercePickupCustomerInput | undefined = params.customer;
+    if (!customerObj && (params.customerName || params.customerEmail || params.customerPhone)) {
+      customerObj = {
+        name: params.customerName,
+        email: params.customerEmail,
+        phoneNumber: params.customerPhone,
+      };
     }
 
-    const body: JsonObject = {
-      storeId: options.channelLinkId,
+    const payload: JsonObject = {
+      storeId,
       fulfillment: {
         type: 'pickup',
-        ...(options.pickupNotes ? { pickupNotes: options.pickupNotes } : {}),
+        ...(params.pickupTime ? { pickupTime: params.pickupTime } : {}),
+        ...(params.pickupNotes ? { pickupNotes: params.pickupNotes } : {}),
       },
+      ...(customerObj ? { customer: customerObj } : {}),
+      ...(params.items && params.items.length > 0 ? { items: params.items } : {}),
     };
 
-    if (options.customer && Object.values(options.customer).some(Boolean)) {
-      body.customer = options.customer;
-    }
-
-    return this.request<JsonObject>(
-      'Create pickup basket',
-      this.accountPath('/baskets'),
-      {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }
-    );
+    return this.request('POST', path, payload, 'Create pickup basket');
   }
 
   async getBasket(basketId: string): Promise<JsonObject> {
-    this.assertId('basketId', basketId);
-    return this.request<JsonObject>(
-      'Get basket',
-      this.accountPath(`/baskets/${encodeURIComponent(basketId)}`),
-      { method: 'GET' }
-    );
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}`;
+    return this.request('GET', path, undefined, 'Get basket');
   }
 
-  /**
-   * Deliverect PATCH /items is replacement semantics, not an append operation.
-   * Always pass the COMPLETE desired item list.
-   */
-  async replaceItems(
+  async updateCustomer(
     basketId: string,
-    items: CommerceBasketItemInput[]
+    customer: CommerceBasketCustomerInput
   ): Promise<JsonObject> {
-    this.assertId('basketId', basketId);
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new Error('replaceItems requires at least one basket item');
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/customer`;
+    return this.request('PATCH', path, customer, 'Update basket customer');
+  }
+
+  async updateStore(
+    basketId: string,
+    storeId: string
+  ): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/store`;
+    return this.request('PATCH', path, { storeId }, 'Update basket store');
+  }
+
+  async validateBasket(basketId: string): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/validate`;
+    return this.request('POST', path, {}, 'Validate basket');
+  }
+
+  async replaceItems(basketId: string, items: CommerceBasketItemInput[]): Promise<JsonObject> {
+    if (!Array.isArray(items)) {
+      throw new DeliverectCommerceBasketApiError(
+        'replaceItems requires an item array',
+        'INVALID_BASKET_ITEMS',
+        400,
+        undefined,
+        'Replace basket items'
+      );
     }
 
-    for (const item of items) {
-      if (!item.menuId?.trim()) throw new Error('Every basket item requires menuId');
-      if (!item.plu?.trim()) throw new Error('Every basket item requires plu');
-      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-        throw new Error(`Basket item ${item.plu || '(unknown)'} requires a positive integer quantity`);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item.menuId || typeof item.menuId !== 'string' || item.menuId.trim().length === 0) {
+        throw new DeliverectCommerceBasketApiError(
+          `Item at index ${i} is missing a valid menuId`,
+          'INVALID_BASKET_ITEM_MENUID',
+          400,
+          undefined,
+          'Replace basket items'
+        );
+      }
+      if (!item.plu || typeof item.plu !== 'string' || item.plu.trim().length === 0) {
+        throw new DeliverectCommerceBasketApiError(
+          `Item at index ${i} is missing a valid plu`,
+          'INVALID_BASKET_ITEM_PLU',
+          400,
+          undefined,
+          'Replace basket items'
+        );
+      }
+      if (typeof item.quantity !== 'number' || !Number.isInteger(item.quantity) || item.quantity <= 0) {
+        throw new DeliverectCommerceBasketApiError(
+          `Item at index ${i} must have a positive integer quantity`,
+          'INVALID_BASKET_ITEM_QUANTITY',
+          400,
+          undefined,
+          'Replace basket items'
+        );
       }
     }
 
-    return this.request<JsonObject>(
-      'Replace basket items',
-      this.accountPath(`/baskets/${encodeURIComponent(basketId)}/items`),
-      {
-        method: 'PATCH',
-        body: JSON.stringify(items),
-      }
-    );
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/items`;
+    // Replacement semantics sends complete RAW array as body
+    return this.request('PATCH', path, items, 'Replace basket items');
+  }
+
+  async replaceBasketItems(basketId: string, items: CommerceBasketItemInput[]): Promise<JsonObject> {
+    return this.replaceItems(basketId, items);
   }
 
   async reconcileBasket(basketId: string): Promise<JsonObject> {
-    this.assertId('basketId', basketId);
-    return this.request<JsonObject>(
-      'Reconcile basket',
-      this.accountPath(`/baskets/${encodeURIComponent(basketId)}/reconcile`),
-      { method: 'POST' }
+    const path = `/commerce/${this.accountId}/baskets/${encodeURIComponent(basketId)}/reconcile`;
+    return this.request('POST', path, {}, 'Reconcile basket');
+  }
+
+  getAuthoritativeTotalMinor(basket: JsonObject): number {
+    const total = basket?.payment?.total;
+    if (typeof total === 'number' && Number.isInteger(total) && total >= 0) {
+      return total;
+    }
+    throw new DeliverectCommerceBasketApiError(
+      'Basket does not contain a valid authoritative integer minor payment.total',
+      'INVALID_AUTHORITATIVE_TOTAL',
+      400,
+      basket,
+      'Get authoritative total'
     );
   }
 
-  /**
-   * Extracts the authoritative payable total documented by Deliverect as payment.total.
-   * We deliberately do not calculate a local checkout amount here.
-   */
-  getAuthoritativeTotalMinor(basket: JsonObject): number {
-    const value = basket?.payment?.total;
-    if (!Number.isInteger(value) || value < 0) {
-      throw new Error(
-        'Deliverect basket response did not contain an integer payment.total. Refusing to guess checkout amount.'
-      );
-    }
-    return value;
+  async getCheckout(checkoutId: string): Promise<JsonObject> {
+    const path = `/commerce/${this.accountId}/v2/checkouts/${encodeURIComponent(checkoutId)}`;
+    return this.request('GET', path, undefined, 'Get checkout');
   }
 
-  /**
-   * Checks out a pickup basket as an unpaid third-party order.
-   * This bypasses DPay and Dispatch and is useful for the first real staging order.
-   */
-  async checkoutUnpaidPickup(input: UnpaidPickupCheckoutInput): Promise<{
-    checkout: JsonObject;
-    channelOrderId: string;
-    channelOrderDisplayId: string;
-  }> {
-    this.assertId('basketId', input.basketId);
-    if (!Number.isInteger(input.amountMinor) || input.amountMinor < 0) {
-      throw new Error('amountMinor must be a non-negative integer');
-    }
+  async checkoutUnpaidPickup(input: UnpaidPickupCheckoutInput): Promise<CommerceCheckoutResult> {
+    const path = `/commerce/${this.accountId}/v2/checkouts`;
+    const randomSuffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
 
-    const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
-    const channelOrderId = input.channelOrderId || `BWYDI-STG-${Date.now()}-${suffix}`;
-    const channelOrderDisplayId = input.channelOrderDisplayId || `BW-${suffix.slice(-6)}`;
+    const channelOrderId = input.channelOrderId || `BWYDI-STG-${Date.now()}-${randomSuffix}`;
+    const channelOrderDisplayId = input.channelOrderDisplayId || `BW-${randomSuffix.slice(-6)}`;
+    const externalPaymentId = input.externalPaymentId || `unpaid-${randomUUID()}`;
 
-    const body = {
-      basket: {
-        id: input.basketId,
-      },
+    const payload: JsonObject = {
+      basket: { id: input.basketId },
       order: {
         channelOrderId,
         channelOrderDisplayId,
-        by: input.orderSource || 'Bwydi Web App',
-        includeCutlery: false,
+        by: input.by || 'Bwydi Web App',
+        includeCutlery: input.includeCutlery ?? false,
       },
-      ...(input.note ? { note: input.note } : {}),
       payments: [
         {
           type: 'third_party',
-          externalId: input.externalPaymentId || `unpaid-${randomUUID()}`,
+          externalId: externalPaymentId,
           isPrepaid: false,
           amount: input.amountMinor,
           metadata: {},
         },
       ],
+      ...(input.customer ? { customer: input.customer } : {}),
+      ...(input.note || input.orderNote ? { note: input.note || input.orderNote } : {}),
     };
 
-    const checkout = await this.request<JsonObject>(
-      'Checkout unpaid pickup basket',
-      this.accountPath('/v2/checkouts'),
-      {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }
-    );
+    const response = await this.request<JsonObject>('POST', path, payload, 'Checkout unpaid pickup');
 
-    return { checkout, channelOrderId, channelOrderDisplayId };
+    return {
+      accepted: true,
+      rawResponse: response,
+      checkout: response,
+      checkoutId: response?.id || response?._id || response?.checkoutId,
+      channelOrderId: response?.channelOrderId || response?.order?.channelOrderId || channelOrderId,
+      channelOrderDisplayId: response?.channelOrderDisplayId || response?.order?.channelOrderDisplayId || channelOrderDisplayId,
+      statusUrl: response?.statusUrl || response?.links?.status,
+    };
   }
 
-  /**
-   * Small staging diagnostic flow:
-   * create pickup basket -> replace items -> reconcile -> optionally checkout unpaid.
-   *
-   * It deliberately stops before checkout unless performCheckout=true.
-   */
-  async createPickupTestOrder(input: PickupTestOrderInput): Promise<PickupTestOrderResult> {
-    let itemsToReplace: Array<{ menuId: string; plu: string; quantity: number }> = [];
-
-    if (Array.isArray(input.items) && input.items.length > 0) {
-      for (const item of input.items) {
-        const qty = Number(item.quantity);
-        if (!Number.isInteger(qty) || qty <= 0) {
-          throw new Error('quantity must be a positive integer');
-        }
-        itemsToReplace.push({
-          menuId: String(item.menuId || input.menuId || '').trim(),
-          plu: String(item.plu || input.plu || '').trim(),
-          quantity: qty,
-        });
-      }
-    } else {
-      const quantity = input.quantity == null ? 1 : Number(input.quantity);
-      if (!Number.isInteger(quantity) || quantity <= 0) {
-        throw new Error('quantity must be a positive integer');
-      }
-      itemsToReplace.push({
-        menuId: String(input.menuId || '').trim(),
-        plu: String(input.plu || '').trim(),
-        quantity,
-      });
-    }
-
-    const created = await this.createPickupBasket({
-      channelLinkId: input.channelLinkId,
-      customer: input.customer,
-      pickupNotes: input.pickupNotes,
+  async createPickupTestOrder(params: CreatePickupTestOrderParams): Promise<CreatePickupTestOrderResult> {
+    const basketRes = await this.createPickupBasket({
+      channelLinkId: params.channelLinkId,
+      pickupTime: params.pickupTime,
+      pickupNotes: params.pickupNotes,
+      customer: params.customer,
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      customerPhone: params.customerPhone,
     });
 
-    const basketId = String(created?.id || created?._id || '');
-    if (!basketId) {
-      throw new Error('Create Basket succeeded but Deliverect returned no basket id');
+    const basketId = basketRes.id || basketRes._id || basketRes.basketId;
+
+    let itemsToSet: CommerceBasketItemInput[] = [];
+    if (params.items && params.items.length > 0) {
+      itemsToSet = params.items;
+    } else if (params.menuId && params.plu) {
+      itemsToSet = [
+        {
+          menuId: params.menuId,
+          plu: params.plu,
+          quantity: params.quantity || 1,
+        },
+      ];
     }
 
-    const withItems = await this.replaceItems(basketId, itemsToReplace);
+    if (itemsToSet.length > 0) {
+      await this.replaceItems(basketId, itemsToSet);
+    }
 
-    const reconciledBasket = await this.reconcileBasket(basketId);
-    const totalMinor = this.getAuthoritativeTotalMinor(reconciledBasket);
+    const reconcileRes = await this.reconcileBasket(basketId);
+    const totalMinor = this.getAuthoritativeTotalMinor(reconcileRes);
 
-    const result: PickupTestOrderResult = {
-      accountId: this.accountId,
-      channelLinkId: input.channelLinkId,
-      basketId,
-      totalMinor,
-      basket: withItems,
-      reconciledBasket,
-    };
-
-    if (input.performCheckout) {
-      const checkedOut = await this.checkoutUnpaidPickup({
+    let checkoutResult: CommerceCheckoutResult | undefined;
+    if (params.performCheckout) {
+      checkoutResult = await this.checkoutUnpaidPickup({
         basketId,
         amountMinor: totalMinor,
-        note: input.orderNote,
+        customer: params.customer,
+        orderNote: params.orderNote,
       });
-      result.checkout = checkedOut.checkout;
-      result.channelOrderId = checkedOut.channelOrderId;
-      result.channelOrderDisplayId = checkedOut.channelOrderDisplayId;
     }
 
-    return result;
-  }
-
-  private assertId(name: string, value: string): void {
-    if (!value?.trim()) throw new Error(`${name} is required`);
+    return {
+      basketId,
+      basket: {
+        ...reconcileRes,
+        items: reconcileRes.items || itemsToSet,
+      },
+      totalMinor,
+      reconcileResponse: reconcileRes,
+      checkout: checkoutResult?.checkout,
+      checkoutResult,
+      channelOrderId: checkoutResult?.channelOrderId,
+      channelOrderDisplayId: checkoutResult?.channelOrderDisplayId,
+    };
   }
 }
+
+export { DeliverectCommerceBasketApiClient as DeliverectCommerceBasketApi };
+export { DeliverectCommerceBasketApiError as DeliverectCommerceApiError };

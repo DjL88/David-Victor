@@ -1,14 +1,28 @@
 # Project Status (PROJECT_STATUS.md)
 
-**Current Status:** Live Deliverect Staging Integrated & Verified (OAuth, Accounts, Locations, Channel Links, Products & Categories)  
-**Target Milestone:** Full Commerce Ordering & Basket Permissions on Staging Client Credentials  
+**Current Status:** Live Deliverect Staging Integrated & Migration Phases A, B, C, D Completed  
+**Target Milestone:** Staging Contract Verification via `dllm` (Phase E & F)  
 **Date:** September 2026
 
 ---
 
 ## 1. Executive Status
 
-The platform is now connected directly to the live Deliverect Staging environment:
+The platform is now connected directly to the live Deliverect Staging environment with Migration Phases A, B, C, and D fully implemented and compiled:
+1. **MIGRATION PHASE A (Fulfillment-Aware Baskets & Store Switching)**:
+   - Updated `useBasket` hook and `AppLayout` to explicitly handle `fulfillmentType` ('delivery' | 'pickup').
+   - Implemented real store switching in `DeliverectApiClient.updateBasketStore` using the official Deliverect Commerce `/store` endpoint.
+2. **MIGRATION PHASE B (Asynchronous Collection Checkout)**:
+   - Replaced local mock checkout calls in `DeliverectApiClient.checkoutBasket` and `checkoutUnpaidPickup` with real Deliverect Commerce checkout calls (`POST /checkouts` / `POST /orders/checkout`).
+   - Added `GET /checkouts/:checkoutId/status` polling route in `v1Router.ts` with upstream refresh from Deliverect for pending checkouts.
+   - Bypassed fake DPay tokenization during Collection checkout in `CheckoutModal.tsx`, using immediate reconciliation and status polling.
+3. **MIGRATION PHASE C (Deliverect Correlation IDs)**:
+   - Extended `OrderProjection` schema in `server/firestoreService.ts` to persist `basketId`, `channelOrderId`, `channelOrderDisplayId`, `channelOrderRawId`, `deliverectAccountId`, and `deliverectLocationId`.
+   - Added `FirestorePlatformService.getOrderProjectionByExternalIdentifier` universal resolver to query orders across all internal and external Deliverect IDs.
+4. **MIGRATION PHASE D (Quest Contract & Substitution Callbacks)**:
+   - Updated `WebhookService.ts` to use `getOrderProjectionByExternalIdentifier` for resolving order projections from webhook events.
+   - Guarded courier dispatch cancellation in `WebhookService.ts` to trigger exclusively for delivery fulfillment types.
+   - Refactored `SubstitutionCallbackService` to return `QuestSubstituteItem[]` candidate arrays for Quest picking callbacks instead of internal policy metadata.
 1. **LIVE DELIVERECT INTEGRATION (Operational)**:
    - Upstream OAuth handshake verified against `https://api.staging.deliverect.com/oauth/token` using `client_credentials` grant and audience `https://api.staging.deliverect.com`.
    - Linked accounts discovery maps live Deliverect account (`68517fde1c3ddaa7f6d0275c` "DELIVERECT-TEST / Daves Deli"), 4 physical locations (Folgate Tuckshop, Spitalfield Spirits, Liqueurs of Liverpool Street, Deli Delivery), and 6 channel links (Direct test channels + Deliveroo Retail + Uber Eats Retail).
@@ -480,6 +494,56 @@ The platform is now connected directly to the live Deliverect Staging environmen
       - Implemented `safeJson` helper method in `HttpAdminClient.ts` to inspect response Content-Type headers before attempting `res.json()`.
       - Prevents `SyntaxError: Unexpected token '<'` when backend endpoints return non-JSON or HTML error pages, delivering clear, human-readable error messages to the UI instead.
     - **Zero Build & Lint Errors**: 100% clean `lint_applet` and `compile_applet` compilation.
+
+17. **WIP MODULE INTEGRATION & DELIVERECT COMMERCE BASKET CONTRACT RECONCILIATION (Completed & Verified)**:
+    - **WIP Files Migration**: Successfully migrated and integrated all modules from `/WIP/` into `/server/deliverect/`:
+      - `deliverectMoney.ts`: Integer minor units conversion (`toMinorMoney`), addition, subtraction, formatting, and validation.
+      - `DeliverectTaxOverlay.ts`: Reporting tax overlay calculation (`calculateTaxOverlay`) keeping prices VAT-inclusive without altering authoritative net minor prices on Commerce baskets.
+      - `DeliverectBasketMapper.ts`: Deliverect Commerce basket payload mapping (`toDeliverectBasketPayload`) and mapped basket normalization (`fromDeliverectBasketResponse`).
+      - `DeliverectCredentialProvider.ts`: Tenant credential provider retrieving secrets via `SecretManager.getSecret` with environment fallback (`DELIVERECT_<TENANT>_CLIENT_SECRET`, `DELIVERECT_ACCOUNT_ID`, etc.).
+    - **DeliverectCommerceBasketApiClient Full Contract**: Fully reconciled `DeliverectCommerceBasketApiClient` in `/server/deliverect/DeliverectCommerceBasketApi.ts` to implement the raw Deliverect Commerce basket API contract:
+      - `createPickupBasket`: POST `/commerce/{accountId}/baskets`
+      - `getBasket`: GET `/commerce/{accountId}/baskets/{basketId}`
+      - `replaceItems` / `replaceBasketItems`: PATCH `/commerce/{accountId}/baskets/{basketId}/items` with complete array replacement semantics and strict input validation (menuId, plu, positive integer quantity).
+      - `reconcileBasket`: POST `/commerce/{accountId}/baskets/{basketId}/reconcile`
+      - `getAuthoritativeTotalMinor`: Extracts integer minor payment total from `basket.payment.total`.
+      - `checkoutUnpaidPickup`: POST `/commerce/{accountId}/v2/checkouts` with `payments` array (`type: 'third_party'`, `isPrepaid: false`).
+      - `createPickupTestOrder`: Orchestrates end-to-end pickup test order flow (create -> set items -> reconcile -> checkout).
+      - Operation names and 401 token invalidation retry logic.
+    - **Type Safety & Build Integrity**:
+      - Updated `CheckoutModal.tsx` and `checkout.test.ts` for safe string fulfillment comparisons.
+      - Updated `AdminClient.ts` with `setBaseUrl`.
+      - Updated `RetailRule` in `src/rules/types.ts` with `countries?: string[]`.
+      - Updated `Product`, `BasketItem`, and `Basket` in `src/commerce/models.ts` to align with integer minor pricing requirements (`inStock`, `channelLinkId`, `itemPrice`, `basketId`, `totalPrice`).
+      - Updated `product_rules_engine_phase1.test.ts` with explicit `Money` typing.
+    - **100% Clean Lint, Build & Test Suite**:
+      - Passed `lint_applet` (`tsc --noEmit`) with 0 errors.
+      - `compile_applet` build succeeded.
+      - Resolved all test suite assertions across `deliverect_commerce_basket_api.test.ts` (items preservation in `createPickupTestOrder` and 401 cache invalidation single retry) and `phase13_final_payment_settlement.test.ts` (supporting US spelling `AUTHORIZED` in `WebhookService.ts` settlement resolution).
+
+18. **AISLE NAVIGATION, AISLES MODAL & COMBO DEALS FORMATTING REFACTOR (Completed & Verified)**:
+    - **CategoryNav 2-Row Layout**:
+      - Restructured `CategoryNav.tsx` into a strict 2-row layout:
+        - Row 1: "Search Aisles" button + category pills scroll.
+        - Row 2: Filters button + Search input bar.
+      - Updated navigation text: when viewing subcategories, Back button reads "All Aisles" or "All [Parent Category]".
+      - Removed top breadcrumb row to keep header compact and clean.
+    - **AislesModal Grid & Fixed Height**:
+      - Replaced list view with a clean grid layout.
+      - Fixed modal height to `h-[580px]` (`max-h-[85vh]`) to prevent height jumps when drilling down into subcategories.
+      - Removed `autoFocus` from the search input to prevent unwanted keyboard popup on mobile.
+      - Displayed item counts under category/subcategory names, calculating in-stock renderable items dynamically.
+      - Removed redundant 'All' and 'Open' action buttons.
+    - **Combo Deals (Bundles) Formatting & Add-to-Basket Fix**:
+      - Implemented `addBundleToBasket` in `HttpCommerceClient.ts` with fallback to `updateBasketItems` using `calculateBundlePrice` in `useBasket.ts`.
+      - Updated combo deal cards in `PromotionalBannerCarousel.tsx`:
+        - Removed image overlay badges ('Combi Deal' and 'In Stock').
+        - Moved title below image with larger typography (`font-extrabold text-sm sm:text-base text-white`).
+        - Enlarged price display (`text-base sm:text-lg font-black text-emerald-400`) and removed the 'Build your combo' badge next to the price.
+        - Renamed button dynamically: "Build your combo" if sections > 1, or "Add to Basket" if sections <= 1.
+        - Fixed tile dimensions and overflow to prevent sliding or jumping.
+      - Updated `BundleSelectionDialog.tsx` to hide optional upsell sections if completely out of stock.
+    - **100% Clean Lint & Build**: Passed `compile_applet` with zero build errors.
 
 ---
 

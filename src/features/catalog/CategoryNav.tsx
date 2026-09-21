@@ -144,129 +144,144 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   return (
     <div
       id="category-nav-section"
-      className="sticky top-[82px] md:top-[54px] z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-3 sm:px-6 py-2 transition-all w-full max-w-full"
+      className="sticky top-[82px] md:top-[54px] z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-3 sm:px-6 py-2 transition-all w-full max-w-full space-y-1.5"
     >
-      {/* Fixed Breadcrumbs Bar directly above Search Box */}
-      <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1.5 overflow-x-auto no-scrollbar whitespace-nowrap">
-        <button
-          type="button"
-          id="breadcrumb-all-aisles-btn"
-          onClick={() => onSelectCategory(null)}
-          className={`flex items-center gap-1 transition-colors ${
-            breadcrumbs.length === 0
-              ? 'font-extrabold text-gray-950'
-              : 'hover:text-gray-900 font-semibold text-gray-600 hover:underline cursor-pointer'
-          }`}
-        >
-          <LayoutGrid className="w-3.5 h-3.5 text-gray-700" />
-          <span>Search Aisles</span>
-        </button>
+      {/* ROW 1: AISLE CATEGORIES & NAVIGATION */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 w-full max-w-full">
+        {/* 'Search Aisles' button at the start */}
+        {onOpenAislesModal && (
+          <button
+            type="button"
+            id="cat-pill-search-aisles"
+            onClick={onOpenAislesModal}
+            className="px-3 py-1.5 rounded-full text-xs font-black transition-all shrink-0 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer active:scale-95"
+            title="Search Aisles & Categories"
+          >
+            <LayoutGrid className="w-3.5 h-3.5 text-white shrink-0" />
+            <span>Search Aisles</span>
+          </button>
+        )}
 
-        {breadcrumbs.map((crumb, idx) => {
-          if (!crumb) return null;
-          const isLast = idx === breadcrumbs.length - 1;
+        {/* Back navigation button when inside sub-categories */}
+        {breadcrumbs.length === 1 && (
+          <button
+            type="button"
+            id="cat-pill-back-all-aisles"
+            onClick={() => onSelectCategory(null)}
+            className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200/80 shadow-2xs cursor-pointer active:scale-95"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-gray-600" />
+            <span>All Aisles</span>
+          </button>
+        )}
+
+        {breadcrumbs.length >= 2 && (
+          <button
+            type="button"
+            id="cat-pill-back-parent-cat"
+            onClick={() => onSelectCategory(breadcrumbs[breadcrumbs.length - 2].id)}
+            className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs cursor-pointer active:scale-95"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
+            <span>All {breadcrumbs[breadcrumbs.length - 2]?.name || 'Parent Category'}</span>
+          </button>
+        )}
+
+        {/* Category Pills */}
+        {displayedCategories.map((cat) => {
+          if (!cat) return null;
+          const isSelected = selectedCategoryId === cat.id;
+
           return (
-            <React.Fragment key={crumb.id || idx}>
-              <ChevronRight className="w-3 h-3 text-gray-400 shrink-0" />
-              <button
-                type="button"
-                id={`breadcrumb-${crumb.id}`}
-                onClick={() => onSelectCategory(crumb.id)}
-                className={`truncate transition-colors cursor-pointer ${
-                  isLast
-                    ? 'font-bold text-gray-900'
-                    : 'hover:text-gray-800 text-gray-600 hover:underline'
-                }`}
-              >
-                {crumb.name || 'Category'}
-              </button>
-            </React.Fragment>
+            <button
+              key={cat.id}
+              id={`cat-pill-${cat.id}`}
+              type="button"
+              onClick={() => onSelectCategory(cat.id)}
+              style={isSelected ? primaryBtnStyle : undefined}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
+                isSelected
+                  ? 'shadow-xs'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200/60'
+              }`}
+            >
+              <span>{cat.name || 'Category'}</span>
+              {cat.subcategories && cat.subcategories.length > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+              )}
+            </button>
           );
         })}
+
+        {/* remaining count tag if more categories exist */}
+        {remainingCategoriesCount > 0 && onOpenAislesModal && (
+          <button
+            type="button"
+            id="cat-pill-remaining-count"
+            onClick={onOpenAislesModal}
+            className="px-2.5 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer"
+          >
+            +{remainingCategoriesCount} More
+          </button>
+        )}
       </div>
 
-      {/* Category Aisles Row: Filter Button + Search Bar + Subcategories & Back Arrow */}
-      <div className="flex items-center gap-2 w-full max-w-full overflow-visible">
-        {/* Left grouping: Merged Filter Button + Search Bar */}
-        <div className="flex items-center gap-1.5 shrink-0 z-30 overflow-visible">
-          {/* Merged Favourites, Allergens & Dietary Preferences Button */}
-          {onOpenFiltersModal && (
-            <button
-              type="button"
-              id="filter-allergens-dietary-btn"
-              onClick={onOpenFiltersModal}
-              className={`relative z-30 overflow-visible w-9 h-9 p-0 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs flex items-center justify-center ${
-                activeFiltersCount > 0 || filterState?.onlyFavourites || filterState?.onlyBuyAgain
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-400/20'
-                  : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700 active:scale-95'
-              }`}
-              title="Filter by favourites, allergens & dietary preferences"
-              aria-label="Filter favourites, allergens and diet"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-gray-700" />
-              {(activeFiltersCount > 0 ||
-                (filterState?.onlyFavourites ? 1 : 0) + (filterState?.onlyBuyAgain ? 1 : 0) > 0) && (
-                <span className="absolute z-40 -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
-                  {activeFiltersCount +
-                    (filterState?.onlyFavourites ? 1 : 0) +
-                    (filterState?.onlyBuyAgain ? 1 : 0)}
-                </span>
-              )}
-            </button>
-          )}
+      {/* ROW 2: FILTERS & SEARCH BAR */}
+      <div className="flex items-center gap-2 w-full max-w-full">
+        {/* Left: Filter Modal Button */}
+        {onOpenFiltersModal && (
+          <button
+            type="button"
+            id="filter-allergens-dietary-btn"
+            onClick={onOpenFiltersModal}
+            className={`relative z-10 overflow-visible w-8 h-8 p-0 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs flex items-center justify-center ${
+              activeFiltersCount > 0 || filterState?.onlyFavourites || filterState?.onlyBuyAgain
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-400/20'
+                : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700 active:scale-95'
+            }`}
+            title="Filter by favourites, allergens & dietary preferences"
+            aria-label="Filter favourites, allergens and diet"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-gray-700" />
+            {(activeFiltersCount > 0 ||
+              (filterState?.onlyFavourites ? 1 : 0) + (filterState?.onlyBuyAgain ? 1 : 0) > 0) && (
+              <span className="absolute z-20 -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                {activeFiltersCount +
+                  (filterState?.onlyFavourites ? 1 : 0) +
+                  (filterState?.onlyBuyAgain ? 1 : 0)}
+              </span>
+            )}
+          </button>
+        )}
 
-          {/* Search Bar - Controlled responsive width preventing overflow */}
-          {onSearchChange && (
-            <div className="relative w-36 sm:w-48 md:w-56 shrink-0">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
-                id="aisle-search-input"
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-7 pr-6 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  id="clear-aisle-search-btn"
-                  onClick={() => onSearchChange('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
-                  title="Clear search"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Middle: Search Input */}
+        {onSearchChange && (
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="text"
+              id="aisle-search-input"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search products & aisles..."
+              className="w-full pl-8 pr-7 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                id="clear-aisle-search-btn"
+                onClick={() => onSearchChange('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
 
-        {/* Subcategory / Shelf Pills with Untoggle Filter Buttons & Back Arrow left of 'Search Aisles' */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
-          {/*
-            Keep the compact arrow for intermediate levels. At a leaf, the leading
-            "‹ All <parent>" pill below becomes the back control, avoiding duplicate
-            navigation controls and the redundant "All <leaf>" label.
-          */}
-          {breadcrumbs.length > 0 && !useParentBackPill && (
-            <button
-              type="button"
-              id="aisle-back-arrow-btn"
-              onClick={handleBackClick}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-700 transition-all shrink-0 cursor-pointer shadow-2xs border border-gray-200 group"
-              title={
-                breadcrumbs.length > 1
-                  ? `Back to ${breadcrumbs[breadcrumbs.length - 2]?.name || 'Parent Aisle'}`
-                  : 'Back to Search Aisles'
-              }
-              aria-label="Back to previous aisle"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-            </button>
-          )}
-
-          {/* ACTIVE FILTER UNTOGGLE BUTTONS (NO TEXT, LEFT OF SEARCH AISLES) */}
+        {/* Right: Active Untoggle Filter Chips & Active Deal Filter */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
           {filterState?.onlyFavourites && onToggleFavouritesFilter && (
             <button
               type="button"
@@ -306,7 +321,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             </button>
           )}
 
-          {/* Active Deal Filter Chip */}
           {activeDealFilter && (
             <div
               id="active-deal-nav-chip"
@@ -329,78 +343,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
                 </button>
               )}
             </div>
-          )}
-
-          <button
-            type="button"
-            id="cat-pill-all-items"
-            onClick={handleAllItemsClick}
-            style={
-              useParentBackPill
-                ? parentBackPillStyle
-                : isAllItemsActive && !activeDealFilter
-                  ? primaryBtnStyle
-                  : undefined
-            }
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 border ${
-              useParentBackPill
-                ? 'shadow-2xs hover:brightness-95 active:scale-95'
-                : isAllItemsActive && !activeDealFilter
-                  ? 'shadow-xs border-transparent'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-transparent'
-            }`}
-            title={
-              useParentBackPill && parentCategory
-                ? `Back to all ${parentCategory.name || 'items'}`
-                : undefined
-            }
-            aria-label={
-              useParentBackPill && parentCategory
-                ? `Back to all ${parentCategory.name || 'items'}`
-                : undefined
-            }
-          >
-            {useParentBackPill && <ArrowLeft className="w-3.5 h-3.5 shrink-0" />}
-            <span>{leadingPillLabel}</span>
-          </button>
-
-          {displayedCategories.map((cat) => {
-            if (!cat) return null;
-            const isSelected = selectedCategoryId === cat.id;
-
-            return (
-              <button
-                key={cat.id}
-                id={`cat-pill-${cat.id}`}
-                type="button"
-                onClick={() => onSelectCategory(cat.id)}
-                style={isSelected ? primaryBtnStyle : undefined}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
-                  isSelected
-                    ? 'shadow-xs'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>{cat.name || 'Category'}</span>
-                {cat.subcategories && cat.subcategories.length > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
-                )}
-              </button>
-            );
-          })}
-
-          {/* "See More / Search Aisles" button opening the All Categories Dialog */}
-          {onOpenAislesModal && (
-            <button
-              type="button"
-              id="cat-pill-see-more-aisles"
-              onClick={onOpenAislesModal}
-              className="px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs cursor-pointer active:scale-95"
-              title="Open full aisle & category directory"
-            >
-              <LayoutGrid className="w-3 h-3 text-emerald-700" />
-              <span>{remainingCategoriesCount > 0 ? `+${remainingCategoriesCount} More` : 'Search Aisles'}</span>
-            </button>
           )}
         </div>
       </div>

@@ -204,6 +204,28 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
     return shoppingListProducts.reduce((sum, p) => sum + moneyToMinor(p.price), 0);
   }, [shoppingListProducts]);
 
+  const bannerSubtitle = useMemo(() => {
+    if (!activeBanner) return '';
+
+    // Dynamic dispatch response logic for category spotlight / category banners
+    if (activeBanner.actionType === 'CATEGORY' || activeBanner.id.startsWith('dynamic-banner')) {
+      if (selectedStore?.dispatchAvailability?.available) {
+        const etaMin = selectedStore.dispatchAvailability.deliveryEtaMinutes;
+        const estTime = selectedStore.dispatchAvailability.estimatedDeliveryTime;
+        if (etaMin && etaMin > 0) {
+          return `From store to door in as little as ${etaMin} minutes`;
+        }
+        if (estTime) {
+          const cleaned = estTime.replace(/mins?|minutes?/i, '').trim();
+          return `From store to door in as little as ${cleaned} minutes`;
+        }
+      }
+      return 'Browse product availability in your local stores';
+    }
+
+    return activeBanner.subtitle;
+  }, [activeBanner, selectedStore?.dispatchAvailability]);
+
   const handleActionClick = () => {
     if (!activeBanner) return;
 
@@ -224,6 +246,10 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
       onSelectProductPlu(activeBanner.targetPlu);
     } else if (activeBanner.actionType === 'CATEGORY' && activeBanner.targetCategoryId && onSelectCategory) {
       onSelectCategory(activeBanner.targetCategoryId);
+      setTimeout(() => {
+        const el = document.getElementById('main-product-listing') || document.getElementById('category-nav-section');
+        el?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     } else if (activeBanner.targetPlu && onSelectProductPlu) {
       onSelectProductPlu(activeBanner.targetPlu);
     } else if (onOpenStorePicker) {
@@ -473,7 +499,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                   transition={{ duration: 0.35, delay: 0.15 }}
                   className="text-sm sm:text-base text-gray-200/90 leading-relaxed font-medium line-clamp-3 sm:line-clamp-none drop-shadow-xs"
                 >
-                  {activeBanner.subtitle}
+                  {bannerSubtitle}
                 </motion.p>
 
                 {/* CTA BUTTONS */}
@@ -625,15 +651,23 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                   group.modifiers?.some((m) => (m.price || m.priceMinor || 0) > 0)
                 );
 
+                const numSections = groups.length;
+                const buttonLabel = isOutOfStock
+                  ? 'Unavailable at Store'
+                  : numSections > 1
+                  ? 'Build your combo'
+                  : 'Add to Basket';
+
                 return (
                   <div
                     key={`bundle-${bundle.id}`}
-                    className={`w-72 sm:w-80 shrink-0 h-[320px] sm:h-[340px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3 ${
+                    className={`w-72 sm:w-80 shrink-0 h-[300px] sm:h-[320px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3.5 ${
                       isOutOfStock
                         ? 'border-white/5 opacity-75'
                         : 'border-emerald-500/40 hover:border-emerald-400/70 hover:bg-white/15'
                     }`}
                   >
+                    {/* Clean Image Container (tags removed) */}
                     <div className="relative aspect-[16/9] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
                       <img
                         src={
@@ -645,53 +679,50 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                         loading="lazy"
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-                      <span className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black shadow-xs flex items-center gap-1">
-                        <Layers className="w-3 h-3" />
-                        Combo Deal
-                      </span>
-                      {isOutOfStock ? (
-                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-rose-600/90 text-white text-[10px] font-bold">
-                          Out of Stock
-                        </span>
-                      ) : (
-                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/50 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold backdrop-blur-xs">
-                          In stock
-                        </span>
-                      )}
-                      <span className="absolute bottom-1.5 left-2 right-2 text-xs font-bold text-white truncate">
-                        {bundle.name}
-                      </span>
                     </div>
 
-                    <div className="py-2 flex-1 flex flex-col justify-between">
+                    {/* Content below image */}
+                    <div className="pt-2 flex-1 flex flex-col justify-between">
                       <div className="space-y-1">
-                        <div className="flex items-baseline justify-between text-xs">
-                          <span className="text-emerald-400 font-black text-sm">
-                            {hasPricedUpsells ? 'From ' : ''}{formatMoney(bundle.price, bundle.currency || 'GBP')}
-                          </span>
-                          <span className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                            Build Your Combo
-                          </span>
-                        </div>
+                        {/* Title below image - larger text */}
+                        <h4 className="font-extrabold text-sm sm:text-base text-white leading-tight line-clamp-1">
+                          {bundle.name}
+                        </h4>
+
+                        {/* Description / Sections */}
                         <p className="text-[11px] text-gray-300 line-clamp-2 leading-tight">
                           {bundle.description || sectionNames}
                         </p>
+
+                        {/* Larger Price without 'Build your combo' badge */}
+                        <div className="pt-1">
+                          <span className="text-base sm:text-lg font-black text-emerald-400">
+                            {!selectedStore
+                              ? 'Price unavailable'
+                              : `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, bundle.currency || 'GBP')}`}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="pt-1.5">
+                      <div className="pt-2">
                         <button
                           type="button"
                           disabled={isOutOfStock}
-                          onClick={() => onOpenBundleDialog?.(bundle)}
-                          className={`w-full py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
+                          onClick={() => {
+                            if (!selectedStore) {
+                              onOpenStorePicker?.();
+                            } else {
+                              onOpenBundleDialog?.(bundle);
+                            }
+                          }}
+                          className={`w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
                             isOutOfStock
                               ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700'
                               : 'bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black'
                           }`}
                         >
                           <ShoppingBag className="w-3.5 h-3.5" />
-                          <span>{isOutOfStock ? 'Unavailable at Store' : 'Customise & Add'}</span>
+                          <span>{buttonLabel}</span>
                         </button>
                       </div>
                     </div>

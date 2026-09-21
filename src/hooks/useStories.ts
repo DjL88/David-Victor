@@ -2,13 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { Story } from '../commerce/models';
 import { useTenant } from '../tenant/TenantContext';
 
-export function useStories(selectedStoreId?: string) {
+export function useStories(selectedStoreId?: string, enabled: boolean = true) {
   const { client } = useTenant();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
 
   const fetchStories = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await client.getStories({ storeId: selectedStoreId });
@@ -19,11 +23,13 @@ export function useStories(selectedStoreId?: string) {
     } finally {
       setLoading(false);
     }
-  }, [client, selectedStoreId]);
+  }, [client, selectedStoreId, enabled]);
 
   useEffect(() => {
-    fetchStories();
-  }, [fetchStories]);
+    if (enabled) {
+      fetchStories();
+    }
+  }, [fetchStories, enabled]);
 
   const openStory = useCallback((index: number) => {
     setActiveStoryIndex(index);
