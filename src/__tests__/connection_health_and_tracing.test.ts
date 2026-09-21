@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConnectionHealthService } from '../../server/deliverect/ConnectionHealthService';
 import { linkedAccountsAdapter } from '../../server/deliverect/LinkedAccountsAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
+import { resetDeliverectAdapter, setDeliverectAdapter } from '../../server/deliverect';
 
 describe('Connection Health & 5-Stage Request Tracing', () => {
   let healthService: ConnectionHealthService;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetDeliverectAdapter();
     // Success-path diagnostics must opt into demo explicitly. Missing APP_MODE is
     // intentionally fail-closed to "unknown" and must never acquire mock data.
     setServerRuntimeMode('demo');
@@ -45,6 +48,37 @@ describe('Connection Health & 5-Stage Request Tracing', () => {
 
   describe('5-Stage Request Tracing: Successful Trace', () => {
     it('traces through Upstream -> BFF -> HTTP Client -> Hook -> Visible Cards with verified counts at each stage', async () => {
+      vi.spyOn(linkedAccountsAdapter, 'getTenantMappings').mockResolvedValue({
+        tenantId: 'brand-alpha',
+        integration: {
+          status: 'CONNECTED',
+          deliverectAccountId: 'demo-account',
+          environment: 'staging',
+        },
+        accounts: [
+          {
+            accountLinkId: 'demo-account-link',
+            deliverectAccountId: 'demo-account',
+          },
+        ],
+        locations: [],
+        stores: [
+          {
+            id: 'store-01',
+            commerceStoreId: 'store-01',
+            channelLinkId: 'store-01',
+            accountLinkId: 'demo-account-link',
+            name: 'Demo Store',
+          },
+        ],
+      } as any);
+      setDeliverectAdapter(
+        new MockDeliverectAdapter(),
+        'brand-alpha',
+        'staging',
+        'demo-account'
+      );
+
       const trace = await healthService.traceRequest({
         tenantId: 'brand-alpha',
         fulfillmentType: 'delivery',
