@@ -2523,6 +2523,60 @@ export class FirestoreService {
   }
 
   /**
+   * Lists orders owned by one authenticated customer within one tenant.
+   * Sorting happens in-process so this query does not depend on a composite
+   * Firestore index. Cross-tenant results are always discarded.
+   */
+  static async listCustomerOrderProjections(
+    tenantId: string,
+    customerUid: string,
+    limit = 50
+  ): Promise<OrderProjection[]> {
+    if (!tenantId || !customerUid) return [];
+
+    const fromMemory = Object.values(inMemoryOrderProjections)
+      .filter(
+        (order) =>
+          order.tenantId === tenantId &&
+          order.customerUid === customerUid
+      );
+
+    const db = getFirestoreDb();
+    let results = fromMemory;
+
+    if (db) {
+      try {
+        const snap = await db
+          .collection('orderProjections')
+          .where('customerUid', '==', customerUid)
+          .limit(Math.max(limit * 2, 50))
+          .get();
+
+        results = snap.docs
+          .map((doc) => doc.data() as OrderProjection)
+          .filter((order) => order.tenantId === tenantId);
+
+        for (const order of results) {
+          inMemoryOrderProjections[order.orderId] = order;
+        }
+      } catch (err) {
+        console.warn(
+          '[Firestore Admin] Could not list customer order projections:',
+          err
+        );
+      }
+    }
+
+    return results
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
+      )
+      .slice(0, limit);
+  }
+
+  /**
    * Updates state on an existing order projection.
    */
   static async updateOrderProjectionState(
