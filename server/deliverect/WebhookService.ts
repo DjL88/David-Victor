@@ -599,12 +599,13 @@ export class WebhookService {
                 : payload.amendedPrice.amount
               : origUnitPrice;
 
-          const finalPrice = typeof existingItem?.originalPrice === 'number'
-            ? Math.round(amendedUnitPrice)
-            : {
-                amount: Math.round(amendedUnitPrice),
-                currency: (origPriceRaw as any).currency || 'GBP',
-              };
+          const finalPrice: Money = {
+            amount: Math.round(amendedUnitPrice),
+            currency:
+              (typeof payload.amendedPrice === 'object' && payload.amendedPrice?.currency) ||
+              (typeof origPriceRaw === 'object' && origPriceRaw?.currency) ||
+              'GBP',
+          };
 
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'QUANTITY_AMENDED',

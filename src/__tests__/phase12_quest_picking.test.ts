@@ -367,7 +367,8 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BANANAS');
       expect(amended?.state).toBe('QUANTITY_AMENDED');
       expect(amended?.pickedQuantity).toBe(2);
-      expect(amended?.finalPrice).toBe(200);
+      expect((amended?.finalPrice as any)?.amount).toBe(200);
+      expect((amended?.finalPrice as any)?.currency).toBe('GBP');
       expect(amended?.amendment?.reason).toContain('Only 2 bunches available');
     });
   });
