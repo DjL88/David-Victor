@@ -498,9 +498,12 @@ export function checkBannerStock(
   }
 
   let inStockCount = 0;
+  let foundInCatalogCount = 0;
+
   for (const plu of linkedPlus) {
-    const p = products.find((prod) => prod.plu === plu);
+    const p = products.find((prod) => prod.plu === plu || prod.id === plu);
     if (p) {
+      foundInCatalogCount++;
       const inStock = p.stockStatus === 'IN_STOCK' || (p.stockQuantity !== undefined && p.stockQuantity > 0);
       if (inStock && p.active !== false) {
         inStockCount++;
@@ -509,16 +512,39 @@ export function checkBannerStock(
   }
 
   const mode = banner.stockMatchMode || 'OR';
-  const isEligible = mode === 'AND' ? inStockCount === linkedPlus.length : inStockCount > 0;
+  let isEligible = false;
+
+  if (!storeName) {
+    // "All Stores" mode: store location stock is not locked to a single branch.
+    if (foundInCatalogCount === 0) {
+      // General promo or cross-store PLU banners remain eligible when in "All Stores" mode
+      isEligible = true;
+    } else {
+      isEligible = mode === 'AND' ? inStockCount === foundInCatalogCount : inStockCount > 0;
+    }
+  } else {
+    // Specific store location selected
+    if (foundInCatalogCount === 0) {
+      // If banner has explicit PLUs but none exist in this store's catalog:
+      // Category/Store picker banners or OR match banners remain eligible; AND banners require match
+      isEligible = mode !== 'AND' || banner.actionType === 'STORE_PICKER' || banner.actionType === 'CATEGORY';
+    } else {
+      isEligible = mode === 'AND' ? inStockCount === linkedPlus.length : inStockCount > 0;
+    }
+  }
 
   let statusLabel: string | undefined = undefined;
   if (storeName) {
     if (isEligible) {
-      statusLabel = mode === 'AND'
+      statusLabel = mode === 'AND' && linkedPlus.length > 1
         ? `In Stock at ${storeName} (${inStockCount}/${linkedPlus.length} items)`
         : `In Stock at ${storeName}`;
     } else {
       statusLabel = `Out of stock at ${storeName}`;
+    }
+  } else {
+    if (isEligible) {
+      statusLabel = 'Available across stores';
     }
   }
 

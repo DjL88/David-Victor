@@ -70,6 +70,22 @@ export function getDealForStory(
       return deal.id === linkedBundleId || deal.externalDeliverectId === linkedBundleId;
     });
     if (existing) return existing;
+    return {
+      id: linkedBundleId,
+      externalDeliverectId: linkedBundleId,
+      type: 'BUNDLE',
+      title: story.title,
+      subtitle: story.caption,
+      badge: story.caption || 'Bundle Deal',
+      description: story.caption || story.title,
+      imageUrl: story.mediaUrl,
+      dealPrice: 0,
+      originalPrice: 0,
+      savings: 0,
+      stockMatchMode: story.stockMatchMode || 'AND',
+      linkedProductPlus: story.linkedProductPlus || [],
+      deliverectTags: [],
+    };
   }
 
   if (!story.linkedProductPlus || story.linkedProductPlus.length === 0) {
@@ -104,6 +120,22 @@ export function getDealForBanner(
       return deal.id === linkedBundleId || deal.externalDeliverectId === linkedBundleId;
     });
     if (existing) return existing;
+    return {
+      id: linkedBundleId,
+      externalDeliverectId: linkedBundleId,
+      type: 'BUNDLE',
+      title: banner.title,
+      subtitle: banner.subtitle,
+      badge: banner.subtitle || 'Bundle Deal',
+      description: banner.subtitle || banner.title,
+      imageUrl: banner.backgroundImageUrl,
+      dealPrice: 0,
+      originalPrice: 0,
+      savings: 0,
+      stockMatchMode: banner.stockMatchMode || 'AND',
+      linkedProductPlus: banner.linkedProductPlus || [],
+      deliverectTags: [],
+    };
   }
 
   if (!banner.linkedProductPlus || banner.linkedProductPlus.length === 0) {

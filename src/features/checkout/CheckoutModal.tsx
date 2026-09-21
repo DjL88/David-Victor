@@ -25,6 +25,7 @@ import { ErrorBoundary } from '../../components/common/ErrorBoundary';
 import { OrderTrackingView } from '../orders/OrderTrackingView';
 import { ItemUnavailablePreferenceModal } from '../cart/ItemUnavailablePreferenceModal';
 import { evaluateBasketSnoozeStatus } from '../../services/snoozeCheckService';
+import { defaultAnalyticsClient, AnalyticsEventType } from '../../analytics';
 import {
   X,
   MapPin,
@@ -360,6 +361,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         dispatchValidationExpiresAt: basket.dispatchValidationExpiresAt,
       });
       setConfirmedOrder(order);
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.ORDER_SUBMITTED,
+        storeId: store?.id,
+        orderReferenceHash: order.orderReference || order.id,
+        properties: {
+          totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
+          currency: order.pricing?.total?.currency || 'GBP',
+          itemCount: order.items?.length || 0,
+          fulfillmentType: order.fulfillmentType || 'DELIVERY',
+        },
+      });
       onOrderSuccess(order.id);
       setPhase('tracking');
     } catch (err: any) {
@@ -369,11 +381,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Keep basket and store synced with props
+  // Keep basket and store synced with props and track CHECKOUT_STARTED
   useEffect(() => {
     if (initialBasket) setBasket(initialBasket);
     if (initialStore) setStore(initialStore);
-  }, [initialBasket, initialStore]);
+    if (isOpen) {
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.CHECKOUT_STARTED,
+        storeId: initialStore?.id || store?.id,
+        properties: {
+          itemCount: initialBasket?.items?.length || basket?.items?.length || 0,
+          subtotalAmount: (initialBasket as any)?.pricing?.subtotal?.amount || initialBasket?.subtotal?.amount || basket?.subtotal?.amount || 0,
+          currency: (initialBasket as any)?.pricing?.subtotal?.currency || initialBasket?.subtotal?.currency || initialBasket?.currency || basket?.currency || 'GBP',
+        },
+      });
+    }
+  }, [initialBasket, initialStore, isOpen]);
 
   // Dispatch countdown timer
   useEffect(() => {

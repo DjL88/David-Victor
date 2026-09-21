@@ -10,10 +10,11 @@ import {
   AdminUser,
   TenantFeatureFlags,
 } from './models';
+import { MediaHealth, MediaHealthSummary } from './mediaHealthModels';
 import { DEFAULT_SCHEDULING_POLICY } from './slotEngine';
 import { DEFAULT_SUBSTITUTION_POLICY } from './substitutionPricing';
 import { auth } from '../firebase';
-import { getRuntimeMode } from '../domain/runtime';
+import { getRuntimeMode, isDemoMode } from '../domain/runtime';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../rules/types';
 
 let cachedRealToken: string | null = null;
@@ -161,16 +162,35 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  private async safeJson(res: Response, defaultError: string): Promise<any> {
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      if (contentType.includes('application/json')) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `${defaultError} (HTTP ${res.status})`);
+      } else {
+        const text = await res.text().catch(() => '');
+        throw new Error(`${defaultError} (HTTP ${res.status}): ${text.slice(0, 120) || res.statusText}`);
+      }
+    }
+    if (contentType.includes('application/json')) {
+      return res.json().catch(() => ({}));
+    }
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  }
+
   async deleteMembership(membershipId: string): Promise<void> {
     const headers = await this.getHeadersAsync();
     const res = await fetch(`${this.baseUrl}/admin/memberships/${encodeURIComponent(membershipId)}`, {
       method: 'DELETE',
       headers,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to delete membership (HTTP ${res.status})`);
-    }
+    await this.safeJson(res, 'Failed to delete membership');
   }
 
   setMockRole(role: AdminUser['role']): void {
@@ -227,14 +247,11 @@ export class HttpAdminClient implements AdminClient {
 
   async deleteBrand(tenantId: string): Promise<boolean> {
     const headers = await this.getHeadersAsync();
-    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}`, {
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}`, {
       method: 'DELETE',
       headers,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to delete brand: ${res.statusText}`);
-    }
+    await this.safeJson(res, 'Failed to delete brand');
     return true;
   }
 
@@ -400,7 +417,14 @@ export class HttpAdminClient implements AdminClient {
       headers: await this.getHeadersAsync(),
     });
     if (!res.ok) {
-      throw new Error(`Failed to load branding for tenant ${tId}: ${res.statusText}`);
+      let errMsg = res.statusText || `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson && (errJson.error || errJson.message || errJson.safeMessage)) {
+          errMsg = errJson.error || errJson.message || errJson.safeMessage;
+        }
+      } catch (_) {}
+      throw new Error(`Failed to load branding for tenant ${tId}: ${errMsg}`);
     }
     const data = await res.json();
     return { ...data, id: data.tenantId };
@@ -901,34 +925,26 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
-  async selectAccount(tenantId: string, accountId: string): Promise<any> {
+  async selectAccount(tenantId: string, accountId: string, channelLinkIds: string[] = []): Promise<any> {
     const tId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();
-    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/integration/select-account`, {
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tId)}/integration/select-account`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ accountId }),
+      body: JSON.stringify({ accountId, channelLinkIds }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || err.error || `Failed to select account: ${res.statusText}`);
-    }
-    return res.json();
+    return this.safeJson(res, 'Failed to select account');
   }
 
   async discoverStores(tenantId?: string, accountId?: string): Promise<any> {
     const tId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();
-    const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/integration/discover-stores`, {
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tId)}/integration/discover-stores`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ accountId }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || err.error || `Store discovery failed: ${res.statusText}`);
-    }
-    return res.json();
+    return this.safeJson(res, 'Store discovery failed');
   }
 
   async getCommerceDiagnostics(tenantId?: string): Promise<any> {
@@ -941,6 +957,16 @@ export class HttpAdminClient implements AdminClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || err.error || `Commerce diagnostics failed: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async getRawStoreMenu(tenantId: string, storeId: string): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/raw-menu/${encodeURIComponent(storeId)}`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Raw menu download failed (HTTP ${res.status})`);
     }
     return res.json();
   }
@@ -1029,6 +1055,24 @@ export class HttpAdminClient implements AdminClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || err.error || `Trace request failed: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async getMediaHealth(tenantId?: string, opts?: { recheck?: boolean }): Promise<{ assets: MediaHealth[]; summary: MediaHealthSummary }> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const query = opts?.recheck ? `?recheck=true` : '';
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tId)}/media-health${query}`, {
+      method: 'GET',
+      headers: {
+        ...headers,
+        'x-tenant-id': tId,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to fetch media health (${res.status})`);
     }
     return res.json();
   }

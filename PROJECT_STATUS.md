@@ -17,7 +17,9 @@ The platform is now connected directly to the live Deliverect Staging environmen
    - Zero mock data fallback in staging/production: `DeliverectApiClient` queries the real Deliverect Eve/REST endpoints with live OAuth tokens.
    - **Cache Reset & Live Sync Mechanism**: Implemented `POST /api/v1/cache/reset` and query param `refresh=true` across all catalog and bundle routes. Added a prominent, dedicated "Reset Cache / Sync" action button in the storefront header and account menu to clear all in-memory and client-side caches and immediately re-pull fresh Deliverect data.
    - **Prominent Meal Deals Display**: Featured Meal Deals & Combos in a dedicated section on the Home Screen as well as in the Promotional Banner Carousel, opening the interactive `BundleSelectionDialog` for customising included fruit, snacks, and upsell selections.
+   - **Carousel Tab Selection & Stock Fixes**: Updated `PromotionalBannerCarousel` to use `effectiveTab` for tab view rendering (preventing empty views when auto-switching), refined stock check for "All Stores" mode, and ensured `dealModels.ts` resolves `linkedBundleId` banners and stories correctly.
    - **Display Hardening & Defensive Type Checking**: Resolved storefront display crash (`Cannot read properties of undefined (reading 'type')`). Added safe optional chaining to `currentStory.action?.type` in `StoryViewerModal.tsx`, `handleStoryAction` in `AppLayout.tsx`, `order.fulfillment?.type` and `order.scheduledTime?.type` in `OrderTrackingView.tsx`, charges in `CartDrawerModal.tsx`, CMS blocks in `CmsPageView.tsx`, and search boost rules in `searchMerchEngine.ts`.
+   - **Workspace Cleanliness & Build Verification**: Purged stray root files, verified `lint_applet` returns 0 errors (`tsc --noEmit`), and verified `compile_applet` builds cleanly.
 2. **DOMAIN & BFF PLATFORM FOUNDATION (Complete & Hardened)**:
    - Authoritative internal domain logic, Cloud Run Express BFF, Zod validation schemas, rate limiting, circuit breakers, security headers, and Prometheus telemetry.
    - Comprehensive test suite passing across all domains (Money, baskets, substitutions, payments, quest picking, analytics).
@@ -454,6 +456,19 @@ The platform is now connected directly to the live Deliverect Staging environmen
     - **JSON Parsing & Firestore Resilience**:
       - Fixed `SyntaxError: Unexpected end of JSON input` errors across `FirestoreService`, `LinkedAccountsAdapter`, and `CmsService` by adding pre-check validation (`fs.existsSync` and `raw.trim().length > 0`) before `JSON.parse`.
       - Removed Web Firestore SDK (`getWebFirestoreDb`) calls from server services to prevent client SDK `PERMISSION_DENIED` errors on Cloud Run.
+    - **Zero Build & Lint Errors**: 100% clean `lint_applet` and `compile_applet` compilation.
+
+16. **SELECT-ACCOUNT 503 ERROR & BRAND / MEMBERSHIP DELETION FIXES (Completed & Verified)**:
+    - **Select-Account 503 Error Resolution**:
+      - Fixed 503 `Unexpected token '<'` error on `POST /admin/tenants/:id/integration/select-account`. Wrapped `LinkedAccountsAdapter.getTenantMappings` call in a try-catch block so missing or standalone tenant mappings do not throw unhandled exceptions or return HTML 503 error pages.
+      - Added fallback to empty mappings array when mappings are unconfigured or pending, allowing account selection and channel assignments to proceed smoothly.
+    - **Brand & Membership Deletion Operationalized**:
+      - Verified and fixed `DELETE /admin/memberships/:id` in `v1Router.ts`, ensuring Super Admin users and Tenant Admins for the target tenant can delete/revoke memberships without authorization mismatches.
+      - Verified `DELETE /admin/tenants/:id` (`deleteBrand`) in `v1Router.ts` and `HttpAdminClient.ts`. Deleting a brand cleans up its Firestore and disk records, domain mappings, and memberships.
+      - Connected Delete Brand button in `BrandsScreen.tsx` with confirmation modal and error toast handling.
+    - **HttpAdminClient Safe JSON Response Parsing**:
+      - Implemented `safeJson` helper method in `HttpAdminClient.ts` to inspect response Content-Type headers before attempting `res.json()`.
+      - Prevents `SyntaxError: Unexpected token '<'` when backend endpoints return non-JSON or HTML error pages, delivering clear, human-readable error messages to the UI instead.
     - **Zero Build & Lint Errors**: 100% clean `lint_applet` and `compile_applet` compilation.
 
 ---

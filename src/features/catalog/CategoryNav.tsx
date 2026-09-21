@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Heart,
   ShieldCheck,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CategoryNavProps {
@@ -34,6 +35,8 @@ interface CategoryNavProps {
   onOpenFiltersModal?: () => void;
   onOpenAislesModal?: () => void;
   onToggleFavouritesFilter?: () => void;
+  onToggleBuyAgainFilter?: () => void;
+  onClearAllergenFilters?: () => void;
   favouritesCount?: number;
   activeFiltersCount?: number;
 }
@@ -53,10 +56,12 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   onOpenFiltersModal,
   onOpenAislesModal,
   onToggleFavouritesFilter,
+  onToggleBuyAgainFilter,
+  onClearAllergenFilters,
   favouritesCount = 0,
   activeFiltersCount = 0,
 }) => {
-  const { primaryBtnStyle } = useTenantStyles();
+  const { primaryBtnStyle, primaryColour } = useTenantStyles();
 
   // Hide bundle category under aisles
   const visibleCategories = useMemo(() => {
@@ -79,32 +84,62 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   // Determine current active container category (the innermost category represented by the breadcrumbs)
   const currentCategory = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1] : null;
 
-  // Determine whether "All Items" is currently active
-  // At root: active when selectedCategoryId === null
-  // Inside a category: active when selectedCategoryId === currentCategory.id
-  const isAllItemsActive = currentCategory
-    ? selectedCategoryId === currentCategory.id
-    : selectedCategoryId === null;
+  // Leaf categories are represented alongside their siblings. At that lowest level,
+  // an "All <leaf>" pill is redundant (for example "All Bananas" beside "Bananas").
+  // Instead, the leading pill becomes an explicit branded back-to-parent control:
+  // "‹ All Fruit". Intermediate/root categories retain the existing "All <category>"
+  // behaviour so users can still view every product below that branch.
+  const currentCategoryHasChildren = Boolean(
+    currentCategory?.subcategories && currentCategory.subcategories.length > 0
+  );
+  const parentCategory = breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2] : null;
+  const isLeafCategory = Boolean(currentCategory && !currentCategoryHasChildren);
+  const useParentBackPill = Boolean(isLeafCategory && parentCategory);
+
+  const isAllItemsActive = useParentBackPill
+    ? false
+    : currentCategory
+      ? selectedCategoryId === currentCategory.id
+      : selectedCategoryId === null;
 
   const handleAllItemsClick = () => {
+    if (useParentBackPill && parentCategory) {
+      onSelectCategory(parentCategory.id);
+      return;
+    }
+
     if (currentCategory) {
-      // Inside a category: Show all items in this category (including all its subcategories and sub-subcategories)
       onSelectCategory(currentCategory.id);
     } else {
-      // Supermarket root
       onSelectCategory(null);
     }
   };
+
+  const leadingPillLabel = useParentBackPill && parentCategory
+    ? `All ${parentCategory.name || 'Parent Aisle'}`
+    : currentCategory?.name
+      ? `All ${currentCategory.name}`
+      : 'Search Aisles';
+
+  const parentBackPillStyle = useParentBackPill
+    ? {
+        backgroundColor: `${primaryColour}12`,
+        borderColor: `${primaryColour}55`,
+        color: primaryColour,
+      }
+    : undefined;
 
   const handleBackClick = () => {
     if (breadcrumbs.length > 1) {
-      // Go back to parent category
       onSelectCategory(breadcrumbs[breadcrumbs.length - 2].id);
     } else {
-      // Go back to all aisles
       onSelectCategory(null);
     }
   };
+
+  const hasActiveAllergenOrDietary =
+    (filterState?.excludedAllergens?.length || 0) > 0 ||
+    (filterState?.selectedDietaryTags?.length || 0) > 0;
 
   return (
     <div
@@ -124,7 +159,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
           }`}
         >
           <LayoutGrid className="w-3.5 h-3.5 text-gray-700" />
-          <span>All Aisles</span>
+          <span>Search Aisles</span>
         </button>
 
         {breadcrumbs.map((crumb, idx) => {
@@ -151,17 +186,17 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       </div>
 
       {/* Category Aisles Row: Filter Button + Search Bar + Subcategories & Back Arrow */}
-      <div className="flex items-center gap-2 w-full max-w-full overflow-hidden">
+      <div className="flex items-center gap-2 w-full max-w-full overflow-visible">
         {/* Left grouping: Merged Filter Button + Search Bar */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 z-30 overflow-visible">
           {/* Merged Favourites, Allergens & Dietary Preferences Button */}
           {onOpenFiltersModal && (
             <button
               type="button"
               id="filter-allergens-dietary-btn"
               onClick={onOpenFiltersModal}
-              className={`relative z-20 overflow-visible w-9 h-9 p-0 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs flex items-center justify-center ${
-                activeFiltersCount > 0 || filterState?.onlyFavourites
+              className={`relative z-30 overflow-visible w-9 h-9 p-0 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer border shadow-2xs flex items-center justify-center ${
+                activeFiltersCount > 0 || filterState?.onlyFavourites || filterState?.onlyBuyAgain
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-400/20'
                   : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700 active:scale-95'
               }`}
@@ -169,9 +204,12 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               aria-label="Filter favourites, allergens and diet"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-gray-700" />
-              {(activeFiltersCount > 0 || (filterState?.onlyFavourites && 1)) && (
-                <span className="absolute z-30 -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
-                  {activeFiltersCount + (filterState?.onlyFavourites ? 1 : 0)}
+              {(activeFiltersCount > 0 ||
+                (filterState?.onlyFavourites ? 1 : 0) + (filterState?.onlyBuyAgain ? 1 : 0) > 0) && (
+                <span className="absolute z-40 -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                  {activeFiltersCount +
+                    (filterState?.onlyFavourites ? 1 : 0) +
+                    (filterState?.onlyBuyAgain ? 1 : 0)}
                 </span>
               )}
             </button>
@@ -186,7 +224,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
                 id="aisle-search-input"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Search aisle..."
+                placeholder="Search..."
                 className="w-full pl-7 pr-6 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
               />
               {searchQuery && (
@@ -204,10 +242,14 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
           )}
         </div>
 
-        {/* Subcategory / Shelf Pills with Back Arrow left of 'All [Category]' */}
+        {/* Subcategory / Shelf Pills with Untoggle Filter Buttons & Back Arrow left of 'Search Aisles' */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
-          {/* Back Arrow button placed immediately to the left of 'All [Category]' */}
-          {breadcrumbs.length > 0 && (
+          {/*
+            Keep the compact arrow for intermediate levels. At a leaf, the leading
+            "‹ All <parent>" pill below becomes the back control, avoiding duplicate
+            navigation controls and the redundant "All <leaf>" label.
+          */}
+          {breadcrumbs.length > 0 && !useParentBackPill && (
             <button
               type="button"
               id="aisle-back-arrow-btn"
@@ -216,11 +258,51 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               title={
                 breadcrumbs.length > 1
                   ? `Back to ${breadcrumbs[breadcrumbs.length - 2]?.name || 'Parent Aisle'}`
-                  : 'Back to All Aisles'
+                  : 'Back to Search Aisles'
               }
               aria-label="Back to previous aisle"
             >
               <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+            </button>
+          )}
+
+          {/* ACTIVE FILTER UNTOGGLE BUTTONS (NO TEXT, LEFT OF SEARCH AISLES) */}
+          {filterState?.onlyFavourites && onToggleFavouritesFilter && (
+            <button
+              type="button"
+              id="untoggle-favourites-filter-btn"
+              onClick={onToggleFavouritesFilter}
+              className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 transition-all shrink-0 cursor-pointer shadow-2xs flex items-center justify-center active:scale-95"
+              title="Remove Favourites filter"
+              aria-label="Remove Favourites filter"
+            >
+              <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+            </button>
+          )}
+
+          {filterState?.onlyBuyAgain && onToggleBuyAgainFilter && (
+            <button
+              type="button"
+              id="untoggle-buy-again-filter-btn"
+              onClick={onToggleBuyAgainFilter}
+              className="w-7 h-7 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-600 transition-all shrink-0 cursor-pointer shadow-2xs flex items-center justify-center active:scale-95"
+              title="Remove Buy Again filter"
+              aria-label="Remove Buy Again filter"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+            </button>
+          )}
+
+          {hasActiveAllergenOrDietary && onClearAllergenFilters && (
+            <button
+              type="button"
+              id="untoggle-allergen-filter-btn"
+              onClick={onClearAllergenFilters}
+              className="w-7 h-7 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 transition-all shrink-0 cursor-pointer shadow-2xs flex items-center justify-center active:scale-95"
+              title="Remove Allergen / Dietary filters"
+              aria-label="Remove Allergen / Dietary filters"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
             </button>
           )}
 
@@ -253,14 +335,33 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             type="button"
             id="cat-pill-all-items"
             onClick={handleAllItemsClick}
-            style={isAllItemsActive && !activeDealFilter ? primaryBtnStyle : undefined}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              isAllItemsActive && !activeDealFilter
-                ? 'shadow-xs'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            style={
+              useParentBackPill
+                ? parentBackPillStyle
+                : isAllItemsActive && !activeDealFilter
+                  ? primaryBtnStyle
+                  : undefined
+            }
+            className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 border ${
+              useParentBackPill
+                ? 'shadow-2xs hover:brightness-95 active:scale-95'
+                : isAllItemsActive && !activeDealFilter
+                  ? 'shadow-xs border-transparent'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-transparent'
             }`}
+            title={
+              useParentBackPill && parentCategory
+                ? `Back to all ${parentCategory.name || 'items'}`
+                : undefined
+            }
+            aria-label={
+              useParentBackPill && parentCategory
+                ? `Back to all ${parentCategory.name || 'items'}`
+                : undefined
+            }
           >
-            {currentCategory?.name ? `All ${currentCategory.name}` : 'All Aisles'}
+            {useParentBackPill && <ArrowLeft className="w-3.5 h-3.5 shrink-0" />}
+            <span>{leadingPillLabel}</span>
           </button>
 
           {displayedCategories.map((cat) => {
@@ -288,7 +389,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             );
           })}
 
-          {/* "See More / All Aisles" button opening the All Categories Dialog */}
+          {/* "See More / Search Aisles" button opening the All Categories Dialog */}
           {onOpenAislesModal && (
             <button
               type="button"
@@ -298,7 +399,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               title="Open full aisle & category directory"
             >
               <LayoutGrid className="w-3 h-3 text-emerald-700" />
-              <span>{remainingCategoriesCount > 0 ? `+${remainingCategoriesCount} More` : 'All Aisles'}</span>
+              <span>{remainingCategoriesCount > 0 ? `+${remainingCategoriesCount} More` : 'Search Aisles'}</span>
             </button>
           )}
         </div>
@@ -306,3 +407,4 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
     </div>
   );
 };
+

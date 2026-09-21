@@ -59,7 +59,9 @@ export function securityHeadersMiddleware(options: SecurityHeadersOptions = {}) 
       "img-src 'self' data: blob: https:",
       "connect-src 'self' https: wss:",
       "frame-src 'self' https://*.google.com https://*.firebaseapp.com https://*.basistheory.com https://*.run.app",
-      "frame-ancestors 'self' https://*.google.com https://*.googleusercontent.com https://*.run.app https://ai.studio https://*.ai.studio https://*.aistudio.google.com https://*.web.app https://*.firebaseapp.com",
+      isProd
+        ? "frame-ancestors 'self' https://*.google.com https://*.googleusercontent.com https://*.run.app https://ai.studio https://*.ai.studio https://*.aistudio.google.com https://*.web.app https://*.firebaseapp.com"
+        : "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://0.0.0.0:* https://*.google.com https://*.googleusercontent.com https://*.run.app https://ai.studio https://*.ai.studio https://*.aistudio.google.com https://*.web.app https://*.firebaseapp.com *",
       "object-src 'none'",
       "base-uri 'self'",
     ].join('; ');

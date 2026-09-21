@@ -123,6 +123,7 @@ export interface TenantFeatureFlags {
   enableSearchSuggestions: boolean;
   enableDepositReturnScheme?: boolean;
   enableTipCourier?: boolean;
+  enableSequentialCategoryGrouping?: boolean;
 }
 
 export type FeatureFlags = TenantFeatureFlags;

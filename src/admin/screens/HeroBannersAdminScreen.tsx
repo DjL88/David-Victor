@@ -208,19 +208,25 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadingImage, setUploadingImage] = useState<boolean>(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      if (uploadEvent.target?.result) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await defaultAdminClient.uploadAssetFile(file, 'HERO_IMAGE', tenantId);
+      if (uploaded && uploaded.publicUrl) {
         setCurrentEditingBanner((prev) => ({
           ...prev,
-          backgroundImageUrl: uploadEvent.target!.result as string,
+          backgroundImageUrl: uploaded.publicUrl,
         }));
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      alert(`Hero image upload failed: ${err.message || err}`);
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const toggleLinkedProduct = (plu: string) => {

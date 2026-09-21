@@ -112,21 +112,32 @@ export const BrandSplashScreen: React.FC<BrandSplashScreenProps> = ({
 
       {/* Center Brand Identity */}
       <div className="flex flex-col items-center text-center z-10 my-auto max-w-sm px-4">
-        {/* Animated Brand Emblem */}
+        {/* Animated Brand Emblem / Square Icon */}
         <div className="relative mb-6">
           <div
             className="absolute -inset-2 rounded-3xl opacity-40 blur-md animate-pulse"
             style={{ backgroundColor: primaryColor }}
           />
           <div
-            className="relative w-24 h-24 rounded-3xl flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-xl"
+            className="relative w-24 h-24 rounded-3xl flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-xl overflow-hidden p-2.5"
             style={{
               background: `linear-gradient(135deg, ${primaryColor} 0%, #111827 100%)`,
             }}
           >
-            <span className="text-3xl font-black tracking-wider text-white">
-              {brandInitials}
-            </span>
+            {tenant?.faviconUrl || tenant?.iconUrl || tenant?.logoUrl ? (
+              <img
+                src={tenant.faviconUrl || tenant.iconUrl || tenant.logoUrl}
+                alt={brandName}
+                className="w-full h-full object-contain drop-shadow-md"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <span className="text-3xl font-black tracking-wider text-white">
+                {brandInitials}
+              </span>
+            )}
           </div>
         </div>
 

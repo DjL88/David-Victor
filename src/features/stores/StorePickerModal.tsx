@@ -198,7 +198,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
               {(detailsStore.services?.length || 0) > 0 && <section className="mt-6 pt-5 border-t border-gray-200"><h3 className="text-base font-black text-gray-900 mb-3">Services</h3><div className="grid grid-cols-2 gap-3">{detailsStore.services!.map((service) => service.url ? <a key={service.id} href={service.url} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800 flex items-center justify-between gap-2">{service.name}<ExternalLink className="w-4 h-4" /></a> : <div key={service.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold text-gray-700">{service.name}</div>)}</div></section>}
             </div>
           )}
-          <div className="overflow-y-auto flex-1 space-y-3 pr-1">
+          <div className="overflow-y-auto flex-1 space-y-3 p-1">
             {storeProductLoading ? <div className="py-10 text-center text-sm text-gray-500">Checking local stock…</div> : inStockStores.length === 0 ? <div className="py-10 text-center rounded-2xl bg-gray-50 text-sm text-gray-600">This item is currently unavailable at nearby stores.</div> : inStockStores.map((store) => {
               const result = storeProductResults[store.id];
               const price = toMajorPrice(result?.price) ?? result?.price ?? targetProduct.price;
@@ -449,7 +449,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
             />
           </div>
         ) : (
-          <div className="overflow-y-auto flex-1 space-y-2.5 pr-1">
+          <div className="overflow-y-auto flex-1 space-y-2.5 p-1">
             {displayedStores.length === 0 ? (
               <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
                 <StoreIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />

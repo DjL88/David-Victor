@@ -1,4 +1,5 @@
 import { CustomFont, TenantFontConfig, DEFAULT_FALLBACK_CHAINS } from '../commerce/fontModels';
+import { extractCleanFontFamily } from '../commerce/googleFonts';
 
 /**
  * Validates and safely injects font declarations into the DOM.
@@ -67,8 +68,8 @@ export function applyTenantFonts(config?: TenantFontConfig): void {
     `);
   });
 
-  const sanitizedHeadingFamily = (config.headingFontFamily || '').replace(/[^a-zA-Z0-9\s-_]/g, '').trim();
-  const sanitizedBodyFamily = (config.bodyFontFamily || '').replace(/[^a-zA-Z0-9\s-_]/g, '').trim();
+  const sanitizedHeadingFamily = config.headingFontFamily ? extractCleanFontFamily(config.headingFontFamily) : '';
+  const sanitizedBodyFamily = config.bodyFontFamily ? extractCleanFontFamily(config.bodyFontFamily) : '';
 
   // Construct fallback chains for heading and body
   const headingFont = sanitizedHeadingFamily
@@ -84,9 +85,16 @@ export function applyTenantFonts(config?: TenantFontConfig): void {
     :root {
       --font-heading: ${headingFont};
       --font-body: ${bodyFont};
+      --font-carousel-title: ${headingFont};
     }
-    h1, h2, h3, h4, .font-heading {
+    h1, h2, h3, h4, h5, h6, .font-heading, [class*="font-heading"] {
       font-family: var(--font-heading) !important;
+    }
+    #main-promotional-super-carousel h1,
+    #main-promotional-super-carousel h2,
+    #main-promotional-super-carousel h3,
+    .font-carousel-title {
+      font-family: var(--font-carousel-title) !important;
     }
     body, p, input, button, select, .font-body {
       font-family: var(--font-body) !important;

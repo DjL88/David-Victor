@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Category, Product } from '../../commerce/models';
-import { useTenantStyles } from '../../tenant/useTenant';
+import { useTenantStyles, useTenant } from '../../tenant/useTenant';
+import { ensureNestedCategoryTree } from '../../commerce/categoryHierarchy';
 import {
   Search,
   X,
@@ -10,6 +11,7 @@ import {
   ArrowRight,
   Sparkles,
   Check,
+  ArrowLeft,
 } from 'lucide-react';
 
 interface AislesModalProps {
@@ -33,44 +35,57 @@ export const AislesModal: React.FC<AislesModalProps> = ({
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
   const [searchQuery, setSearchQuery] = useState('');
+  const [browsePath, setBrowsePath] = useState<Category[]>([]);
 
-  // Filter out bundles from general aisles
+  useEffect(() => {
+    if (isOpen) {
+      setBrowsePath([]);
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
+  const { tenant } = useTenant();
+
+  // Normalize category tree to guarantee top-level array only contains level 1 root categories (c. 10 categories)
   const rootCategories = useMemo(() => {
-    return (categories || []).filter((cat) => {
+    const tree = ensureNestedCategoryTree(categories || [], {
+      enableSequentialCategoryGrouping: tenant?.featureFlags?.enableSequentialCategoryGrouping,
+    });
+    return tree.filter((cat) => {
       if (!cat) return false;
       const name = (cat.name || '').toLowerCase();
       const id = (cat.id || '').toLowerCase();
       return !name.includes('bundle') && !id.includes('bundle');
     });
-  }, [categories]);
+  }, [categories, tenant?.featureFlags?.enableSequentialCategoryGrouping]);
 
-  // Search filter across root categories and all subcategories
+  const visibleCategories = browsePath.length > 0
+    ? browsePath[browsePath.length - 1].subcategories || []
+    : rootCategories;
+
+  // Search across all category levels when searchQuery is provided, or show current level when browsing
   const filteredCategories = useMemo((): Category[] => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return rootCategories;
+    if (!q) return visibleCategories;
 
-    const results: Category[] = [];
-    for (const cat of rootCategories) {
-      const catNameMatches = (cat.name || '').toLowerCase().includes(q);
-      const catDescMatches = (cat.description || '').toLowerCase().includes(q);
-
-      const matchingSubs = (cat.subcategories || []).filter((sub) => {
-        const subNameMatches = (sub.name || '').toLowerCase().includes(q);
-        const subDeepMatches = (sub.subcategories || []).some((deep) =>
-          (deep.name || '').toLowerCase().includes(q)
-        );
-        return subNameMatches || subDeepMatches;
-      });
-
-      if (catNameMatches || catDescMatches || matchingSubs.length > 0) {
-        results.push({
-          ...cat,
-          subcategories: matchingSubs.length > 0 ? matchingSubs : cat.subcategories,
-        });
+    // Helper to recursively collect matching categories at any level
+    const matches: Category[] = [];
+    const visit = (cats: Category[]) => {
+      for (const cat of cats) {
+        if (
+          (cat.name || '').toLowerCase().includes(q) ||
+          (cat.description || '').toLowerCase().includes(q)
+        ) {
+          matches.push(cat);
+        }
+        if (cat.subcategories && cat.subcategories.length > 0) {
+          visit(cat.subcategories);
+        }
       }
-    }
-    return results;
-  }, [rootCategories, searchQuery]);
+    };
+    visit(rootCategories);
+    return matches;
+  }, [visibleCategories, rootCategories, searchQuery]);
 
   const categoryFallbackImages = useMemo(() => {
     const result = new Map<string, string>();
@@ -112,7 +127,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-gray-950 leading-tight">
-                  All Aisles & Categories
+                  {browsePath.length > 0 ? browsePath[browsePath.length - 1].name : 'All Aisles'}
                 </h2>
                 <p className="text-[11px] text-gray-500 font-medium">
                   {storeName ? `Browsing ${storeName}` : 'Select an aisle or product shelf'}
@@ -158,7 +173,19 @@ export const AislesModal: React.FC<AislesModalProps> = ({
 
         {/* Scrollable Category List / Grid */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 no-scrollbar flex-1 bg-gray-50/50">
+          {browsePath.length > 0 && (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setBrowsePath((path) => path.slice(0, -1)); setSearchQuery(''); }} className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                <ArrowLeft className="w-3.5 h-3.5" /> Back
+              </button>
+              <button type="button" onClick={() => handleSelect(browsePath[browsePath.length - 1].id)} className="flex-1 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
+                View all in {browsePath[browsePath.length - 1].name}
+              </button>
+            </div>
+          )}
+
           {/* Quick "All Aisles" option */}
+          {browsePath.length === 0 && (
           <button
             type="button"
             id="aisles-modal-select-all-btn"
@@ -197,6 +224,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               <ChevronRight className="w-4 h-4 text-gray-400" />
             )}
           </button>
+          )}
 
           {/* Filtered Aisles */}
           {filteredCategories.length === 0 ? (
@@ -231,7 +259,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                     {/* Main Category Header Row */}
                     <div className="flex items-center justify-between gap-3">
                       <div
-                        onClick={() => handleSelect(cat.id)}
+                        onClick={() => hasSubs ? (setBrowsePath((path) => [...path, cat]), setSearchQuery('')) : handleSelect(cat.id)}
                         className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
                       >
                         {categoryImage ? (
@@ -260,7 +288,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                       <button
                         type="button"
                         id={`aisle-select-btn-${cat.id}`}
-                        onClick={() => handleSelect(cat.id)}
+                        onClick={() => hasSubs ? (setBrowsePath((path) => [...path, cat]), setSearchQuery('')) : handleSelect(cat.id)}
                         style={isSelected ? primaryBtnStyle : undefined}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
                           isSelected
@@ -268,7 +296,9 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
-                        {isSelected ? (
+                        {hasSubs ? (
+                          <><span>Open</span><ChevronRight className="w-3.5 h-3.5" /></>
+                        ) : isSelected ? (
                           <>
                             <Check className="w-3.5 h-3.5" />
                             <span>Active</span>
@@ -282,30 +312,6 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Subcategories Shelf Chips */}
-                    {hasSubs && (
-                      <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap gap-1.5">
-                        {cat.subcategories?.map((sub) => {
-                          const isSubSelected = selectedCategoryId === sub.id;
-                          return (
-                            <button
-                              key={sub.id}
-                              id={`aisles-modal-sub-${sub.id}`}
-                              type="button"
-                              onClick={() => handleSelect(sub.id)}
-                              style={isSubSelected ? primaryBtnStyle : undefined}
-                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                                isSubSelected
-                                  ? 'shadow-xs'
-                                  : 'bg-gray-100/90 text-gray-700 hover:bg-gray-200'
-                              }`}
-                            >
-                              {sub.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 );
               })}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
-import { AdminUser, TenantConfig } from '../../commerce/models';
+import { AdminRole, AdminUser, TenantConfig } from '../../commerce/models';
 import {
   Users,
   UserPlus,
@@ -13,8 +13,6 @@ import {
   RefreshCw,
   Mail,
   Building2,
-  Info,
-  Lock,
 } from 'lucide-react';
 
 interface MembershipRecord {
@@ -53,12 +51,21 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<string>('tenantAdmin');
+  const [newRole, setNewRole] = useState<AdminRole>('tenantAdmin');
   const [newTenantId, setNewTenantId] = useState<string>(currentTenantId || 'brand-alpha');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser.isSuperAdmin || currentUser.role === 'platformSuperAdmin';
+  const assignableRoles: AdminRole[] = isSuperAdmin
+    ? ['platformSuperAdmin', 'tenantAdmin', 'operationsEditor', 'marketingEditor', 'viewer']
+    : currentUser.role === 'tenantAdmin'
+      ? ['tenantAdmin', 'operationsEditor', 'marketingEditor', 'viewer']
+      : currentUser.role === 'operationsEditor'
+        ? ['operationsEditor', 'viewer']
+        : currentUser.role === 'marketingEditor'
+          ? ['marketingEditor', 'viewer']
+          : [];
 
   const loadData = async () => {
     setLoading(true);
@@ -148,18 +155,22 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
             Tenant Admin
           </span>
         );
-      case 'storeManager':
-      case 'STORE_MANAGER':
+      case 'operationsEditor':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
-            Store Manager
+            Operations Editor
           </span>
         );
-      case 'customerSupport':
-      case 'CUSTOMER_SUPPORT':
+      case 'marketingEditor':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-            Customer Support
+            Marketing Editor
+          </span>
+        );
+      case 'viewer':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
+            Viewer
           </span>
         );
       default:
@@ -177,13 +188,10 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-2xs">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-gray-900">Admin Memberships & RBAC</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Section 7 & 27
-            </span>
+            <h1 className="text-xl font-bold text-gray-900">Team & access</h1>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Manage authenticated Firebase accounts authorized for platform and tenant operations.
+            Invite teammates and choose what they can manage.
           </p>
         </div>
 
@@ -204,21 +212,8 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-98"
           >
             <UserPlus className="w-4 h-4" />
-            <span>Add Administrator</span>
+            <span>Add teammate</span>
           </button>
-        </div>
-      </div>
-
-      {/* BOOTSTRAP ALLOWLIST NOTICE */}
-      <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-start gap-3 text-xs text-blue-900">
-        <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-bold text-blue-950">First-Admin Bootstrap & Permanent RBAC</p>
-          <p className="text-blue-800 leading-relaxed">
-            When deployed to staging or production, the initial platform administrator is verified via cryptographically checked Firebase tokens matched against{' '}
-            <code className="px-1.5 py-0.5 bg-blue-100/80 rounded font-mono font-bold text-blue-900">PLATFORM_SUPERADMIN_EMAILS</code>.
-            Once you create authoritative memberships here in Firestore, those users retain their assigned permissions permanently, and the initial environment allowlist can safely be retired.
-          </p>
         </div>
       </div>
 
@@ -227,7 +222,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-xs text-red-700">
           <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <div>
-            <p className="font-bold">Operation Error</p>
+            <p className="font-bold">We couldn't complete that change</p>
             <p className="mt-0.5">{error}</p>
           </div>
         </div>
@@ -381,8 +376,8 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                   <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-sm">Assign Administrator Membership</h3>
-                  <p className="text-[11px] text-gray-500">Authorize a Firebase account for admin access</p>
+                  <h3 className="font-bold text-gray-900 text-sm">Add a teammate</h3>
+                  <p className="text-[11px] text-gray-500">Choose what this person can manage</p>
                 </div>
               </div>
               <button
@@ -397,7 +392,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
             <form onSubmit={handleAddMember} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Administrator Email (Firebase Account) *
+                  Email address *
                 </label>
                 <input
                   type="email"
@@ -408,7 +403,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                   className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
                 />
                 <p className="text-[10px] text-gray-400 mt-1">
-                  The user must sign in with this exact email via Firebase Authentication.
+                  They must sign in with this email address.
                 </p>
               </div>
 
@@ -427,16 +422,14 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Role *</label>
                 <select
                   value={newRole}
-                  onChange={(e) => setNewRole(e.target.value)}
+                  onChange={(e) => setNewRole(e.target.value as AdminRole)}
                   className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
                 >
-                  <option value="tenantAdmin">Tenant Administrator (Full brand management)</option>
-                  <option value="storeManager">Store Manager (Fleet & catalog operations)</option>
-                  <option value="customerSupport">Customer Support (Orders & audit logs)</option>
-                  <option value="analyst">Analyst (Read-only analytics & reporting)</option>
-                  {isSuperAdmin && (
-                    <option value="platformSuperAdmin">Platform SuperAdmin (Global multi-tenant)</option>
-                  )}
+                  {assignableRoles.includes('tenantAdmin') && <option value="tenantAdmin">Tenant administrator — manage the whole brand</option>}
+                  {assignableRoles.includes('operationsEditor') && <option value="operationsEditor">Operations editor — stores, orders and fulfilment</option>}
+                  {assignableRoles.includes('marketingEditor') && <option value="marketingEditor">Marketing editor — pages, branding and promotions</option>}
+                  {assignableRoles.includes('viewer') && <option value="viewer">Viewer — read only</option>}
+                  {assignableRoles.includes('platformSuperAdmin') && <option value="platformSuperAdmin">Platform administrator — all brands</option>}
                 </select>
               </div>
 
@@ -479,7 +472,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                   disabled={isSubmitting}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Assigning...' : 'Confirm Assignment'}
+                  {isSubmitting ? 'Adding...' : 'Add teammate'}
                 </button>
               </div>
             </form>

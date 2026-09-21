@@ -7,6 +7,7 @@ import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { resolveAllergenTags } from '../../domain/allergens';
+import { defaultAnalyticsClient, AnalyticsEventType } from '../../analytics';
 import {
   X,
   Plus,
@@ -74,6 +75,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   useEffect(() => {
     setImgFailed(false);
   }, [product?.imageUrl]);
+
+  useEffect(() => {
+    if (product) {
+      const priceVal = typeof product.price === 'object' && product.price !== null ? (product.price as any).amount / 100 : (typeof product.price === 'number' ? product.price : 0);
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.PRODUCT_VIEW,
+        productPlu: product.plu || product.id,
+        categoryId: product.categoryIds?.[0],
+        properties: {
+          productName: product.name,
+          price: priceVal,
+        },
+      });
+    }
+  }, [product?.id, product?.plu]);
 
   useEffect(() => {
     if (availabilitySummary) {

@@ -4,6 +4,7 @@ import { useTenant } from '../../tenant/TenantContext';
 import { resolveStoryMediaUrl } from '../../utils/storyMediaUtils';
 import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
 import { getDealForStory } from '../../commerce/dealModels';
+import { defaultAnalyticsClient, AnalyticsEventType } from '../../analytics';
 import {
   X,
   ChevronLeft,
@@ -91,7 +92,16 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   useEffect(() => {
     setProgress(0);
     setDirectVideoFailed(false);
-  }, [currentIndex]);
+    if (currentStory) {
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.STORY_OPEN,
+        storyId: currentStory.id,
+        properties: {
+          title: currentStory.title,
+        },
+      });
+    }
+  }, [currentIndex, currentStory?.id]);
 
   // Direct video play / pause synchronization
   useEffect(() => {

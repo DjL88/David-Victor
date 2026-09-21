@@ -10,6 +10,7 @@ import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { FirestorePlatformService, FirestoreService } from '../firestoreService';
 import { getFirestoreDb, getFirebaseStorage, getFirebaseAuth, getFirebaseAdminAuth, verifyAdminSession, verifyAdminSessionWithStatus, AuthenticatedAdmin } from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
+import { MediaHealthService } from '../mediaHealthService';
 import { LocationService } from '../locationService';
 import { WebhookService } from '../deliverect/WebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
@@ -1811,7 +1812,7 @@ v1Router.get('/admin/memberships', requireAdminAuth(), async (req: Request, res:
 
 // Create/Invite membership:
 // platformSuperAdmin can create any role (including platformSuperAdmin or tenant roles).
-// tenantAdmin can create roles for their own tenant.
+// tenant roles can only grant roles at or below their own authority, within their tenant.
 v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
@@ -1822,7 +1823,33 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    const isAssigningSuperAdmin = role === 'platformSuperAdmin' || role === 'PLATFORM_SUPER_ADMIN';
+    const requestedRole = String(role);
+    const canonicalRoles = ['platformSuperAdmin', 'tenantAdmin', 'operationsEditor', 'marketingEditor', 'viewer'] as const;
+    const assignableRoles: Record<string, readonly string[]> = {
+      platformSuperAdmin: canonicalRoles,
+      tenantAdmin: ['tenantAdmin', 'operationsEditor', 'marketingEditor', 'viewer'],
+      operationsEditor: ['operationsEditor', 'viewer'],
+      marketingEditor: ['marketingEditor', 'viewer'],
+      viewer: [],
+    };
+
+    if (!canonicalRoles.includes(requestedRole as any)) {
+      return res.status(400).json({
+        error: `Unsupported role: ${requestedRole}`,
+        code: 'INVALID_ADMIN_ROLE',
+        allowedRoles: canonicalRoles,
+      });
+    }
+
+    const actorRole = authAdmin.isSuperAdmin ? 'platformSuperAdmin' : authAdmin.role;
+    if (!(assignableRoles[actorRole] || []).includes(requestedRole)) {
+      return res.status(403).json({
+        error: `Your ${actorRole} role cannot assign ${requestedRole}.`,
+        code: 'ROLE_GRANT_NOT_ALLOWED',
+      });
+    }
+
+    const isAssigningSuperAdmin = requestedRole === 'platformSuperAdmin';
 
     if (isAssigningSuperAdmin && !authAdmin.isSuperAdmin) {
       return res.status(403).json({
@@ -1838,7 +1865,7 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
     const docId = isAssigningSuperAdmin ? `${normalizedEmail}_platform` : `${normalizedEmail}_${targetTenant}`;
     const membershipData = {
       email: normalizedEmail,
-      role: isAssigningSuperAdmin ? 'platformSuperAdmin' : role,
+      role: requestedRole,
       tenantId: targetTenant,
       name: name || normalizedEmail.split('@')[0],
       status: 'active',
@@ -1861,7 +1888,7 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
           if (isAssigningSuperAdmin) {
             await adminAuth.setCustomUserClaims(userRecord.uid, { role: 'platformSuperAdmin', platformSuperAdmin: true });
           } else {
-            await adminAuth.setCustomUserClaims(userRecord.uid, { role, tenantId: targetTenant });
+            await adminAuth.setCustomUserClaims(userRecord.uid, { role: requestedRole, tenantId: targetTenant });
           }
           if (db) {
             const uidDocId = isAssigningSuperAdmin ? `${userRecord.uid}_platform` : `${userRecord.uid}_${targetTenant}`;
@@ -1881,7 +1908,7 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
       tenantId: targetTenant,
       category: 'Tenant',
       action: 'ASSIGN_MEMBERSHIP',
-      details: `Assigned role ${role} to ${normalizedEmail} for tenant ${targetTenant}`,
+      details: `Assigned role ${requestedRole} to ${normalizedEmail} for tenant ${targetTenant}`,
     });
 
     res.status(201).json({
@@ -1911,18 +1938,34 @@ v1Router.delete('/admin/memberships/:id', requireAdminAuth(), async (req: Reques
     }
 
     const data = doc.data();
-    if (data?.role === 'platformSuperAdmin' && !authAdmin.isSuperAdmin) {
-      return res.status(403).json({
-        error: 'Forbidden: Only Platform SuperAdmins can delete platformSuperAdmin memberships.',
-        code: 'FORBIDDEN_SUPERADMIN_ONLY',
-      });
-    }
+    const targetRole = String(data?.role || '');
+    const isTargetSuperAdmin = targetRole === 'platformSuperAdmin' || targetRole === 'PLATFORM_SUPER_ADMIN';
 
-    if (!authAdmin.isSuperAdmin && data?.tenantId !== authAdmin.tenantId) {
-      return res.status(403).json({
-        error: 'Forbidden: You cannot remove memberships for other tenants.',
-        code: 'TENANT_ISOLATION_ERROR',
-      });
+    if (!authAdmin.isSuperAdmin) {
+      if (isTargetSuperAdmin) {
+        return res.status(403).json({
+          error: 'Forbidden: Only Platform SuperAdmins can delete platformSuperAdmin memberships.',
+          code: 'FORBIDDEN_SUPERADMIN_ONLY',
+        });
+      }
+      if (data?.tenantId !== authAdmin.tenantId) {
+        return res.status(403).json({
+          error: 'Forbidden: You cannot remove memberships for other tenants.',
+          code: 'TENANT_ISOLATION_ERROR',
+        });
+      }
+      if (authAdmin.role === 'viewer') {
+        return res.status(403).json({
+          error: 'Forbidden: Viewers cannot revoke memberships.',
+          code: 'ROLE_REVOKE_NOT_ALLOWED',
+        });
+      }
+      if ((targetRole === 'tenantAdmin' || targetRole === 'TENANT_ADMIN') && authAdmin.role !== 'tenantAdmin') {
+        return res.status(403).json({
+          error: 'Forbidden: Only tenantAdmin or superAdmin can revoke tenantAdmin memberships.',
+          code: 'ROLE_REVOKE_NOT_ALLOWED',
+        });
+      }
     }
 
     await db.collection('tenantMemberships').doc(membershipId).delete();
@@ -2889,6 +2932,40 @@ v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), async (r
   }
 });
 
+// 9.9.1 Media Health Audit API
+v1Router.get('/admin/tenants/:id/media-health', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = req.params.id;
+
+    if (authAdmin.role !== 'platformSuperAdmin' && authAdmin.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot inspect media health for another tenant.', code: 'FORBIDDEN' });
+    }
+
+    const recheck = req.query.recheck === 'true';
+    const health = await MediaHealthService.scanTenantMediaHealth(tenantId, recheck);
+    res.json(health);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to inspect media health');
+  }
+});
+
+v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = req.params.id;
+
+    if (authAdmin.role !== 'platformSuperAdmin' && authAdmin.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot inspect media health for another tenant.', code: 'FORBIDDEN' });
+    }
+
+    const health = await MediaHealthService.scanTenantMediaHealth(tenantId, true);
+    res.json(health);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to probe media health');
+  }
+});
+
 // 9.10 Google Fonts Catalogue API
 v1Router.get('/cms/pages', (req: Request, res: Response) => res.json({ pages: CmsService.list(resolveTenant(req), true) }));
 v1Router.get('/admin/tenants/:id/pages', requireAdminAuth(), (req: Request, res: Response) => {
@@ -3290,19 +3367,29 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     }
 
     const adapter = new LinkedAccountsAdapter();
-    const mappings = await adapter.getTenantMappings(tenantId);
-    const matchingStores = mappings.stores.filter(s => s.accountLinkId === `acclink_${accountId}` || s.accountLinkId === accountId);
-    const availableChannelLinkIds = new Set(matchingStores.map(s => String(s.channelLinkId)));
+    let mappings: any = { accounts: [], stores: [] };
+    try {
+      mappings = await adapter.getTenantMappings(tenantId);
+    } catch (mappingErr: any) {
+      console.warn(`[Select Account] Live tenant mappings unavailable for ${tenantId}:`, mappingErr?.message || mappingErr);
+    }
+
+    const matchingStores = (mappings?.stores || []).filter((s: any) => s.accountLinkId === `acclink_${accountId}` || s.accountLinkId === accountId);
+    const availableChannelLinkIds = new Set(matchingStores.map((s: any) => String(s.channelLinkId)));
+    // Store assignment is explicit. Missing or empty input never expands a tenant to every store.
     const requestedChannelLinkIds: string[] = channelLinkIds === undefined
-      ? matchingStores.map(s => String(s.channelLinkId))
+      ? []
       : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
-    const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
-    if (invalidChannelLinkIds.length > 0) {
-      return res.status(400).json({
-        error: 'One or more channel links do not belong to the selected Deliverect account.',
-        code: 'INVALID_CHANNEL_ASSIGNMENT',
-        invalidChannelLinkIds,
-      });
+    
+    if (availableChannelLinkIds.size > 0) {
+      const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
+      if (invalidChannelLinkIds.length > 0) {
+        return res.status(400).json({
+          error: 'One or more channel links do not belong to the selected Deliverect account.',
+          code: 'INVALID_CHANNEL_ASSIGNMENT',
+          invalidChannelLinkIds,
+        });
+      }
     }
 
     const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
@@ -3472,6 +3559,23 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
   }
 });
 
+v1Router.get('/admin/tenants/:id/integration/raw-menu/:storeId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const adapter = await getDeliverectAdapterAsync(tenantId) as any;
+    if (typeof adapter.getRawStoreMenus !== 'function') {
+      return res.status(501).json({ error: 'Raw menu download is unavailable for this integration.', code: 'RAW_MENU_NOT_SUPPORTED' });
+    }
+    const result = await adapter.getRawStoreMenus(req.params.storeId);
+    const safeName = String(req.params.storeId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="deliverect-menu-${safeName}.json"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to download the Deliverect menu');
+  }
+});
+
 // ==========================================
 // CONNECTION HEALTH & 5-STAGE REQUEST TRACE
 // ==========================================
@@ -3567,6 +3671,20 @@ v1Router.get('/analytics/insights', requireAdminAuth('operationsEditor'), async 
     res.json(insights);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to retrieve analytics insights');
+  }
+});
+
+/**
+ * Get raw de-identified analytics events log (Protected by Admin RBAC - Item 18)
+ */
+v1Router.get('/analytics/events', requireAdminAuth('operationsEditor'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const limit = Math.min(200, parseInt(req.query.limit as string) || 50);
+    const events = await FirestorePlatformService.getAnalyticsEvents(tenantId, limit);
+    res.json(events);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve analytics events');
   }
 });
 

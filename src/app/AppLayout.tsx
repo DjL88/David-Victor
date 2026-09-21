@@ -115,6 +115,26 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     }
   }, [showSplash, entryStage, hasLocation, setIsLocationModalOpen]);
 
+  // Track SESSION_STARTED and BRAND_VIEW when tenant is loaded
+  React.useEffect(() => {
+    if (tenant) {
+      defaultAnalyticsClient.setContext(tenant.tenantId, tenant.locale || 'en-GB');
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.SESSION_STARTED,
+        properties: {
+          tenantName: tenant.brandName,
+        },
+      });
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.BRAND_VIEW,
+        properties: {
+          tenantId: tenant.tenantId,
+          tenantName: tenant.brandName,
+        },
+      });
+    }
+  }, [tenant?.tenantId]);
+
   // Auto-launch Story index 0 exactly once upon reaching READY state
   React.useEffect(() => {
     if (entryStage === 'READY' && stories.length > 0) {

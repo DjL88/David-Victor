@@ -9,6 +9,7 @@ import {
   Store,
   TenantFeatureFlags,
 } from './models';
+import { MediaHealth, MediaHealthSummary } from './mediaHealthModels';
 import { TenantDispatchRules } from '../rules/types';
 
 export interface AdminClient {
@@ -291,7 +292,7 @@ export interface AdminClient {
   /**
    * Selects an account to map to the tenant.
    */
-  selectAccount?(tenantId: string, accountId: string): Promise<any>;
+  selectAccount?(tenantId: string, accountId: string, channelLinkIds?: string[]): Promise<any>;
 
   /**
    * Discovers and maps commerce stores for an account.
@@ -302,6 +303,7 @@ export interface AdminClient {
    * Retrieves live commerce catalog diagnostics (Root Menu, Store Menu, and Products counts).
    */
   getCommerceDiagnostics?(tenantId: string): Promise<any>;
+  getRawStoreMenu?(tenantId: string, storeId: string): Promise<any>;
 
   /**
    * Registers the active admin user with the client for header/tenant derivation.
@@ -367,6 +369,11 @@ export interface AdminClient {
     fulfillmentType?: 'delivery' | 'pickup';
     forceFailureType?: any;
   }): Promise<any>;
+
+  /**
+   * Probes and returns Media Health report for tenant assets.
+   */
+  getMediaHealth?(tenantId?: string, opts?: { recheck?: boolean }): Promise<{ assets: MediaHealth[]; summary: MediaHealthSummary }>;
 }
 
 import { defaultHttpAdminClient } from './HttpAdminClient';
@@ -381,4 +388,3 @@ export { defaultHttpAdminClient, defaultAdminClient } from './HttpAdminClient';
 export function getAdminClient(): AdminClient {
   return defaultHttpAdminClient;
 }
-

@@ -20,6 +20,7 @@ import {
   MapPin,
   ExternalLink,
   Package,
+  Download,
 } from 'lucide-react';
 
 interface IntegrationsAdminScreenProps {
@@ -55,6 +56,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [discoveredStores, setDiscoveredStores] = useState<any[]>([]);
   const [discoveredLocations, setDiscoveredLocations] = useState<any[]>([]);
+  const [selectedChannelLinkIds, setSelectedChannelLinkIds] = useState<string[]>([]);
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +83,27 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     }
   };
 
+  const downloadRawMenu = async () => {
+    const store = discoveredStores.find((item) => selectedChannelLinkIds.includes(String(item.channelLinkId))) || discoveredStores[0];
+    if (!store) { setDiagnosticsError('Discover and assign a store before downloading its menu.'); return; }
+    setDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      const raw = await defaultAdminClient.getRawStoreMenu!(tenantId, store.id || store.channelLinkId);
+      const blob = new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `deliverect-menu-${store.channelLinkId || store.id}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setDiagnosticsError(err.message || 'Could not download the menu JSON.');
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadIntegration();
   }, [tenantId]);
@@ -95,6 +118,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
         if (data.deliverectAccountId) {
           setSelectedAccountId(data.deliverectAccountId);
         }
+        setSelectedChannelLinkIds(Array.isArray(data.allowedChannelLinkIds) ? data.allowedChannelLinkIds.map(String) : []);
       }
 
       // Load linked accounts and stores if already mapped
@@ -234,13 +258,14 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
 
     setError(null);
     try {
-      const res = await defaultAdminClient.selectAccount(tenantId, selectedAccountId);
+      const res = await defaultAdminClient.selectAccount(tenantId, selectedAccountId, selectedChannelLinkIds);
       if (res.success) {
         setConfig((prev: any) => ({
           ...prev,
           deliverectAccountId: selectedAccountId,
           status: res.status || 'ACCOUNT_MAPPED',
           lastSyncAt: new Date().toISOString(),
+          allowedChannelLinkIds: res.allowedChannelLinkIds || selectedChannelLinkIds,
         }));
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3500);
@@ -764,6 +789,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <table className="w-full text-left text-xs text-gray-300">
                     <thead className="bg-gray-950 text-gray-400 border-b border-gray-800 font-medium">
                       <tr>
+                        <th className="p-3">Use</th>
                         <th className="p-3">Store Name</th>
                         <th className="p-3">Channel Link ID</th>
                         <th className="p-3">Location ID</th>
@@ -774,8 +800,11 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                     <tbody className="divide-y divide-gray-800/60 bg-gray-900/50">
                       {discoveredStores.map((st: any) => {
                         const storeId = st.commerceStoreId || st.channelLinkId || st._id;
+                        const channelLinkId = String(st.channelLinkId || '');
+                        const isAssigned = selectedChannelLinkIds.includes(channelLinkId);
                         return (
                           <tr key={storeId} className="hover:bg-gray-800/40">
+                            <td className="p-3"><input type="checkbox" checked={isAssigned} disabled={!channelLinkId} aria-label={`Assign ${st.name || 'store'} to this brand`} onChange={() => setSelectedChannelLinkIds((current) => isAssigned ? current.filter((id) => id !== channelLinkId) : [...current, channelLinkId])} className="w-4 h-4 rounded border-gray-600 text-emerald-500" /></td>
                             <td className="p-3 font-semibold text-white flex items-center gap-2">
                               <Store className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               {st.name || 'Store'}
@@ -808,6 +837,10 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4">
+                  <div><div className="text-sm font-bold text-white">{selectedChannelLinkIds.length} store{selectedChannelLinkIds.length === 1 ? '' : 's'} assigned to this brand</div><p className="text-[11px] text-gray-400 mt-1">Only checked stores and their catalogues will be visible to this tenant.</p></div>
+                  <button type="button" onClick={handleSelectAccount} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2"><Save className="w-4 h-4" />Save assigned stores</button>
                 </div>
               </div>
             ) : (
@@ -884,6 +917,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 <span>Diagnostics</span>
               </button>
             </div>
+            <button onClick={downloadRawMenu} disabled={diagnosticsLoading || discoveredStores.length === 0} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-gray-700 bg-gray-950 text-xs font-semibold text-cyan-300 hover:border-cyan-700 disabled:opacity-40">
+              <Download className="w-3.5 h-3.5" /> Download received menu JSON
+            </button>
             <div className="space-y-2.5 text-xs text-gray-400">
               <div className="flex items-center justify-between">
                 <span>OAuth Token:</span>

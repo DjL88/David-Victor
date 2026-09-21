@@ -146,23 +146,32 @@ export const GOOGLE_FONTS_CATALOG: GoogleFontFamily[] = [
   },
 ];
 
+export function extractCleanFontFamily(rawFontString?: string): string {
+  if (!rawFontString) return 'Plus Jakarta Sans';
+  const firstPart = rawFontString.split(',')[0].replace(/["']/g, '').trim();
+  const cleaned = firstPart.replace(/[^a-zA-Z0-9\s-_]/g, '').trim();
+  return cleaned || 'Plus Jakarta Sans';
+}
+
 export function getGoogleFontStylesheetUrl(family: string, weights: string[] = ['400', '600', '700']): string {
-  if (family.toLowerCase().includes('croogla')) {
+  const cleanFamily = extractCleanFontFamily(family);
+  if (cleanFamily.toLowerCase().includes('croogla')) {
     return 'https://db.onlinewebfonts.com/c/9645b9f58651aa6b35d5e34795cc30b6?family=Croogla4F';
   }
-  const formattedFamily = family.replace(/\s+/g, '+');
+  const formattedFamily = cleanFamily.replace(/\s+/g, '+');
   const weightsParam = weights.join(';');
   return `https://fonts.googleapis.com/css2?family=${formattedFamily}:wght@${weightsParam}&display=swap`;
 }
 
 export function injectGoogleFontLink(family: string, weights?: string[]): void {
   if (typeof document === 'undefined') return;
-  const linkId = `google-font-${family.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+  const cleanFamily = extractCleanFontFamily(family);
+  const linkId = `google-font-${cleanFamily.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
   if (document.getElementById(linkId)) return;
 
   const link = document.createElement('link');
   link.id = linkId;
   link.rel = 'stylesheet';
-  link.href = getGoogleFontStylesheetUrl(family, weights);
+  link.href = getGoogleFontStylesheetUrl(cleanFamily, weights);
   document.head.appendChild(link);
 }

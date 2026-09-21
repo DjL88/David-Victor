@@ -57,7 +57,9 @@ export async function getDeliverectAdapterAsync(
   const env = environment || context.environment;
   const accId = deliverectAccountId || context.deliverectAccountId || 'default';
   const appMode = getServerRuntimeMode();
-  const storeScopeKey = (context.allowedChannelLinkIds || []).slice().sort().join(',') || 'all';
+  const storeScopeKey = context.allowedChannelLinkIds === undefined
+    ? 'all'
+    : (context.allowedChannelLinkIds.slice().sort().join(',') || 'none');
   const key = `${normalizedTenantId}:${env}:${accId}:${storeScopeKey}:${appMode}`;
 
   let adapter = deliverectAdapters.get(key);
@@ -181,4 +183,3 @@ export * from './IntegrationUnavailableDPayAdapter';
 export * from './PaymentService';
 export * from './DispatchOrchestrationService';
 export * from './dispatchTiming';
-

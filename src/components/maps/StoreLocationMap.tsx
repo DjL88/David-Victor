@@ -109,9 +109,13 @@ const LeafletMapInner: React.FC<StoreLocationMapProps> = ({
     const defaultLng = userCoordinates?.longitude || stores[0]?.coordinates?.longitude || -0.1278;
 
     const map = L.map(mapContainerRef.current, {
-      zoomControl: showControls,
+      zoomControl: false,
       attributionControl: false,
     }).setView([defaultLat, defaultLng], 13);
+
+    if (showControls) {
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    }
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
@@ -291,7 +295,7 @@ const LeafletMapInner: React.FC<StoreLocationMapProps> = ({
       {/* Force inset-0 absolute so Leaflet perfectly respects the parent boundary */}
       <div ref={mapContainerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
 
-      <div className="absolute top-2 left-2 z-[400] bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-gray-200/80 shadow-2xs text-[10px] font-semibold text-gray-700 flex flex-wrap items-center gap-3 pointer-events-none">
+      <div className="absolute top-2 right-2 z-[400] bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-gray-200/80 shadow-2xs text-[10px] font-semibold text-gray-700 flex flex-wrap items-center gap-3 pointer-events-none">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-600" /><span>Delivery</span></span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-600" /><span>Collection only</span></span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-500" /><span>Closed</span></span>

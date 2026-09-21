@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MediaHealth, MediaHealthSummary } from '../../commerce/mediaHealthModels';
-import { MOCK_MEDIA_HEALTH_ASSETS, getMediaHealthSummary } from '../../commerce/mediaHealthData';
+import { getMediaHealthSummary } from '../../commerce/mediaHealthData';
+import { defaultAdminClient } from '../../commerce/AdminClient';
 import {
   Image as ImageIcon,
   AlertTriangle,
@@ -19,36 +20,55 @@ interface MediaHealthScreenProps {
 }
 
 export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }) => {
-  const [assets, setAssets] = useState<MediaHealth[]>(
-    MOCK_MEDIA_HEALTH_ASSETS[tenantId] || MOCK_MEDIA_HEALTH_ASSETS['brand-alpha']
-  );
-  const [filter, setFilter] = useState<'all' | 'healthy' | 'failing' | 'product' | 'story' | 'cms'>('all');
+  const [assets, setAssets] = useState<MediaHealth[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'healthy' | 'failing' | 'product' | 'category' | 'story' | 'cms'>('all');
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
 
-  const summary = getMediaHealthSummary(assets);
+  const fetchMediaHealth = useCallback(async (recheck: boolean = false) => {
+    if (recheck) {
+      setIsScanning(true);
+      setScanMessage('Auditing upstream CDN image headers & HTTP response codes across all tenant media...');
+    } else {
+      setLoading(true);
+    }
+    setError(null);
 
-  const handleRecheckAll = async () => {
-    setIsScanning(true);
-    setScanMessage('Auditing all upstream CDN image headers & HTTP response codes...');
-    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      if (defaultAdminClient.getMediaHealth) {
+        const res = await defaultAdminClient.getMediaHealth(tenantId, { recheck });
+        setAssets(res.assets || []);
+        if (recheck) {
+          const failing = (res.assets || []).filter((a) => a.status === 'failing' || a.status === 'unreachable').length;
+          setScanMessage(`Audit complete. ${failing > 0 ? `${failing} failing or unreachable asset(s) flagged.` : 'All probed media assets are healthy!'}`);
+          setTimeout(() => setScanMessage(null), 5000);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to inspect media health.');
+    } finally {
+      setLoading(false);
+      setIsScanning(false);
+    }
+  }, [tenantId]);
 
-    // Update timestamps and simulate probe
-    setAssets((prev) =>
-      prev.map((a) => ({
-        ...a,
-        lastCheckedAt: new Date().toISOString(),
-      }))
-    );
-    setIsScanning(false);
-    setScanMessage('Audit complete. 1 broken CDN link and 1 unreachable media gateway flagged.');
-    setTimeout(() => setScanMessage(null), 4000);
+  useEffect(() => {
+    fetchMediaHealth(false);
+  }, [fetchMediaHealth]);
+
+  const handleRecheckAll = () => {
+    fetchMediaHealth(true);
   };
+
+  const summary = getMediaHealthSummary(assets);
 
   const filteredAssets = assets.filter((a) => {
     if (filter === 'healthy') return a.status === 'healthy';
     if (filter === 'failing') return a.status === 'failing' || a.status === 'unreachable';
     if (filter === 'product') return a.assetType === 'product';
+    if (filter === 'category') return a.assetType === 'category';
     if (filter === 'story') return a.assetType === 'story';
     if (filter === 'cms') return a.assetType === 'cms';
     return true;
@@ -64,8 +84,8 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
               <ImageIcon className="w-5 h-5 text-indigo-600" />
               <span>Media Health & Upstream CDN Resilience</span>
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              Demo Simulation
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              Live BFF Probe
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
@@ -75,14 +95,21 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
 
         <button
           type="button"
-          disabled={isScanning}
+          disabled={isScanning || loading}
           onClick={handleRecheckAll}
           className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${isScanning || loading ? 'animate-spin' : ''}`} />
           <span>{isScanning ? 'Probing Assets...' : 'Re-check All Media'}</span>
         </button>
       </div>
+
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl text-xs font-semibold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {scanMessage && (
         <div className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl text-xs font-semibold flex items-center gap-2">
@@ -135,6 +162,7 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
           { id: 'failing', label: `Failing (${summary.failingCount})` },
           { id: 'healthy', label: `Healthy (${summary.healthyCount})` },
           { id: 'product', label: 'Products' },
+          { id: 'category', label: 'Categories' },
           { id: 'story', label: 'Stories' },
           { id: 'cms', label: 'CMS Pages' },
         ].map((f) => (

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   defaultAnalyticsClient,
   InsightsDashboardData,
+  AnalyticsEvent,
   FunnelStageMetric,
   ProductPerformanceMetric,
   StoryPerformanceMetric,
@@ -27,6 +28,9 @@ import {
   DollarSign,
   ChevronRight,
   Download,
+  Activity,
+  Radio,
+  Layers,
 } from 'lucide-react';
 
 interface InsightsScreenProps {
@@ -44,9 +48,12 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
     | 'picking'
     | 'regions'
     | 'abandonment'
+    | 'telemetry'
   >('overview');
 
   const [data, setData] = useState<InsightsDashboardData | null>(null);
+  const [recentEvents, setRecentEvents] = useState<AnalyticsEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
@@ -54,13 +61,34 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
     loadData();
   }, [tenantId, timeframe]);
 
+  useEffect(() => {
+    if (activeTab === 'telemetry') {
+      loadRecentEvents();
+    }
+  }, [activeTab, tenantId]);
+
   const loadData = async () => {
     setLoading(true);
     try {
       const res = await defaultAnalyticsClient.getInsights(tenantId, timeframe);
       setData(res);
+      if (activeTab === 'telemetry') {
+        loadRecentEvents();
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRecentEvents = async () => {
+    setLoadingEvents(true);
+    try {
+      const events = await defaultAnalyticsClient.getRecentEvents(tenantId, 50);
+      setRecentEvents(events);
+    } catch (err) {
+      console.error('Failed to load recent events:', err);
+    } finally {
+      setLoadingEvents(false);
     }
   };
 
@@ -232,6 +260,32 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
         </div>
       </div>
 
+      {/* TELEMETRY ORIGIN & CONTRACT NOTICE */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl p-4 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-800">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+            <Radio className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-slate-100">Website Frontend Telemetry: ACTIVE</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Live De-Identified Logging
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Customer sessions, product views, search queries, cart additions, and order submissions on the web app are tracked in real time.
+            </p>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Deliverect Operational Webhooks</span>
+          <span className="text-xs text-amber-300 font-medium block mt-0.5">
+            Auto-connects upon staging credential deployment
+          </span>
+        </div>
+      </div>
+
       {/* SUB-SECTION TABS */}
       <div className="flex items-center gap-1.5 overflow-x-auto border-b border-gray-200 pb-2 scrollbar-none">
         {[
@@ -243,6 +297,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           { id: 'picking', label: 'Availability & Picking', icon: ShieldCheck },
           { id: 'regions', label: 'Coarse Regions', icon: MapPin },
           { id: 'abandonment', label: 'Basket Abandonment', icon: ShoppingBag },
+          { id: 'telemetry', label: 'Live Telemetry Feed', icon: Activity },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -617,6 +672,91 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT: LIVE TELEMETRY FEED */}
+      {activeTab === 'telemetry' && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-indigo-600" />
+                <span>Live De-Identified Website Telemetry Log</span>
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Real-time stream of incoming customer interactions. Strictly sanitized to protect user privacy.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadRecentEvents}
+              disabled={loadingEvents}
+              className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-gray-700 flex items-center gap-1.5 shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingEvents ? 'animate-spin' : ''}`} />
+              <span>Refresh Stream</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-500 font-bold border-y border-gray-100">
+                <tr>
+                  <th className="py-2.5 px-3">Timestamp</th>
+                  <th className="py-2.5 px-3">Event Type</th>
+                  <th className="py-2.5 px-3">Session Hash</th>
+                  <th className="py-2.5 px-3">Store Context</th>
+                  <th className="py-2.5 px-3">Target / PLU / Query</th>
+                  <th className="py-2.5 px-3">Coarse Region</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentEvents.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-gray-400">
+                      No telemetry events recorded yet in this window. Click around the storefront to log live interactions.
+                    </td>
+                  </tr>
+                ) : (
+                  recentEvents.map((evt, idx) => (
+                    <tr key={evt.id || idx} className="hover:bg-gray-50/50 font-mono">
+                      <td className="py-2.5 px-3 text-gray-500 text-[11px]">
+                        {new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          evt.type.includes('ORDER')
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : evt.type.includes('BASKET') || evt.type.includes('CHECKOUT')
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : evt.type.includes('PRODUCT')
+                            ? 'bg-blue-100 text-blue-800'
+                            : evt.type.includes('SEARCH')
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {evt.type}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-gray-500 text-[11px]">
+                        {evt.sessionId ? evt.sessionId.slice(0, 12) : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-gray-700 text-[11px]">
+                        {evt.storeId || '—'}
+                      </td>
+                      <td className="py-2.5 px-3 font-sans font-medium text-gray-900 text-[11px]">
+                        {evt.productPlu || evt.searchTerm || evt.storyId || evt.orderReferenceHash || '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-gray-500 text-[11px]">
+                        {evt.coarseRegion || '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

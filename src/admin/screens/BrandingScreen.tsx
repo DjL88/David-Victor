@@ -8,7 +8,7 @@ import {
   FontProcessingState,
 } from '../../commerce/fontModels';
 import { applyTenantFonts, simulateBackendFontPipeline } from '../../tenant/fontManager';
-import { GOOGLE_FONTS_CATALOG } from '../../commerce/googleFonts';
+import { GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../../commerce/googleFonts';
 import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
 import {
@@ -147,9 +147,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
       setSuccessColour(data.successColour || '#059669');
       setWarningColour(data.warningColour || '#d97706');
       setErrorColour(data.errorColour || '#dc2626');
-      setHeadingFamily(data.headingFontFamily || 'Plus Jakarta Sans');
-      setBodyFamily(data.fontFamily?.split(',')[0].replace(/["']/g, '').trim() || 'Plus Jakarta Sans');
-      setCarouselTitleFamily(data.carouselTitleFontFamily || data.headingFontFamily || 'Plus Jakarta Sans');
+      setHeadingFamily(extractCleanFontFamily(data.headingFontFamily));
+      setBodyFamily(extractCleanFontFamily(data.fontFamily));
+      setCarouselTitleFamily(extractCleanFontFamily(data.carouselTitleFontFamily || data.headingFontFamily));
       setBorderRadius(data.borderRadius);
       setSupportEmail(data.supportDetails?.email || '');
       setSupportPhone(data.supportDetails?.phone || '');
@@ -217,6 +217,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
     setSavedSuccess(false);
 
     try {
+      const cleanBody = extractCleanFontFamily(bodyFamily);
+      const cleanHeading = extractCleanFontFamily(headingFamily);
+      const cleanCarousel = extractCleanFontFamily(carouselTitleFamily);
+
       const updated = await defaultAdminClient.updateBranding(
         tenantId,
         {
@@ -224,6 +228,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           tagline,
           logoUrl,
           faviconUrl,
+          iconUrl: faviconUrl || logoUrl,
           headerLogoMode,
           headerLogoMaxWidth,
           primaryColour,
@@ -237,9 +242,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           warningColour,
           errorColour,
           borderRadius,
-          fontFamily: `'${bodyFamily}', ${bodyFallback}`,
-          headingFontFamily: `'${headingFamily}', ${headingFallback}`,
-          carouselTitleFontFamily: `'${carouselTitleFamily}', ${headingFallback}`,
+          fontFamily: `'${cleanBody}', ${bodyFallback}`,
+          headingFontFamily: `'${cleanHeading}', ${headingFallback}`,
+          carouselTitleFontFamily: `'${cleanCarousel}', ${headingFallback}`,
           supportDetails: {
             ...config.supportDetails,
             email: supportEmail,
@@ -251,9 +256,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
       // Apply dynamic fonts safely
       const fontConfig: TenantFontConfig = {
-        headingFontFamily: headingFamily,
+        headingFontFamily: cleanHeading,
         headingFallbackChain: headingFallback,
-        bodyFontFamily: bodyFamily,
+        bodyFontFamily: cleanBody,
         bodyFallbackChain: bodyFallback,
         customFonts: fontsList,
       };
@@ -483,7 +488,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-gray-700">Favicon Asset</label>
+                  <label className="block text-xs font-bold text-gray-700">Square Brand Icon / Favicon</label>
                   <label className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800">
                     {uploadingAsset === 'favicon' ? (
                       <RefreshCw className="w-3 h-3 animate-spin" />

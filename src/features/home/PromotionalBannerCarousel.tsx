@@ -279,6 +279,19 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
     };
   }, [autoCycle, isPaused, bundles?.length]);
 
+  const totalDeals = (bundles?.length || 0) + DELIVERECT_CATALOG_DEALS.length;
+  const effectiveTab =
+    currentTab === 'featured' && banners.length === 0 && totalDeals > 0
+      ? 'deals'
+      : currentTab === 'deals' && totalDeals === 0 && banners.length > 0
+      ? 'featured'
+      : currentTab;
+
+  // Completely hide carousel if there are no banners and no deals to show (prevents empty black box)
+  if (banners.length === 0 && totalDeals === 0) {
+    return null;
+  }
+
   return (
     <div
       id="main-promotional-super-carousel"
@@ -297,13 +310,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             id="carousel-tab-featured"
             onClick={() => handleSetTab('featured')}
             className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              currentTab === 'featured'
+              effectiveTab === 'featured'
                 ? 'bg-white text-gray-950 shadow-2xs'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             <Flame className="w-3.5 h-3.5 text-amber-500" />
-            <span>Featured Offers</span>
+            <span>Featured</span>
           </button>
 
           <button
@@ -311,7 +324,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             id="carousel-tab-deals"
             onClick={() => handleSetTab('deals')}
             className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              currentTab === 'deals'
+              effectiveTab === 'deals'
                 ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
@@ -320,12 +333,12 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             <span>Combo Deals</span>
             <span
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                currentTab === 'deals'
+                effectiveTab === 'deals'
                   ? 'bg-emerald-700 text-emerald-100'
                   : 'bg-emerald-100 text-emerald-800'
               }`}
             >
-              {(bundles?.length || 0) + DELIVERECT_CATALOG_DEALS.length}
+              {totalDeals}
             </span>
           </button>
         </div>
@@ -351,7 +364,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             type="button"
             id="carousel-fixed-prev-btn"
             onClick={(e) => {
-              if (currentTab === 'featured') handlePrev(e);
+              if (effectiveTab === 'featured') handlePrev(e);
               else handleDealsScroll('left');
             }}
             className="p-1.5 rounded-xl text-gray-700 hover:bg-gray-200 transition-all cursor-pointer"
@@ -364,7 +377,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             type="button"
             id="carousel-fixed-next-btn"
             onClick={(e) => {
-              if (currentTab === 'featured') handleNext(e);
+              if (effectiveTab === 'featured') handleNext(e);
               else handleDealsScroll('right');
             }}
             className="p-1.5 rounded-xl text-gray-700 hover:bg-gray-200 transition-all cursor-pointer"
@@ -376,24 +389,26 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
       </div>
 
       {/* STANDARDIZED CAROUSEL CONTAINER */}
-      <div className="relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl h-[420px] sm:h-[440px] md:h-[450px] bg-gray-950">
+      <div className="relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl h-[420px] sm:h-[440px] md:h-[450px] bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950">
         {/* ========================================================= */}
         {/* VIEW 1: FEATURED PROMOTIONAL BANNER                       */}
         {/* ========================================================= */}
-        {currentTab === 'featured' && activeBanner && (
-          <div className="relative h-full w-full bg-gray-900 rounded-none sm:rounded-3xl overflow-hidden">
+        {effectiveTab === 'featured' && activeBanner && (
+          <div className="relative h-full w-full bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950 rounded-none sm:rounded-3xl overflow-hidden">
             <AnimatePresence initial={false} mode="wait">
-              <motion.div
-                key={activeBanner.id}
-                initial={{ opacity: 0, scale: 1.04 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-                className="absolute inset-0 w-full h-full bg-cover bg-center"
-                style={{
-                  backgroundImage: `url(${activeBanner.backgroundImageUrl})`,
-                }}
-              />
+              {activeBanner.backgroundImageUrl && (
+                <motion.div
+                  key={activeBanner.id}
+                  initial={{ opacity: 0, scale: 1.04 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="absolute inset-0 w-full h-full bg-cover bg-center"
+                  style={{
+                    backgroundImage: `url(${activeBanner.backgroundImageUrl})`,
+                  }}
+                />
+              )}
             </AnimatePresence>
 
             <div className="absolute inset-0 bg-gradient-to-r from-gray-950/90 via-gray-950/70 to-gray-950/20" />
@@ -559,7 +574,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
         {/* ========================================================= */}
         {/* VIEW 2: COMBO DEALS (GENUINE BUNDLES & COMBO DEALS)        */}
         {/* ========================================================= */}
-        {currentTab === 'deals' && (
+        {effectiveTab === 'deals' && (
           <div className="relative h-full w-full bg-gradient-to-br from-gray-950 via-emerald-950/85 to-gray-950 text-white p-4 sm:p-5 md:p-6 flex flex-col justify-between overflow-hidden rounded-none sm:rounded-3xl">
             {/* Header */}
             <div className="flex items-center justify-between gap-3 shrink-0">

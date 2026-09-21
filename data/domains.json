@@ -65,11 +65,11 @@
   "highland.marketlane.app": {
     "domainId": "dom_highland.marketlane.app",
     "hostname": "highland.marketlane.app",
-    "tenantId": "brand-test-1789925100977",
+    "tenantId": "brand-test-1789961803248",
     "isPrimary": true,
     "status": "active",
     "createdAt": "2026-09-19T09:49:01.354Z",
-    "updatedAt": "2026-09-20T17:25:00.978Z"
+    "updatedAt": "2026-09-21T03:36:43.249Z"
   },
   "ais-dev-ciigtiumqqu7x57kplguwi-232948319569.europe-west3.run.app": {
     "domainId": "dom_ais-dev-ciigtiumqqu7x57kplguwi-232948319569.europe-west3.run.app",
@@ -124,5 +124,32 @@
     "status": "active",
     "createdAt": "2026-09-20T17:25:52.794Z",
     "updatedAt": "2026-09-20T17:25:52.794Z"
+  },
+  "brand-audit-1789961616202.marketlane.app": {
+    "domainId": "dom_brand-audit-1789961616202.marketlane.app",
+    "hostname": "brand-audit-1789961616202.marketlane.app",
+    "tenantId": "brand-audit-1789961616202",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-21T03:33:36.203Z",
+    "updatedAt": "2026-09-21T03:33:36.203Z"
+  },
+  "brand-audit-1789961722430.marketlane.app": {
+    "domainId": "dom_brand-audit-1789961722430.marketlane.app",
+    "hostname": "brand-audit-1789961722430.marketlane.app",
+    "tenantId": "brand-audit-1789961722430",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-21T03:35:22.430Z",
+    "updatedAt": "2026-09-21T03:35:22.430Z"
+  },
+  "brand-audit-1789961803253.marketlane.app": {
+    "domainId": "dom_brand-audit-1789961803253.marketlane.app",
+    "hostname": "brand-audit-1789961803253.marketlane.app",
+    "tenantId": "brand-audit-1789961803253",
+    "isPrimary": true,
+    "status": "active",
+    "createdAt": "2026-09-21T03:36:43.253Z",
+    "updatedAt": "2026-09-21T03:36:43.253Z"
   }
 }

@@ -7,6 +7,7 @@ import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { defaultBasketService } from '../basket/BasketService';
 import { CommerceError } from '../errors';
+import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
 import {
   Store,
   StoreStatus,
@@ -22,6 +23,7 @@ import {
   Address,
   DeliveryOption,
   DeliverySlot,
+  TenantFeatureFlags,
   HostedPaymentSession,
   Order,
   Money,
@@ -227,9 +229,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
       this.tenantId = tenantId || 'brand-alpha';
     }
     this.deliverectAccountId = deliverectAccountId;
-    this.allowedChannelLinkIds = allowedChannelLinkIds?.length
-      ? new Set(allowedChannelLinkIds.map(String))
-      : undefined;
+    this.allowedChannelLinkIds = allowedChannelLinkIds === undefined
+      ? undefined
+      : new Set(allowedChannelLinkIds.map(String));
     this.baseUrl = this.tokenManager.config.baseUrl;
   }
 
@@ -432,11 +434,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return definitions;
   }
 
-  parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean, tagDefinitions: ProductTagDefinition[] = []): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
-    return DeliverectApiClient.parseDeliverectMenu(rawMenu, isStoreCatalog, tagDefinitions);
+  parseDeliverectMenu(
+    rawMenu: any,
+    isStoreCatalog: boolean,
+    tagDefinitions: ProductTagDefinition[] = [],
+    options?: { featureFlags?: TenantFeatureFlags; enableSequentialCategoryGrouping?: boolean }
+  ): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
+    return DeliverectApiClient.parseDeliverectMenu(rawMenu, isStoreCatalog, tagDefinitions, options);
   }
 
-  static parseDeliverectMenu(rawMenu: any, isStoreCatalog: boolean, tagDefinitions: ProductTagDefinition[] = []): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
+  static parseDeliverectMenu(
+    rawMenu: any,
+    isStoreCatalog: boolean,
+    tagDefinitions: ProductTagDefinition[] = [],
+    options?: { featureFlags?: TenantFeatureFlags; enableSequentialCategoryGrouping?: boolean }
+  ): { categories: Category[]; products: Product[]; bundleCatalog: BundleCatalog } {
     const tagDefinitionMap = new Map(tagDefinitions.map(definition => [String(definition.id), definition]));
     const productCategoryMap = new Map<string, string[]>();
 
@@ -449,32 +461,69 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const rawCategoryMap = new Map<string, any>();
     const childIdSet = new Set<string>();
+    const childIdsByParent = new Map<string, string[]>();
+    const directProductIdsByCategory = new Map<string, string[]>();
+
+    const referenceId = (value: any): string =>
+      typeof value === 'string' || typeof value === 'number'
+        ? String(value)
+        : String(value?.id || value?._id || value?.productId || value?.plu || '');
+
+    const addChild = (parentId: string, childId: string) => {
+      if (!parentId || !childId || parentId === childId) return;
+      const children = childIdsByParent.get(parentId) || [];
+      if (!children.includes(childId)) children.push(childId);
+      childIdsByParent.set(parentId, children);
+      childIdSet.add(childId);
+    };
 
     const indexRawCategory = (rawCat: any) => {
       const catId = String(rawCat.id || rawCat._id || '');
       if (!catId) return;
       rawCategoryMap.set(catId, rawCat);
 
-      const subProds: string[] = Array.isArray(rawCat.subProducts) ? rawCat.subProducts : [];
-      for (const prodId of subProds) {
+      const rawProductRefs: any[] = Array.isArray(rawCat.productIds)
+        ? rawCat.productIds
+        : Array.isArray(rawCat.products)
+          ? rawCat.products
+          : Array.isArray(rawCat.subProducts)
+            ? rawCat.subProducts
+            : [];
+      const productIds = rawProductRefs.map(referenceId).filter(Boolean);
+      directProductIdsByCategory.set(catId, Array.from(new Set(productIds)));
+      for (const prodId of productIds) {
         const existing = productCategoryMap.get(prodId) || [];
         if (!existing.includes(catId)) existing.push(catId);
         productCategoryMap.set(prodId, existing);
       }
 
-      if (Array.isArray(rawCat.subCategories)) {
-        for (const sub of rawCat.subCategories) {
+      const rawSubCats = Array.isArray(rawCat.subCategories)
+        ? rawCat.subCategories
+        : Array.isArray(rawCat.subcategories)
+          ? rawCat.subcategories
+          : Array.isArray(rawCat.children)
+            ? rawCat.children
+            : Array.isArray(rawCat.subCategoryIds)
+              ? rawCat.subCategoryIds
+              : Array.isArray(rawCat.sub_categories)
+                ? rawCat.sub_categories
+                : [];
+
+      if (rawSubCats.length > 0) {
+        for (const sub of rawSubCats) {
           if (typeof sub === 'string') {
-            childIdSet.add(sub);
+            addChild(catId, sub);
           } else if (sub && typeof sub === 'object') {
             const subId = String(sub.id || sub._id || '');
-            if (subId) childIdSet.add(subId);
+            if (subId) addChild(catId, subId);
             indexRawCategory(sub);
           }
         }
       }
-      if (rawCat.parentId) {
-        childIdSet.add(catId);
+
+      const rawParentId = rawCat.parentId || rawCat.parent || rawCat.parentCategoryId || rawCat.parent_id || rawCat.categoryParentId;
+      if (rawParentId) {
+        addChild(String(rawParentId), catId);
       }
     };
 
@@ -491,18 +540,25 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const rawCat = rawCategoryMap.get(catId);
       if (!rawCat) return null;
 
-      const subProds: string[] = Array.isArray(rawCat.subProducts) ? rawCat.subProducts : [];
       const subcategoryNodes: Category[] = [];
 
-      if (Array.isArray(rawCat.subCategories)) {
-        for (const sub of rawCat.subCategories) {
-          const subId = typeof sub === 'string' ? sub : String(sub.id || sub._id || '');
-          if (subId && rawCategoryMap.has(subId)) {
-            const childNode = buildCategoryTree(subId, level + 1, catId);
-            if (childNode) subcategoryNodes.push(childNode);
-          }
+      for (const subId of childIdsByParent.get(catId) || []) {
+        if (rawCategoryMap.has(subId)) {
+          const childNode = buildCategoryTree(subId, level + 1, catId);
+          if (childNode) subcategoryNodes.push(childNode);
         }
       }
+
+      const descendantProductIds = new Set(directProductIdsByCategory.get(catId) || []);
+      const collectDescendantProducts = (parentCategoryId: string, seen = new Set<string>()) => {
+        if (seen.has(parentCategoryId)) return;
+        seen.add(parentCategoryId);
+        for (const childId of childIdsByParent.get(parentCategoryId) || []) {
+          for (const productId of directProductIdsByCategory.get(childId) || []) descendantProductIds.add(productId);
+          collectDescendantProducts(childId, seen);
+        }
+      };
+      collectDescendantProducts(catId);
 
       return {
         id: catId,
@@ -512,16 +568,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
         parentId,
         level,
         subcategories: subcategoryNodes.length > 0 ? subcategoryNodes : undefined,
-        productCount: subProds.length,
+        productCount: descendantProductIds.size,
       };
     };
 
     // Root categories are those not marked as a child of another category
-    const categories: Category[] = [];
+    const rawTreeCategories: Category[] = [];
     for (const [catId] of rawCategoryMap) {
       if (!childIdSet.has(catId)) {
         const rootNode = buildCategoryTree(catId, 1, null);
-        if (rootNode) categories.push(rootNode);
+        if (rootNode) rawTreeCategories.push(rootNode);
       }
     }
 
@@ -529,9 +585,40 @@ export class DeliverectApiClient implements DeliverectAdapter {
     for (const [catId] of rawCategoryMap) {
       if (!visited.has(catId)) {
         const orphanNode = buildCategoryTree(catId, 1, null);
-        if (orphanNode) categories.push(orphanNode);
+        if (orphanNode) rawTreeCategories.push(orphanNode);
       }
     }
+
+    // IMPORTANT: Keep flat Deliverect category feeds lossless here.
+    //
+    // Some retail menus encode hierarchy implicitly using sequential empty rows:
+    //   Dairy & Eggs []
+    //   Milk         []
+    //   Whole Milk   [products]
+    //
+    // If we prune empty rows at the API adapter layer before the tenant feature
+    // flag is available in the storefront, those structural parent rows are gone
+    // forever and the browser cannot reconstruct the hierarchy.
+    //
+    // Therefore:
+    // - explicit Deliverect parent/child relationships are normalised server-side;
+    // - flat feeds are returned losslessly by default (including known-empty rows);
+    // - callers that explicitly pass the sequential-grouping option may still ask
+    //   for server-side grouping (useful for tests / future server-owned flags);
+    // - the current storefront applies the tenant feature flag in useCatalog.
+    const sequentialGroupingEnabled = Boolean(
+      options?.enableSequentialCategoryGrouping ||
+      options?.featureFlags?.enableSequentialCategoryGrouping
+    );
+    const hasExplicitCategoryHierarchy = childIdSet.size > 0;
+
+    const categories: Category[] = hasExplicitCategoryHierarchy
+      ? ensureNestedCategoryTree(rawTreeCategories)
+      : sequentialGroupingEnabled
+        ? ensureNestedCategoryTree(rawTreeCategories, {
+            enableSequentialCategoryGrouping: true,
+          })
+        : rawTreeCategories;
 
     // Build raw modifier groups map
     const rawModifierGroupsMap = new Map<string, any>();
@@ -594,7 +681,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         continue;
       }
 
-      const assignedCatIds = productCategoryMap.get(prodId) || [];
+      const assignedCatIds = productCategoryMap.get(prodId) || productCategoryMap.get(plu) || [];
       const imageUrl = p.imageUrl || p.image || undefined;
 
       // Extract raw modifier groups (subProducts in Deliverect represent modifier group IDs for combos)
@@ -843,6 +930,45 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
   async getRootCatalog(): Promise<Catalog> {
     const accountId = await this.resolveAccountId();
+
+    // A tenant with an explicit store scope must never inherit the account-wide root menu.
+    // Build its browse catalogue only from the assigned stores' own menus.
+    if (this.allowedChannelLinkIds) {
+      const allowedStores = (await this.getStores()).filter((store) => this.allowedChannelLinkIds!.has(String(store.channelLinkId)));
+      if (allowedStores.length === 0) {
+        return { id: `scoped_catalog_${accountId}`, type: 'ROOT', menus: [], categories: [], products: [], totalProducts: 0, updatedAt: new Date().toISOString() };
+      }
+      const storeCatalogs = await Promise.all(allowedStores.map((store) => this.getStoreCatalog(store.id)));
+      const categories = new Map<string, Category>();
+      const products = new Map<string, Product>();
+      const bundles = new Map<string, BundleProduct>();
+      const minorPrice = (product: Product) => typeof product.priceMinor === 'number' ? product.priceMinor : (typeof (product.price as any)?.amount === 'number' ? (product.price as any).amount : -1);
+
+      for (const catalog of storeCatalogs) {
+        for (const category of catalog.categories || []) if (!categories.has(category.id)) categories.set(category.id, category);
+        const withinStore = new Map<string, Product>();
+        for (const product of catalog.products || []) {
+          const gtin = Array.isArray(product.gtin) ? product.gtin.find(Boolean) : product.gtin;
+          const key = gtin ? `gtin:${gtin}` : `plu:${product.plu}`;
+          const existing = withinStore.get(key);
+          if (!existing || minorPrice(product) > minorPrice(existing)) withinStore.set(key, product);
+        }
+        for (const [key, product] of withinStore) {
+          if (!products.has(key)) products.set(key, { ...product, price: undefined, priceMinor: undefined, stockStatus: undefined } as Product);
+        }
+        for (const bundle of catalog.bundleCatalog?.bundles || []) if (!bundles.has(bundle.plu)) bundles.set(bundle.plu, { ...bundle, price: undefined, priceMinor: undefined, stockStatus: undefined } as BundleProduct);
+      }
+      return {
+        id: `scoped_catalog_${accountId}`,
+        type: 'ROOT',
+        menus: storeCatalogs.flatMap((catalog) => catalog.menus || []),
+        categories: Array.from(categories.values()),
+        products: Array.from(products.values()),
+        totalProducts: products.size,
+        bundleCatalog: { id: `scoped_bundles_${accountId}`, accountId, bundles: Array.from(bundles.values()), totalBundles: bundles.size, updatedAt: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      };
+    }
     const token = await this.tokenManager.getAccessToken();
 
     return await circuitBreakers.commerce.execute(async () => {
@@ -1056,6 +1182,32 @@ export class DeliverectApiClient implements DeliverectAdapter {
     });
   }
 
+  /** Returns the exact tenant-scoped Deliverect menu response for admin inspection. */
+  async getRawStoreMenus(storeId: string): Promise<{ accountId: string; channelLinkId: string; storeId: string; receivedAt: string; payload: unknown }> {
+    const accountId = await this.resolveAccountId();
+    const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
+    const token = await this.tokenManager.getAccessToken();
+    const urls = [
+      `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/stores/${encodeURIComponent(channelLinkId)}/menus`,
+      `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/channelLinks/${encodeURIComponent(channelLinkId)}/menus`,
+      store?.physicalLocationId ? `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(store.physicalLocationId)}/menus` : null,
+    ].filter(Boolean) as string[];
+
+    let lastStatus = 502;
+    for (const url of urls) {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      lastStatus = response.status;
+      if (response.ok) {
+        return { accountId, channelLinkId, storeId, receivedAt: new Date().toISOString(), payload: await response.json() };
+      }
+      if (response.status !== 404) break;
+    }
+    const error: any = new Error(`Deliverect raw menu request failed: HTTP ${lastStatus} for assigned store ${storeId}`);
+    error.statusCode = 502;
+    error.code = 'DELIVERECT_RAW_MENU_UNAVAILABLE';
+    throw error;
+  }
+
   async getBundleCatalog(
     storeId?: string,
     fulfillmentType?: 'delivery' | 'pickup',
@@ -1200,7 +1352,18 @@ export class DeliverectApiClient implements DeliverectAdapter {
       );
     }
     if (options?.categoryId) {
-      filtered = filtered.filter((p) => (p.categoryIds || []).includes(options.categoryId!));
+      const allowedCategoryIds = new Set<string>();
+      const collectCategoryIds = (categories: Category[]) => {
+        for (const category of categories) {
+          if (category.id === options.categoryId || allowedCategoryIds.has(category.parentId || '')) {
+            allowedCategoryIds.add(category.id);
+          }
+          if (category.subcategories?.length) collectCategoryIds(category.subcategories);
+        }
+      };
+      collectCategoryIds(catalog.categories || []);
+      if (allowedCategoryIds.size === 0) allowedCategoryIds.add(options.categoryId);
+      filtered = filtered.filter((p) => (p.categoryIds || []).some((categoryId) => allowedCategoryIds.has(categoryId)));
     }
     if (options?.limit && options.limit > 0) filtered = filtered.slice(0, options.limit);
 

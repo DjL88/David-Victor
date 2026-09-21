@@ -351,6 +351,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onToggleFavouritesFilter={() =>
           setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }))
         }
+        onToggleBuyAgainFilter={() =>
+          setFilterState((prev) => ({ ...prev, onlyBuyAgain: !prev.onlyBuyAgain }))
+        }
+        onClearAllergenFilters={() =>
+          setFilterState((prev) => ({
+            ...prev,
+            excludedAllergens: [],
+            selectedDietaryTags: [],
+          }))
+        }
       />
 
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}

@@ -101,6 +101,11 @@ export const FeaturesScreen: React.FC<FeaturesScreenProps> = ({
       title: 'Courier Tipping',
       description: 'Display tip shortcuts during checkout that pass 100% of tips to courier.',
     },
+    {
+      key: 'enableSequentialCategoryGrouping',
+      title: 'Sequential Empty-Category Grouping',
+      description: 'Treat empty sequential Deliverect categories as parent headers for subsequent populated categories.',
+    },
   ];
 
   return (

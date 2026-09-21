@@ -113,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
             style={tenant?.headerLogoMode && tenant.headerLogoMode !== 'ICON_WITH_TEXT' ? { width: Math.min(tenant.headerLogoMaxWidth || 160, 240) } : undefined}
           >
             <img
-              src={tenant?.headerLogoMode === 'ICON_WITH_TEXT' || !tenant?.headerLogoMode ? (tenant?.iconUrl || tenant?.logoUrl) : tenant?.logoUrl}
+              src={tenant?.headerLogoMode === 'ICON_WITH_TEXT' || !tenant?.headerLogoMode ? (tenant?.faviconUrl || tenant?.iconUrl || tenant?.logoUrl) : tenant?.logoUrl}
               alt={tenant?.brandName}
               className="w-full h-full object-contain"
             />

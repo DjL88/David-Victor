@@ -42,7 +42,7 @@
       "headingFontFamily": "Cinzel",
       "letterSpacing": "0.05em"
     },
-    "updatedAt": "2026-09-20T17:25:04.671Z"
+    "updatedAt": "2026-09-21T03:36:52.863Z"
   },
   "brand-beta": {
     "tenantId": "brand-beta",
@@ -436,6 +436,198 @@
       "secondaryColor": "#ffffff",
       "fontFamily": "Inter"
     },
-    "updatedAt": "2026-09-20T17:25:52.802Z"
+    "updatedAt": "2026-09-21T03:36:59.557Z"
+  },
+  "brand-test-1789961616198": {
+    "tenantId": "brand-test-1789961616198",
+    "brandName": "Highland Fine Foods",
+    "tagline": "Scottish craft pantry delivered locally",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#1e3a8a",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-test-1789961616198.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
+  },
+  "brand-audit-1789961616202": {
+    "tenantId": "brand-audit-1789961616202",
+    "brandName": "Organic Greens Co",
+    "tagline": "Fresh essentials delivered in minutes",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#059669",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-audit-1789961616202.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
+  },
+  "brand-test-1789961722424": {
+    "tenantId": "brand-test-1789961722424",
+    "brandName": "Highland Fine Foods",
+    "tagline": "Scottish craft pantry delivered locally",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#1e3a8a",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-test-1789961722424.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
+  },
+  "brand-audit-1789961722430": {
+    "tenantId": "brand-audit-1789961722430",
+    "brandName": "Organic Greens Co",
+    "tagline": "Fresh essentials delivered in minutes",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#059669",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-audit-1789961722430.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
+  },
+  "brand-test-1789961803248": {
+    "tenantId": "brand-test-1789961803248",
+    "brandName": "Highland Fine Foods",
+    "tagline": "Scottish craft pantry delivered locally",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#1e3a8a",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-test-1789961803248.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
+  },
+  "brand-audit-1789961803253": {
+    "tenantId": "brand-audit-1789961803253",
+    "brandName": "Organic Greens Co",
+    "tagline": "Fresh essentials delivered in minutes",
+    "logoUrl": "",
+    "iconUrl": "",
+    "primaryColour": "#059669",
+    "secondaryColour": "#f59e0b",
+    "backgroundColour": "#f8fafc",
+    "textColour": "#0f172a",
+    "fontFamily": "'Plus Jakarta Sans', system-ui, sans-serif",
+    "borderRadius": "16px",
+    "country": "GB",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "locale": "en-GB",
+    "supportDetails": {
+      "email": "support@brand-audit-1789961803253.co.uk",
+      "phone": "0800 000 0000",
+      "openingHours": "Mon - Sun: 08:00 - 22:00"
+    },
+    "featureFlags": {
+      "enableStories": true,
+      "enableRootCatalogBrowse": true,
+      "enableCollection": true,
+      "allowStoreSwitchingWithBasket": true,
+      "enableNutritionalInfo": true,
+      "enableDeposits": true,
+      "enableAgeVerification": true,
+      "enableSearchSuggestions": true
+    }
   }
 }

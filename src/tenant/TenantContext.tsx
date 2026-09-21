@@ -3,7 +3,7 @@ import { TenantConfig, BootstrapResponse } from '../commerce/models';
 import { CommerceClient } from '../commerce/CommerceClient';
 import { defaultHttpCommerceClient } from '../commerce/HttpCommerceClient';
 import { MOCK_TENANTS } from '../commerce/mockData';
-import { injectGoogleFontLink, GOOGLE_FONTS_CATALOG } from '../commerce/googleFonts';
+import { injectGoogleFontLink, GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../commerce/googleFonts';
 
 import { defaultPaymentClient } from '../commerce/PaymentClient';
 import { setRuntimeMode, parseRuntimeMode, isDemoMode } from '../domain/runtime';
@@ -161,19 +161,27 @@ export const TenantProvider: React.FC<{
     root.style.setProperty('--brand-warning', tenant.warningColour || '#d97706');
     root.style.setProperty('--brand-error', tenant.errorColour || '#dc2626');
     root.style.setProperty('--brand-radius', tenant.borderRadius);
-    root.style.setProperty('--brand-font', tenant.fontFamily);
-    root.style.setProperty('--tenant-font-family', tenant.fontFamily);
-    root.style.setProperty('--font-body', tenant.fontFamily);
-    root.style.setProperty('--font-heading', tenant.headingFontFamily || tenant.fontFamily);
-    root.style.setProperty('--font-carousel-title', tenant.carouselTitleFontFamily || tenant.headingFontFamily || tenant.fontFamily);
+    const bodyClean = extractCleanFontFamily(tenant.fontFamily);
+    const headingClean = extractCleanFontFamily(tenant.headingFontFamily || tenant.fontFamily);
+    const carouselClean = extractCleanFontFamily(tenant.carouselTitleFontFamily || tenant.headingFontFamily || tenant.fontFamily);
+
+    root.style.setProperty('--brand-font', `'${bodyClean}', sans-serif`);
+    root.style.setProperty('--tenant-font-family', `'${bodyClean}', sans-serif`);
+    root.style.setProperty('--font-body', `'${bodyClean}', sans-serif`);
+    root.style.setProperty('--font-heading', `'${headingClean}', sans-serif`);
+    root.style.setProperty('--font-carousel-title', `'${carouselClean}', sans-serif`);
 
     // Auto-inject Google Font link if matched
-    [tenant.fontFamily, tenant.headingFontFamily, tenant.carouselTitleFontFamily].filter(Boolean).forEach((configured) => {
-      const matchedFamily = GOOGLE_FONTS_CATALOG.find((f) => configured!.toLowerCase().includes(f.family.toLowerCase()));
-      if (matchedFamily) injectGoogleFontLink(matchedFamily.family, matchedFamily.weights);
+    [bodyClean, headingClean, carouselClean].filter(Boolean).forEach((cleanName) => {
+      const matchedFamily = GOOGLE_FONTS_CATALOG.find((f) => f.family.toLowerCase() === cleanName.toLowerCase());
+      if (matchedFamily) {
+        injectGoogleFontLink(matchedFamily.family, matchedFamily.weights);
+      } else {
+        injectGoogleFontLink(cleanName);
+      }
     });
 
-    // Update document title and OpenGraph metadata with brand name
+    // Update document title, OpenGraph metadata, and Favicon / Apple Touch Icon
     document.title = `${tenant.brandName} • On-Demand Grocery Delivery`;
     const desc = document.querySelector('meta[name="description"]');
     if (desc) desc.setAttribute('content', `${tenant.brandName} on-demand retail delivery and collection.`);
@@ -181,6 +189,26 @@ export const TenantProvider: React.FC<{
     if (ogTitle) ogTitle.setAttribute('content', `${tenant.brandName} • Retail Storefront`);
     const ogDesc = document.querySelector('meta[property="og:description"]');
     if (ogDesc) ogDesc.setAttribute('content', `${tenant.brandName} on-demand retail delivery and collection.`);
+
+    // Inject/update browser tab favicon & square apple-touch-icon
+    const faviconUrl = tenant.faviconUrl || tenant.iconUrl || tenant.logoUrl;
+    if (faviconUrl) {
+      let iconLink = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
+      if (!iconLink) {
+        iconLink = document.createElement('link');
+        iconLink.rel = 'shortcut icon';
+        document.head.appendChild(iconLink);
+      }
+      iconLink.href = faviconUrl;
+
+      let appleIconLink = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement | null;
+      if (!appleIconLink) {
+        appleIconLink = document.createElement('link');
+        appleIconLink.rel = 'apple-touch-icon';
+        document.head.appendChild(appleIconLink);
+      }
+      appleIconLink.href = faviconUrl;
+    }
   }, [tenant]);
 
   const switchTenant = async (tenantId: string) => {

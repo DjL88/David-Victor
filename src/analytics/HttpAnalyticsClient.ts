@@ -164,6 +164,21 @@ export class HttpAnalyticsClient implements AnalyticsClient {
   }
 
   async getRecentEvents(tenantId: string, limit: number = 50): Promise<AnalyticsEvent[]> {
+    try {
+      const headers: Record<string, string> = {
+        'x-tenant-id': tenantId,
+      };
+      const authHeader = await getAdminAuthorizationHeader();
+      if (authHeader) {
+        headers['Authorization'] = authHeader;
+      }
+      const res = await fetch(`/api/v1/analytics/events?limit=${limit}`, { headers });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('[HttpAnalyticsClient] Error fetching recent events:', err);
+    }
     return [];
   }
 }

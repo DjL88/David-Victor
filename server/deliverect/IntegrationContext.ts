@@ -139,7 +139,7 @@ export class IntegrationContext {
       deliverectAccountId,
       allowedChannelLinkIds: Array.isArray(integrationRecord?.allowedChannelLinkIds)
         ? integrationRecord.allowedChannelLinkIds.map(String)
-        : undefined,
+        : [],
       tokenManager,
       isConfigured,
     };
