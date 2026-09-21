@@ -690,6 +690,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">{ruleError}</div>}
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">
+              <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="font-bold text-gray-500">Rule preview</span>
+                <span className="px-2 py-1 rounded-lg bg-white border border-gray-200">WHERE {editingRule.matchConditions[0]?.field || 'condition'} {editingRule.matchConditions[0]?.operator || 'equals'} “{String(editingRule.matchConditions[0]?.value || '…')}”</span>
+                <span className="text-gray-400">→</span>
+                <span className="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-800 font-bold">ACTION {editingRule.actions[0]?.type || '…'}</span>
+              </div>
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Rule name</label>
                 <input
@@ -806,6 +812,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   <option value="BADGE">Show badge</option>
                   <option value="WARNING">Show warning</option>
                 </select>
+                {editingRule.actions[0]?.type === 'COMBINED_GROUP_LIMIT' && <div className="grid grid-cols-2 gap-2"><input type="text" value={(editingRule.actions[0] as any).groupId || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], groupId:e.target.value} as any]})} className="px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Group ID" /><input type="number" min="1" value={(editingRule.actions[0] as any).maximum || 1} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], maximum:Math.max(1,Number(e.target.value)||1)} as any]})} className="px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Combined limit" /></div>}
+                {editingRule.actions[0]?.type === 'PREVENT_PURCHASE' && <input type="text" value={(editingRule.actions[0] as any).reason || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], reason:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Reason shown to customer" />}
                 {editingRule.actions[0]?.type === 'MAX_QUANTITY_PER_ORDER' && <input type="number" min="1" value={(editingRule.actions[0] as any).maximum || 1} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], maximum: Math.max(1, Number(e.target.value)||1)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Maximum quantity" />}
                 {editingRule.actions[0]?.type === 'MINIMUM_AGE' && <input type="number" min="1" max="100" value={(editingRule.actions[0] as any).minimumAge || 18} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], minimumAge: Math.max(1, Number(e.target.value)||18)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" />}
                 {editingRule.actions[0]?.type === 'BADGE' && <input type="text" value={(editingRule.actions[0] as any).label || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], label:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Badge text" />}
