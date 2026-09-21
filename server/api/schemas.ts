@@ -168,7 +168,7 @@ export const CheckoutBasketOptionsSchema = z
     customerEmail: z.string().email('Invalid customer email').optional(),
     customerPhone: z.string().optional(),
     deliveryAddress: z.any().optional(),
-    fulfillmentType: z.enum(['delivery', 'collection']).optional(),
+    fulfillmentType: z.enum(['delivery', 'pickup', 'collection']).optional(),
     substitutionPolicy: z.any().optional(),
     scheduledSlot: z.any().optional(),
     paymentMethod: z.any().optional(),
