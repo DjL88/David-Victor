@@ -160,7 +160,11 @@ export class CommerceDiscoveryService {
     const {
       coordinates,
       address = params.deliveryAddress,
-      preferredFulfillment = params.fulfillmentType || 'delivery',
+      // Default to 'pickup', not 'delivery': delivery is gated off entirely outside
+      // demo mode (DeliverectApiClient.createBasket/checkout both reject it), so any
+      // caller that omits this should get pickup-eligible ranking, not delivery-only
+      // results that would leave the customer unable to actually order.
+      preferredFulfillment = params.fulfillmentType || 'pickup',
       tenantId,
       appMode,
       customStores,

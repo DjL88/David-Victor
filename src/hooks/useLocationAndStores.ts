@@ -192,8 +192,18 @@ export function useLocationAndStores() {
             const coarse = parsedAddr.postalCode?.split(' ')[0] || parsedAddr.city || 'GB';
             defaultAnalyticsClient.setCoarseRegion(coarse);
 
-            // Fetch stores authoritatively
-            const activeMode = savedFulfillment || 'delivery';
+            // Fetch stores authoritatively. Default to 'pickup', matching the same
+            // invariant as the fulfillmentType useState default above and
+            // useBasket.ts's default param — staging/production must never land a
+            // session in delivery mode by default (delivery is gated off entirely
+            // outside demo mode). Previously defaulted to 'delivery' here, which
+            // silently split-brained: a session with a saved address but no saved
+            // fulfillment choice yet (e.g. reloaded mid-journey, before reaching the
+            // fulfilment step) would fetch delivery-eligible stores while every other
+            // part of the app still believed fulfillmentType was 'pickup', so the
+            // selected store often wasn't actually pickup-eligible and basket
+            // creation was rejected with FULFILLMENT_NOT_SUPPORTED.
+            const activeMode = savedFulfillment || 'pickup';
             const result = await client.getEligibleStores(parsedCoords, parsedAddr, activeMode);
 
             if (!isMounted) return;
