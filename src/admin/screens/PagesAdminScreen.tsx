@@ -77,11 +77,11 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'Hero',
           order: newOrder,
-          headline: 'Seasonal Harvest Arriving Daily',
-          subheadline: 'Hand-picked from certified sustainable farms.',
-          badge: 'New Season',
-          imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=1200',
-          ctaText: 'Shop Essentials',
+          headline: 'Add a headline',
+          subheadline: 'Add supporting text for this page.',
+          badge: '',
+          imageUrl: '',
+          ctaText: 'Learn more',
         };
         break;
       case 'RichText':
@@ -89,7 +89,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'RichText',
           order: newOrder,
-          content: 'Add your story and artisanal heritage details here. Safe, structured prose.',
+          content: 'Add your page content here.',
         };
         break;
       case 'ProductCarousel':
@@ -97,8 +97,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'ProductCarousel',
           order: newOrder,
-          title: 'Featured Organic Essentials',
-          productPlus: ['PLU-SOURDOUGH-01', 'PLU-ORGANIC-EGGS-6PK'],
+          title: 'Featured products',
+          productPlus: [],
         };
         break;
       case 'OfferCarousel':
@@ -106,8 +106,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'OfferCarousel',
           order: newOrder,
-          title: 'Special Deals & Promo Spotlights',
-          subtitle: 'Limited-time bundles and seasonal savings',
+          title: 'Featured offers',
+          subtitle: 'Add an optional description',
         };
         break;
       case 'FAQ':
@@ -117,7 +117,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           order: newOrder,
           title: 'Frequently Asked Questions',
           items: [
-            { question: 'What is the delivery cutoff time?', answer: 'Orders placed before 9 PM arrive by 10 AM next morning.' },
+            { question: 'Add a question', answer: 'Add an answer' },
           ],
         };
         break;
@@ -126,7 +126,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'StoreFinder',
           order: newOrder,
-          title: 'Find Your Nearest Artisan Hub',
+          title: 'Find a store',
         };
         break;
       case 'Divider':
@@ -185,14 +185,14 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <FileText className="w-5 h-5 text-indigo-600" />
-              <span>Structured CMS Page Builder</span>
+              <span>Pages</span>
             </h1>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              Tenant persisted
+              Saved per brand
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Build SEO-optimised landing pages, policies and brand content using structured, tenant-safe blocks.
+            Create landing pages, policies and brand content using reusable storefront blocks.
           </p>
         </div>
 
