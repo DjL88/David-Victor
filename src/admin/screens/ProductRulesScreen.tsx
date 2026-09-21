@@ -201,7 +201,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           }`}
         >
           <CalendarClock className="w-4 h-4" />
-          <span>ASAP & Pre-Order Scheduling</span>
+          <span>Order scheduling</span>
           {schedulingPolicy.acceptAsapOrdersOnly && (
             <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800 font-mono font-semibold">
               ASAP ONLY
@@ -437,7 +437,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             {/* Allowed Providers */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-gray-700">
-                Allowed Courier Providers Whitelist
+                Allowed courier providers
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                 {['deliverect-dispatch', 'stuart', 'uber', 'gophr', 'relay', 'demo-dispatch'].map((prov) => {
@@ -487,7 +487,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-xs disabled:opacity-50"
               >
                 {dispatchSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
-                <span>{dispatchSaving ? 'Saving Rules...' : 'Save Dispatch Rules'}</span>
+                <span>{dispatchSaving ? 'Saving…' : 'Save dispatch settings'}</span>
               </button>
             </div>
           </div>
@@ -507,7 +507,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             <div className="border-b border-gray-100 pb-3">
               <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <CalendarClock className="w-4 h-4 text-indigo-600" />
-                <span>ASAP & Pre-Order Scheduling</span>
+                <span>Order scheduling</span>
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Controls whether customers can build a basket for a closed store's next opening, or pick a
@@ -526,7 +526,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 className="w-4 h-4 rounded text-amber-600 border-gray-300 focus:ring-amber-500"
               />
               <div>
-                <span className="text-xs font-bold text-gray-900 block">Accept ASAP Orders Only</span>
+                <span className="text-xs font-bold text-gray-900 block">Accept ASAP orders only</span>
                 <span className="text-[11px] text-gray-600">
                   Disables both pre-order modes below. A closed store is simply unavailable rather than
                   offered for pre-order.
@@ -546,7 +546,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 />
                 <div>
                   <span className="text-xs font-bold text-gray-900 block">
-                    1. Pre-Order for Next Opening
+                    Pre-order for next opening
                   </span>
                   <span className="text-[11px] text-gray-600">
                     A customer may still build a basket for a currently closed store; it targets the store's
@@ -566,7 +566,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 />
                 <div>
                   <span className="text-xs font-bold text-gray-900 block">
-                    2. Scheduled Pre-Order, Same Day
+                    Scheduled pre-order, same day
                   </span>
                   <span className="text-[11px] text-gray-600">
                     A customer may pick a specific later time slot, today only, while the store is or will be
@@ -583,7 +583,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-xs disabled:opacity-50"
               >
                 {schedulingSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
-                <span>{schedulingSaving ? 'Saving Policy...' : 'Save Scheduling Policy'}</span>
+                <span>{schedulingSaving ? 'Saving…' : 'Save scheduling settings'}</span>
               </button>
             </div>
           </div>
@@ -616,7 +616,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
                 {/* Match conditions */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-                  <span className="text-gray-400 text-[11px]">Matches:</span>
+                  <span className="text-gray-400 text-[11px]">Where:</span>
                   {r.matchConditions.map((cond, i) => (
                     <span
                       key={i}
@@ -629,7 +629,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-                  <span className="text-gray-400 text-[11px]">Enforces:</span>
+                  <span className="text-gray-400 text-[11px]">Action:</span>
                   {r.actions.map((act, i) => (
                     <span
                       key={i}
@@ -674,11 +674,11 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {editingRule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-gray-900">Configure Declarative Rule</h3>
+            <h3 className="text-base font-bold text-gray-900">Edit product rule</h3>
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Rule Name</label>
+                <label className="block font-bold text-gray-700 mb-1">Rule name</label>
                 <input
                   type="text"
                   value={editingRule.name}
@@ -690,7 +690,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Priority (Higher = First)</label>
+                  <label className="block font-bold text-gray-700 mb-1">Priority (higher runs first)</label>
                   <input
                     type="number"
                     value={editingRule.priority}
@@ -701,7 +701,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Active Status</label>
+                  <label className="block font-bold text-gray-700 mb-1">Status</label>
                   <label className="flex items-center gap-2 pt-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -709,14 +709,14 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                       onChange={(e) => setEditingRule({ ...editingRule, enabled: e.target.checked })}
                       className="rounded text-indigo-600 w-4 h-4"
                     />
-                    <span className="font-bold text-gray-800">Rule is Active</span>
+                    <span className="font-bold text-gray-800">Rule is active</span>
                   </label>
                 </div>
               </div>
 
-              {/* Match Condition Editor */}
+              {/* Where Editor */}
               <div className="p-3 bg-gray-50 rounded-xl space-y-2 border border-gray-100">
-                <span className="font-bold text-gray-700 block">Match Condition</span>
+                <span className="font-bold text-gray-700 block">Where</span>
                 <div className="grid grid-cols-3 gap-2">
                   <select
                     value={editingRule.matchConditions[0]?.field || 'productTag'}
@@ -772,7 +772,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   disabled={saving}
                   className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-xs"
                 >
-                  {saving ? 'Saving...' : 'Save Rule'}
+                  {saving ? 'Saving...' : 'Save rule'}
                 </button>
               </div>
             </form>
