@@ -905,34 +905,37 @@ export class LinkedAccountsAdapter {
           ? (String(rawPhysicalId).startsWith('loc_') ? String(rawPhysicalId) : `loc_${rawPhysicalId}`)
           : null;
 
-      let fulfillmentCapabilitiesProjection: { delivery: boolean; pickup: boolean; scheduling: boolean } | undefined = undefined;
-      if (rawStore.fulfillmentCapabilities && typeof rawStore.fulfillmentCapabilities === 'object') {
-        if (Array.isArray(rawStore.fulfillmentCapabilities)) {
-          fulfillmentCapabilitiesProjection = {
-            delivery: rawStore.fulfillmentCapabilities.some((c: any) => String(c).toUpperCase() === 'DELIVERY'),
-            pickup: rawStore.fulfillmentCapabilities.some((c: any) => {
-              const u = String(c).toUpperCase();
-              return u === 'PICKUP' || u === 'COLLECTION';
-            }),
-            scheduling: rawStore.fulfillmentCapabilities.some((c: any) => String(c).toUpperCase() === 'SCHEDULING'),
-          };
-        } else {
-          const caps = rawStore.fulfillmentCapabilities;
-          if (caps.delivery !== undefined || caps.pickup !== undefined || caps.collection !== undefined || caps.scheduling !== undefined) {
-            fulfillmentCapabilitiesProjection = {
-              delivery: Boolean(caps.delivery),
-              pickup: Boolean(caps.pickup ?? caps.collection),
-              scheduling: Boolean(caps.scheduling),
-            };
-          }
-        }
-      } else if (rawStore.deliveryEnabled !== undefined || rawStore.pickupEnabled !== undefined || rawStore.schedulingEnabled !== undefined) {
-        fulfillmentCapabilitiesProjection = {
-          delivery: Boolean(rawStore.deliveryEnabled),
-          pickup: Boolean(rawStore.pickupEnabled),
-          scheduling: Boolean(rawStore.schedulingEnabled),
-        };
-      }
+      // Commerce Store capabilities are exposed by Deliverect primarily via
+      // `fulfillmentTypes` and/or `settings.<fulfillmentType>.enabled`.
+      // Reuse the shared normalizer so the live Commerce store path handles the
+      // same documented shapes as the linked-account/channel-link path. The
+      // previous hand-written branch only checked legacy `fulfillmentCapabilities`
+      // / `pickupEnabled`, causing real pickup-capable stores to become
+      // supportsPickup=false in the storefront.
+      const channelDetail =
+        channelDetails.get(String(storeIdentifier)) ||
+        (channelLinkId ? channelDetails.get(String(channelLinkId)) : undefined) ||
+        (rawId ? channelDetails.get(String(rawId)) : undefined);
+      const correlatedChannelLink =
+        Array.isArray(correlatedLoc?.channelLinks)
+          ? correlatedLoc.channelLinks.find((link: any) => {
+              const id = String(
+                typeof link === 'string'
+                  ? link
+                  : link?.channelLinkId || link?._id || link?.id || ''
+              );
+              return (
+                id === String(storeIdentifier) ||
+                id === String(channelLinkId || '') ||
+                id === String(rawId || '')
+              );
+            })
+          : undefined;
+
+      const fulfillmentCapabilitiesProjection =
+        normalizeFulfillmentCapabilities(rawStore) ||
+        normalizeFulfillmentCapabilities(channelDetail) ||
+        normalizeFulfillmentCapabilities(correlatedChannelLink);
 
       // Address: preserve returned fields; fall back to correlated physical location address; absent if not provided
       let address: { street?: string; city?: string; postcode?: string; country?: string } | undefined = undefined;
