@@ -212,6 +212,13 @@ export const CheckoutBasketOptionsSchema = z
     scheduledSlot: z.any().optional(),
     paymentMethod: z.any().optional(),
     paymentId: z.string().optional(),
+    orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
+    authorizedMaximum: z
+      .object({
+        amount: z.number().int().nonnegative(),
+        currency: z.string().length(3),
+      })
+      .optional(),
     dispatchValidationId: z.string().optional(),
     dispatchValidationExpiresAt: z.string().optional(),
     selectedQuoteId: z.string().optional(),
@@ -503,6 +510,8 @@ export const ReorderHeroBannersSchema = z
 
 export const UpdateIntegrationSchema = z.object({
   deliverectAccountId: z.string().optional(),
+  channelName: z.string().min(1).optional(),
+  orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
   environment: z.enum(['staging', 'production']).optional(),
   status: z.enum(['connected', 'standalone', 'error']).optional(),
   bffProxyUrl: z.string().optional(),
