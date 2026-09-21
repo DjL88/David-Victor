@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Order, DemoScenario } from '../../commerce/models';
+import { useTenant } from '../../tenant/TenantContext';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
 const defaultCommerceClient = getCommerceClient() as any;
@@ -22,6 +23,8 @@ import {
 
 export const OrdersScreen: React.FC = () => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { appMode } = useTenant();
+  const isDemo = appMode === 'demo';
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -91,8 +94,8 @@ export const OrdersScreen: React.FC = () => {
         </button>
       </div>
 
-      {/* Demo Scenario Launcher Card */}
-      <div className="p-4 rounded-3xl bg-linear-to-r from-gray-900 via-gray-800 to-gray-900 text-white shadow-md space-y-3">
+      {/* Demo tooling is intentionally sandbox-only and never shown to live white-label customers. */}
+      {isDemo && <div className="p-4 rounded-3xl bg-linear-to-r from-gray-900 via-gray-800 to-gray-900 text-white shadow-md space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Play className="w-4 h-4 text-emerald-400 fill-current" />
@@ -164,7 +167,7 @@ export const OrdersScreen: React.FC = () => {
             <span className="text-[11px] text-gray-300">Weight-Adjusted Produce</span>
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* Orders List */}
       <div className="space-y-3">
@@ -177,7 +180,7 @@ export const OrdersScreen: React.FC = () => {
             <Package className="w-10 h-10 text-gray-300 mx-auto" />
             <p className="text-xs font-bold text-gray-700">No active orders yet</p>
             <p className="text-xs text-gray-400">
-              Place an order from the shop or launch a scenario above to test the lifecycle.
+              {isDemo ? 'Place an order from the shop or launch a scenario above to test the lifecycle.' : 'Your current and previous orders will appear here.'}
             </p>
           </div>
         ) : (
