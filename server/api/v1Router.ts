@@ -31,6 +31,7 @@ import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
+import { mergeCheckoutProjection } from '../deliverect/CheckoutProjectionMerge';
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
@@ -1312,6 +1313,76 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
   }
 });
 
+async function persistRefreshedCheckout(
+  existingCheckout: CheckoutResult | null,
+  upstream: CheckoutResult,
+  resolvedTenant: string,
+  checkoutId: string
+): Promise<CheckoutResult> {
+  const merged = mergeCheckoutProjection(existingCheckout, upstream);
+  await FirestorePlatformService.saveCheckoutProjection(merged);
+
+  const existingOrder = await FirestorePlatformService.getOrderProjectionByCheckoutId(checkoutId);
+  const rawOrder: any = upstream.order;
+  const upstreamOrderId = String(
+    upstream.orderId ||
+    rawOrder?.id ||
+    rawOrder?._id ||
+    rawOrder?.orderId ||
+    ''
+  ).trim() || undefined;
+  const upstreamChannelOrderId = String(
+    rawOrder?.channelOrderId ||
+    upstream.channelOrderReference ||
+    ''
+  ).trim() || undefined;
+  const upstreamDisplayId = String(
+    rawOrder?.channelOrderDisplayId ||
+    rawOrder?.displayId ||
+    ''
+  ).trim() || undefined;
+
+  if (existingOrder) {
+    let nextState = existingOrder.status;
+    if (upstream.status === 'ORDER_CONFIRMED') nextState = 'ORDER_CONFIRMED';
+    else if (upstream.status === 'ORDER_FAILED') nextState = 'ORDER_FAILED';
+    else if (upstream.status === 'CANCELLED') nextState = 'CANCELLED';
+
+    await FirestorePlatformService.updateOrderProjectionState(existingOrder.orderId, nextState, {
+      channelOrderRawId: upstreamOrderId,
+      channelOrderId: upstreamChannelOrderId,
+      channelOrderDisplayId: upstreamDisplayId,
+    });
+  } else if (rawOrder) {
+    // Legacy recovery: old pending checkouts may pre-date provisional order
+    // persistence. Enrich only with values already known from the checkout; never
+    // invent delivery or payment state.
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        ...rawOrder,
+        basketId: rawOrder.basketId || merged.basketId,
+        channelOrderId: rawOrder.channelOrderId || merged.channelOrderReference,
+        channelOrderRawId: upstreamOrderId,
+        fulfillmentType:
+          rawOrder.fulfillment?.type ||
+          rawOrder.fulfillmentType ||
+          merged.fulfillmentType,
+        originalBasket: rawOrder.originalBasket || {
+          id: merged.basketId,
+          fulfillmentType: merged.fulfillmentType,
+          items: [],
+          total: merged.total,
+          currency: merged.total.currency,
+        },
+      },
+      resolvedTenant,
+      checkoutId
+    );
+  }
+
+  return merged;
+}
+
 v1Router.post(
   '/checkouts',
   checkoutAndPaymentRateLimiter.middleware(),
@@ -1511,15 +1582,12 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
         try {
           const upstream = await adapter.getCheckout(checkoutId);
           if (upstream) {
-            checkout = upstream;
-            await FirestorePlatformService.saveCheckoutProjection(upstream);
-            if (upstream.order) {
-              await FirestorePlatformService.saveOrderProjection(
-                upstream.order,
-                resolvedTenant,
-                checkoutId
-              );
-            }
+            checkout = await persistRefreshedCheckout(
+              checkout,
+              upstream,
+              resolvedTenant,
+              checkoutId
+            );
           }
         } catch (error) {
           if (!checkout) throw error;
@@ -1581,15 +1649,12 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
         try {
           const upstream = await adapter.getCheckout(checkoutId);
           if (upstream) {
-            checkout = upstream;
-            await FirestorePlatformService.saveCheckoutProjection(upstream);
-            if (upstream.order) {
-              await FirestorePlatformService.saveOrderProjection(
-                upstream.order,
-                resolvedTenant,
-                checkoutId
-              );
-            }
+            checkout = await persistRefreshedCheckout(
+              checkout,
+              upstream,
+              resolvedTenant,
+              checkoutId
+            );
           }
         } catch (error) {
           if (!checkout) throw error;
