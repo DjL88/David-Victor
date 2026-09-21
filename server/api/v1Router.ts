@@ -3914,6 +3914,8 @@ v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdmin
         ? {
             id: storeCatalog.id,
             storeId: storeCatalog.storeId,
+            activeMenuId: storeCatalog.activeMenuId,
+            diagnostics: storeCatalog.diagnostics,
             menusCount: storeCatalog.menus?.length || 1,
             categoriesCount: storeCatalog.categories?.length || 0,
             productsCount: storeCatalog.products?.length || 0,
