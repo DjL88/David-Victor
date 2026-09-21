@@ -3729,23 +3729,41 @@ v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), async
 });
 
 // 9.10 Google Fonts Catalogue API
-v1Router.get('/cms/pages', (req: Request, res: Response) => res.json({ pages: CmsService.list(resolveTenant(req), true) }));
-v1Router.get('/admin/tenants/:id/pages', requireAdminAuth(), (req: Request, res: Response) => {
-  const admin = (req as AuthenticatedRequest).adminUser;
-  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
-  res.json({ pages: CmsService.list(req.params.id) });
+v1Router.get('/cms/pages', async (req: Request, res: Response) => {
+  try {
+    res.json({ pages: await CmsService.list(resolveTenant(req), true) });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to load published CMS pages');
+  }
 });
-v1Router.put('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), (req: Request, res: Response) => {
-  const admin = (req as AuthenticatedRequest).adminUser;
-  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
-  if (!req.body || req.body.id !== req.params.pageId) return res.status(400).json({ error: 'Page identity mismatch' });
-  res.json(CmsService.save(req.params.id, req.body));
+v1Router.get('/admin/tenants/:id/pages', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const admin = (req as AuthenticatedRequest).adminUser;
+    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+    res.json({ pages: await CmsService.list(req.params.id) });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to load CMS pages');
+  }
 });
-v1Router.delete('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), (req: Request, res: Response) => {
-  const admin = (req as AuthenticatedRequest).adminUser;
-  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
-  const deleted = CmsService.delete(req.params.id, req.params.pageId);
-  res.status(deleted ? 200 : 404).json({ success: deleted });
+v1Router.put('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+  try {
+    const admin = (req as AuthenticatedRequest).adminUser;
+    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+    if (!req.body || req.body.id !== req.params.pageId) return res.status(400).json({ error: 'Page identity mismatch' });
+    res.json(await CmsService.save(req.params.id, req.body));
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to save CMS page');
+  }
+});
+v1Router.delete('/admin/tenants/:id/pages/:pageId', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
+  try {
+    const admin = (req as AuthenticatedRequest).adminUser;
+    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== req.params.id) return res.status(403).json({ error: 'Tenant access denied' });
+    const deleted = await CmsService.delete(req.params.id, req.params.pageId);
+    res.status(deleted ? 200 : 404).json({ success: deleted });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to delete CMS page');
+  }
 });
 
 let googleFontsCache: { expiresAt: number; fonts: any[] } | null = null;
