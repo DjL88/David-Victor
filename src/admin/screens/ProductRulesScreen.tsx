@@ -24,6 +24,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [dispatchSuccessMsg, setDispatchSuccessMsg] = useState<string | null>(null);
   const [schedulingSaving, setSchedulingSaving] = useState<boolean>(false);
   const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
+  const [ruleError, setRuleError] = useState<string | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -82,17 +83,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const handleCreateNew = () => {
     const newRule: VisualRule = {
       id: `rule-${Date.now()}`,
-      name: 'New Product Rule',
+      name: 'New rule',
       enabled: true,
       countries: ['GB'],
       priority: 50,
-      matchConditions: [
-        { field: 'productTag', operator: 'equals', value: 'AGE_RESTRICTED_18' },
-      ],
-      actions: [
-        { type: 'MINIMUM_AGE', minimumAge: 18, params: { age: 18 } },
-        { type: 'BADGE', label: '18+ Only', params: { text: '18+ Only', color: 'red' } },
-      ],
+      matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }],
+      actions: [{ type: 'HIDE_PRODUCT' }],
     };
     setEditingRule(newRule);
   };
@@ -101,25 +97,39 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     e.preventDefault();
     if (!editingRule) return;
     setSaving(true);
+    setRuleError(null);
     try {
       await defaultAdminClient.saveProductRule(tenantId, editingRule, currentUser);
       await loadRules();
       setEditingRule(null);
+    } catch (err: any) {
+      console.error('Failed to save product rule:', err);
+      setRuleError(err?.message || 'This rule could not be saved.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (ruleId: string) => {
-    if (!window.confirm('Delete this compliance rule?')) return;
-    await defaultAdminClient.deleteProductRule(tenantId, ruleId, currentUser);
-    await loadRules();
+    if (!window.confirm('Delete this rule?')) return;
+    setRuleError(null);
+    try {
+      await defaultAdminClient.deleteProductRule(tenantId, ruleId, currentUser);
+      await loadRules();
+    } catch (err: any) {
+      setRuleError(err?.message || 'This rule could not be deleted.');
+    }
   };
 
   const handleToggle = async (rule: VisualRule) => {
     const updated = { ...rule, enabled: !rule.enabled };
-    await defaultAdminClient.saveProductRule(tenantId, updated, currentUser);
-    await loadRules();
+    setRuleError(null);
+    try {
+      await defaultAdminClient.saveProductRule(tenantId, updated, currentUser);
+      await loadRules();
+    } catch (err: any) {
+      setRuleError(err?.message || 'This rule could not be updated.');
+    }
   };
 
   if (loading) {
@@ -138,10 +148,10 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-600" />
-            <span>Rules Engine & Orchestration Policies</span>
+            <span>Rules</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Configure declarative product compliance, merchandising triggers, and automated courier dispatch timing.
+            Create simple conditions and actions that control how products behave in the storefront.
           </p>
         </div>
 
@@ -152,7 +162,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs"
           >
             <Plus className="w-4 h-4" />
-            <span>New Declarative Rule</span>
+            <span>New rule</span>
           </button>
         )}
       </div>
@@ -169,7 +179,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           }`}
         >
           <ShieldCheck className="w-4 h-4" />
-          <span>Product & Compliance Rules</span>
+          <span>Product rules</span>
           <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600 font-semibold">
             {rules.length}
           </span>
@@ -185,7 +195,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           }`}
         >
           <Truck className="w-4 h-4" />
-          <span>Courier Dispatch Orchestration Rules</span>
+          <span>Courier settings</span>
           <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-mono font-semibold">
             {dispatchRules.assignmentEvent}
           </span>
@@ -592,6 +602,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
       {activeTab === 'product' && (
       <div className="grid grid-cols-1 gap-4">
+        {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{ruleError}</div>}
+        {rules.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center"><ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-3"/><h3 className="text-sm font-bold text-gray-900">No product rules yet</h3><p className="text-xs text-gray-500 mt-1">Create a rule to control matching products by tag, category, brand, group, alcohol status or PLU.</p><button type="button" onClick={handleCreateNew} className="mt-4 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">Create first rule</button></div>}
         {rules.map((r) => (
           <div
             key={r.id}
@@ -674,7 +686,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {editingRule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-gray-900">Edit product rule</h3>
+            <div><h3 className="text-base font-bold text-gray-900">{rules.some((r) => r.id === editingRule.id) ? 'Edit product rule' : 'Create product rule'}</h3><p className="text-xs text-gray-500 mt-1">When the <strong>Where</strong> condition matches, the selected <strong>Action</strong> is applied.</p></div>
+            {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">{ruleError}</div>}
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div>
@@ -727,9 +740,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                     }}
                     className="px-2 py-1.5 border border-gray-200 rounded-lg bg-white"
                   >
-                    <option value="productTag">productTag</option>
-                    <option value="category">category</option>
-                    <option value="plu">plu</option>
+                    <option value="productTag">Product tag</option>
+                    <option value="category">Category</option>
+                    <option value="brand">Brand</option>
+                    <option value="ruleGroup">Rule group</option>
+                    <option value="isAlcohol">Alcohol product</option>
+                    <option value="plu">PLU</option>
                   </select>
 
                   <select
@@ -741,8 +757,9 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                     }}
                     className="px-2 py-1.5 border border-gray-200 rounded-lg bg-white"
                   >
-                    <option value="equals">equals</option>
+                    <option value="equals">is</option>
                     <option value="contains">contains</option>
+                    <option value="in">is one of</option>
                   </select>
 
                   <input
@@ -757,6 +774,42 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                     placeholder="e.g. AGE_RESTRICTED_18"
                   />
                 </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-2">
+                <span className="font-bold text-gray-700 block">Action</span>
+                <select
+                  value={editingRule.actions[0]?.type || 'HIDE_PRODUCT'}
+                  onChange={(e) => {
+                    const type = e.target.value as any;
+                    const action: any =
+                      type === 'MINIMUM_AGE' ? { type, minimumAge: 18 } :
+                      type === 'MAX_QUANTITY_PER_ORDER' ? { type, maximum: 1 } :
+                      type === 'COMBINED_GROUP_LIMIT' ? { type, groupId: 'group', maximum: 1 } :
+                      type === 'BADGE' ? { type, label: 'Featured' } :
+                      type === 'WARNING' ? { type, text: 'Important information' } :
+                      type === 'PREVENT_PURCHASE' ? { type, reason: 'Unavailable' } :
+                      { type };
+                    setEditingRule({ ...editingRule, actions: [action] });
+                  }}
+                  className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-semibold"
+                >
+                  <option value="HIDE_PRODUCT">Hide product</option>
+                  <option value="PREVENT_PURCHASE">Prevent purchase</option>
+                  <option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option>
+                  <option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option>
+                  <option value="MINIMUM_AGE">Require minimum age</option>
+                  <option value="PREVENT_UPSELL">Exclude from upsells</option>
+                  <option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option>
+                  <option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option>
+                  <option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option>
+                  <option value="BADGE">Show badge</option>
+                  <option value="WARNING">Show warning</option>
+                </select>
+                {editingRule.actions[0]?.type === 'MAX_QUANTITY_PER_ORDER' && <input type="number" min="1" value={(editingRule.actions[0] as any).maximum || 1} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], maximum: Math.max(1, Number(e.target.value)||1)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Maximum quantity" />}
+                {editingRule.actions[0]?.type === 'MINIMUM_AGE' && <input type="number" min="1" max="100" value={(editingRule.actions[0] as any).minimumAge || 18} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], minimumAge: Math.max(1, Number(e.target.value)||18)} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" />}
+                {editingRule.actions[0]?.type === 'BADGE' && <input type="text" value={(editingRule.actions[0] as any).label || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], label:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Badge text" />}
+                {editingRule.actions[0]?.type === 'WARNING' && <input type="text" value={(editingRule.actions[0] as any).text || ''} onChange={(e) => setEditingRule({...editingRule, actions:[{...editingRule.actions[0], text:e.target.value} as any]})} className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white" placeholder="Warning message" />}
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
