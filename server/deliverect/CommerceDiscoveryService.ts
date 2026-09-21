@@ -17,6 +17,7 @@ import {
 } from '../../src/commerce/models';
 export { calculateHaversineDistanceMeters } from '../../src/services/mapsDistanceService';
 import { calculateHaversineDistanceMeters } from '../../src/services/mapsDistanceService';
+import { evaluateStoreOpenNow, computeNextOpeningTime } from '../../src/services/storeOpeningHoursService';
 import { DispatchAdapter, DispatchValidationResult } from './DispatchAdapter';
 import { getDispatchAdapter } from './index';
 import { DemoDispatchAdapter } from './DemoDispatchAdapter';
@@ -306,14 +307,33 @@ export class CommerceDiscoveryService {
       // Filter valid evaluated entries
       const validEntries = evaluatedEntries.filter(Boolean);
 
-      // 3. Separate delivery vs collection candidates
+      // 3. Separate delivery vs collection candidates.
+      // Steer customers toward stores that are open now (or opening soonest) rather
+      // than pure nearest-first, which could rank a closer-but-closed store ahead of
+      // one that's actually orderable right now.
+      const rankByOpenNowThenDistance = (a: EligibleStore, b: EligibleStore): number => {
+        const aOpen = evaluateStoreOpenNow(a.store).isOpen;
+        const bOpen = evaluateStoreOpenNow(b.store).isOpen;
+        if (aOpen !== bOpen) return aOpen ? -1 : 1;
+        if (!aOpen) {
+          const aNext = computeNextOpeningTime(a.store)?.getTime();
+          const bNext = computeNextOpeningTime(b.store)?.getTime();
+          if (aNext !== bNext) {
+            if (aNext === undefined) return 1;
+            if (bNext === undefined) return -1;
+            return aNext - bNext;
+          }
+        }
+        return a.distanceMeters - b.distanceMeters;
+      };
+
       const deliveryStores = validEntries
         .filter((e) => e.deliveryServiceable)
-        .sort((a, b) => a.distanceMeters - b.distanceMeters);
+        .sort(rankByOpenNowThenDistance);
 
       const collectionStores = validEntries
         .filter((e) => e.pickupAvailable && !e.deliveryServiceable)
-        .sort((a, b) => a.distanceMeters - b.distanceMeters);
+        .sort(rankByOpenNowThenDistance);
 
       // 4. Combine based on Section 12 rule:
       // Rank serviceable delivery stores by distance.
