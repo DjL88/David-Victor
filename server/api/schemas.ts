@@ -292,7 +292,7 @@ export const DPayRequestPaymentSchema = z.object({
     type: z.enum(['token', 'card', 'hosted']),
     tokenId: z.string().min(1, 'tokenId is required for tokenized payments'),
   }),
-  captureMode: z.enum(['manual', 'automatic']).default('manual'),
+  captureMode: z.enum(['manual', 'immediate']).default('manual'),
   amount: z.number().int('amount must be an integer in minor units').positive('amount must be positive'),
   currency: z.string().length(3, 'currency must be a 3-letter ISO-4217 code'),
   payer: z
