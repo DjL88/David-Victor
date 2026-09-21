@@ -23,6 +23,10 @@ export interface TenantIntegrationConfig {
   webhookSecret: string;
   deliverectAccountId?: string;
   allowedChannelLinkIds?: string[];
+  /** Channel API scope/name used by POST /{channelName}/order/{channelLinkId}. */
+  channelName?: string;
+  /** Terminal Deliverect order-creation route. Exactly one route may run per order. */
+  orderRoute: 'retail_quest' | 'commerce_checkout';
   tokenManager: OAuthTokenManager;
   isConfigured: boolean;
 }
@@ -130,6 +134,20 @@ export class IntegrationContext {
       deliverectAccountId = process.env.DELIVERECT_ACCOUNT_ID;
     }
 
+    const channelName =
+      integrationRecord?.channelName ||
+      process.env.DELIVERECT_CHANNEL_NAME ||
+      undefined;
+    const configuredOrderRoute = String(
+      integrationRecord?.orderRoute ||
+      process.env.DELIVERECT_ORDER_ROUTE ||
+      'retail_quest'
+    ).toLowerCase();
+    const orderRoute: 'retail_quest' | 'commerce_checkout' =
+      configuredOrderRoute === 'commerce_checkout'
+        ? 'commerce_checkout'
+        : 'retail_quest';
+
     const context: TenantIntegrationConfig = {
       tenantId,
       environment,
@@ -140,6 +158,8 @@ export class IntegrationContext {
       allowedChannelLinkIds: Array.isArray(integrationRecord?.allowedChannelLinkIds)
         ? integrationRecord.allowedChannelLinkIds.map(String)
         : [],
+      channelName,
+      orderRoute,
       tokenManager,
       isConfigured,
     };
