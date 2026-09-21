@@ -124,17 +124,17 @@ export function useBasket(
           if (!activeStoreId) {
             throw new Error('A store must be selected before creating a basket.');
           }
-          // Deliverect rejects basket creation with a raw 422 ("Fulfillment time is
-          // invalid...") when the store is currently closed and no future pickup/
-          // delivery time is offered yet. Check first so the customer gets an honest,
-          // friendly message instead of a raw upstream error.
+          // When the store is currently closed, the server (DeliverectApiClient.
+          // createBasket) targets the store's next real opening time instead of
+          // "now", so basket creation still succeeds — let the customer know their
+          // order is being prepared for that time rather than silently proceeding.
           const openStatus = evaluateStoreOpenNow(selectedStore);
           if (!openStatus.isOpen) {
-            const reasonMsg = `${selectedStore?.name || 'This store'} is closed right now${
-              openStatus.nextChangeText ? ` — ${openStatus.nextChangeText.toLowerCase()}` : ''
-            }.`;
-            setSnoozeWarning(reasonMsg);
-            return { success: false, reason: 'STORE_CLOSED' };
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} is closed right now${
+                openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
+              }. You can choose a different time at checkout.`
+            );
           }
           // Same idea for fulfillment type: some Commerce stores only support one of
           // delivery/pickup. The BFF enforces this too (server/api/v1Router.ts
@@ -223,10 +223,9 @@ export function useBasket(
           if (!openStatus.isOpen) {
             setSnoozeWarning(
               `${selectedStore?.name || 'This store'} is closed right now${
-                openStatus.nextChangeText ? ` — ${openStatus.nextChangeText.toLowerCase()}` : ''
-              }.`
+                openStatus.nextChangeText ? ` — your order will be prepared for collection when it ${openStatus.nextChangeText.toLowerCase()}` : ''
+              }. You can choose a different time at checkout.`
             );
-            return;
           }
           const supportsRequested =
             fulfillmentType === 'delivery' ? selectedStore?.supportsDelivery : selectedStore?.supportsPickup;
