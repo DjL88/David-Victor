@@ -400,7 +400,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             totalAmount: order.pricing?.total?.amount ? order.pricing.total.amount / 100 : 0,
             currency: order.pricing?.total?.currency || 'GBP',
             itemCount: order.items?.length || 0,
-            fulfillmentType: order.fulfillmentType || 'DELIVERY',
+            fulfillmentType:
+              order.fulfillment?.type ||
+              order.fulfillmentType ||
+              (isCollection ? 'pickup' : 'delivery'),
           },
         });
         onOrderSuccess(order.id);
@@ -408,7 +411,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       } else if (checkoutId) {
         setSessionId(checkoutId);
         setPhase('polling_status');
-        setStatusMessage('Placing order with store & dispatching courier...');
+        setStatusMessage(
+          isCollection
+            ? 'Placing your collection order with the store...'
+            : 'Placing order with store & dispatching courier...'
+        );
 
         const pollInterval = setInterval(async () => {
           try {
@@ -436,7 +443,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }, 1500);
       }
     } catch (err: any) {
-      setRevalidationError(err.message || 'Payment authorization failed');
+      setRevalidationError(
+        err.message || (isCollection ? 'Could not place collection order' : 'Payment authorization failed')
+      );
     } finally {
       setIsAuthorizingDirect(false);
     }
