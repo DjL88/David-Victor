@@ -6,13 +6,8 @@ import {
   Image as ImageIcon,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
   RefreshCw,
   ExternalLink,
-  ShieldAlert,
-  Film,
-  Package,
-  Layers,
 } from 'lucide-react';
 
 interface MediaHealthScreenProps {
@@ -82,14 +77,14 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-indigo-600" />
-              <span>Media Health & Upstream CDN Resilience</span>
+              <span>Media Health</span>
             </h1>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              Live BFF Probe
+              Live checks
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Proactively detects broken product pictures, failing CMS assets, and unavailable Story videos before shoppers do.
+            Check product, category, story and CMS media so broken assets can be fixed before shoppers encounter them.
           </p>
         </div>
 
@@ -100,7 +95,7 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
           className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isScanning || loading ? 'animate-spin' : ''}`} />
-          <span>{isScanning ? 'Probing Assets...' : 'Re-check All Media'}</span>
+          <span>{isScanning ? 'Checking media…' : 'Re-check all media'}</span>
         </button>
       </div>
 
@@ -146,12 +141,12 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
 
         <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs">
           <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
-            Placeholder Usage
+            Fallback rate
           </span>
           <p className="text-2xl font-black text-amber-600 mt-1">
             {((summary.failingCount / Math.max(summary.totalAssets, 1)) * 100).toFixed(0)}%
           </p>
-          <span className="text-[10px] text-amber-700 mt-1 block">Fallback coverage rate</span>
+          <span className="text-[10px] text-amber-700 mt-1 block">Assets currently needing fallback</span>
         </div>
       </div>
 
@@ -182,6 +177,9 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
       </div>
 
       {/* MEDIA ASSETS TABLE */}
+      {!loading && filteredAssets.length === 0 && !error && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-xs text-gray-500">No media assets match this filter.</div>
+      )}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
         <table className="w-full text-left text-xs">
           <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-200">
