@@ -188,3 +188,42 @@ export function evaluateStoreOpenNow(
     };
   }
 }
+
+/**
+ * Computes the next real datetime the store opens, based on its actual Deliverect
+ * opening hours (never a fabricated/guessed time). Looks up to 7 days ahead; returns
+ * null if the store has no parseable hours in that window rather than inventing one.
+ * Used to let a customer's basket target a genuine future opening instead of "now"
+ * when the store is currently closed.
+ */
+export function computeNextOpeningTime(
+  store: Store | null | undefined,
+  fromDate: Date = new Date()
+): Date | null {
+  if (!store) return null;
+
+  const normalizedMap = normalizeOpeningHours(store.openingHours);
+  const currentHoursMinutes =
+    fromDate.getHours().toString().padStart(2, '0') + ':' + fromDate.getMinutes().toString().padStart(2, '0');
+
+  for (let offset = 0; offset <= 7; offset++) {
+    const candidateDate = new Date(fromDate);
+    candidateDate.setDate(candidateDate.getDate() + offset);
+    const dayOfWeek = DAY_NAMES[candidateDate.getDay()];
+    const hours = normalizedMap[dayOfWeek];
+    if (!hours) continue;
+
+    // On the current day, only a still-upcoming opening counts; an opening earlier
+    // today (whether the store is now open or has already closed again) does not.
+    if (offset === 0 && currentHoursMinutes >= hours.open) continue;
+
+    const [openHour, openMinute] = hours.open.split(':').map((n) => parseInt(n, 10));
+    if (Number.isNaN(openHour) || Number.isNaN(openMinute)) continue;
+
+    const opening = new Date(candidateDate);
+    opening.setHours(openHour, openMinute, 0, 0);
+    return opening;
+  }
+
+  return null;
+}
