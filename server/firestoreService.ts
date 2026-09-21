@@ -1824,6 +1824,57 @@ export class FirestoreService {
     const persistedSubstitutionPreferences = basketId
       ? await this.getBasketSubstitutionPreferences(tenantId, basketId)
       : {};
+    const persistedBundleAllocations = basketId
+      ? await this.getBasketBundleAllocations(tenantId, basketId)
+      : [];
+
+    // Build a per-PLU pool of frozen protected bundle unit prices. The basket may
+    // aggregate bundle and ordinary units of the same PLU into one line, so the
+    // pool is consumed across picking lines rather than duplicating metadata.
+    const protectedBundlePricePools = new Map<
+      string,
+      Array<{ price: Money; bundleInstanceId: string }>
+    >();
+    for (const allocation of persistedBundleAllocations) {
+      for (const component of allocation.components || []) {
+        const pool = protectedBundlePricePools.get(component.componentPlu) || [];
+        for (const protectedPriceMinor of component.protectedUnitPricesMinor || []) {
+          pool.push({
+            price: {
+              amount: Math.round(protectedPriceMinor),
+              currency: allocation.currency || 'GBP',
+            },
+            bundleInstanceId: allocation.bundleInstanceId,
+          });
+        }
+        protectedBundlePricePools.set(component.componentPlu, pool);
+      }
+    }
+    for (const pool of protectedBundlePricePools.values()) {
+      pool.sort((a, b) => a.price.amount - b.price.amount);
+    }
+
+    const attachBundlePricing = (
+      item: PickingItem,
+      quantity: number
+    ): PickingItem => {
+      const pool = protectedBundlePricePools.get(item.plu);
+      if (!pool?.length || quantity <= 0) return item;
+
+      const protectedUnits = pool.splice(0, Math.min(quantity, pool.length));
+      if (protectedUnits.length === 0) return item;
+
+      return cleanUndefined({
+        ...item,
+        bundlePricing: {
+          protectedUnitPrices: protectedUnits.map((unit) => unit.price),
+          bundleInstanceIds: Array.from(
+            new Set(protectedUnits.map((unit) => unit.bundleInstanceId))
+          ),
+        },
+      });
+    };
+
     const fullAddress = order.fulfillment?.address?.formattedAddress || '';
     const postcodeMatch = fullAddress.match(/[A-Z]{1,2}[0-9][A-Z0-9]?/i);
     const destinationArea = postcodeMatch ? postcodeMatch[0].toUpperCase() : 'Local Area';
@@ -1853,21 +1904,35 @@ export class FirestoreService {
             );
           }
 
-          return {
-            id: item.id || `item_${item.plu || idx}`,
-            plu: item.plu,
-            name: item.name,
-            originalQuantity: item.quantity,
-            pickedQuantity: 0,
-            originalPrice: priceObj,
-            finalPrice: priceObj,
-            state: 'PENDING',
-            substitutionPreference: item.substitutionPreference || 'BEST_MATCH',
-            preferredSubstitutePlu: (item as any).substituteCandidates?.[0]?.plu || (item as any).preferredSubstitutePlu,
-            preferredSubstituteName: (item as any).substituteCandidates?.[0]?.name || (item as any).preferredSubstituteName,
-            preferredSubstitutePrice: (item as any).preferredSubstitutePrice,
-          };
+          return attachBundlePricing(
+            {
+              id: item.id || `item_${item.plu || idx}`,
+              plu: item.plu,
+              name: item.name,
+              originalQuantity: item.quantity,
+              pickedQuantity: 0,
+              originalPrice: priceObj,
+              finalPrice: priceObj,
+              state: 'PENDING',
+              substitutionPreference: item.substitutionPreference || 'BEST_MATCH',
+              preferredSubstitutePlu: (item as any).substituteCandidates?.[0]?.plu || (item as any).preferredSubstitutePlu,
+              preferredSubstituteName: (item as any).substituteCandidates?.[0]?.name || (item as any).preferredSubstituteName,
+              preferredSubstitutePrice: (item as any).preferredSubstitutePrice,
+            },
+            item.quantity
+          );
         }),
+      };
+    }
+
+    if (picking?.items?.length && persistedBundleAllocations.length > 0) {
+      picking = {
+        ...picking,
+        items: picking.items.map((item) =>
+          item.bundlePricing
+            ? item
+            : attachBundlePricing(item, item.originalQuantity || 0)
+        ),
       };
     }
 
@@ -1929,6 +1994,15 @@ export class FirestoreService {
       capturedAmount: (order as any).capturedAmount !== undefined ? (order as any).capturedAmount : undefined,
       residualHoldReleased: (order as any).residualHoldReleased !== undefined ? (order as any).residualHoldReleased : undefined,
       settlementDetails: (order as any).settlementDetails || undefined,
+      metadata: cleanUndefined({
+        ...((order as any).metadata || {}),
+        ...(persistedBundleAllocations.length > 0
+          ? {
+              bundlePricingVersion: 1,
+              bundleAllocations: persistedBundleAllocations,
+            }
+          : {}),
+      }),
       createdAt: order.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

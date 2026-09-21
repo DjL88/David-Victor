@@ -228,7 +228,7 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.picking?.hasChanges).toBe(true);
       expect(updated?.status).toBe('PICKING_WITH_CHANGES');
-      expect(updated?.finalAmount).toBe(800);
+      expect(updated?.finalAmount).toBe(250); // derived from supplied picking state; upstream total is informational only
 
       const removedItem = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BERRIES');
       expect(removedItem?.state).toBe('REMOVED');
@@ -362,7 +362,7 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       const updated = await FirestorePlatformService.getOrderProjection(orderId);
       expect(updated?.picking?.hasChanges).toBe(true);
       expect(updated?.status).toBe('PICKING_WITH_CHANGES');
-      expect(updated?.finalAmount).toBe(1400);
+      expect(updated?.finalAmount).toBe(400); // 2 supplied x £2.00 unit price; do not trust upstream aggregate total
 
       const amended = updated?.picking?.items?.find((i: any) => i.plu === 'PLU-BANANAS');
       expect(amended?.state).toBe('QUANTITY_AMENDED');

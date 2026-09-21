@@ -619,11 +619,15 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? payload.finalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount:
+            payload.newFinalAmount ?? payload.finalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
@@ -666,7 +670,15 @@ export class WebhookService {
               : 'BEST_MATCH';
 
           // Lower-of-Original-and-Substitute guarantee for Best Match substitutions
-          const chargedPriceAmount =
+          const preferredApprovedRaw = existingItem?.preferredSubstitutePrice;
+          const preferredApprovedAmount =
+            typeof preferredApprovedRaw === 'object' && preferredApprovedRaw !== null
+              ? preferredApprovedRaw.amount
+              : typeof preferredApprovedRaw === 'number'
+                ? preferredApprovedRaw
+                : undefined;
+
+          const requestedChargedPrice =
             payload.chargedPrice !== undefined
               ? typeof payload.chargedPrice === 'object'
                 ? payload.chargedPrice.amount
@@ -674,6 +686,18 @@ export class WebhookService {
               : subType === 'BEST_MATCH'
                 ? Math.min(origPriceAmount, subPriceAmount)
                 : subPriceAmount;
+
+          const chargedPriceAmount =
+            subType === 'CUSTOMER_SELECTED' &&
+            preferredApprovedAmount !== undefined
+              ? Math.min(requestedChargedPrice, preferredApprovedAmount)
+              : subType === 'BEST_MATCH'
+                ? Math.min(
+                    requestedChargedPrice,
+                    origPriceAmount,
+                    subPriceAmount
+                  )
+                : requestedChargedPrice;
 
           const currency = (origPriceRaw as any)?.currency || (existingItem?.originalPrice as any)?.currency || 'GBP';
           const finalPrice: Money = { amount: chargedPriceAmount, currency };
@@ -701,11 +725,14 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount: payload.newFinalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {
@@ -731,11 +758,15 @@ export class WebhookService {
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
-        const nextFinal = payload.newFinalAmount ?? payload.finalAmount ?? (refreshed?.finalAmount !== undefined ? refreshed.finalAmount : refreshed?.total);
+        const nextFinal = refreshed
+          ? PaymentService.calculateAuthoritativeFinalAmount(refreshed)
+          : 0;
 
         await FirestorePlatformService.updateOrderProjectionState(targetOrder.orderId, 'PICKING_WITH_CHANGES', {
           updatedViaWebhookId: webhookEventId,
           finalAmount: nextFinal,
+          upstreamReportedFinalAmount:
+            payload.newFinalAmount ?? payload.finalAmount,
         });
         await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
         return {

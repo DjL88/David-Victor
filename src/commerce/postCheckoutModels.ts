@@ -173,6 +173,16 @@ export interface PickingAmendment {
   reason?: string;
 }
 
+export interface PickingBundlePricing {
+  /**
+   * Frozen per-unit customer prices allocated when the bundle was added.
+   * Sorted cheapest-first so a later quantity reduction preserves the most
+   * customer-favourable protected units.
+   */
+  protectedUnitPrices: Money[];
+  bundleInstanceIds: string[];
+}
+
 export interface PickingItem {
   id: string;
   plu: string;
@@ -187,6 +197,7 @@ export interface PickingItem {
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
   preferredSubstitutePrice?: Money;
+  bundlePricing?: PickingBundlePricing;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
   unit?: string;
