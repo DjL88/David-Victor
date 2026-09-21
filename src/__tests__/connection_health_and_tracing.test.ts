@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConnectionHealthService } from '../../server/deliverect/ConnectionHealthService';
 import { linkedAccountsAdapter } from '../../server/deliverect/LinkedAccountsAdapter';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 
 describe('Connection Health & 5-Stage Request Tracing', () => {
   let healthService: ConnectionHealthService;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    // Success-path diagnostics must opt into demo explicitly. Missing APP_MODE is
+    // intentionally fail-closed to "unknown" and must never acquire mock data.
+    setServerRuntimeMode('demo');
     healthService = new ConnectionHealthService();
   });
 
