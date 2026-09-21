@@ -45,7 +45,7 @@ export class ConnectionHealthService {
       stores: [],
     }));
 
-    const accountId = (mappings as any).integration?.deliverectAccountId || (mappings.accounts?.[0]?.deliverectAccountId) || 'acc_bwydi_01';
+    const accountId = (mappings as any).integration?.deliverectAccountId || (mappings.accounts?.[0]?.deliverectAccountId) || process.env.DELIVERECT_ACCOUNT_ID || null;
     const env = ((mappings as any).integration?.environment as 'staging' | 'production') || (runtimeMode === 'production' ? 'production' : 'staging');
     const apiUrl = env === 'production' ? 'https://api.deliverect.com' : 'https://api.staging.deliverect.com';
 
@@ -389,7 +389,12 @@ export class ConnectionHealthService {
       (mappings as any).integration?.deliverectAccountId ||
       (mappings.accounts?.[0] as any)?.deliverectAccountId ||
       process.env.DELIVERECT_ACCOUNT_ID ||
-      'acc_bwydi_01';
+      null;
+    // Never fabricate a real-looking account ID for diagnostics: if no account is
+    // genuinely mapped, treat the trace as NOT_CONFIGURED rather than probing a
+    // synthesized ID that could collide with an unrelated real account.
+    const effectiveFailureType: ConnectionTraceFailureType | undefined =
+      forceType || (!accountId ? 'NOT_CONFIGURED' : undefined);
     const store = params.storeId
       ? mappings.stores?.find((s: any) => s.id === params.storeId || s.channelLinkId === params.storeId)
       : mappings.stores?.[0];
@@ -400,9 +405,10 @@ export class ConnectionHealthService {
     const baseUrl = env === 'production' ? 'https://api.deliverect.com' : 'https://api.staging.deliverect.com';
 
     // -------------------------------------------------------------
-    // FORCED FAILURE 1: NOT_CONFIGURED
+    // FAILURE 1: NOT_CONFIGURED (explicitly forced for testing, or genuinely
+    // detected when no Deliverect account could be resolved for this tenant)
     // -------------------------------------------------------------
-    if (forceType === 'NOT_CONFIGURED') {
+    if (effectiveFailureType === 'NOT_CONFIGURED') {
       const stage1: Stage1UpstreamTrace = {
         stage: 'UPSTREAM',
         status: 'FAILED',
@@ -415,7 +421,9 @@ export class ConnectionHealthService {
         timestamp,
         error: {
           code: 'NOT_CONFIGURED',
-          message: `Deliverect credentials not configured for environment '${env}'. Missing client_id or client_secret.`,
+          message: forceType
+            ? `Deliverect credentials not configured for environment '${env}'. Missing client_id or client_secret.`
+            : `No Deliverect account is mapped for tenant '${tenantId}'. Complete account discovery/selection in Integrations before tracing.`,
         },
       };
 
@@ -922,7 +930,10 @@ export class ConnectionHealthService {
     // -------------------------------------------------------------
     const startStage1 = Date.now();
     try {
-      const adapter = getDeliverectAdapter(tenantId, env, accountId);
+      // accountId is guaranteed non-null here: the NOT_CONFIGURED guard above
+      // already returned when no account could be resolved. 'default' is the
+      // adapter factory's own no-override sentinel, not a fabricated ID.
+      const adapter = getDeliverectAdapter(tenantId, env, accountId ?? 'default');
       let storeCatalog = await adapter.getStoreCatalog(channelLinkId, params.fulfillmentType || 'delivery').catch(() => null);
       if (!storeCatalog || !storeCatalog.products || storeCatalog.products.length === 0) {
         const rootCat = await adapter.getRootCatalog().catch(() => null);
