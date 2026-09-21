@@ -816,6 +816,11 @@ export class HttpAdminClient implements AdminClient {
     return res.ok;
   }
 
+  // NOT CONNECTED: no /admin/tenants/:id/country-rules BFF endpoint exists yet, so these
+  // intentionally do not persist anything. CountryRulesScreen.tsx no longer calls them and
+  // shows an explicit "Not Connected" banner instead of a false success state. Wire these up
+  // (and the corresponding server/api/v1Router.ts route + storage) as part of building the
+  // real rules-engine persistence backend, not by quietly making this return real-looking data.
   async getCountryRules(_tenantId: string, _country: string): Promise<any[]> {
     return [];
   }

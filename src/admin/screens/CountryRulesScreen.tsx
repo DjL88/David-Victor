@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AdminUser } from '../../commerce/models';
-import { defaultAdminClient } from '../../commerce/HttpAdminClient';
-import { Globe, Shield, Check, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Globe, Shield, Check, AlertTriangle } from 'lucide-react';
 
 interface CountryRulesScreenProps {
   tenantId: string;
@@ -13,8 +12,6 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
   currentUser,
 }) => {
   const [country, setCountry] = useState<string>('GB');
-  const [saving, setSaving] = useState<boolean>(false);
-  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   // Statutory parameters for selected country
   const [ageThreshold, setAgeThreshold] = useState<number>(18);
@@ -25,29 +22,10 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
   const [hfssPromotionBan, setHfssPromotionBan] = useState<boolean>(true);
   const [otcMedicineOrderLimit, setOtcMedicineOrderLimit] = useState<number>(2);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setSaveSuccess(false);
-
-    try {
-      const payload = [
-        { key: 'ageThreshold', value: ageThreshold },
-        { key: 'requireCourierChallenge25', value: requireCourierChallenge25 },
-        { key: 'requireAlcoholLicenceDisplay', value: requireAlcoholLicenceDisplay },
-        { key: 'enableDrsDeposit', value: enableDrsDeposit },
-        { key: 'drsCanFee', value: drsCanFee },
-        { key: 'hfssPromotionBan', value: hfssPromotionBan },
-        { key: 'otcMedicineOrderLimit', value: otcMedicineOrderLimit },
-      ];
-
-      await defaultAdminClient.updateCountryRules(tenantId, country, payload, currentUser);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } finally {
-      setSaving(false);
-    }
-  };
+  // NOTE: HttpAdminClient.getCountryRules / updateCountryRules are not yet wired to a
+  // BFF endpoint or persistence backend (no /admin/tenants/:id/country-rules route
+  // exists in server/api/v1Router.ts). Until that backend is built, this screen is
+  // display-only so it never claims a save succeeded when nothing was persisted.
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -76,14 +54,15 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
         </div>
       </div>
 
-      {saveSuccess && (
-        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 animate-in fade-in">
-          <Check className="w-4 h-4" />
-          <span>Country regulatory configuration saved and synced across stores</span>
-        </div>
-      )}
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-semibold border border-amber-200">
+        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+        <span>
+          Not Connected: this screen is not yet wired to a persistence backend. Values shown below
+          are local to this session only and are not saved or enforced by the Rule Engine.
+        </span>
+      </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
         {/* Challenge 25 & Age Verification */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
           <div className="flex items-center gap-2">
@@ -184,10 +163,11 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
         <div className="pt-2 flex items-center justify-end gap-3">
           <button
             type="submit"
-            disabled={saving}
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5"
+            disabled
+            title="Not connected: no backend endpoint persists Country Rules yet."
+            className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs opacity-50 cursor-not-allowed flex items-center gap-1.5"
           >
-            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            <Check className="w-3.5 h-3.5" />
             <span>Publish Country Regulations</span>
           </button>
         </div>
