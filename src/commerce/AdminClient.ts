@@ -321,6 +321,7 @@ export interface AdminClient {
    */
   getCommerceDiagnostics?(tenantId: string): Promise<any>;
   getRawStoreMenu?(tenantId: string, storeId: string): Promise<any>;
+  inspectStoreMenu?(tenantId: string, storeId: string, menuId?: string): Promise<any>;
 
   /**
    * Registers the active admin user with the client for header/tenant derivation.
