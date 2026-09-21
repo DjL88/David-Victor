@@ -270,6 +270,39 @@ export const CancelDispatchSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const VisualRuleMatchConditionSchema = z.object({
+  field: z.enum(['productTag', 'category', 'brand', 'ruleGroup', 'isAlcohol', 'plu']),
+  operator: z.enum(['equals', 'contains', 'in']),
+  value: z.string().trim().min(1, 'Condition value is required').max(500),
+});
+
+export const VisualRuleActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('MINIMUM_AGE'), minimumAge: z.number().int().min(1).max(100), requiresGate: z.boolean().optional(), requiresAcknowledgement: z.boolean().optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('PREVENT_UPSELL'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('PREVENT_RECOMMENDATION'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('EXCLUDE_FROM_DISCOUNTS'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('PREVENT_STORY_PLACEMENT'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('PREVENT_CAROUSEL_PLACEMENT'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('PREVENT_PURCHASE'), reason: z.string().max(500).optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('HIDE_PRODUCT'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('MAX_QUANTITY_PER_ORDER'), maximum: z.number().int().min(1).max(9999), reason: z.string().max(500).optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('COMBINED_GROUP_LIMIT'), groupId: z.string().trim().min(1).max(128), maximum: z.number().int().min(1).max(9999), groupName: z.string().max(200).optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('REQUIRES_COURIER_VERIFICATION'), verificationType: z.string().max(100).optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('REQUIRES_ALLERGEN_DISPLAY'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('BADGE'), label: z.string().trim().min(1).max(80), localizationKey: z.string().max(200).optional(), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ type: z.literal('WARNING'), text: z.string().trim().min(1).max(500), params: z.record(z.string(), z.unknown()).optional() }),
+]);
+
+export const SaveVisualRuleSchema = z.object({
+  id: z.string().trim().min(1).max(160),
+  name: z.string().trim().min(1).max(200),
+  enabled: z.boolean(),
+  countries: z.array(z.string().trim().length(2).transform((v) => v.toUpperCase())).max(50),
+  priority: z.number().int().min(-100000).max(100000),
+  matchConditions: z.array(VisualRuleMatchConditionSchema).min(1).max(25),
+  actions: z.array(VisualRuleActionSchema).min(1).max(25),
+}).strict();
+
 export const UpdateTenantDispatchRulesSchema = z.object({
   assignmentEvent: z.enum(['START_PICKING', 'CHECKOUT_PAID', 'ORDER_FINALISED']).optional(),
   dynamicTiming: z.boolean().optional(),
