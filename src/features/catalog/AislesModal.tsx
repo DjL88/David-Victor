@@ -87,58 +87,48 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     return matches;
   }, [visibleCategories, rootCategories, searchQuery]);
 
-  const categoryFallbackImages = useMemo(() => {
-    if (!isOpen) return new Map<string, string>();
-    const result = new Map<string, string>();
-    const collectIds = (category: Category): string[] => [
-      category.id,
-      ...(category.subcategories || []).flatMap(collectIds),
-    ];
-    const visit = (category: Category) => {
-      const ids = new Set(collectIds(category).map((id) => id.toLowerCase()));
-      const product = products.find(
-        (candidate) =>
-          candidate.active !== false &&
-          Boolean(candidate.imageUrl) &&
-          (candidate.categoryIds || []).some((id) => ids.has(id.toLowerCase()))
-      );
-      if (product?.imageUrl) result.set(category.id, product.imageUrl);
-      (category.subcategories || []).forEach(visit);
-    };
-    rootCategories.forEach(visit);
-    return result;
-  }, [isOpen, rootCategories, products]);
-
-  const categoryItemCounts = useMemo(() => {
-    if (!isOpen) return new Map<string, number>();
+  // Derive both imagery and counts from the same product membership rule used by
+  // the storefront: a category contains products assigned to itself OR any of its
+  // descendants. Count unique PLUs, not category references, because retail feeds
+  // can assign the same product at more than one level of the hierarchy.
+  const categoryPresentation = useMemo(() => {
     const counts = new Map<string, number>();
+    const images = new Map<string, string>();
+    if (!isOpen) return { counts, images };
 
-    // Pre-group active product counts by category ID for fast O(P + C) lookups
-    const productCountByCatId = new Map<string, number>();
-    for (const p of products) {
-      if (p.active === false) continue;
-      for (const cid of p.categoryIds || []) {
-        const lower = cid.toLowerCase();
-        productCountByCatId.set(lower, (productCountByCatId.get(lower) || 0) + 1);
-      }
-    }
-
+    const activeProducts = products.filter((product) => product.active !== false);
     const collectIds = (category: Category): string[] => [
       category.id,
       ...(category.subcategories || []).flatMap(collectIds),
     ];
+
     const visit = (category: Category) => {
-      const ids = new Set(collectIds(category).map((id) => id.toLowerCase()));
-      let total = 0;
-      // Sum counts for unique category IDs in this sub-tree
-      for (const id of ids) {
-        total += productCountByCatId.get(id) || 0;
-      }
-      counts.set(category.id, total);
+      const descendantIds = new Set(
+        collectIds(category).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
+      );
+      const matching = activeProducts.filter((product) =>
+        (product.categoryIds || []).some((id) =>
+          descendantIds.has(String(id).trim().toLowerCase())
+        )
+      );
+
+      // PLU is the saleable identity; fall back to product id only for malformed
+      // catalogue rows so one product assigned at parent + shelf is never counted twice.
+      const unique = new Map<string, Product>();
+      matching.forEach((product) => {
+        const key = String(product.plu || product.id || '').trim();
+        if (key && !unique.has(key)) unique.set(key, product);
+      });
+      counts.set(category.id, unique.size);
+
+      const representative = Array.from(unique.values()).find((product) => Boolean(product.imageUrl));
+      if (representative?.imageUrl) images.set(category.id, representative.imageUrl);
+
       (category.subcategories || []).forEach(visit);
     };
+
     rootCategories.forEach(visit);
-    return counts;
+    return { counts, images };
   }, [isOpen, rootCategories, products]);
 
   if (!isOpen) return null;
@@ -284,8 +274,8 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               {filteredCategories.map((cat) => {
                 const isSelected = selectedCategoryId === cat.id;
                 const hasSubs = cat.subcategories && cat.subcategories.length > 0;
-                const categoryImage = cat.imageUrl || categoryFallbackImages.get(cat.id);
-                const count = categoryItemCounts.get(cat.id) || 0;
+                const categoryImage = cat.imageUrl || categoryPresentation.images.get(cat.id);
+                const count = categoryPresentation.counts.get(cat.id) || 0;
 
                 return (
                   <button

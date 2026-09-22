@@ -1898,6 +1898,34 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const api = await this.getCommerceBasketApi();
+
+    // Deliverect Commerce replaceItems deliberately rejects an empty array.
+    // An empty customer basket is therefore a local lifecycle state, not an
+    // upstream mutation: clear all Bwydi-owned bundle pricing/allocation state
+    // and return an empty mapped basket. The next add creates a fresh basket,
+    // so we never keep an un-clearable final line just to satisfy Deliverect.
+    if (desired.length === 0) {
+      const existingDiscounts = Array.isArray((current as any)?.discounts)
+        ? (current as any).discounts
+        : [];
+      const nonBundleDiscounts = existingDiscounts.filter(
+        (discount: any) => !this.isManagedBundleDiscount(discount)
+      );
+      if (existingDiscounts.length !== nonBundleDiscounts.length) {
+        await api.updateDiscounts(basketId, nonBundleDiscounts);
+      }
+      await FirestorePlatformService.replaceBasketBundleAllocations(this.tenantId, basketId, []);
+      return {
+        ...current,
+        items: [],
+        subtotal: { ...current.subtotal, amount: 0 },
+        discountTotal: { ...current.discountTotal, amount: 0 },
+        total: { ...current.total, amount: 0 },
+        discounts: nonBundleDiscounts,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
     const raw = await api.replaceItems(basketId, desired);
 
     // A plain quantity change/removal can silently drop a bundle below its
@@ -2288,7 +2316,17 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     // The bundle parent is deliberately NOT added to Deliverect. Every chosen
     // component becomes a normal product line so Quest can amend/remove/substitute
-    // it independently.
+    // it independently. For one-tap qualification, existing basket units are
+    // claimed into the allocation and only the missing deficit is added.
+    const claimPool = new Map<string, number>();
+    if (request.claimExistingBasketItems) {
+      current.items.forEach((item) => claimPool.set(item.plu, (claimPool.get(item.plu) || 0) + item.quantity));
+      const priorLedger = await FirestorePlatformService.getBasketBundleAllocations(this.tenantId, basketId);
+      priorLedger.forEach((entry) => entry.components.forEach((component) => {
+        claimPool.set(component.componentPlu, Math.max(0, (claimPool.get(component.componentPlu) || 0) - component.quantity));
+      }));
+    }
+
     for (const component of allocation.components) {
       const product = normalProducts.find(
         (candidate) => candidate.plu === component.componentPlu
@@ -2304,30 +2342,36 @@ export class DeliverectApiClient implements DeliverectAdapter {
         );
       }
 
-      // Bundle components are exploded into normal product lines (see comment
-      // above), so each one needs the same Product Rules gate a direct
-      // basket-add gets — otherwise a restricted/hidden item could reach the
-      // basket simply by being bundled rather than added standalone.
-      await assertProductAddAllowed(
-        this.tenantId,
-        product,
-        { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
-        current.items,
-        component.quantity
-      );
-
-      const existing = desired.find(
-        (candidate) => candidate.plu === component.componentPlu
-      );
-      if (existing) {
-        existing.quantity += component.quantity;
-      } else {
-        desired.push({
-          menuId,
-          plu: component.componentPlu,
-          quantity: component.quantity,
-          itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
-        });
+      const claimable = request.claimExistingBasketItems
+        ? Math.min(component.quantity, claimPool.get(component.componentPlu) || 0)
+        : 0;
+      if (claimable > 0) {
+        claimPool.set(component.componentPlu, (claimPool.get(component.componentPlu) || 0) - claimable);
+      }
+      const quantityToAdd = component.quantity - claimable;
+      if (quantityToAdd > 0) {
+        // Only newly-added units need the add-rule gate. Units claimed from the
+        // basket already passed that gate when the customer originally added them.
+        await assertProductAddAllowed(
+          this.tenantId,
+          product,
+          { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
+          current.items,
+          quantityToAdd
+        );
+        const existing = desired.find(
+          (candidate) => candidate.plu === component.componentPlu
+        );
+        if (existing) {
+          existing.quantity += quantityToAdd;
+        } else {
+          desired.push({
+            menuId,
+            plu: component.componentPlu,
+            quantity: quantityToAdd,
+            itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
+          });
+        }
       }
     }
 

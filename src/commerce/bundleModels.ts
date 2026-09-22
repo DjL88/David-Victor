@@ -96,6 +96,8 @@ export interface AddBundleToBasketRequest {
   bundlePlu?: string;
   quantity?: number;
   selections: AddBundleSelectionInput[];
+  /** Claim matching units already in this basket; add only any deficit. */
+  claimExistingBasketItems?: boolean;
 }
 
 export interface BundleSectionValidation {
@@ -422,7 +424,9 @@ export interface MissedBundleOffer {
   presentUnits: number;
   requiredUnits: number;
   /** One suggested item per still-unsatisfied required section, to complete the combo. */
-  missingComponents: Array<{ plu: string; name: string; quantityNeeded: number }>;
+  missingComponents: Array<{ plu: string; name: string; quantityNeeded: number; sectionId: string; modifierId: string; imageUrl?: string }>;
+  /** Existing basket units that should be claimed into the bundle allocation. */
+  matchedSelections: SelectedBundleModifier[];
 }
 
 /**
@@ -459,14 +463,34 @@ export function findMissedBundleOffers(
     let requiredUnits = 0;
     let presentUnits = 0;
     const missingComponents: MissedBundleOffer['missingComponents'] = [];
+    const matchedSelections: SelectedBundleModifier[] = [];
 
     for (const section of sections) {
       requiredUnits += section.min;
 
       let sectionPresent = 0;
+      let remainingNeeded = section.min;
       for (const modifier of section.modifiers) {
         if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
-        sectionPresent += basketQtyByPlu.get(modifier.standalonePlu) || 0;
+        const available = basketQtyByPlu.get(modifier.standalonePlu) || 0;
+        const claimed = Math.min(available, remainingNeeded);
+        sectionPresent += available;
+        if (claimed > 0) {
+          matchedSelections.push({
+            modifierId: modifier.id,
+            plu: modifier.plu,
+            name: modifier.name,
+            quantity: claimed,
+            price: modifier.priceMinor ?? modifier.price ?? 0,
+            priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+            standalonePlu: modifier.standalonePlu,
+            standalonePriceMinor: modifier.standalonePriceMinor,
+            sectionId: section.id,
+            sectionName: section.name,
+          });
+          remainingNeeded -= claimed;
+        }
+        if (remainingNeeded <= 0) break;
       }
       const covered = Math.min(sectionPresent, section.min);
       presentUnits += covered;
@@ -480,6 +504,9 @@ export function findMissedBundleOffers(
             plu: suggestion.standalonePlu,
             name: suggestion.name,
             quantityNeeded: section.min - covered,
+            sectionId: section.id,
+            modifierId: suggestion.id,
+            imageUrl: suggestion.imageUrl,
           });
         }
       }
@@ -491,7 +518,7 @@ export function findMissedBundleOffers(
     // Only prompt at the genuinely useful moment: one required unit away from
     // qualification. Percentage thresholds produce noisy prompts for larger bundles.
     if (presentUnits === requiredUnits - 1 && missingComponents.length === 1 && missingComponents[0].quantityNeeded === 1) {
-      offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents });
+      offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents, matchedSelections });
     }
   }
 

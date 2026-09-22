@@ -710,9 +710,39 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         }}
         bundles={catalog?.bundleCatalog?.bundles || []}
         onOpenBundleDialog={(bundle) => {
-          // Never stack the bundle dialog behind the basket drawer.
+          // Full bundle builder remains available for explicit catalogue bundle adds.
           setIsCartOpen(false);
           setActiveBundleForModal(bundle);
+        }}
+        onCompleteBundleOffer={async (offer) => {
+          const missing = offer.missingComponents[0];
+          if (!missing) return;
+          const section = (offer.bundle.sections || offer.bundle.modifierGroups || []).find((candidate) => candidate.id === missing.sectionId);
+          const modifier = section?.modifiers.find((candidate) => candidate.id === missing.modifierId);
+          if (!section || !modifier) return;
+
+          // Existing basket units are claimed into the allocation; only this final
+          // missing unit is added by the server-side bundle mutation.
+          await addBundleToBasket(
+            offer.bundle,
+            [
+              ...offer.matchedSelections,
+              {
+                modifierId: modifier.id,
+                plu: modifier.plu,
+                name: modifier.name,
+                quantity: 1,
+                price: modifier.priceMinor ?? modifier.price ?? 0,
+                priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+                standalonePlu: modifier.standalonePlu,
+                standalonePriceMinor: modifier.standalonePriceMinor,
+                sectionId: section.id,
+                sectionName: section.name,
+              },
+            ],
+            1,
+            { claimExistingBasketItems: true }
+          );
         }}
         loading={basketLoading}
       />

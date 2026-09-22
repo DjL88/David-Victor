@@ -187,7 +187,8 @@ export interface CommerceClient {
     basketId: string,
     bundle: import('./bundleModels').BundleProduct,
     selectedModifiers: import('./bundleModels').SelectedBundleModifier[],
-    quantity?: number
+    quantity?: number,
+    options?: { claimExistingBasketItems?: boolean }
   ): Promise<Basket>;
 
   /**
