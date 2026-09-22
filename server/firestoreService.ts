@@ -1091,18 +1091,12 @@ export class FirestoreService {
    * Saves or updates a story in Firestore and memory.
    */
   static async saveTenantStory(tenantId: string, story: Story): Promise<Story> {
-    if (!inMemoryStories[tenantId]) {
-      inMemoryStories[tenantId] = [];
-    }
-    const existingIndex = inMemoryStories[tenantId].findIndex((s) => s.id === story.id);
-    if (existingIndex >= 0) {
-      inMemoryStories[tenantId][existingIndex] = { ...inMemoryStories[tenantId][existingIndex], ...story };
-    } else {
-      inMemoryStories[tenantId].push(story);
-    }
-    inMemoryStoriesPurged[tenantId] = false;
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Story was not saved because durable storage is unavailable.', 503);
+    }
+
     if (db) {
       try {
         await db
@@ -1113,8 +1107,18 @@ export class FirestoreService {
           .set(story, { merge: true });
       } catch (err) {
         console.error(`[Firestore Admin] Failed to save story:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+
+    if (!inMemoryStories[tenantId]) inMemoryStories[tenantId] = [];
+    const existingIndex = inMemoryStories[tenantId].findIndex((s) => s.id === story.id);
+    if (existingIndex >= 0) {
+      inMemoryStories[tenantId][existingIndex] = { ...inMemoryStories[tenantId][existingIndex], ...story };
+    } else {
+      inMemoryStories[tenantId].push(story);
+    }
+    inMemoryStoriesPurged[tenantId] = false;
     return story;
   }
 
@@ -1122,22 +1126,21 @@ export class FirestoreService {
    * Deletes a story from Firestore and memory.
    */
   static async deleteTenantStory(tenantId: string, storyId: string): Promise<boolean> {
-    if (inMemoryStories[tenantId]) {
-      inMemoryStories[tenantId] = inMemoryStories[tenantId].filter((s) => s.id !== storyId);
-    }
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Story was not deleted because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
-        await db
-          .collection('tenants')
-          .doc(tenantId)
-          .collection('stories')
-          .doc(storyId)
-          .delete();
+        await db.collection('tenants').doc(tenantId).collection('stories').doc(storyId).delete();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to delete story:`, err);
+        if (!fallbackAllowed) throw err;
       }
+    }
+    if (inMemoryStories[tenantId]) {
+      inMemoryStories[tenantId] = inMemoryStories[tenantId].filter((s) => s.id !== storyId);
     }
     return true;
   }
@@ -1146,10 +1149,11 @@ export class FirestoreService {
    * Purges all stories for a tenant (both mock and saved).
    */
   static async purgeTenantStories(tenantId: string = 'brand-alpha'): Promise<boolean> {
-    inMemoryStories[tenantId] = [];
-    inMemoryStoriesPurged[tenantId] = true;
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Stories were not deleted because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         const snap = await db.collection('tenants').doc(tenantId).collection('stories').get();
@@ -1158,8 +1162,11 @@ export class FirestoreService {
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to purge stories from Firestore:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryStories[tenantId] = [];
+    inMemoryStoriesPurged[tenantId] = true;
     return true;
   }
 
