@@ -402,6 +402,56 @@ export interface EventDeliveryAttempt {
 }
 
 // ==========================================
+// OPERATIONAL EXCEPTIONS & ORDER RECOVERY
+// ==========================================
+
+export type OrderExceptionType =
+  | 'ACCEPTANCE_TIMEOUT'
+  | 'PAYMENT_UNCERTAIN'
+  | 'FULFILMENT_STALLED'
+  | 'COURIER_UNAVAILABLE'
+  | 'CUSTOMER_CANCELLATION'
+  | 'STORE_CANCELLATION'
+  | 'PROVIDER_ERROR'
+  | 'UNKNOWN';
+
+export type OrderExceptionStatus =
+  | 'OPEN'
+  | 'RETRY_SCHEDULED'
+  | 'MANUAL_REVIEW'
+  | 'RECOVERED'
+  | 'CANCELLED'
+  | 'COMPENSATION_PENDING'
+  | 'RESOLVED';
+
+export interface OrderOperationalException {
+  exceptionId: string;
+  tenantId: string;
+  orderId: string;
+  storeId?: string;
+  type: OrderExceptionType;
+  status: OrderExceptionStatus;
+  reasonCode: string;
+  correlationId?: string;
+  sourceSystem?: string;
+  attemptCount: number;
+  firstObservedAt: string;
+  lastObservedAt: string;
+  nextRetryAt?: string;
+  resolvedAt?: string;
+  /** No provider-specific callback behaviour belongs in this neutral exception record. */
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface OrderExceptionPolicy {
+  tenantId: string;
+  acceptanceTimeoutMinutes: number;
+  maximumRetryAttempts: number;
+  retryDelaySeconds: number;
+  onRetriesExhausted: 'MANUAL_REVIEW' | 'CANCEL' | 'KEEP_OPEN';
+}
+
+// ==========================================
 // TRUST, REFUNDS & CUSTOMER CARE
 // ==========================================
 
