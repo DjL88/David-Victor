@@ -2625,106 +2625,22 @@ export class DeliverectApiClient implements DeliverectAdapter {
     let raw = await api.updateStore(basketId, channelLinkId);
     let after = await this.mapLiveCommerceBasket(raw);
 
-    // A store switch changes the authoritative shelf prices and can change
-    // bundle availability. Never carry the source-store combo saving forward.
-    const priorLedger = await FirestorePlatformService.getBasketBundleAllocations(this.tenantId, basketId);
-    if (priorLedger.length > 0) {
-      const destinationCatalog = await this.getStoreCatalog(after.storeId, after.fulfillmentType);
-      const destinationProducts = destinationCatalog.products || [];
-      const repricedLedger: BasketBundleAllocationRecord[] = [];
-
-      const getPriceMinor = (product: Product): number | undefined => {
-        const value = product.price ?? product.basePrice;
-        if (typeof value === 'number' && Number.isInteger(value)) return value;
-        if (value && typeof value === 'object' && Number.isInteger((value as Money).amount)) {
-          return (value as Money).amount;
-        }
-        return Number.isInteger(product.priceMinor) ? product.priceMinor : undefined;
-      };
-
-      for (const prior of priorLedger) {
-        const bundle = destinationCatalog.bundleCatalog?.bundles.find(
-          (candidate) => candidate.id === prior.bundleId || candidate.plu === prior.bundlePlu
-        );
-        if (!bundle || bundle.stockStatus === 'OUT_OF_STOCK') continue;
-
-        const selectedModifiers: SelectedBundleModifier[] = [];
-        let valid = true;
-        for (const priorComponent of prior.components || []) {
-          const section = (bundle.sections || bundle.modifierGroups || []).find(
-            (candidate) => candidate.id === priorComponent.sectionId
-          );
-          const modifier = section?.modifiers.find(
-            (candidate) => candidate.id === priorComponent.modifierId
-          );
-          if (!section || !modifier || modifier.active === false || modifier.snoozed) {
-            valid = false;
-            break;
-          }
-          const isOptionalUpsell = section.isUpsell === true || section.min === 0;
-          const priorPlu = String(priorComponent.componentPlu || '').trim();
-          const product = destinationProducts.find(
-            (candidate) =>
-              candidate.plu === priorPlu ||
-              candidate.plu === String(modifier.standalonePlu || '').trim() ||
-              candidate.plu === String(modifier.plu || '').trim()
-          );
-          const shelfPrice = product ? getPriceMinor(product) : undefined;
-          if (
-            product?.active === false ||
-            product?.stockStatus === 'OUT_OF_STOCK' ||
-            (!product && !isOptionalUpsell) ||
-            (product && shelfPrice === undefined)
-          ) {
-            valid = false;
-            break;
-          }
-          // Optional modifier-only upsells survive a store switch without being
-          // forced through the normal-product catalogue. Their configured uplift
-          // remains the deal price; if a shelf product exists, allocation clamps
-          // against that destination-store shelf price.
-          const resolvedPlu = product?.plu || String(modifier.plu || priorPlu).trim();
-          const resolvedStandalonePrice =
-            shelfPrice ??
-            (Number.isInteger(priorComponent.standaloneUnitPriceMinor)
-              ? priorComponent.standaloneUnitPriceMinor
-              : Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0)));
-          selectedModifiers.push({
-            modifierId: modifier.id,
-            plu: modifier.plu,
-            name: modifier.name,
-            quantity: Math.max(1, Math.round(priorComponent.quantity / Math.max(1, prior.bundleQuantity))),
-            price: modifier.priceMinor ?? modifier.price ?? 0,
-            priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
-            standalonePlu: product?.plu || (isOptionalUpsell ? undefined : resolvedPlu),
-            standalonePriceMinor: resolvedStandalonePrice,
-            sectionId: section.id,
-            sectionName: section.name,
-          });
-          modifier.standalonePlu = product?.plu || (isOptionalUpsell ? undefined : resolvedPlu);
-          modifier.standalonePriceMinor = resolvedStandalonePrice;
-        }
-        if (!valid) continue;
-        try {
-          const allocation = allocateProtectedBundlePrices(bundle, selectedModifiers, prior.bundleQuantity);
-          repricedLedger.push({
-            ...allocation,
-            bundleInstanceId: prior.bundleInstanceId,
-            createdAt: prior.createdAt,
-          });
-        } catch {
-          // Invalid at the destination store means the old allocation/discount
-          // is removed; ordinary basket lines remain independently saleable.
-        }
-      }
-
-      await FirestorePlatformService.replaceBasketBundleAllocations(this.tenantId, basketId, repricedLedger);
-      const rawDiscounts: CommerceBasketDiscountInput[] = Array.isArray(raw?.discounts) ? raw.discounts : [];
-      const nonBundleDiscounts = rawDiscounts.filter((discount) => !this.isManagedBundleDiscount(discount));
-      const desiredDiscounts = [...nonBundleDiscounts, ...this.buildManagedBundleDiscountLines(repricedLedger)];
-      raw = await api.updateDiscounts(basketId, desiredDiscounts);
-      after = await this.mapLiveCommerceBasket(raw);
-    }
+    // Store switching is a fresh basket qualification event. Do not reconstruct
+    // historical bundle ownership from the source store: evaluate the actual
+    // destination basket against the destination catalogue and prices.
+    const destinationCatalog = await this.getStoreCatalog(after.storeId, after.fulfillmentType);
+    const destinationDesired = toCommerceItemInputs(after).map((item) => ({
+      plu: item.plu,
+      quantity: item.quantity,
+    }));
+    const automaticDiscounts = await this.recalculateAutomaticDealDiscounts(
+      basketId,
+      destinationDesired,
+      destinationCatalog,
+      Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
+    );
+    raw = await api.updateDiscounts(basketId, automaticDiscounts);
+    after = await this.mapLiveCommerceBasket(raw);
 
     const comparison = this.compareBasketItems(before, after);
 
