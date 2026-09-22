@@ -2945,7 +2945,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     // Commerce keeps one order_flat_off for a qualifying combo. When explicitly
     // enabled per tenant, the Retail order consumes the frozen bundle allocation
     // ledger and sends those savings as final per-unit item prices instead.
-    const tenantConfig = await FirestoreService.getTenantConfig(this.tenantId);
+    const tenantConfig = await FirestorePlatformService.getTenantConfig(this.tenantId);
     const sendBundleDiscountAsItemPrice =
       tenantConfig.featureFlags?.sendBundleDiscountAsItemPrice === true;
     const bundleAllocations = sendBundleDiscountAsItemPrice
