@@ -65,24 +65,27 @@ Assistant write requests are stored as durable `AssistantChangeSet` records unde
 
 `tenants/{tenantId}/assistantChangeSets/{changeSetId}`
 
-The current lifecycle supports:
+The lifecycle supports:
 
-`PROPOSED -> VALIDATED -> APPROVAL_REQUIRED -> APPROVED`
+`PROPOSED -> VALIDATED -> APPROVAL_REQUIRED -> APPROVED -> APPLYING -> APPLIED -> ROLLED_BACK`
 
-The broader status contract also reserves `APPLYING`, `APPLIED`, `PARTIALLY_FAILED`, `FAILED` and `ROLLED_BACK`.
+`PARTIALLY_FAILED` and `FAILED` are also explicit terminal states.
 
-Important: approval is not execution. Every persisted change set currently carries `executionEnabled: false`.
+Approval is not execution. Autonomous execution remains disabled. A change set is only explicitly applicable when a typed resource adapter has produced a validated revision and the server marks `applyAvailable: true`.
 
 Change-set creation includes:
 
 - immutable validated action inputs;
 - actor and role;
 - prompt/request;
-- affected resources;
-- before/after snapshots where available;
-- diff and warnings;
+- server-derived affected resources;
+- server-derived before/after snapshots and diff where an adapter exists;
+- warnings;
+- linked validated revision IDs;
 - idempotency key and request hash;
 - reversibility metadata.
+
+The public assistant proposal API does not accept authoritative before/after/diff values from the model or browser. Those values must be calculated by a server-side resource adapter.
 
 High-risk approval requires `assistant.approveHighRisk`. Lower-risk approval requires `assistant.executeLowRisk`.
 
@@ -125,11 +128,11 @@ Enabled deterministic reads:
 - store configuration inspection;
 - integration/connection diagnosis.
 
-Proposal-only foundations:
+Controlled write foundations:
 
-- branding;
-- product rules;
-- fee policies.
+- Branding: server-derived preview, validated revision, human approval, explicit LOW_WRITE apply, and conflict-safe rollback.
+- Product rules: proposal-only.
+- Fee policies: proposal-only.
 
 ## Explicitly not enabled
 
@@ -141,15 +144,15 @@ Proposal-only foundations:
 - payment/refund/cancellation side effects;
 - tenant deletion;
 - Team/RBAC mutation by the assistant;
-- applying an approved change set without a typed versioned resource adapter.
+- applying an approved change set without a typed versioned resource adapter;
+- autonomous application of approved changes.
 
 ## Next adapters
 
 Recommended order:
 
-1. Branding
-2. CMS pages/content
-3. Product rules
+1. CMS pages/content
+2. Product rules
 4. Location operational settings
 5. Fee policies
 6. Scheduling/dispatch configuration
