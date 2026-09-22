@@ -25,7 +25,7 @@ describe('AdminChangeSetService', () => {
       tenantId: 'tenant-a',
       actorId: 'admin-1',
       actorRole: 'tenantAdmin' as const,
-      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColor: '#112233' } }],
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#112233' } }],
       idempotencyKey: 'branding-1',
     };
     const first = await AdminChangeSetService.createProposedChangeSet(args);
@@ -35,7 +35,7 @@ describe('AdminChangeSetService', () => {
     await expect(
       AdminChangeSetService.createProposedChangeSet({
         ...args,
-        actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColor: '#ffffff' } }],
+        actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#ffffff' } }],
       })
     ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_IDEMPOTENCY_CONFLICT' });
   });
