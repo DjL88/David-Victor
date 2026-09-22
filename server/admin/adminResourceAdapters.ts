@@ -207,6 +207,19 @@ async function projectBrandingRevision(args: {
   }
 
   const currentTenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+  if (revision.basedOnRevisionId) {
+    const baseRevision = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+      args.tenantId,
+      revision.basedOnRevisionId
+    );
+    const liveBeforeApply = brandingSnapshot(currentTenant);
+    if (diffConfiguration(baseRevision.payload, liveBeforeApply).length > 0) {
+      throw Object.assign(
+        new Error('Branding changed after this proposal was created. Review a fresh proposal before applying.'),
+        { code: 'ADMIN_REVISION_LIVE_STATE_CONFLICT', statusCode: 409 }
+      );
+    }
+  }
   const updatedAt = new Date().toISOString();
   const fullTenant = {
     ...currentTenant,
@@ -287,6 +300,16 @@ async function rollbackBrandingRevision(args: {
     throw Object.assign(
       new Error('Branding changed again after this change set was applied; automatic rollback is unsafe.'),
       { code: 'ADMIN_REVISION_ROLLBACK_CONFLICT', statusCode: 409 }
+    );
+  }
+
+  const liveBeforeRollback = brandingSnapshot(
+    await FirestorePlatformService.getTenantConfig(args.tenantId)
+  );
+  if (diffConfiguration(applied.payload, liveBeforeRollback).length > 0) {
+    throw Object.assign(
+      new Error('Live Branding no longer matches this applied revision. Automatic rollback would overwrite a newer edit.'),
+      { code: 'ADMIN_REVISION_LIVE_STATE_CONFLICT', statusCode: 409 }
     );
   }
 
