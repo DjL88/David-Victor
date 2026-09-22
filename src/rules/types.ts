@@ -597,6 +597,46 @@ export interface CourierCompensationClaim {
 }
 
 // ==========================================
+// ORGANISATION & CONFIGURATION INHERITANCE
+// ==========================================
+
+export type OrganisationNodeType = 'ORGANISATION' | 'BRAND' | 'MARKET' | 'REGION' | 'LOCATION_GROUP' | 'LOCATION';
+
+export interface OrganisationNode {
+  nodeId: string;
+  tenantId: string;
+  type: OrganisationNodeType;
+  name: string;
+  parentNodeId?: string;
+  enabled: boolean;
+  country?: string;
+  locale?: string;
+  timezone?: string;
+}
+
+export interface ConfigurationOverride<T = Record<string, unknown>> {
+  overrideId: string;
+  tenantId: string;
+  nodeId: string;
+  resourceType: string;
+  values: Partial<T>;
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface ResolvedConfiguration<T = Record<string, unknown>> {
+  tenantId: string;
+  targetNodeId: string;
+  resourceType: string;
+  value: T;
+  /** Root-to-leaf provenance makes inherited values explainable in the admin UI and audit log. */
+  appliedNodeIds: string[];
+  sourceRevisionIds: string[];
+  resolvedAt: string;
+}
+
+// ==========================================
 // VERSIONED TENANT CONTROL PLANE
 // ==========================================
 
