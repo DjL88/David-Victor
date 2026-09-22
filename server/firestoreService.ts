@@ -369,7 +369,8 @@ export class FirestoreService {
   static async listAllTenants(): Promise<TenantConfig[]> {
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
-      return Object.values(inMemoryTenants);
+      if (isDemoMode() || isTestMode()) return Object.values(inMemoryTenants);
+      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant registry is unavailable because durable storage cannot be reached.', 503, true);
     }
 
     try {
@@ -401,7 +402,8 @@ export class FirestoreService {
       } else {
         handleFirestoreError(err, OperationType.LIST, 'tenants');
       }
-      return Object.values(inMemoryTenants);
+      if (isDemoMode() || isTestMode()) return Object.values(inMemoryTenants);
+      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant registry could not be read from durable storage.', 503, true);
     }
   }
 
@@ -418,10 +420,10 @@ export class FirestoreService {
 
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
-      if (inMemoryTenants[tenantId]) {
+      if ((isDemoMode() || isTestMode()) && inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
+      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant configuration is unavailable because durable storage cannot be reached.', 503, true);
     }
 
     try {
@@ -445,10 +447,10 @@ export class FirestoreService {
       if (isFirestorePermissionDeniedError(err)) {
         markFirestorePermissionDenied(err);
       }
-      if (inMemoryTenants[tenantId]) {
+      if ((isDemoMode() || isTestMode()) && inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
+      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant configuration could not be verified against durable storage.', 503, true);
     }
   }
 
