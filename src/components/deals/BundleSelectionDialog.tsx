@@ -42,7 +42,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
   selectedStoreName,
   onAddBundleToBasket,
 }) => {
-  const { primaryBtnStyle } = useTenantStyles();
+  const { primaryBtnStyle, currencySymbol } = useTenantStyles();
 
   // Map of modifierId -> quantity selected
   const [selections, setSelections] = useState<Record<string, number>>({});
@@ -148,7 +148,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
     return calculateBundlePrice(bundle, selectedModifiersList).totalPriceMinor;
   }, [bundle, selectedModifiersList]);
 
-  const currency = bundle?.currency || 'GBP';
+  const currency = currencySymbol;
   const totalPriceMinor = bundlePriceMinor * bundleQuantity;
 
   if (!isOpen || !bundle) return null;
