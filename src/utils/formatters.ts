@@ -38,6 +38,10 @@ export function formatCurrency(
 
   let minorUnits: number;
   let currencyCode = currencySymbolOrCode;
+  // When the caller supplies a currency/code (the storefront does this from
+  // tenant Settings), that setting is the display authority. Upstream Money
+  // metadata is still useful when no display currency was supplied.
+  const hasExplicitDisplayCurrency = arguments.length >= 2;
 
   if (typeof amount === 'object' && amount !== null && 'amount' in amount) {
     const rawVal = (amount as any).amount;
@@ -45,7 +49,7 @@ export function formatCurrency(
       return 'Price unavailable';
     }
     minorUnits = !Number.isInteger(rawVal) ? Math.round(rawVal * 100) : Math.round(rawVal);
-    if ((amount as any).currency) {
+    if (!hasExplicitDisplayCurrency && (amount as any).currency) {
       currencyCode = (amount as any).currency;
     }
   } else if (typeof amount === 'number') {
