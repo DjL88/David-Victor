@@ -105,9 +105,9 @@ export function allocateProtectedBundlePrices(
     // the basket identity and its configured uplift is its deal price.
     const isOptionalUpsell = section.isUpsell === true || section.min === 0;
     const componentPlu = String(modifier.standalonePlu || (isOptionalUpsell ? modifier.plu : '')).trim();
-    const upliftUnitPriceMinor = Math.max(
+    const configuredUpliftUnitPriceMinor = Math.max(
       0,
-      Math.round(modifier.priceMinor ?? modifier.price ?? 0)
+      Math.round(selection.priceMinor ?? selection.price ?? modifier.priceMinor ?? modifier.price ?? 0)
     );
 
     if (!componentPlu) {
@@ -120,13 +120,20 @@ export function allocateProtectedBundlePrices(
       Number.isInteger(declaredStandalonePriceMinor) && (declaredStandalonePriceMinor as number) >= 0
         ? (declaredStandalonePriceMinor as number)
         : isOptionalUpsell
-          ? upliftUnitPriceMinor
+          ? configuredUpliftUnitPriceMinor
           : undefined;
     if (standalonePriceMinor === undefined) {
       throw new Error(
         `Bundle component "${modifier.name}" is missing an authoritative standalone price.`
       );
     }
+
+    // Optional components are conditional discounts, never surcharges.
+    // Use the resolved selection price when supplied by the store-aware deal
+    // engine, and clamp again here so every caller gets the same protection.
+    const upliftUnitPriceMinor = isOptionalUpsell
+      ? Math.min(configuredUpliftUnitPriceMinor, standalonePriceMinor as number)
+      : configuredUpliftUnitPriceMinor;
 
     return {
       selection,
