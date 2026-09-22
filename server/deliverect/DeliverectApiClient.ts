@@ -1943,6 +1943,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const raw = await api.replaceItems(basketId, desired);
+    const catalog = await this.getStoreCatalog(current.storeId, current.fulfillmentType);
 
     // A plain quantity change/removal can silently drop a bundle below its
     // required components (e.g. removing the last unit of an item a combo
