@@ -41,7 +41,9 @@ export interface AdminActionDefinition {
   enabledForAssistant: boolean;
 }
 
-export type AdminActionMetadata = Omit<AdminActionDefinition, 'inputSchema'>;
+export type AdminActionMetadata = Omit<AdminActionDefinition, 'inputSchema'> & {
+  assistantMode: 'EXECUTE_READ' | 'PROPOSE_ONLY';
+};
 
 const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<ServerAdminCapability>> = {
   platformSuperAdmin: new Set<ServerAdminCapability>([
@@ -172,12 +174,38 @@ export function hasServerAdminCapability(role: AdminRole, capability: ServerAdmi
 export function listAssistantActionsForRole(role: AdminRole): AdminActionMetadata[] {
   if (!hasServerAdminCapability(role, 'assistant.use')) return [];
   return ACTIONS
-    .filter((action) => action.enabledForAssistant && hasServerAdminCapability(role, action.capability))
-    .map(({ inputSchema: _inputSchema, ...metadata }) => metadata);
+    .filter(
+      (action) =>
+        hasServerAdminCapability(role, action.capability) &&
+        (action.enabledForAssistant || (action.risk !== 'READ' && action.supportsPreview))
+    )
+    .map(({ inputSchema: _inputSchema, ...metadata }) => ({
+      ...metadata,
+      assistantMode: metadata.enabledForAssistant ? 'EXECUTE_READ' : 'PROPOSE_ONLY',
+    }));
 }
 
 export function getAdminActionDefinition(name: string): AdminActionDefinition | undefined {
   return ACTIONS.find((action) => action.name === name);
+}
+
+const SENSITIVE_INPUT_KEY = /^(?:password|secret|clientSecret|apiKey|accessToken|refreshToken|authorization|credential|credentials)$/i;
+
+function findSensitiveInputKey(value: unknown, path: string[] = [], depth = 0): string | null {
+  if (depth > 8 || value === null || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findSensitiveInputKey(value[index], [...path, String(index)], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_INPUT_KEY.test(key)) return [...path, key].join('.');
+    const found = findSensitiveInputKey(nested, [...path, key], depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function validateAdminActionInput(
@@ -191,6 +219,13 @@ export function validateAdminActionInput(
       statusCode: 400,
       issues: parsed.error.issues,
     });
+  }
+  const sensitiveKey = findSensitiveInputKey(parsed.data);
+  if (sensitiveKey) {
+    throw Object.assign(
+      new Error(`Sensitive credential fields are not allowed in assistant action input (${sensitiveKey}).`),
+      { code: 'ADMIN_ACTION_SENSITIVE_INPUT_FORBIDDEN', statusCode: 400 }
+    );
   }
   return parsed.data as Record<string, unknown>;
 }
