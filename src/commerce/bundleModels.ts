@@ -445,6 +445,7 @@ export interface MissedBundleOffer {
 export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
+  activeDiscounts: Array<{ title?: string; code?: string; id?: string }> = [],
 ): MissedBundleOffer[] {
   // Basket quantity is a pool of individual units. A unit consumed by a completed
   // bundle (or by an earlier prompt candidate) cannot qualify a second bundle.
@@ -485,6 +486,11 @@ export function findMissedBundleOffers(
   // used in a meal deal from triggering a second 2-for-X suggestion.
   for (const bundle of bundles) {
     if (bundle.stockStatus === 'OUT_OF_STOCK' || requiredSections(bundle).length === 0) continue;
+    const isAllocated = activeDiscounts.some((discount) => {
+      const label = String(discount.title || discount.code || discount.id || '').toLowerCase();
+      return label.includes(String(bundle.name || '').toLowerCase()) || label.includes(String(bundle.id || '').toLowerCase());
+    });
+    if (!isAllocated) continue;
     while (consumeBundleIfComplete(bundle)) {
       // A basket may legitimately contain more than one complete instance.
     }
