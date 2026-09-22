@@ -14,6 +14,7 @@ import { calculateReverseDeals } from '../../commerce/reverseDealEngine';
 import { ReverseDealPromptCard } from '../deals/ReverseDealPromptCard';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { BundleProduct, findMissedBundleOffers } from '../../commerce/bundleModels';
+import { qualifyAutomaticDeals } from '../../commerce/automaticDealEngine';
 import { ItemUnavailablePreferenceModal } from './ItemUnavailablePreferenceModal';
 import {
   evaluateBasketSnoozeStatus,
@@ -200,17 +201,42 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   // explicit bundle-add flow, so they never got the discount. This never
   // applies a discount itself — it only surfaces the option; the customer
   // still has to confirm through BundleSelectionDialog to actually get it.
+  const automaticBundleAllocations = useMemo(() => {
+    if (!effectiveBasket || bundles.length === 0 || candidatePool.length === 0) return [];
+    return qualifyAutomaticDeals(allBasketItems, bundles, candidatePool);
+  }, [allBasketItems, bundles, candidatePool, effectiveBasket]);
+
+  const allocatedBundleUnits = useMemo(
+    () => automaticBundleAllocations.flatMap((allocation) =>
+      allocation.components.map((component) => ({
+        plu: component.componentPlu,
+        quantity: component.quantity,
+      }))
+    ),
+    [automaticBundleAllocations]
+  );
+
   const missedBundleOffers = useMemo(() => {
     if (!effectiveBasket || bundles.length === 0) return [];
-    return findMissedBundleOffers(allBasketItems, bundles, candidatePool);
-  }, [allBasketItems, bundles, candidatePool, effectiveBasket]);
+    return findMissedBundleOffers(allBasketItems, bundles, candidatePool, allocatedBundleUnits);
+  }, [allBasketItems, bundles, candidatePool, allocatedBundleUnits, effectiveBasket]);
 
   if (!isOpen) return null;
 
+  const addProductQuantity = (product: Product, quantityToAdd = 1) => {
+    const currentQuantity = allBasketItems
+      .filter((item) => item.plu === product.plu)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    onUpdateQuantity(
+      product,
+      currentQuantity + Math.max(1, quantityToAdd),
+      effectiveBasket?.storeId || basket?.storeId
+    );
+  };
+
   // Helper to add missing item from reverse deal prompt
   const handleAddMissingProduct = (missingProduct: Product) => {
-    const targetStoreId = basket?.storeId;
-    onUpdateQuantity(missingProduct, 1, targetStoreId);
+    addProductQuantity(missingProduct, 1);
   };
 
    return (
@@ -542,7 +568,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         </div>
                         <button type="button" disabled={loading} onClick={() => {
                           if (choices.length > 1) setComboChoice(offer);
-                          else if (product) onUpdateQuantity(product, 1, effectiveBasket?.storeId);
+                          else if (product) addProductQuantity(product, offer.missingSection.quantityNeeded);
                         }} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
                           {choices.length > 1 ? 'Choose item' : 'Add & save'}
                         </button>
@@ -567,7 +593,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         const choiceProduct = candidatePool.find((candidate) => candidate.plu === choice.plu);
                         if (!choiceProduct) return null;
                         return <button key={choice.modifierId} type="button" onClick={() => {
-                          onUpdateQuantity(choiceProduct, 1, effectiveBasket?.storeId);
+                          addProductQuantity(choiceProduct, comboChoice.missingSection.quantityNeeded);
                           setComboChoice(null);
                         }} className="w-full p-3 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 flex items-center gap-3 text-left">
                           {(choiceProduct.imageUrl || choice.imageUrl) ? <img src={choiceProduct.imageUrl || choice.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" /> : <Package className="w-5 h-5 text-gray-400" />}

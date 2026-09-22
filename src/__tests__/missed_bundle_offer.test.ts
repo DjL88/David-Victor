@@ -94,3 +94,60 @@ it('keeps distinct deal opportunities even when their missing section overlaps',
   const offers = findMissedBundleOffers(basketItems, [dearer as any, cheaper as any]);
   expect(offers.map((offer) => offer.bundle.id).sort()).toEqual(['cheaper', 'dearer']);
 });
+
+
+describe('single-section and overlapping deal prompts', () => {
+  const twoOfSame: BundleProduct = {
+    id: 'two-x',
+    plu: 'TWO_X',
+    name: 'Two X Deal',
+    price: 300,
+    priceMinor: 300,
+    currency: 'GBP',
+    isCombo: true,
+    stockStatus: 'IN_STOCK',
+    sections: [
+      {
+        id: 'items',
+        name: 'Items',
+        min: 2,
+        max: 2,
+        modifiers: [
+          { id: 'x', name: 'X', plu: 'X###', standalonePlu: 'X', active: true, snoozed: false, price: 0 },
+        ],
+      },
+    ],
+  };
+
+  it('prompts for the second unit of a one-section min-2 deal', () => {
+    const offers = findMissedBundleOffers(
+      [{ plu: 'X', quantity: 1 }],
+      [twoOfSame],
+      [{ plu: 'X', active: true, stockStatus: 'IN_STOCK' }]
+    );
+    expect(offers).toHaveLength(1);
+    expect(offers[0].missingSection.quantityNeeded).toBe(1);
+    expect(offers[0].missingSection.choices.map((choice) => choice.plu)).toEqual(['X']);
+  });
+
+  it('does not reuse a unit already consumed by another qualified deal when prompting', () => {
+    const catalogue = [{ plu: 'X', active: true, stockStatus: 'IN_STOCK' }];
+
+    expect(findMissedBundleOffers(
+      [{ plu: 'X', quantity: 1 }],
+      [twoOfSame],
+      catalogue,
+      [{ plu: 'X', quantity: 1 }]
+    )).toHaveLength(0);
+
+    const offers = findMissedBundleOffers(
+      [{ plu: 'X', quantity: 2 }],
+      [twoOfSame],
+      catalogue,
+      [{ plu: 'X', quantity: 1 }]
+    );
+    expect(offers).toHaveLength(1);
+    expect(offers[0].presentUnits).toBe(1);
+    expect(offers[0].missingSection.quantityNeeded).toBe(1);
+  });
+});
