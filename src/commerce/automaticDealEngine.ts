@@ -60,8 +60,12 @@ function buildCandidate(
       const available = local.get(plu) || 0;
       const take = Math.min(available, room);
       if (take <= 0) continue;
-      const uplift = Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0));
-      selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: uplift, priceMinor: uplift, standalonePlu: product?.plu, standalonePriceMinor: shelf ?? uplift, sectionId: section.id, sectionName: section.name });
+      const configuredUpsell = Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0));
+      // Optional deal pricing may discount a normal shelf product, but it must
+      // never turn into a surcharge when the configured upsell price is stale
+      // or higher than the destination store's current shelf price.
+      const protectedUpsell = shelf === undefined ? configuredUpsell : Math.min(configuredUpsell, shelf);
+      selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: protectedUpsell, priceMinor: protectedUpsell, standalonePlu: product?.plu, standalonePriceMinor: shelf ?? protectedUpsell, sectionId: section.id, sectionName: section.name });
       local.set(plu, available - take);
       room -= take;
       if (!room) break;
