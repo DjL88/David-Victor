@@ -1,3 +1,4 @@
+import type { DocumentReference } from 'firebase-admin/firestore';
 import crypto from 'crypto';
 import { getFirestoreDb } from '../firebase';
 import { isDemoMode, isTestMode } from '../runtimeMode';
@@ -343,7 +344,12 @@ export class ConfigurationRevisionService {
   static async publishRevision(
     tenantId: string,
     revisionId: string,
-    actorId: string
+    actorId: string,
+    projection?: {
+      documentRef: DocumentReference;
+      data: Record<string, unknown>;
+      merge?: boolean;
+    }
   ): Promise<{ revision: ConfigurationRevision; pointer: PublishedConfigurationPointer }> {
     const db = requireStore();
 
@@ -434,6 +440,13 @@ export class ConfigurationRevisionService {
       };
       transaction.set(revisionRef, published);
       transaction.set(pointerRef, pointer);
+      if (projection) {
+        transaction.set(
+          projection.documentRef,
+          projection.data,
+          projection.merge === false ? undefined : { merge: true }
+        );
+      }
       return { revision: published, pointer };
     });
   }
