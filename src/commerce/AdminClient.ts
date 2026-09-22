@@ -398,6 +398,28 @@ export interface AdminClient {
    */
   runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string }): Promise<any>;
 
+  /** Lists server-authorized assistant actions, including proposal-only write actions. */
+  getAssistantActions?(tenantId?: string): Promise<any>;
+
+  /** Creates a durable, reviewable proposal. This never applies the mutation. */
+  createAssistantChangeSet?(tenantId: string, proposal: {
+    prompt?: string;
+    actions: Array<{ actionName: string; input?: Record<string, unknown> }>;
+    affectedResources?: Array<{ type: string; id: string; label?: string }>;
+    beforeSnapshot?: unknown;
+    afterSnapshot?: unknown;
+    diff?: unknown;
+    warnings?: string[];
+    idempotencyKey?: string;
+    conversationId?: string;
+  }): Promise<any>;
+
+  /** Retrieves one tenant-bound assistant change set. */
+  getAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Records human approval only; execution remains disabled server-side. */
+  approveAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
   placePickupTestOrder?(
     tenantId: string,
     options?: {
