@@ -2996,10 +2996,6 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const ordinaryQuantity = item.quantity - protectedPrices.length;
       projectedRetailItemsTotalMinor += protectedTotal + ordinaryQuantity * unitPrice;
 
-      const projectedUnitPrice =
-        protectedPrices.length === item.quantity && item.quantity > 0
-          ? protectedTotal / item.quantity
-          : unitPrice;
       // Retail Channel order lines have one unit price per line. If qualified and
       // ordinary units of the same PLU are aggregated at different prices, silently
       // averaging would corrupt the protected allocation. Fail closed until the
