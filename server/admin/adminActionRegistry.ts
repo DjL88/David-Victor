@@ -94,6 +94,32 @@ const CatalogueDiagnosticInputSchema = z.object({
 });
 const ProposalInputSchema = z.record(z.string(), z.unknown());
 
+const BrandingProposalInputSchema = z.object({
+  brandName: z.string().trim().min(1).max(200).optional(),
+  tagline: z.string().max(500).optional(),
+  logoUrl: z.string().max(4000).optional(),
+  iconUrl: z.string().max(4000).optional(),
+  faviconUrl: z.string().max(4000).optional(),
+  headerLogoMode: z.enum(['ICON_WITH_TEXT', 'WIDE_LOGO', 'LOGO_ONLY']).optional(),
+  headerLogoMaxWidth: z.number().finite().min(24).max(1200).optional(),
+  primaryColour: z.string().trim().min(1).max(100).optional(),
+  secondaryColour: z.string().trim().min(1).max(100).optional(),
+  backgroundColour: z.string().trim().min(1).max(100).optional(),
+  textColour: z.string().trim().min(1).max(100).optional(),
+  surfaceColour: z.string().trim().min(1).max(100).optional(),
+  mutedTextColour: z.string().trim().min(1).max(100).optional(),
+  borderColour: z.string().trim().min(1).max(100).optional(),
+  successColour: z.string().trim().min(1).max(100).optional(),
+  warningColour: z.string().trim().min(1).max(100).optional(),
+  errorColour: z.string().trim().min(1).max(100).optional(),
+  fontFamily: z.string().trim().min(1).max(200).optional(),
+  headingFontFamily: z.string().trim().min(1).max(200).optional(),
+  carouselTitleFontFamily: z.string().trim().min(1).max(200).optional(),
+  borderRadius: z.string().trim().min(1).max(100).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, {
+  message: 'At least one branding field is required.',
+});
+
 const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'catalog.inspect',
@@ -138,7 +164,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'branding.proposeUpdate',
     description: 'Prepare a branding change proposal without applying it.',
-    inputSchema: ProposalInputSchema,
+    inputSchema: BrandingProposalInputSchema,
     capability: 'branding.write',
     risk: 'LOW_WRITE',
     supportsPreview: true,
