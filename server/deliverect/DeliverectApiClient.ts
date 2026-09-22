@@ -1948,15 +1948,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
     // required components (e.g. removing the last unit of an item a combo
     // needed) — re-check the ledger against the resulting basket and strip
     // any discount that no longer qualifies.
-    const revalidatedDiscounts = await this.revalidateBundleDiscounts(
+    const automaticDiscounts = await this.recalculateAutomaticDealDiscounts(
       basketId,
       desired,
+      catalog,
       Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
     );
-    const finalRaw = revalidatedDiscounts
-      ? await api.updateDiscounts(basketId, revalidatedDiscounts)
-      : raw;
-
+    const finalRaw = await api.updateDiscounts(basketId, automaticDiscounts);
     return this.mapLiveCommerceBasket(finalRaw);
   }
 
@@ -2072,15 +2070,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
 
-    const revalidatedDiscounts = await this.revalidateBundleDiscounts(
+    const automaticDiscounts = await this.recalculateAutomaticDealDiscounts(
       basketId,
       desired,
+      catalog,
       Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
     );
-    const finalRaw = revalidatedDiscounts
-      ? await api.updateDiscounts(basketId, revalidatedDiscounts)
-      : raw;
-
+    const finalRaw = await api.updateDiscounts(basketId, automaticDiscounts);
     return this.mapLiveCommerceBasket(finalRaw);
   }
 
