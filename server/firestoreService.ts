@@ -243,7 +243,10 @@ function savePersistedIntegrations(integrations: Record<string, IntegrationConfi
 }
 
 // In-memory tenant registry with disk persistence fallback
-const inMemoryTenants: Record<string, TenantConfig> = { ...MOCK_TENANTS, ...loadPersistedTenants() };
+const inMemoryTenants: Record<string, TenantConfig> = {
+  ...(isDemoMode() || isTestMode() ? MOCK_TENANTS : {}),
+  ...loadPersistedTenants(),
+};
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
