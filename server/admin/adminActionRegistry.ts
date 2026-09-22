@@ -148,3 +148,57 @@ export function listAssistantActionsForRole(role: AdminRole): AdminActionDefinit
 export function getAdminActionDefinition(name: string): AdminActionDefinition | undefined {
   return ACTIONS.find((action) => action.name === name);
 }
+
+
+export interface AdminActionPlan {
+  planId: string;
+  actionName: string;
+  tenantId: string;
+  actorId: string;
+  risk: AdminActionRisk;
+  summary: string;
+  input: Record<string, unknown>;
+  affectedResources: Array<{ type: string; id: string; label?: string }>;
+  requiresConfirmation: boolean;
+  executable: boolean;
+  reversible: boolean;
+  createdAt: string;
+}
+
+export function assertAssistantActionAllowed(role: AdminRole, actionName: string): AdminActionDefinition {
+  const action = getAdminActionDefinition(actionName);
+  if (!action) {
+    throw Object.assign(new Error('Unknown admin action.'), { code: 'ADMIN_ACTION_UNKNOWN', statusCode: 404 });
+  }
+  if (!action.enabledForAssistant) {
+    throw Object.assign(new Error('This action is not enabled for assistant execution.'), { code: 'ADMIN_ACTION_DISABLED', statusCode: 403 });
+  }
+  if (!hasServerAdminCapability(role, 'assistant.use') || !hasServerAdminCapability(role, action.capability)) {
+    throw Object.assign(new Error('Your role does not have permission to use this admin action.'), { code: 'ADMIN_ACTION_FORBIDDEN', statusCode: 403 });
+  }
+  return action;
+}
+
+export function buildReadOnlyActionPlan(args: {
+  action: AdminActionDefinition;
+  tenantId: string;
+  actorId: string;
+  input?: Record<string, unknown>;
+}): AdminActionPlan {
+  const now = new Date().toISOString();
+  const entropy = Math.random().toString(36).slice(2, 10);
+  return {
+    planId: `plan-${Date.now()}-${entropy}`,
+    actionName: args.action.name,
+    tenantId: args.tenantId,
+    actorId: args.actorId,
+    risk: args.action.risk,
+    summary: args.action.description,
+    input: args.input || {},
+    affectedResources: [],
+    requiresConfirmation: args.action.risk !== 'READ',
+    executable: args.action.risk === 'READ' && args.action.enabledForAssistant,
+    reversible: args.action.supportsUndo,
+    createdAt: now,
+  };
+}
