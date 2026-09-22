@@ -6,7 +6,7 @@ import { AgeGateModal } from '../compliance/AgeGateModal';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
-import { resolveAllergenTags } from '../../domain/allergens';
+import { resolveAllergenTags, isKnownAllergen, isDietaryTag, normalizeDietaryTag, getCanonicalDietaryLabel } from '../../domain/allergens';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../../analytics';
 import {
   X,
@@ -160,12 +160,28 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   // Check which sections have data
-  const allergenLabels = Array.from(new Set((product.allergens || []).filter((label) => label && !/^\d+$/.test(String(label)))));
-  const friendlyProductTags = Array.from(new Set([
-    ...(product.productTagLabels || []),
-    ...(product.displayLabels || []),
-    ...(product.productTags || []).filter((tag) => !/^\d+$/.test(String(tag))).map(String),
-  ]));
+  // Customer-facing safety/preference metadata is intentionally narrower than
+  // Deliverect's general product-tag taxonomy. Merchandising/operational tags
+  // remain available to catalogue logic/admin but are not rendered as product facts.
+  const allergenLabels = Array.from(new Set(
+    (product.allergens || [])
+      .map(String)
+      .filter((label) => isKnownAllergen(label))
+  ));
+  const friendlyProductTags = Array.from(
+    new Map(
+      [
+        ...(product.productTagLabels || []),
+        ...(product.displayLabels || []),
+        ...(product.productTags || []).map(String),
+      ]
+        .filter((tag) => isDietaryTag(String(tag)))
+        .map((tag) => {
+          const canonical = normalizeDietaryTag(String(tag));
+          return [canonical, getCanonicalDietaryLabel(String(tag))] as const;
+        })
+    ).values()
+  );
   const hasAllergens = allergenLabels.length > 0;
   const hasIngredients = Boolean(product.supplementalInfo?.ingredients);
   const hasNutrition = Boolean(product.nutritionalInfo);
@@ -181,11 +197,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         product.beverageInfo.alcoholByVolume > 0)
   );
   const hasDeposit = Boolean(depositAmount && depositAmount > 0);
-  const unmappedTagIds = Array.from(new Set([
-    ...(product.unmappedProductTags || []),
-    ...(product.productTags || []).filter((tag) => /^\d+$/.test(String(tag))).map(String),
-  ]));
-  const hasTags = friendlyProductTags.length > 0 || unmappedTagIds.length > 0;
+  const hasTags = friendlyProductTags.length > 0;
 
   return (
     <>
@@ -252,7 +264,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {/* Pricing & Deposit */}
             <div className="flex flex-wrap items-baseline gap-2 mb-4">
-              <span className="text-2xl font-black text-gray-900">
+              <span className="text-2xl font-black text-gray-900 leading-[1.05]">
                 {(() => {
                   if (isStoreSelected) {
                     if (product.price != null) {
@@ -564,7 +576,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {hasTags && (
               <div className="mb-5">
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Product Tags
+                  Dietary & Lifestyle
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
                   {friendlyProductTags.map((tag, idx) => (
@@ -592,7 +604,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-md border-t border-gray-100 flex items-center justify-between gap-3 shadow-lg">
             <div>
               <span className="text-[11px] text-gray-400 block">Total</span>
-              <span className="text-xl font-extrabold text-gray-900">
+              <span className="text-xl font-extrabold text-gray-900 leading-[1.05]">
                 {(() => {
                   const qty = Math.max(1, basketQuantity);
                   if (isStoreSelected) {
