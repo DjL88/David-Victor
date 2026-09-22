@@ -396,7 +396,7 @@ export interface AdminClient {
   /**
    * Places an isolated test pickup order via Deliverect Commerce Basket API
    */
-  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string }): Promise<any>;
+  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string }): Promise<any>;
 
   /** Lists server-authorized assistant actions, including proposal-only write actions. */
   getAssistantActions?(tenantId?: string): Promise<any>;
