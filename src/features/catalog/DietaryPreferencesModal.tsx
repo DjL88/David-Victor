@@ -14,6 +14,8 @@ import {
   getAllergenIcon,
   normalizeDietaryTag,
   getCanonicalDietaryLabel,
+  isDietaryTag,
+  isKnownAllergen,
   CANONICAL_ALLERGENS,
 } from '../../domain/allergens';
 
@@ -58,6 +60,10 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
 
       candidates.forEach((raw) => {
         if (!raw || typeof raw !== 'string') return;
+        // Product tags also contain merchandising, operational and raw numeric
+        // Deliverect tag IDs. Only expose the small canonical set that is
+        // meaningful as a customer dietary/lifestyle preference.
+        if (!isDietaryTag(raw)) return;
         const norm = normalizeDietaryTag(raw);
         if (!norm) return;
 
@@ -83,12 +89,13 @@ export const DietaryPreferencesModal: React.FC<DietaryPreferencesModalProps> = (
     products.forEach((product) =>
       (product.allergens || []).forEach((raw) => {
         const label = String(raw).trim();
-        if (!label) return;
+        // Never turn an unresolved/raw tag id into a customer-facing allergen.
+        // Allergens must resolve to our explicit canonical safety vocabulary.
+        if (!label || !isKnownAllergen(label)) return;
         const canonicalKey = normalizeAllergenKey(label);
         const canonicalConfig = CANONICAL_ALLERGENS[canonicalKey];
-        const displayLabel = canonicalConfig
-          ? canonicalConfig.label
-          : label.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
+        if (!canonicalConfig) return;
+        const displayLabel = canonicalConfig.label;
 
         const existing = counts.get(canonicalKey);
         if (existing) {
