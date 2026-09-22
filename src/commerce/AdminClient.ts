@@ -405,11 +405,6 @@ export interface AdminClient {
   createAssistantChangeSet?(tenantId: string, proposal: {
     prompt?: string;
     actions: Array<{ actionName: string; input?: Record<string, unknown> }>;
-    affectedResources?: Array<{ type: string; id: string; label?: string }>;
-    beforeSnapshot?: unknown;
-    afterSnapshot?: unknown;
-    diff?: unknown;
-    warnings?: string[];
     idempotencyKey?: string;
     conversationId?: string;
   }): Promise<any>;
