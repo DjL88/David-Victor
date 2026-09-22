@@ -653,7 +653,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         deliveryStoresCount={deliveryStores.length}
         collectionStoresCount={collectionStores.length}
         hasDeliveryCoverage={hasDeliveryCoverage}
-        deliveryEnabled={appMode === 'demo'}
+        deliveryEnabled={tenant?.featureFlags?.enableCollection === false ? false : deliveryStores.length > 0}
         onSelectFulfillment={(mode) => setFulfillmentType(mode)}
         onClose={() => setIsFulfilmentModalOpen(false)}
         dismissible={true}
