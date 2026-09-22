@@ -21,15 +21,25 @@ export interface AdminResourceSelection {
   label?: string;
 }
 
+export interface AdminWorkspaceScope {
+  organizationId?: string;
+  market?: string;
+  region?: string;
+  locationGroupId?: string;
+  locationId?: string;
+}
+
 export interface AdminWorkspaceSnapshot {
   tenantId: string;
   section: AdminTab;
   actor: Pick<AdminUser, 'id' | 'name' | 'role' | 'tenantId'>;
+  scope: AdminWorkspaceScope;
   resource?: AdminResourceSelection;
   filters?: Record<string, string | number | boolean | null>;
 }
 
 interface AdminWorkspaceContextValue extends AdminWorkspaceSnapshot {
+  setScope: (scope: AdminWorkspaceScope) => void;
   setResource: (resource?: AdminResourceSelection) => void;
   setFilters: (filters?: Record<string, string | number | boolean | null>) => void;
 }
@@ -42,6 +52,7 @@ export const AdminWorkspaceProvider: React.FC<{
   actor: AdminUser;
   children: React.ReactNode;
 }> = ({ tenantId, section, actor, children }) => {
+  const [scope, setScope] = useState<AdminWorkspaceScope>({});
   const [resource, setResource] = useState<AdminResourceSelection | undefined>();
   const [filters, setFilters] = useState<Record<string, string | number | boolean | null> | undefined>();
 
@@ -55,12 +66,14 @@ export const AdminWorkspaceProvider: React.FC<{
         role: actor.role,
         tenantId: actor.tenantId,
       },
+      scope,
       resource,
       filters,
+      setScope,
       setResource,
       setFilters,
     }),
-    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, resource, filters]
+    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, scope, resource, filters]
   );
 
   return <AdminWorkspaceContext.Provider value={value}>{children}</AdminWorkspaceContext.Provider>;
