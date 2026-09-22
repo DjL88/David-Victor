@@ -254,15 +254,15 @@ describe('protected bundle component allocation', () => {
     );
   });
 
-  it('refuses a bundle configured to cost more than its selected standalone products', () => {
+  it('uses the cheaper shelf total when a configured bundle price would be a surcharge', () => {
     const expensiveBundle: BundleProduct = {
       ...bundle,
       price: 700,
       priceMinor: 700,
     };
 
-    expect(() =>
-      allocateProtectedBundlePrices(expensiveBundle, selection)
-    ).toThrow(/cost more than buying the selected items individually/i);
+    const allocation = allocateProtectedBundlePrices(expensiveBundle, selection);
+    expect(allocation.targetBundleTotalMinor).toBe(600);
+    expect(allocation.discountTotalMinor).toBe(0);
   });
 });
