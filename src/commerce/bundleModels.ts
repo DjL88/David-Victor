@@ -96,6 +96,8 @@ export interface AddBundleToBasketRequest {
   bundlePlu?: string;
   quantity?: number;
   selections: AddBundleSelectionInput[];
+  /** Claim matching units already in this basket; add only any deficit. */
+  claimExistingBasketItems?: boolean;
 }
 
 export interface BundleSectionValidation {
