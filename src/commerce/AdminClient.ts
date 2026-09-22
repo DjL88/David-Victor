@@ -412,8 +412,14 @@ export interface AdminClient {
   /** Retrieves one tenant-bound assistant change set. */
   getAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
 
-  /** Records human approval only; execution remains disabled server-side. */
+  /** Records human approval. */
   approveAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Explicitly applies a human-approved change set when a typed resource adapter is available. */
+  applyAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Rolls back an applied reversible change set when the live resource has not drifted. */
+  rollbackAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
 
   placePickupTestOrder?(
     tenantId: string,
