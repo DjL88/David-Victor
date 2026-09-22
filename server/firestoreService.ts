@@ -569,25 +569,14 @@ export class FirestoreService {
     const cleanHost = (hostname || '').toLowerCase().trim().split(':')[0];
     if (!cleanHost) return null;
 
-    // 1. Direct match in persistent / in-memory domain registry
-    if (inMemoryDomains[cleanHost]) {
-      return inMemoryDomains[cleanHost].tenantId;
+    // Demo/test can use the local domain registry. Live traffic must resolve from durable storage.
+    if (isDemoMode() || isTestMode()) {
+      if (inMemoryDomains[cleanHost]) return inMemoryDomains[cleanHost].tenantId;
+      const equivalentHost = cleanHost.startsWith('www.') ? cleanHost.slice(4) : `www.${cleanHost}`;
+      if (inMemoryDomains[equivalentHost]) return inMemoryDomains[equivalentHost].tenantId;
     }
 
-    // 2. www-prefixed or non-www equivalent
-    if (cleanHost.startsWith('www.')) {
-      const withoutWww = cleanHost.slice(4);
-      if (inMemoryDomains[withoutWww]) {
-        return inMemoryDomains[withoutWww].tenantId;
-      }
-    } else {
-      const withWww = `www.${cleanHost}`;
-      if (inMemoryDomains[withWww]) {
-        return inMemoryDomains[withWww].tenantId;
-      }
-    }
-
-    // 3. Firestore query if connected and not denied
+    // Firestore is authoritative for live domain routing
     const db = getFirestoreDb();
     if (db && !isFirestorePermissionDenied()) {
       try {
@@ -614,24 +603,14 @@ export class FirestoreService {
       }
     }
 
-    // 4. Check if any tenant has this as defaultDomain
-    for (const t of Object.values(inMemoryTenants)) {
-      const tDom = (t as any).defaultDomain || (t as any).domain;
-      if (tDom && tDom.toLowerCase().split(':')[0] === cleanHost) {
-        return t.tenantId;
+    // Demo/test-only compatibility heuristics.
+    if (isDemoMode() || isTestMode()) {
+      for (const t of Object.values(inMemoryTenants)) {
+        const tDom = (t as any).defaultDomain || (t as any).domain;
+        if (tDom && tDom.toLowerCase().split(':')[0] === cleanHost) return t.tenantId;
       }
-    }
-
-    // 5. Subdomain heuristic (e.g. brand-beta.1bwydi.ai.studio -> brand-beta)
-    const hostParts = cleanHost.split('.');
-    if (hostParts.length > 2) {
-      const candidateSlug = hostParts[0].toLowerCase();
-      if (inMemoryTenants[candidateSlug]) {
-        return candidateSlug;
-      }
-      if (candidateSlug.startsWith('brand-') || candidateSlug === 'marketlane') {
-        return candidateSlug;
-      }
+      const candidateSlug = cleanHost.split('.')[0]?.toLowerCase();
+      if (candidateSlug && inMemoryTenants[candidateSlug]) return candidateSlug;
     }
 
     // 6. Explicit authorized preview environment variable (if authorized by server configuration)
