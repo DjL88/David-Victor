@@ -347,6 +347,13 @@ export class HttpAdminClient implements AdminClient {
         const uploadHeaders: Record<string, string> = {
           'Content-Type': file.type || 'application/octet-stream',
         };
+        // The relative URL is the authenticated BFF fallback used when signed URL
+        // generation is unavailable. Never forward Firebase auth to an external
+        // Cloud Storage signed URL.
+        if (!uploadUrl.startsWith('http')) {
+          if (headers.Authorization) uploadHeaders.Authorization = headers.Authorization;
+          if (headers['X-Tenant-ID']) uploadHeaders['X-Tenant-ID'] = headers['X-Tenant-ID'];
+        }
 
         const uploadRes = await fetch(targetUrl, {
           method: 'PUT',
