@@ -70,7 +70,7 @@ describe('findMissedBundleOffers', () => {
 
 
 it('shows only the strongest missed deal when two bundles compete for the same missing product', () => {
-  const base = SAMPLE_DELIVERECT_BUNDLES[0];
+  const base = bundle;
   const cheaper = { ...base, id: 'cheaper', plu: 'CHEAPER', priceMinor: Math.max(0, (base.priceMinor || 0) - 100) };
   const dearer = { ...base, id: 'dearer', plu: 'DEARER', priceMinor: base.priceMinor };
   const required = (base.sections || []).filter((section) => !section.isUpsell && section.min > 0);
