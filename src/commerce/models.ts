@@ -146,6 +146,8 @@ export interface TenantFeatureFlags {
   enableDepositReturnScheme?: boolean;
   enableTipCourier?: boolean;
   enableSequentialCategoryGrouping?: boolean;
+  /** When true, Retail/Quest orders project frozen bundle savings into final item prices. Basket pricing remains order_flat_off. */
+  sendBundleDiscountAsItemPrice?: boolean;
 }
 
 export type FeatureFlags = TenantFeatureFlags;

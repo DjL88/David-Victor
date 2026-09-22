@@ -653,7 +653,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         deliveryStoresCount={deliveryStores.length}
         collectionStoresCount={collectionStores.length}
         hasDeliveryCoverage={hasDeliveryCoverage}
-        deliveryEnabled={appMode === 'demo'}
+        deliveryEnabled={tenant?.featureFlags?.enableCollection === false ? false : deliveryStores.length > 0}
         onSelectFulfillment={(mode) => setFulfillmentType(mode)}
         onClose={() => setIsFulfilmentModalOpen(false)}
         dismissible={true}
@@ -709,7 +709,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           setActiveDealForModal(deal);
         }}
         bundles={catalog?.bundleCatalog?.bundles || []}
-        onOpenBundleDialog={(bundle) => setActiveBundleForModal(bundle)}
+        onOpenBundleDialog={(bundle) => {
+          // Never stack the bundle dialog behind the basket drawer.
+          setIsCartOpen(false);
+          setActiveBundleForModal(bundle);
+        }}
         loading={basketLoading}
       />
 

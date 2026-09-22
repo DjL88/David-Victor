@@ -22,7 +22,7 @@ import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
 import { checkoutAndPaymentRateLimiter } from '../rateLimiter';
 import { CheckoutResult } from '../../src/domain/models';
-import { TenantConfig } from '../../src/commerce/models';
+import { TenantConfig, Product } from '../../src/commerce/models';
 import { MOCK_TENANTS } from '../../src/commerce/mockData';
 import { GOOGLE_FONTS_CATALOG } from '../../src/commerce/googleFonts';
 import { BFFError, CommerceError } from '../errors';
@@ -574,10 +574,22 @@ v1Router.get('/stores/:storeId', async (req: Request, res: Response) => {
 v1Router.get('/config/maps', (_req: Request, res: Response) => {
   const apiKey =
     process.env.VITE_GOOGLE_MAPS_API_KEY ||
-    process.env.GOOGLE_MAPS_API_KEY ||
-    'xDh0vIFs-lfpjyGqlg9KJnrAMqQ=';
-  const mapId = process.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
-  res.json({ apiKey, mapId });
+    process.env.GOOGLE_MAPS_API_KEY;
+  const mapId = process.env.VITE_GOOGLE_MAPS_MAP_ID;
+
+  // Never make staging/production look configured by returning demo/sample
+  // credentials. Missing runtime configuration is an operational error.
+  if ((!apiKey || !mapId) && !isDemoMode() && !isTestMode()) {
+    return res.status(503).json({
+      code: 'INTEGRATION_NOT_CONFIGURED',
+      message: 'Google Maps is not configured for this runtime.',
+    });
+  }
+
+  res.json({
+    apiKey: apiKey || '',
+    mapId: mapId || '',
+  });
 });
 
 // ==========================================
@@ -903,7 +915,7 @@ async function enforceRulesForBasketAdd(
     return;
   }
 
-  const productsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+  const productsByPlu = new Map<string, Product>(((catalog.products || []) as Product[]).map((p) => [p.plu, p]));
   const context = { storeId: basket.storeId, fulfillmentType: basket.fulfillmentType };
 
   for (const { plu, quantity } of itemsToCheck) {
@@ -1647,7 +1659,7 @@ v1Router.post(
           .getStoreCatalog(checkoutBasket.storeId, checkoutBasket.fulfillmentType)
           .catch(() => null);
         if (checkoutCatalog) {
-          const productsByPlu = new Map((checkoutCatalog.products || []).map((p) => [p.plu, p]));
+          const productsByPlu = new Map<string, Product>(((checkoutCatalog.products || []) as Product[]).map((p) => [p.plu, p]));
           await assertBasketCheckoutAllowed(resolvedTenant, checkoutBasket, productsByPlu, {
             storeId: checkoutBasket.storeId,
             fulfillmentType: checkoutBasket.fulfillmentType,

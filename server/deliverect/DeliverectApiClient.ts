@@ -2066,20 +2066,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
   private buildManagedBundleDiscountLines(
     entries: BasketBundleAllocationRecord[]
   ): CommerceBasketDiscountInput[] {
+    // Commerce basket discount PATCH accepts the bundle saving reliably as an
+    // order-level flat discount. Item-level attribution belongs in our bundle
+    // allocation ledger and can be projected to downstream order metadata when
+    // that contract supports item references; sending PLU-only item_flat_off
+    // discounts here causes Deliverect to reject the basket with HTTP 422.
     return entries
       .filter((entry) => entry.discountTotalMinor > 0)
-      .flatMap((entry) =>
-        (entry.components || [])
-          .filter((component) => component.discountLineMinor > 0)
-          .map((component) => ({
-            type: 'item_flat_off' as const,
-            provider: 'restaurant' as const,
-            amount: component.discountLineMinor,
-            plu: component.componentPlu,
-            name: `Combo Deal: ${entry.bundleName}`,
-            externalId: `bwydi-bundle:${entry.bundleInstanceId}:${component.modifierId}`,
-          }))
-      );
+      .map((entry) => ({
+        type: 'order_flat_off' as const,
+        provider: 'restaurant' as const,
+        amount: entry.discountTotalMinor,
+        value: entry.discountTotalMinor,
+        name: `Combo Deal: ${entry.bundleName}`,
+        externalId: `bwydi-bundle:${entry.bundleInstanceId}`,
+      }));
   }
 
   /**
@@ -2940,6 +2941,40 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const now = new Date().toISOString();
     const hasOnlineAuthorization = Boolean(options?.paymentId);
 
+    // Basket presentation and Retail/Quest order pricing are intentionally separate.
+    // Commerce keeps one order_flat_off for a qualifying combo. When explicitly
+    // enabled per tenant, the Retail order consumes the frozen bundle allocation
+    // ledger and sends those savings as final per-unit item prices instead.
+    const tenantConfig = await FirestorePlatformService.getTenantConfig(this.tenantId);
+    const sendBundleDiscountAsItemPrice =
+      tenantConfig.featureFlags?.sendBundleDiscountAsItemPrice === true;
+    const bundleAllocations = sendBundleDiscountAsItemPrice
+      ? await FirestorePlatformService.getBasketBundleAllocations(this.tenantId, basketId)
+      : [];
+
+    const protectedUnitPricePools = new Map<string, number[]>();
+    let projectedBundleDiscountMinor = 0;
+    if (sendBundleDiscountAsItemPrice) {
+      for (const allocation of bundleAllocations) {
+        projectedBundleDiscountMinor += Math.round(allocation.discountTotalMinor || 0);
+        for (const component of allocation.components || []) {
+          const pool = protectedUnitPricePools.get(component.componentPlu) || [];
+          for (const price of component.protectedUnitPricesMinor || []) {
+            if (!Number.isInteger(price) || price < 0) {
+              throw new CommerceError(
+                'BASKET_RECONCILIATION_REQUIRED',
+                'Bundle allocation contains an invalid protected unit price.',
+                409
+              );
+            }
+            pool.push(price);
+          }
+          protectedUnitPricePools.set(component.componentPlu, pool);
+        }
+      }
+    }
+
+    let projectedRetailItemsTotalMinor = 0;
     const retailItems = basket.items.map((item: any) => {
       const unitPrice =
         typeof item?.unitPrice?.amount === 'number'
@@ -2949,6 +2984,46 @@ export class DeliverectApiClient implements DeliverectAdapter {
             : typeof item?.price === 'number'
               ? Math.round(item.price)
               : 0;
+      const protectedPrices = protectedUnitPricePools.get(item.plu) || [];
+      if (protectedPrices.length > item.quantity) {
+        throw new CommerceError(
+          'BASKET_RECONCILIATION_REQUIRED',
+          `Bundle allocation contains more protected units than basket quantity for ${item.plu}.`,
+          409
+        );
+      }
+      const protectedTotal = protectedPrices.reduce((sum, price) => sum + price, 0);
+      const ordinaryQuantity = item.quantity - protectedPrices.length;
+      projectedRetailItemsTotalMinor += protectedTotal + ordinaryQuantity * unitPrice;
+
+      // Retail Channel order lines have one unit price per line. If qualified and
+      // ordinary units of the same PLU are aggregated at different prices, silently
+      // averaging would corrupt the protected allocation. Fail closed until the
+      // outbound projector splits that line into separate price-homogeneous lines.
+      if (
+        protectedPrices.length > 0 &&
+        ordinaryQuantity > 0 &&
+        protectedPrices.some((price) => price !== unitPrice)
+      ) {
+        throw new CommerceError(
+          'BASKET_RECONCILIATION_REQUIRED',
+          `Bundle and non-bundle quantities for ${item.plu} require separate Retail order lines.`,
+          409
+        );
+      }
+      if (
+        protectedPrices.length > 1 &&
+        protectedPrices.some((price) => price !== protectedPrices[0])
+      ) {
+        throw new CommerceError(
+          'BASKET_RECONCILIATION_REQUIRED',
+          `Protected bundle quantities for ${item.plu} have different unit prices and require separate Retail order lines.`,
+          409
+        );
+      }
+      const outboundUnitPrice =
+        protectedPrices.length > 0 ? Math.round(protectedUnitPricePools.get(item.plu)![0]) : unitPrice;
+
       const preference = item.substitutionPreference || 'BEST_MATCH';
       const echoedActions =
         Array.isArray(item.itemUnavailableActions) && item.itemUnavailableActions.length > 0
@@ -2999,7 +3074,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       return {
         plu: item.plu,
         name: item.name || item.plu,
-        price: unitPrice,
+        price: outboundUnitPrice,
         quantity: item.quantity,
         ...(item.note ? { remark: item.note } : {}),
         itemUnavailableActions,
@@ -3007,7 +3082,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
       };
     });
 
-    const payload: any = {
+    if (sendBundleDiscountAsItemPrice && bundleAllocations.length > 0) {
+      const expectedItemsTotalMinor =
+        basket.items.reduce((sum: number, item: any) => {
+          const unit =
+            typeof item?.unitPrice?.amount === 'number'
+              ? Math.round(item.unitPrice.amount)
+              : typeof item?.price?.amount === 'number'
+                ? Math.round(item.price.amount)
+                : typeof item?.price === 'number'
+                  ? Math.round(item.price)
+                  : 0;
+          return sum + unit * item.quantity;
+        }, 0) - projectedBundleDiscountMinor;
+
+      if (projectedRetailItemsTotalMinor !== expectedItemsTotalMinor) {
+        throw new CommerceError(
+          'BASKET_RECONCILIATION_REQUIRED',
+          `Bundle item-price projection does not reconcile: projected ${projectedRetailItemsTotalMinor}, expected ${expectedItemsTotalMinor}.`,
+          409
+        );
+      }
+    }
+
+        const payload: any = {
       channelOrderId: channelOrderReference,
       channelOrderDisplayId,
       orderType: basket.fulfillmentType === 'delivery' ? 2 : 1,
