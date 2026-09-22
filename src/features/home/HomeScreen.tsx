@@ -70,6 +70,8 @@ interface HomeScreenProps {
   activeStores?: Store[];
   onSelectStore?: (store: Store | null) => void;
   onOpenAislesModal?: () => void;
+  catalogFilterState?: CatalogFilterState;
+  onCatalogFilterStateChange?: (next: CatalogFilterState) => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -107,6 +109,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   activeStores = [],
   onSelectStore,
   onOpenAislesModal,
+  catalogFilterState,
+  onCatalogFilterStateChange,
 }) => {
   const { tenant } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
@@ -116,12 +120,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   // Filter state for dietary preferences & favourites toggle
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [filterState, setFilterState] = useState<CatalogFilterState>({
+  const [localFilterState, setLocalFilterState] = useState<CatalogFilterState>({
     onlyFavourites: false,
     onlyBuyAgain: false,
     selectedDietaryTags: [],
     excludedAllergens: [],
   });
+  const filterState = catalogFilterState || localFilterState;
+  const setFilterState = onCatalogFilterStateChange || setLocalFilterState;
   const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
 
   useEffect(() => {
