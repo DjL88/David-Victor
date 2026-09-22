@@ -5,7 +5,7 @@ import {
   BasketRuleDecision,
   RuleGroupLimit,
 } from './types';
-import { evaluateProductRules } from './ProductRuleEvaluator';
+import { evaluateProductRules, matchesCondition } from './ProductRuleEvaluator';
 
 /**
  * Evaluates an entire basket against regulatory, inventory, group,
@@ -129,13 +129,16 @@ export function evaluateBasketRules(
       const product = productsMap.get(item.plu);
       if (!product) continue;
 
-      // Check if product belongs to this group via tags or matching rule
-      const itemRuleDecision = evaluateProductRules(product, rules, context, []);
-      const matchesGroup = itemRuleDecision.groupLimits.some((g) => g.groupId === groupId);
-
-      if (matchesGroup) {
-        currentQuantity += item.quantity;
-      }
+      // A group is defined by the conditions of the rule carrying the
+      // COMBINED_GROUP_LIMIT action. Evaluate those conditions directly so
+      // the total is independent of transient basket-line metadata.
+      const matchesGroup = rules.some(
+        (rule) =>
+          rule.enabled &&
+          rule.actions.maxQuantityAcrossRuleGroup?.groupId === groupId &&
+          matchesCondition(product, rule.conditions, context)
+      );
+      if (matchesGroup) currentQuantity += item.quantity;
     }
 
     const exceeded = currentQuantity > groupLimit.maxQuantity;
