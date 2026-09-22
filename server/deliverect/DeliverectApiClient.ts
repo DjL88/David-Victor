@@ -2235,6 +2235,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
             : undefined;
 
           if (!standalonePlu || !product) {
+            // Optional Deliverect upsells are sometimes published only as bundle
+            // modifiers, with no duplicate standalone catalogue row. They remain
+            // valid selections: use the modifier PLU as the pickable identity and
+            // its explicit uplift as its standalone/effective value.
+            if (section.isUpsell || section.min === 0) {
+              const modifierPlu = String(modifier.plu || '').trim();
+              const upliftMinor = Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0));
+              return {
+                ...modifier,
+                standalonePlu: modifierPlu || undefined,
+                standalonePriceMinor: modifierPlu ? upliftMinor : undefined,
+              };
+            }
             return {
               ...modifier,
               standalonePlu: undefined,
@@ -2331,10 +2344,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const product = normalProducts.find(
         (candidate) => candidate.plu === component.componentPlu
       );
+      const componentSection = authoritativeBundle.sections.find(
+        (section) => section.id === component.sectionId
+      );
+      const modifierOnlyUpsell = Boolean(
+        (componentSection?.isUpsell || componentSection?.min === 0) && !product
+      );
       if (
-        !product ||
-        product.active === false ||
-        product.stockStatus === 'OUT_OF_STOCK'
+        (!product && !modifierOnlyUpsell) ||
+        product?.active === false ||
+        product?.stockStatus === 'OUT_OF_STOCK'
       ) {
         throw new CommerceError(
           'PRODUCT_NOT_AVAILABLE',
@@ -2352,13 +2371,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (quantityToAdd > 0) {
         // Only newly-added units need the add-rule gate. Units claimed from the
         // basket already passed that gate when the customer originally added them.
-        await assertProductAddAllowed(
-          this.tenantId,
-          product,
-          { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
-          current.items,
-          quantityToAdd
-        );
+        if (product) {
+          await assertProductAddAllowed(
+            this.tenantId,
+            product,
+            { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
+            current.items,
+            quantityToAdd
+          );
+        }
         const existing = desired.find(
           (candidate) => candidate.plu === component.componentPlu
         );
