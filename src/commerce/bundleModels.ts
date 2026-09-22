@@ -446,9 +446,16 @@ export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
   candidateProducts: Array<{ plu: string; active?: boolean; stockStatus?: string }> = [],
+  allocatedUnits: Array<{ plu: string; quantity: number }> = [],
 ): MissedBundleOffer[] {
+  // Only FREE basket units may contribute to a missed-deal prompt. Units already
+  // consumed by a currently-qualified automatic deal cannot simultaneously
+  // count toward another deal; surplus quantity above that allocation remains free.
   const basketQtyByPlu = new Map<string, number>();
   basketItems.forEach((item) => basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity));
+  allocatedUnits.forEach((item) => {
+    basketQtyByPlu.set(item.plu, Math.max(0, (basketQtyByPlu.get(item.plu) || 0) - Math.max(0, item.quantity)));
+  });
   const productByPlu = new Map(candidateProducts.map((product) => [product.plu, product]));
   const hasProductCatalogue = candidateProducts.length > 0;
   const offers: MissedBundleOffer[] = [];
