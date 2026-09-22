@@ -3,6 +3,7 @@ import {
   assertAssistantActionAllowed,
   buildReadOnlyActionPlan,
   listAssistantActionsForRole,
+  hasServerAdminCapability,
 } from './adminActionRegistry';
 
 describe('adminActionRegistry', () => {
@@ -25,6 +26,18 @@ describe('adminActionRegistry', () => {
     expect(() => assertAssistantActionAllowed('viewer', 'integrations.diagnose')).toThrow(
       'permission'
     );
+  });
+
+  it('rejects invalid action input before an executor can see it', () => {
+    const action = assertAssistantActionAllowed('tenantAdmin', 'catalog.diagnoseVisibility');
+    expect(() => buildReadOnlyActionPlan({ action, tenantId: 'tenant-a', actorId: 'user-1', input: {} })).toThrow('required');
+  });
+
+  it('keeps viewer access read-only for sensitive admin resources', () => {
+    expect(hasServerAdminCapability('viewer', 'assets.read')).toBe(true);
+    expect(hasServerAdminCapability('viewer', 'assets.write')).toBe(false);
+    expect(hasServerAdminCapability('viewer', 'stores.write')).toBe(false);
+    expect(hasServerAdminCapability('tenantAdmin', 'assets.write')).toBe(true);
   });
 
   it('builds read-only plans that are tenant-bound and executable', () => {
