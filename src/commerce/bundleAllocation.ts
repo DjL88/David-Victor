@@ -99,8 +99,12 @@ export function allocateProtectedBundlePrices(
     );
     if (!modifier) throw new Error(`Unknown bundle component ${selection.modifierId}.`);
 
-    const componentPlu = String(modifier.standalonePlu || '').trim();
-    const standalonePriceMinor = modifier.standalonePriceMinor;
+    // Required combo components are normal saleable products and need a
+    // standalone shelf identity. Optional upsells are different: Deliverect can
+    // publish them only as modifier PLUs. In that case the modifier PLU itself is
+    // the basket identity and its configured uplift is its deal price.
+    const isOptionalUpsell = section.isUpsell === true || section.min === 0;
+    const componentPlu = String(modifier.standalonePlu || (isOptionalUpsell ? modifier.plu : '')).trim();
     const upliftUnitPriceMinor = Math.max(
       0,
       Math.round(modifier.priceMinor ?? modifier.price ?? 0)
@@ -111,10 +115,14 @@ export function allocateProtectedBundlePrices(
         `Bundle component "${modifier.name}" is not mapped to a standalone product PLU.`
       );
     }
-    if (
-      !Number.isInteger(standalonePriceMinor) ||
-      (standalonePriceMinor as number) < 0
-    ) {
+    const declaredStandalonePriceMinor = modifier.standalonePriceMinor;
+    const standalonePriceMinor =
+      Number.isInteger(declaredStandalonePriceMinor) && (declaredStandalonePriceMinor as number) >= 0
+        ? (declaredStandalonePriceMinor as number)
+        : isOptionalUpsell
+          ? upliftUnitPriceMinor
+          : undefined;
+    if (standalonePriceMinor === undefined) {
       throw new Error(
         `Bundle component "${modifier.name}" is missing an authoritative standalone price.`
       );
