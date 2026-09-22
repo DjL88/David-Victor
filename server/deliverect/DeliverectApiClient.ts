@@ -1898,6 +1898,34 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const api = await this.getCommerceBasketApi();
+
+    // Deliverect Commerce replaceItems deliberately rejects an empty array.
+    // An empty customer basket is therefore a local lifecycle state, not an
+    // upstream mutation: clear all Bwydi-owned bundle pricing/allocation state
+    // and return an empty mapped basket. The next add creates a fresh basket,
+    // so we never keep an un-clearable final line just to satisfy Deliverect.
+    if (desired.length === 0) {
+      const existingDiscounts = Array.isArray((current as any)?.discounts)
+        ? (current as any).discounts
+        : [];
+      const nonBundleDiscounts = existingDiscounts.filter(
+        (discount: any) => !this.isManagedBundleDiscount(discount)
+      );
+      if (existingDiscounts.length !== nonBundleDiscounts.length) {
+        await api.updateDiscounts(basketId, nonBundleDiscounts);
+      }
+      await FirestorePlatformService.clearBasketBundleAllocations(this.tenantId, basketId);
+      return {
+        ...current,
+        items: [],
+        subtotal: { ...current.subtotal, amount: 0 },
+        discountTotal: { ...current.discountTotal, amount: 0 },
+        total: { ...current.total, amount: 0 },
+        discounts: nonBundleDiscounts,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
     const raw = await api.replaceItems(basketId, desired);
 
     // A plain quantity change/removal can silently drop a bundle below its
