@@ -264,8 +264,6 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               </p>
 
 
-              </div>
-
               <button
                 type="button"
                 onClick={onClose}
