@@ -183,8 +183,8 @@ The platform is now connected directly to the live Deliverect Staging environmen
 - **OAuth Token Manager (Phase 6):** Server-side `OAuthTokenManager` with token caching, 60s TTL safety margin, mutex stampede protection, and strict environment URL resolution (`https://api.staging.deliverect.com/oauth/token` vs `https://api.deliverect.com/oauth/token`).
 - **Zero Mock Fallback Guarantee:** Staging and production runtime modes strictly reject mock/demo fallbacks. If upstream credentials or endpoints are unconfigured, typed `503 INTEGRATION_NOT_CONFIGURED` or `501 INTEGRATION_CAPABILITY_NOT_IMPLEMENTED` errors are returned.
 - **Deliverect Commerce Client (`DeliverectApiClient`):** Verified OAuth integration, strict error handling, and unverified endpoints guarded via `throwUnverifiedContract` (DV-02, DV-03).
-- **Deliverect Dispatch Adapter (`DeliverectDispatchAdapter`):** Genuine courier availability validation via OAuth token, zero mock fallback, and removal of fabricated availability or expiration defaults.
-- **Deliverect DPay Adapter (`DeliverectDPayAdapter`):** Unverified raw DPay routes (`getPaymentGateways`, `requestPayment`, `getPayment`, `capture`, `refund`, `reauthorize`) strictly frozen with `INTEGRATION_CAPABILITY_NOT_IMPLEMENTED` pending official staging contract confirmation per Deep Research.
+- **Deliverect Dispatch Adapter (`DeliverectDispatchAdapter`):** Genuine courier availability validation via OAuth token, zero mock fallback, and removal of fabricated availability or expiration defaults. `assignCourier` is still an explicit stub pending confirmation of the dispatch validation payload contract (**DV-02**).
+- **Deliverect DPay Adapter (`DeliverectDPayAdapter`):** `getPaymentGateways`, `requestPayment`, `getPayment`, and `refund` now make real live HTTP calls to the Deliverect Pay API (no longer frozen stubs). `capture` and `reauthorize` remain explicit stubs throwing `INTEGRATION_CAPABILITY_NOT_IMPLEMENTED`, pending official confirmation of the manual capture (DV-05) and post-pick reauthorization (DV-06) endpoints/payload semantics.
 - **Quest Substitute Callback (`SubstitutionCallbackService`):** Strict HMAC SHA-256 validation supporting Deliverect empty-body GET signing contract; unsigned requests rejected in staging and production.
 - **Inbound Webhook Verification (`WebhookService`):** Constant-time HMAC SHA-256 verification using official `x-server-authorization-hmac-sha256` header, raw payload bytes preservation, deduplication by `externalEventKey`, immutable event journaling, and tenant derivation strictly via trusted integration ID.
 - **Deliverect Verification Tracker (`docs/DELIVERECT_VERIFICATION.md`):** Complete catalogue of all confirmed vs open questions regarding Auth, Commerce, Dispatch, DPay, and Quest.
@@ -282,7 +282,7 @@ The platform is now connected directly to the live Deliverect Staging environmen
 - [x] **Phase 8 — Store Eligibility / Dispatch Validation (Domain Complete; Upstream Dispatch Verification Blocked on Credentials)**
 - [x] **Phase 9 — Real Authoritative Basket & Reconciliation**
 - [x] **Phase 10 — Async Checkout & Confirmation**
-- [x] **Phase 11 — Deliverect Pay / DPay (Domain Complete; Upstream DPay Contracts Blocked on Credentials)**
+- [x] **Phase 11 — Deliverect Pay / DPay (`getPaymentGateways`/`requestPayment`/`getPayment`/`refund` now real live Deliverect Pay calls; `capture`/`reauthorize` still explicit stubs pending DV-05/DV-06 confirmation)**
 - [x] **Phase 12 — Quest / Picking Updates (Domain Complete; Live Quest Staging Verification Blocked on Credentials)**
 - [x] **Phase 13 — Final Payment Settlement (Domain Complete; Live Capture/Settlement Blocked on Credentials)**
 - [x] **Phase 14 — Analytics & Notifications**
@@ -317,7 +317,7 @@ The platform is now connected directly to the live Deliverect Staging environmen
   - **Demo & Admin Scope**: "bwydi" is exclusively visible in Demo mode (via top `DemoBanner.tsx`) and Admin portal screens (`AdminGuard.tsx`, `AdminLayout.tsx`, `BrandsScreen.tsx`).
 - [ ] **Infrastructure & Upstream Prerequisites**
   - Cloud Run IAM: Grant "Cloud Datastore User" role to Cloud Run execution service account on project `hi-domino-d0abb` for named database `ai-studio-retailstorefront-94d6f13b-2728-44ae-81f7-336ea211333f`.
-  - Upstream Deliverect Staging Credentials & Contract Verification (DV-01 through DV-05).
+  - Upstream Deliverect Staging Credentials & Contract Verification (DV-01 through DV-12; see Section 3 for DV-11/DV-12, the two newest open blockers).
 
 ---
 
@@ -325,6 +325,8 @@ The platform is now connected directly to the live Deliverect Staging environmen
 
 - **Deliverect Staging Credentials:** Awaiting `client_id`, `client_secret`, account mapping, and staging webhook secret.
   - See `docs/DELIVERECT_VERIFICATION.md` for the exact questionnaire for API/Pay colleagues.
+- **DV-11 (Quest Retail Order Editing Capability):** A live Quest Retail order shows zero picking/substitution/cancellation editing capability regardless of endpoint domain (`.io`/`.com`) tried — behaves like a standard Channel order rather than a Retail-Quest-enabled one. Likely a channel provisioning question for the Deliverect team; a ready-to-send support ticket exists at `docs/DELIVERECT_SUPPORT_TICKET_QUEST_SUBSTITUTION.md`.
+- **DV-12 (Commerce Basket Charges/Fees Endpoint):** `TenantFeePolicy` (delivery/service/bag/small-order fees) cannot be sent to Deliverect's Commerce Basket API at all — there is no charges-setting endpoint. `DeliverectApiClient.updateCharges()` remains an explicit stub. Fee policy is real end-to-end in DEMO mode but not wired for live/Deliverect checkout until this is resolved.
 
 ### C. PRE-STAGING SECURITY CLOSURE (Verified & Complete)
 - **OIDC-Secured Cloud Tasks Worker Endpoints:** Removed legacy unauthenticated task endpoints (`/tasks/process-settlement`, `/tasks/process-cancellation`); internal background handlers (`/internal/tasks/settlement`, `/internal/tasks/cancellation`) now strictly require cryptographic Google Cloud Tasks OIDC token verification (`verifyCloudTasksOidcToken`), rejecting forgery attempts, queue-name header manipulation, or arbitrary bearer tokens.
@@ -547,6 +549,19 @@ The platform is now connected directly to the live Deliverect Staging environmen
       - Updated `BundleSelectionDialog.tsx` to hide optional upsell sections if completely out of stock.
     - **100% Clean Lint & Build**: Passed `compile_applet` with zero build errors.
 
+19. **PRODUCT RULES ENGINE LIVE WIRING, SERVER-SIDE ENFORCEMENT & STORE GEOGRAPHY (Completed & Verified)**:
+    - **Root Cause — Rules Engine Had Zero Live Effect**: `RuleEngine.setRules()` was never called anywhere in the app, so `defaultRuleEngine` ran permanently empty; every admin-configured `VisualRule` (hide product, age gates, quantity limits, badges) silently did nothing on the live storefront regardless of what was saved in `ProductRulesScreen.tsx`.
+    - **Client-Side Fix**: Added `visualRuleAdapter.ts` (`VisualRule` -> `RetailRule`), a new public `GET /rules` endpoint (previously admin-auth-only), and `CommerceClient.getActiveRules()` on both Http/Mock clients. `AppLayout.tsx` now loads rules on mount and keeps `RuleEngine`'s ambient context (country/store/fulfillment) synced to the selected store.
+    - **Server-Side Backstop**: Added `server/ruleEnforcementService.ts` (`assertProductAddAllowed`, `assertBasketCheckoutAllowed`) reusing the same `ProductRuleEvaluator`/`BasketRuleEvaluator` logic server-side with a 60s per-tenant rules cache, so a direct API call bypassing the storefront UI can no longer add a hidden/purchase-blocked/quantity-capped item. Enforced at basket-add, basket-update, checkout, and basket-validate routes, and extended to exploded bundle components (`addBundleToBasket`). Deliberately does not enforce age-gate acknowledgement (no server-visible signal for it yet; `BasketRuleEvaluator` only ever surfaces it as a warning, never a blocking issue).
+    - **Store Geography**: New `geographyService.ts` resolves real Country/Nation/Region/County per store via `postcodes.io` (GB), cached once in Firestore, wired into `DeliverectApiClient.getStores()` and rule matching (country conditions now match on any resolved geography level). The admin rules screen's "Applies in" field is now a live datalist sourced from real store addresses instead of free-typed ISO codes.
+    - **Bundle PLU De-Suffix Bug Fixed**: Real Deliverect combo sub-item PLUs are `{plu}###{SUFFIX}` (e.g. `374263###PRNT`), not bare trailing hashes; the old regex never matched letters after `###`, silently leaving `standalonePlu` unresolved on real bundle orders.
+    - **Demo Fee-Policy Bug Fixed**: `MockCommerceClient.recalculateBasketTotals()` was reading the frozen `MOCK_FEE_POLICIES` constant instead of `MockAdminClient`'s live-edited policy map, so admin edits in the Fees screen silently never applied to any basket in demo mode. Fee policy is now real end-to-end in DEMO mode. Live/Deliverect checkout fees remain genuinely blocked (not just unwired): `DeliverectApiClient.updateCharges()` is an explicit stub and the Deliverect Commerce Basket API exposes no charges-setting endpoint at all — tracked as **DV-12** (see Section 3).
+    - **Substitute Candidate Ranking**: Candidates returned to Quest for `GET /orders/:orderId/substitute/:plu` are now ranked (same category as the original item first, then within ~20% of its price) via a best-effort catalog lookup, falling back to Deliverect's original order if the catalog is unavailable. The Quest substitute response schema itself (**DV-09**) is still unconfirmed.
+    - **Customer Order History Wired to Real Data**: The Account "Orders" page called `HttpCommerceClient.getUserOrders()`, previously a decoy hardcoded to return `[]`. Added a customer-scoped `GET /orders` route (Firebase ID token -> `getCallerUid` -> Firestore query) and wired the client to send the signed-in customer's ID token; order history now reflects real orders.
+    - **New Quest Blocker (DV-11)**: A live Quest Retail order was accepted and reached Quest but showed zero picking amendment/substitution/cancellation capability on every item (not item-specific) — consistent with a standard Channel order rather than a Retail-Quest-enabled one. Domain (`.io` vs `.com`), endpoint shape, and `itemUnavailableActions` computation were all ruled out; likely a channel provisioning question. See `docs/DELIVERECT_SUPPORT_TICKET_QUEST_SUBSTITUTION.md`.
+    - **`server/basket/BasketService.ts` Removed**: The file previously flagged as dead code no longer exists in the repository.
+    - **100% Clean Lint & Build**: `tsc --noEmit` and `compile_applet` pass cleanly.
+
 ---
 
 ## 4. Next Tasks
@@ -565,4 +580,9 @@ The platform is now connected directly to the live Deliverect Staging environmen
    - `CHECK-01` through `CHECK-03` (Async checkout)
    - `QST-01` through `QST-05` (Quest picking amendments & substitutions)
    - `WH-01` through `WH-04` (Webhook HMAC validation & idempotency)
+
+2. **Resolve PR #13 (`chatgpt/enterprise-foundations-20260922`, "Enterprise foundations") Divergence:**
+   - This branch has diverged from `main` and can no longer be merged as a simple fast-forward or clean merge.
+   - One of its fixes (removing the insecure hardcoded `'brand-alpha'` tenant fallback) was already cherry-picked directly onto `main`.
+   - Needs a manual rebase/re-review to determine what else from that branch (if anything) is still worth carrying forward.
 
