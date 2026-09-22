@@ -884,7 +884,9 @@ export class FirestoreService {
     let current: TenantConfig;
     try {
       current = await this.getTenantConfig(tenantId);
-    } catch {
+    } catch (err) {
+      // Updating an unknown tenant must never implicitly provision a new brand in live environments.
+      if (!isDemoMode() && !isTestMode()) throw err;
       current = await this.createTenant({
         tenantId,
         brandName: (updates as any).brandName || (updates as any).name || tenantId,
@@ -892,33 +894,43 @@ export class FirestoreService {
         currency: (updates as any).currency || 'GBP',
       });
     }
+
     const updated = {
       ...current,
       ...updates,
+      tenantId,
       updatedAt: new Date().toISOString(),
     };
 
-    inMemoryTenants[tenantId] = updated;
-    savePersistedTenants(inMemoryTenants);
-
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
-      return updated;
+      if (isDemoMode() || isTestMode()) {
+        inMemoryTenants[tenantId] = updated;
+        savePersistedTenants(inMemoryTenants);
+        return updated;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Brand configuration could not be saved because durable storage is unavailable.', 503, true);
     }
 
     try {
       await db.collection('tenants').doc(tenantId).set(updated, { merge: true });
+      inMemoryTenants[tenantId] = updated;
+      if (isDemoMode() || isTestMode()) savePersistedTenants(inMemoryTenants);
       console.log(`[Firestore Admin] Updated tenant config for ${tenantId}`);
+      return updated;
     } catch (err: any) {
       if (isFirestorePermissionDeniedError(err)) {
         markFirestorePermissionDenied(err);
       } else {
         console.error(`[Firestore Admin] Failed to update tenant config for ${tenantId}:`, err);
       }
-      return updated;
+      if (isDemoMode() || isTestMode()) {
+        inMemoryTenants[tenantId] = updated;
+        savePersistedTenants(inMemoryTenants);
+        return updated;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Brand configuration could not be saved to durable storage.', 503, true);
     }
-
-    return updated;
   }
 
   /**
