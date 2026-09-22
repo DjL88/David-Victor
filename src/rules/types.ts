@@ -597,6 +597,38 @@ export interface CourierCompensationClaim {
 }
 
 // ==========================================
+// LOCALE & TENANT TERMINOLOGY
+// ==========================================
+
+export interface TenantLocaleProfile {
+  tenantId: string;
+  defaultLocale: string;
+  supportedLocales: string[];
+  fallbackLocale: string;
+  currency: string;
+  timezone: string;
+  measurementSystem: 'METRIC' | 'IMPERIAL' | 'MIXED';
+  dateFormat?: string;
+  timeFormat?: '12H' | '24H';
+}
+
+export interface TenantTerminologyEntry {
+  key: string;
+  /** Tenant-specific wording, e.g. store/shop, basket/cart, collection/pickup. */
+  value: string;
+  locale: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface TenantTerminologyProfile {
+  tenantId: string;
+  entries: TenantTerminologyEntry[];
+  /** Missing tenant terms fall back to translated platform copy, never raw translation keys. */
+  fallbackToPlatformTranslation: boolean;
+}
+
+// ==========================================
 // ORGANISATION & CONFIGURATION INHERITANCE
 // ==========================================
 
