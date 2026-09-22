@@ -44,3 +44,22 @@ describe('bundle pricing safety', () => {
     expect(allocateProtectedBundlePrices(bundle, selections(bundle)).discountTotalMinor).toBe(30);
   });
 });
+
+
+it('prices a modifier-only optional upsell at its uplift without requiring a standalone product', () => {
+  const bundle = {
+    id: 'deal', plu: 'DEAL', name: 'Deal', priceMinor: 500, currency: 'GBP', isCombo: true,
+    stockStatus: 'IN_STOCK', categoryIds: [],
+    sections: [
+      { id: 'main', name: 'Main', min: 1, max: 1, modifiers: [{ id: 'm', plu: 'MAIN###DEAL', standalonePlu: 'MAIN', standalonePriceMinor: 600, name: 'Main', priceMinor: 0 }] },
+      { id: 'upsell', name: 'Upsell', min: 0, max: 5, isUpsell: true, modifiers: [{ id: 'beans', plu: 'BEANS###UPSELL', name: 'Beans', priceMinor: 95 }] },
+    ],
+  } as any;
+  const allocation = allocateProtectedBundlePrices(bundle, [
+    { modifierId: 'm', plu: 'MAIN###DEAL', standalonePlu: 'MAIN', standalonePriceMinor: 600, name: 'Main', quantity: 1, priceMinor: 0, sectionId: 'main', sectionName: 'Main' },
+    { modifierId: 'beans', plu: 'BEANS###UPSELL', name: 'Beans', quantity: 1, priceMinor: 95, sectionId: 'upsell', sectionName: 'Upsell' },
+  ] as any);
+  const beans = allocation.components.find((component) => component.modifierId === 'beans');
+  expect(beans?.componentPlu).toBe('BEANS###UPSELL');
+  expect(beans?.protectedUnitPricesMinor).toEqual([95]);
+});
