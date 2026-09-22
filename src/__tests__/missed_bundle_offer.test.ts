@@ -29,23 +29,36 @@ describe('findMissedBundleOffers', () => {
     expect(findMissedBundleOffers([{ plu: 'M1', quantity: 1 }], [bundle])).toHaveLength(0);
   });
 
-  it('does not reuse a unit already allocated to another bundle', () => {
+  it('ignores historic allocation ownership and derives opportunity from current basket', () => {
     const offers = findMissedBundleOffers(
       [{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 1 }],
-      [bundle],
-      [{ plu: 'S1', quantity: 1 }]
-    );
-    expect(offers).toHaveLength(0);
-  });
-
-  it('keeps quantity above an existing allocation available for a legitimate offer', () => {
-    const offers = findMissedBundleOffers(
-      [{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 2 }],
-      [bundle],
-      [{ plu: 'S1', quantity: 1 }]
+      [bundle]
     );
     expect(offers).toHaveLength(1);
-    expect(offers[0].missingComponents[0].plu).toBe('D1');
+    expect(offers[0].missingSection.choices.map((choice) => choice.plu)).toEqual(['D1']);
+  });
+
+  it('filters missing-section choices against the current store catalogue', () => {
+    const multiChoice: BundleProduct = {
+      ...bundle,
+      sections: bundle.sections.map((section) => section.id !== 'drink' ? section : {
+        ...section,
+        modifiers: [
+          ...section.modifiers,
+          { id: 'd2', name: 'Drink B', plu: 'D2###', standalonePlu: 'D2', active: true, snoozed: false, price: 0 },
+        ],
+      }),
+    };
+    const offers = findMissedBundleOffers(
+      [{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 1 }],
+      [multiChoice],
+      [
+        { plu: 'D1', active: true, stockStatus: 'IN_STOCK' },
+        { plu: 'D2', active: true, stockStatus: 'OUT_OF_STOCK' },
+      ]
+    );
+    expect(offers).toHaveLength(1);
+    expect(offers[0].missingSection.choices.map((choice) => choice.plu)).toEqual(['D1']);
   });
 
   it('does not let one shared PLU unit satisfy two required sections', () => {
@@ -69,7 +82,7 @@ describe('findMissedBundleOffers', () => {
 });
 
 
-it('shows only the strongest missed deal when two bundles compete for the same missing product', () => {
+it('keeps distinct deal opportunities even when their missing section overlaps', () => {
   const base = bundle;
   const cheaper = { ...base, id: 'cheaper', plu: 'CHEAPER', priceMinor: Math.max(0, (base.priceMinor || 0) - 100) };
   const dearer = { ...base, id: 'dearer', plu: 'DEARER', priceMinor: base.priceMinor };
@@ -79,6 +92,5 @@ it('shows only the strongest missed deal when two bundles compete for the same m
     return modifier?.standalonePlu ? [{ plu: modifier.standalonePlu, quantity: section.min }] : [];
   });
   const offers = findMissedBundleOffers(basketItems, [dearer as any, cheaper as any]);
-  expect(offers.length).toBeLessThanOrEqual(1);
-  if (offers.length === 1) expect(['cheaper', 'dearer']).toContain(offers[0].bundle.id);
+  expect(offers.map((offer) => offer.bundle.id).sort()).toEqual(['cheaper', 'dearer']);
 });

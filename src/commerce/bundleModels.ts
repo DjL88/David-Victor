@@ -423,152 +423,101 @@ export interface MissedBundleOffer {
   matchRatio: number;
   presentUnits: number;
   requiredUnits: number;
-  /** One suggested item per still-unsatisfied required section, to complete the combo. */
+  /** Required section that is one unit short, with every currently saleable catalogue choice. */
+  missingSection: {
+    sectionId: string;
+    sectionName: string;
+    quantityNeeded: number;
+    choices: Array<{ plu: string; name: string; modifierId: string; imageUrl?: string }>;
+  };
+  /** @deprecated Compatibility projection. Use missingSection.choices instead. */
   missingComponents: Array<{ plu: string; name: string; quantityNeeded: number; sectionId: string; modifierId: string; imageUrl?: string }>;
-  /** Existing basket units that should be claimed into the bundle allocation. */
+  /** Existing basket units used only to explain the opportunity; these are not persisted ownership claims. */
   matchedSelections: SelectedBundleModifier[];
 }
 
 /**
- * Detects "missed offer" bundles: combos where the customer already has most
- * all but the final required unit of the bundle in their basket, individually
- * added, but hasn't gotten the combo discount because they never went
- * through the explicit bundle-add flow. Purely a suggestion — completing the
- * bundle still requires the customer to confirm via BundleSelectionDialog,
- * the same explicit action as adding any other combo, so this never silently
- * changes pricing on its own.
+ * Finds a deal that is exactly one required unit away from qualifying.
  *
- * Coverage per required section is capped at that section's `min` (adding 5
- * of an item a bundle only needs 1 of doesn't "cover" a different section),
- * and only non-upsell sections with min > 0 count toward the required total.
+ * This is deliberately stateless: automatic deal qualification owns pricing.
+ * Basket prompts only help the customer add an ordinary saleable product.
  */
 export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
-  allocatedUnits: Array<{ plu: string; quantity: number }> = [],
+  candidateProducts: Array<{ plu: string; active?: boolean; stockStatus?: string }> = [],
 ): MissedBundleOffer[] {
-  // Missed-deal qualification may only consume FREE basket units. Units already
-  // owned by a persisted bundle allocation are behind a hard wall and cannot
-  // qualify another combo. Quantities above the allocated amount remain free.
   const basketQtyByPlu = new Map<string, number>();
-  basketItems.forEach((item) => {
-    basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity);
-  });
-  allocatedUnits.forEach((item) => {
-    basketQtyByPlu.set(item.plu, Math.max(0, (basketQtyByPlu.get(item.plu) || 0) - item.quantity));
-  });
-
+  basketItems.forEach((item) => basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity));
+  const productByPlu = new Map(candidateProducts.map((product) => [product.plu, product]));
+  const hasProductCatalogue = candidateProducts.length > 0;
   const offers: MissedBundleOffer[] = [];
 
   for (const bundle of bundles) {
     if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
-    // Each candidate gets its own mutable copy of the FREE-unit pool. Consuming
-    // a PLU in one required section prevents the same physical unit satisfying
-    // another section of the same candidate.
     const freeQtyByPlu = new Map(basketQtyByPlu);
-    const sections = (bundle.sections || bundle.modifierGroups || []).filter(
-      (section) => !section.isUpsell && section.min > 0
-    );
+    const sections = (bundle.sections || bundle.modifierGroups || []).filter((section) => !section.isUpsell && section.min > 0);
     if (sections.length === 0) continue;
 
     let requiredUnits = 0;
     let presentUnits = 0;
-    const missingComponents: MissedBundleOffer['missingComponents'] = [];
+    const missingSections: MissedBundleOffer['missingSection'][] = [];
     const matchedSelections: SelectedBundleModifier[] = [];
 
     for (const section of sections) {
       requiredUnits += section.min;
-
-      let sectionPresent = 0;
       let remainingNeeded = section.min;
+
       for (const modifier of section.modifiers) {
-        if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
-        const available = freeQtyByPlu.get(modifier.standalonePlu) || 0;
+        const plu = String(modifier.standalonePlu || modifier.plu || '').trim();
+        if (!plu || modifier.active === false || modifier.snoozed) continue;
+        const available = freeQtyByPlu.get(plu) || 0;
         const claimed = Math.min(available, remainingNeeded);
-        sectionPresent += claimed;
         if (claimed > 0) {
           matchedSelections.push({
-            modifierId: modifier.id,
-            plu: modifier.plu,
-            name: modifier.name,
-            quantity: claimed,
+            modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: claimed,
             price: modifier.priceMinor ?? modifier.price ?? 0,
             priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
-            standalonePlu: modifier.standalonePlu,
-            standalonePriceMinor: modifier.standalonePriceMinor,
-            sectionId: section.id,
-            sectionName: section.name,
+            standalonePlu: plu, standalonePriceMinor: modifier.standalonePriceMinor,
+            sectionId: section.id, sectionName: section.name,
           });
           remainingNeeded -= claimed;
-          freeQtyByPlu.set(modifier.standalonePlu, available - claimed);
+          presentUnits += claimed;
+          freeQtyByPlu.set(plu, available - claimed);
         }
         if (remainingNeeded <= 0) break;
       }
-      const covered = Math.min(sectionPresent, section.min);
-      presentUnits += covered;
 
-      if (covered < section.min) {
-        const suggestion = section.modifiers.find(
-          (modifier) => modifier.standalonePlu && modifier.active !== false && !modifier.snoozed
-        );
-        if (suggestion?.standalonePlu) {
-          missingComponents.push({
-            plu: suggestion.standalonePlu,
-            name: suggestion.name,
-            quantityNeeded: section.min - covered,
-            sectionId: section.id,
-            modifierId: suggestion.id,
-            imageUrl: suggestion.imageUrl,
-          });
+      if (remainingNeeded > 0) {
+        const choices = section.modifiers.flatMap((modifier) => {
+          const plu = String(modifier.standalonePlu || modifier.plu || '').trim();
+          if (!plu || modifier.active === false || modifier.snoozed) return [];
+          const product = productByPlu.get(plu);
+          if (hasProductCatalogue && (!product || product.active === false || product.stockStatus === 'OUT_OF_STOCK')) return [];
+          return [{ plu, name: modifier.name, modifierId: modifier.id, imageUrl: modifier.imageUrl }];
+        });
+        if (choices.length > 0) {
+          missingSections.push({ sectionId: section.id, sectionName: section.name, quantityNeeded: remainingNeeded, choices });
         }
       }
     }
 
-    if (requiredUnits === 0) continue;
-    const matchRatio = presentUnits / requiredUnits;
-
-    // Only prompt at the genuinely useful moment: one required unit away from
-    // qualification. Percentage thresholds produce noisy prompts for larger bundles.
-    if (presentUnits === requiredUnits - 1 && missingComponents.length === 1 && missingComponents[0].quantityNeeded === 1) {
-      offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents, matchedSelections });
-    }
+    if (requiredUnits === 0 || presentUnits !== requiredUnits - 1 || missingSections.length !== 1 || missingSections[0].quantityNeeded !== 1) continue;
+    const missingSection = missingSections[0];
+    offers.push({
+      bundle,
+      matchRatio: presentUnits / requiredUnits,
+      presentUnits,
+      requiredUnits,
+      missingSection,
+      missingComponents: missingSection.choices.map((choice) => ({ ...choice, sectionId: missingSection.sectionId, quantityNeeded: 1 })),
+      matchedSelections,
+    });
   }
 
-  // A basket can qualify for several catalogue bundles with the same missing
-  // physical product. Showing all of them produces duplicate "Add & save"
-  // cards and races two claims for the same free units. Keep the strongest
-  // saving/closest offer per missing PLU; the customer can still choose other
-  // deals from the catalogue deliberately.
-  const bestByMissingPlu = new Map<string, MissedBundleOffer>();
-  for (const offer of offers) {
-    const key = offer.missingComponents.map((component) => component.plu).sort().join('|');
-    const current = bestByMissingPlu.get(key);
-    const offerSaving = Math.max(
-      0,
-      offer.matchedSelections.reduce(
-        (sum, selection) => sum + (selection.standalonePriceMinor || 0) * selection.quantity,
-        0
-      ) + offer.missingComponents.reduce((sum, component) => {
-        const modifier = (offer.bundle.sections || offer.bundle.modifierGroups || [])
-          .flatMap((section) => section.modifiers)
-          .find((candidate) => candidate.id === component.modifierId);
-        return sum + (modifier?.standalonePriceMinor || 0) * component.quantityNeeded;
-      }, 0) - Math.max(0, Math.round(offer.bundle.priceMinor ?? offer.bundle.price ?? 0))
-    );
-    const currentSaving = current
-      ? Math.max(
-          0,
-          current.matchedSelections.reduce(
-            (sum, selection) => sum + (selection.standalonePriceMinor || 0) * selection.quantity,
-            0
-          ) - Math.max(0, Math.round(current.bundle.priceMinor ?? current.bundle.price ?? 0))
-        )
-      : -1;
-    if (!current || offer.matchRatio > current.matchRatio || (offer.matchRatio === current.matchRatio && offerSaving > currentSaving)) {
-      bestByMissingPlu.set(key, offer);
-    }
-  }
-  return Array.from(bestByMissingPlu.values()).sort((a, b) => b.matchRatio - a.matchRatio);
+  // Prefer the closest/best-priced opportunity per bundle. Do not dedupe by one
+  // arbitrary missing PLU because a section may intentionally offer alternatives.
+  return offers.sort((a, b) => b.matchRatio - a.matchRatio || String(a.bundle.id).localeCompare(String(b.bundle.id)));
 }
 
 /**
