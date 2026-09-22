@@ -597,6 +597,59 @@ export interface CourierCompensationClaim {
 }
 
 // ==========================================
+// VERSIONED TENANT CONTROL PLANE
+// ==========================================
+
+export type ConfigurationRevisionStatus = 'DRAFT' | 'VALIDATED' | 'PUBLISHED' | 'SUPERSEDED' | 'ROLLED_BACK';
+
+export interface ConfigurationRevision<T = Record<string, unknown>> {
+  revisionId: string;
+  tenantId: string;
+  resourceType: string;
+  resourceId: string;
+  version: number;
+  status: ConfigurationRevisionStatus;
+  payload: T;
+  createdAt: string;
+  createdBy: string;
+  validatedAt?: string;
+  publishedAt?: string;
+  publishedBy?: string;
+  supersedesRevisionId?: string;
+  rollbackOfRevisionId?: string;
+  changeReason?: string;
+}
+
+export interface ConfigurationWriteGuard {
+  tenantId: string;
+  resourceType: string;
+  resourceId: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+}
+
+export interface PublishedConfigurationPointer {
+  tenantId: string;
+  resourceType: string;
+  resourceId: string;
+  revisionId: string;
+  version: number;
+  publishedAt: string;
+}
+
+/**
+ * Enterprise configuration changes use optimistic concurrency: stale writers are rejected,
+ * publication points to an immutable validated revision, and rollback publishes a known prior
+ * revision rather than trying to reconstruct old state from mutable documents.
+ */
+export interface ConfigurationPublishRequest {
+  revisionId: string;
+  expectedPublishedVersion: number;
+  actorId: string;
+  reason?: string;
+}
+
+// ==========================================
 // STOREFRONT NETWORKS & MARKETPLACES
 // ==========================================
 
