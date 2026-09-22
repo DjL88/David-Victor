@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Bot, ChevronRight, LockKeyhole, Sparkles, X } from 'lucide-react';
 import { useAdminWorkspace } from './AdminWorkspaceContext';
+import { defaultAdminClient } from '../commerce/HttpAdminClient';
 
 const SECTION_LABELS: Record<string, string> = {
   brands: 'Brands & Provisioning',
@@ -65,6 +66,9 @@ interface AdminAssistantDrawerProps {
 export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open, onClose }) => {
   const workspace = useAdminWorkspace();
   const [draft, setDraft] = useState('');
+  const [running, setRunning] = useState(false);
+  const [answer, setAnswer] = useState<any>(null);
+  const [error, setError] = useState('');
 
   const starters = useMemo(
     () => STARTERS[workspace.section] || [
@@ -76,6 +80,45 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
   );
 
   if (!open) return null;
+
+  const runSuggestedDiagnostic = async () => {
+    const q = draft.trim();
+    setError('');
+    setAnswer(null);
+    let actionName = '';
+    let input: Record<string, unknown> = {};
+
+    if (workspace.section === 'catalog') {
+      actionName = q ? 'catalog.diagnoseVisibility' : 'catalog.inspect';
+      if (q) input = { query: q };
+    } else if (workspace.section === 'stores') {
+      actionName = 'stores.inspect';
+    } else if (workspace.section === 'connection_health' || workspace.section === 'integrations') {
+      actionName = 'integrations.diagnose';
+    } else {
+      setError('Read-only diagnostics are not connected for this page yet.');
+      return;
+    }
+
+    try {
+      setRunning(true);
+      const result = await defaultAdminClient.runAssistantAction?.(
+        workspace.tenantId,
+        actionName,
+        input,
+        {
+          section: workspace.section,
+          resourceType: workspace.resource?.type,
+          resourceId: workspace.resource?.id,
+        }
+      );
+      setAnswer(result);
+    } catch (err: any) {
+      setError(err?.message || 'Diagnostic failed.');
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const sectionLabel = SECTION_LABELS[workspace.section] || workspace.section;
 
@@ -119,6 +162,19 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           </div>
         </div>
 
+        {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{error}</div>}
+
+        {answer && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400">Diagnostic result</p>
+              <span className="text-[10px] font-bold text-emerald-700">Read only</span>
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-gray-950 p-3 text-[10px] leading-relaxed text-gray-100">{JSON.stringify(answer.result, null, 2)}</pre>
+            {Array.isArray(answer.evidence) && answer.evidence.length > 0 && <p className="text-[10px] text-gray-500">{answer.evidence.length} evidence source{answer.evidence.length === 1 ? '' : 's'} checked · audited as {answer.plan?.planId}</p>}
+          </div>
+        )}
+
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Useful here</p>
           <div className="space-y-2">
@@ -147,15 +203,16 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <span className="text-[10px] text-gray-400">Actions coming after safety layer</span>
+            <span className="text-[10px] text-gray-400">Deterministic diagnostics only · no writes</span>
             <button
               type="button"
-              disabled
-              title="Assistant model connection is intentionally disabled in foundation mode"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-200 px-3 py-1.5 text-[11px] font-bold text-gray-500 cursor-not-allowed"
+              disabled={running}
+              onClick={runSuggestedDiagnostic}
+              title="Run a deterministic read-only diagnostic for this page"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-gray-800 disabled:opacity-50"
             >
               <Bot className="w-3.5 h-3.5" />
-              Ask
+              {running ? 'Checking…' : 'Check'}
             </button>
           </div>
         </div>
