@@ -60,6 +60,7 @@ interface CartDrawerModalProps {
   onOpenDealPopup?: (deal: DeliverectDeal) => void;
   bundles?: BundleProduct[];
   onOpenBundleDialog?: (bundle: BundleProduct) => void;
+  onCompleteBundleOffer?: (offer: ReturnType<typeof findMissedBundleOffers>[number]) => Promise<unknown> | unknown;
   loading: boolean;
 }
 
@@ -78,6 +79,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   onOpenDealPopup,
   bundles = [],
   onOpenBundleDialog,
+  onCompleteBundleOffer,
   loading,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
@@ -209,28 +211,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
     onUpdateQuantity(missingProduct, 1, targetStoreId);
   };
 
-  // Quick helper to test reverse deals (for demonstration / reviewer ease)
-  const loadDemoScenario = (scenario: 'lunch' | 'evening' | 'hfss') => {
-    const storeId = basket?.storeId || 'store-market-lane-chelmsford';
-    if (scenario === 'lunch') {
-      const tortelloni = candidatePool.find((p) => p.plu === 'PLU-PASTA-TORTELLONI-TRUFFLE-250G');
-      const crisps = candidatePool.find((p) => p.plu === 'PLU-CRISPS-SEA-SALT-CIDER-150G');
-      if (tortelloni) onUpdateQuantity(tortelloni, 1, storeId);
-      if (crisps) onUpdateQuantity(crisps, 1, storeId);
-    } else if (scenario === 'evening') {
-      const pizza = candidatePool.find((p) => p.plu === 'PLU-PIZZA-MARGHERITA-WOODFIRED');
-      const crisps = candidatePool.find((p) => p.plu === 'PLU-CRISPS-SEA-SALT-CIDER-150G');
-      if (pizza) onUpdateQuantity(pizza, 1, storeId);
-      if (crisps) onUpdateQuantity(crisps, 1, storeId);
-    } else if (scenario === 'hfss') {
-      const pizza = candidatePool.find((p) => p.plu === 'PLU-PIZZA-MARGHERITA-WOODFIRED');
-      const juice = candidatePool.find((p) => p.plu === 'PLU-JUICE-OJ-FRESH-1L');
-      if (pizza) onUpdateQuantity(pizza, 1, storeId);
-      if (juice) onUpdateQuantity(juice, 1, storeId);
-    }
-  };
-
-  return (
+   return (
     <div
       id="cart-drawer-backdrop"
       className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs overflow-x-hidden"
@@ -282,41 +263,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 Explore our fresh aisles and trending stories to add items.
               </p>
 
-              {/* Interactive Demo Presets */}
-              <div className="w-full bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 text-left mb-4">
-                <div className="flex items-center gap-1.5 text-xs font-black text-amber-950 mb-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Test Reverse Meal Deal Calculations:</span>
-                </div>
-                <p className="text-[11px] text-gray-600 mb-3 leading-snug">
-                  Click below to quickly load 2 of 3 meal deal items into your basket and see the prompt in action:
-                </p>
-                <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => loadDemoScenario('lunch')}
-                    className="w-full text-left px-3 py-2 rounded-xl bg-white border border-amber-200 hover:border-emerald-500 text-[11px] font-bold text-gray-800 flex items-center justify-between transition-colors shadow-2xs"
-                  >
-                    <span>🍜 Load 2 of 3: Tortelloni + Crisps (Non-HFSS)</span>
-                    <span className="text-emerald-700 font-extrabold text-[10px]">Prompts Juice +Save £2.75 →</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => loadDemoScenario('evening')}
-                    className="w-full text-left px-3 py-2 rounded-xl bg-white border border-amber-200 hover:border-emerald-500 text-[11px] font-bold text-gray-800 flex items-center justify-between transition-colors shadow-2xs"
-                  >
-                    <span>🍕 Load 2 of 3: Pizza + Crisps (Non-HFSS)</span>
-                    <span className="text-emerald-700 font-extrabold text-[10px]">Prompts Ale +Save £3.50 →</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => loadDemoScenario('hfss')}
-                    className="w-full text-left px-3 py-2 rounded-xl bg-white border border-amber-200 hover:border-amber-400 text-[11px] font-bold text-gray-800 flex items-center justify-between transition-colors shadow-2xs"
-                  >
-                    <span>🍫 Load 2 of 3: Pizza + OJ (3rd item is Cookies)</span>
-                    <span className="text-amber-800 font-extrabold text-[10px]">HFSS Blocked by Law 🛡️</span>
-                  </button>
-                </div>
+
               </div>
 
               <button
@@ -584,24 +531,34 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                       key={offer.bundle.id}
                       className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 flex items-start gap-2.5"
                     >
-                      <BadgePercent className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-extrabold text-emerald-900 text-xs block">
-                          Missed offer: {offer.bundle.name}
-                        </span>
-                        <p className="text-[11px] text-emerald-800 leading-tight">
-                          {offer.missingComponents.length === 1
-                            ? `Add ${offer.missingComponents[0].name} to complete this combo and unlock the discount.`
-                            : `Add ${offer.missingComponents.length} more items to complete this combo and unlock the discount.`}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onOpenBundleDialog?.(offer.bundle)}
-                        className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700"
-                      >
-                        Complete
-                      </button>
+                      {(() => {
+                        const missing = offer.missingComponents[0];
+                        const product = candidatePool.find((candidate) => candidate.plu === missing?.plu);
+                        const imageUrl = product?.imageUrl || missing?.imageUrl;
+                        const shelfTotal = [...offer.matchedSelections, {
+                          modifierId: missing?.modifierId || '',
+                          plu: '',
+                          name: missing?.name || '',
+                          quantity: 1,
+                          price: 0,
+                          sectionId: missing?.sectionId || '',
+                        }].reduce((sum, selection) => {
+                          const candidate = candidatePool.find((p) => p.plu === selection.standalonePlu || p.plu === missing?.plu);
+                          return sum + (candidate ? moneyToMajor(candidate.price) * selection.quantity : 0);
+                        }, 0);
+                        const bundlePrice = ((offer.bundle.priceMinor ?? offer.bundle.price ?? 0) / 100);
+                        const saving = Math.max(0, shelfTotal - bundlePrice);
+                        return <>
+                          {imageUrl ? <img src={imageUrl} alt="" className="w-12 h-12 rounded-xl object-cover bg-white shrink-0" /> : <BadgePercent className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />}
+                          <div className="flex-1 min-w-0">
+                            <span className="font-extrabold text-emerald-900 text-xs block">{missing?.name}</span>
+                            <p className="text-[11px] text-emerald-800 leading-tight">{offer.bundle.name}</p>
+                          </div>
+                          <button type="button" disabled={loading} onClick={() => void onCompleteBundleOffer?.(offer)} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
+                            Add{saving > 0 ? ` & save ${currencySymbol}${saving.toFixed(2)}` : ' & save'}
+                          </button>
+                        </>;
+                      })()}
                     </div>
                   ))}
                 </div>
