@@ -2244,10 +2244,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
       sections: (bundle.sections || bundle.modifierGroups || []).map((section) => ({
         ...section,
         modifiers: section.modifiers.map((modifier) => {
-          const standalonePlu = String(modifier.standalonePlu || '').trim();
-          const product = standalonePlu
-            ? normalProducts.find((candidate) => candidate.plu === standalonePlu)
-            : undefined;
+          // Deliverect modifiers may themselves carry the normal saleable PLU
+          // (common for optional upsells) without a separate standalonePlu field.
+          // Resolve that real catalogue product; never fabricate an identity.
+          const declaredStandalonePlu = String(modifier.standalonePlu || '').trim();
+          const product = normalProducts.find(
+            (candidate) =>
+              (declaredStandalonePlu && candidate.plu === declaredStandalonePlu) ||
+              candidate.plu === String(modifier.plu || '').trim()
+          );
+          const standalonePlu = product?.plu || declaredStandalonePlu;
 
           if (!standalonePlu || !product) {
             return {
