@@ -3021,7 +3021,7 @@ v1Router.post(
       res.status(201).json({
         changeSet,
         mode: 'PROPOSAL_ONLY',
-        executionEnabled: false,
+        autonomousExecutionEnabled: false,
         safety: {
           tenantBoundByServer: true,
           approvalRequired: true,
@@ -3046,7 +3046,7 @@ v1Router.get('/admin/assistant/change-sets/:changeSetId', requireAdminAuth(), as
     }
     const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
     const changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
-    res.json({ changeSet, executionEnabled: false });
+    res.json({ changeSet, autonomousExecutionEnabled: false });
   } catch (err: any) {
     res.status(err?.statusCode || 400).json({
       error: err?.message || 'Unable to load assistant change set.',
@@ -3092,8 +3092,11 @@ v1Router.post(
 
       res.json({
         changeSet,
-        executionEnabled: false,
-        message: 'Approved and recorded. Execution remains disabled until a versioned resource adapter is connected.',
+        autonomousExecutionEnabled: false,
+        applyAvailable: changeSet.applyAvailable,
+        message: changeSet.applyAvailable
+          ? 'Approved and recorded. This Branding change can now be applied explicitly.'
+          : 'Approved and recorded. Apply remains disabled until a versioned resource adapter is connected.',
       });
     } catch (err: any) {
       res.status(err?.statusCode || 400).json({
