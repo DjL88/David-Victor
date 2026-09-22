@@ -3104,6 +3104,184 @@ v1Router.post(
   }
 );
 
+// 9.0.0d Apply an approved LOW_WRITE change set through its typed resource adapter.
+// Branding is the only executable adapter in this foundation. All other write actions remain fail-closed.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/apply',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.executeLowRisk'),
+  requireAdminCapability('branding.write'),
+  async (req: Request, res: Response) => {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    let changeSet;
+    try {
+      changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+      if (!['APPROVED', 'APPLYING'].includes(changeSet.status)) {
+        return res.status(409).json({
+          error: `Change set cannot be applied from state ${changeSet.status}.`,
+          code: 'ADMIN_CHANGESET_INVALID_STATE',
+        });
+      }
+      if (
+        changeSet.actions.length !== 1 ||
+        changeSet.actions[0].actionName !== 'branding.proposeUpdate' ||
+        changeSet.actions[0].risk !== 'LOW_WRITE' ||
+        changeSet.revisionIds.length !== 1
+      ) {
+        return res.status(409).json({
+          error: 'This change set does not have an executable Branding adapter.',
+          code: 'ADMIN_CHANGESET_APPLY_NOT_CONNECTED',
+        });
+      }
+
+      if (changeSet.status === 'APPROVED') {
+        changeSet = await AdminChangeSetService.transitionChangeSet({
+          tenantId,
+          changeSetId: changeSet.id,
+          actorId: authAdmin.uid,
+          status: 'APPLYING',
+        });
+      }
+
+      const execution = await AdminResourceAdapterRegistry.applyRevision({
+        tenantId,
+        actorId: authAdmin.uid,
+        actionName: changeSet.actions[0].actionName,
+        revisionId: changeSet.revisionIds[0],
+      });
+
+      const applied = await AdminChangeSetService.transitionChangeSet({
+        tenantId,
+        changeSetId: changeSet.id,
+        actorId: authAdmin.uid,
+        status: 'APPLIED',
+        afterSnapshot: execution.result,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Branding',
+        action: 'Assistant branding change applied',
+        details: JSON.stringify({
+          changeSetId: applied.id,
+          revisionId: execution.revisionId,
+        }),
+        actorType: 'human',
+        changeSetId: applied.id,
+        actionRisk: 'LOW_WRITE',
+        beforeState: applied.beforeSnapshot,
+        afterState: applied.afterSnapshot,
+        reversible: applied.reversible,
+      });
+
+      res.json({
+        changeSet: applied,
+        revisionId: execution.revisionId,
+        result: execution.result,
+        autonomousExecutionEnabled: false,
+      });
+    } catch (err: any) {
+      if (changeSet?.status === 'APPLYING') {
+        try {
+          await AdminChangeSetService.transitionChangeSet({
+            tenantId,
+            changeSetId: changeSet.id,
+            actorId: authAdmin.uid,
+            status: 'FAILED',
+            warning: err?.message || 'Branding apply failed.',
+          });
+        } catch {}
+      }
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to apply assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_APPLY_FAILED',
+      });
+    }
+  }
+);
+
+// 9.0.0e Undo an applied Branding change set by publishing a new revision.
+// Rollback refuses to proceed if Branding has changed again since this change set was applied.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/rollback',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.executeLowRisk'),
+  requireAdminCapability('branding.write'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+      if (changeSet.status !== 'APPLIED') {
+        return res.status(409).json({
+          error: `Change set cannot be rolled back from state ${changeSet.status}.`,
+          code: 'ADMIN_CHANGESET_INVALID_STATE',
+        });
+      }
+      if (
+        changeSet.actions.length !== 1 ||
+        changeSet.actions[0].actionName !== 'branding.proposeUpdate' ||
+        changeSet.revisionIds.length !== 1
+      ) {
+        return res.status(409).json({
+          error: 'This change set does not have a reversible Branding adapter.',
+          code: 'ADMIN_CHANGESET_ROLLBACK_NOT_CONNECTED',
+        });
+      }
+
+      const rollback = await AdminResourceAdapterRegistry.rollbackRevision({
+        tenantId,
+        actorId: authAdmin.uid,
+        actionName: changeSet.actions[0].actionName,
+        revisionId: changeSet.revisionIds[0],
+      });
+
+      const rolledBack = await AdminChangeSetService.transitionChangeSet({
+        tenantId,
+        changeSetId: changeSet.id,
+        actorId: authAdmin.uid,
+        status: 'ROLLED_BACK',
+        afterSnapshot: rollback.result,
+        rollbackRevisionIds: [rollback.revisionId],
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Branding',
+        action: 'Assistant branding change rolled back',
+        details: JSON.stringify({
+          changeSetId: rolledBack.id,
+          rollbackRevisionId: rollback.revisionId,
+        }),
+        actorType: 'human',
+        changeSetId: rolledBack.id,
+        actionRisk: 'LOW_WRITE',
+        afterState: rolledBack.afterSnapshot,
+        reversible: false,
+        reversedAt: rolledBack.rolledBackAt,
+      });
+
+      res.json({
+        changeSet: rolledBack,
+        rollbackRevisionId: rollback.revisionId,
+        result: rollback.result,
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to roll back assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_ROLLBACK_FAILED',
+      });
+    }
+  }
+);
+
 // 9.0.1 Admin Memberships Management (Section 7, 27)
 // List memberships: platformSuperAdmin can list all or filter by tenantId; tenantAdmin can list their tenant's memberships.
 v1Router.get('/admin/memberships', requireAdminAuth(), async (req: Request, res: Response) => {
