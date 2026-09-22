@@ -317,7 +317,7 @@ export class FirestoreService {
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
       if (isDemoMode() || isTestMode()) return Object.values(inMemoryTenants);
-      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant registry is unavailable because durable storage cannot be reached.', 503, true);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant registry is unavailable because durable storage cannot be reached.', 503, true);
     }
 
     try {
@@ -350,7 +350,7 @@ export class FirestoreService {
         handleFirestoreError(err, OperationType.LIST, 'tenants');
       }
       if (isDemoMode() || isTestMode()) return Object.values(inMemoryTenants);
-      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant registry could not be read from durable storage.', 503, true);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant registry could not be read from durable storage.', 503, true);
     }
   }
 
@@ -370,7 +370,7 @@ export class FirestoreService {
       if ((isDemoMode() || isTestMode()) && inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant configuration is unavailable because durable storage cannot be reached.', 503, true);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant configuration is unavailable because durable storage cannot be reached.', 503, true);
     }
 
     try {
@@ -397,7 +397,7 @@ export class FirestoreService {
       if ((isDemoMode() || isTestMode()) && inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('STORAGE_UNAVAILABLE', 'Tenant configuration could not be verified against durable storage.', 503, true);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant configuration could not be verified against durable storage.', 503, true);
     }
   }
 
