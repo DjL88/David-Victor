@@ -347,6 +347,13 @@ export class HttpAdminClient implements AdminClient {
         const uploadHeaders: Record<string, string> = {
           'Content-Type': file.type || 'application/octet-stream',
         };
+        // The relative URL is the authenticated BFF fallback used when signed URL
+        // generation is unavailable. Never forward Firebase auth to an external
+        // Cloud Storage signed URL.
+        if (!uploadUrl.startsWith('http')) {
+          if (headers.Authorization) uploadHeaders.Authorization = headers.Authorization;
+          if (headers['X-Tenant-ID']) uploadHeaders['X-Tenant-ID'] = headers['X-Tenant-ID'];
+        }
 
         const uploadRes = await fetch(targetUrl, {
           method: 'PUT',
@@ -1175,11 +1182,82 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async getAssistantActions(tenantId?: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/actions`, { headers });
+    return this.safeJson(res, 'Failed to load assistant actions');
+  }
+
+  async createAssistantChangeSet(
+    tenantId: string,
+    proposal: {
+      prompt?: string;
+      actions: Array<{ actionName: string; input?: Record<string, unknown> }>;
+      affectedResources?: Array<{ type: string; id: string; label?: string }>;
+      beforeSnapshot?: unknown;
+      afterSnapshot?: unknown;
+      diff?: unknown;
+      warnings?: string[];
+      idempotencyKey?: string;
+      conversationId?: string;
+    }
+  ): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/change-sets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(proposal),
+    });
+    return this.safeJson(res, 'Failed to create assistant change set');
+  }
+
+  async getAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}`,
+      { headers }
+    );
+    return this.safeJson(res, 'Failed to load assistant change set');
+  }
+
+  async approveAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/approve`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to approve assistant change set');
+  }
+
+  async applyAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/apply`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to apply assistant change set');
+  }
+
+  async rollbackAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/rollback`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to roll back assistant change set');
+  }
+
   async runAssistantAction(
     tenantId: string,
     actionName: string,
     input: Record<string, unknown> = {},
-    context?: { section?: string; resourceType?: string; resourceId?: string }
+    context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string }
   ): Promise<any> {
     this.currentTenantId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();

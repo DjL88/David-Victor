@@ -110,6 +110,11 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           section: workspace.section,
           resourceType: workspace.resource?.type,
           resourceId: workspace.resource?.id,
+          organizationId: workspace.scope.organizationId,
+          market: workspace.scope.market,
+          region: workspace.scope.region,
+          locationGroupId: workspace.scope.locationGroupId,
+          locationId: workspace.scope.locationId,
         }
       );
       setAnswer(result);
@@ -144,9 +149,9 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           <div className="flex items-start gap-2">
             <LockKeyhole className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
             <div>
-              <p className="text-xs font-extrabold text-emerald-950">Foundation mode · read only</p>
+              <p className="text-xs font-extrabold text-emerald-950">Safe mode · diagnostics + proposals</p>
               <p className="text-[11px] leading-relaxed text-emerald-800 mt-1">
-                The assistant is page-aware, but write actions are deliberately disabled until the typed Admin Action layer, approval flow and audit trail are connected.
+                The assistant is page-aware. Read diagnostics can run now; write requests can be stored as reviewable change sets, but applying them remains disabled until a versioned resource adapter is connected.
               </p>
             </div>
           </div>
@@ -158,6 +163,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             <div className="flex justify-between gap-3"><span className="text-gray-500">Brand</span><span className="font-bold text-gray-900 truncate">{workspace.tenantId}</span></div>
             <div className="flex justify-between gap-3"><span className="text-gray-500">Area</span><span className="font-bold text-gray-900">{sectionLabel}</span></div>
             <div className="flex justify-between gap-3"><span className="text-gray-500">Access</span><span className="font-bold text-gray-900">{workspace.actor.role}</span></div>
+            {workspace.scope.locationId && <div className="flex justify-between gap-3"><span className="text-gray-500">Location</span><span className="font-bold text-gray-900 truncate">{workspace.scope.locationId}</span></div>}
             {workspace.resource && <div className="flex justify-between gap-3"><span className="text-gray-500">Selected</span><span className="font-bold text-gray-900 truncate">{workspace.resource.label || workspace.resource.id}</span></div>}
           </div>
         </div>
@@ -203,7 +209,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <span className="text-[10px] text-gray-400">Deterministic diagnostics only · no writes</span>
+            <span className="text-[10px] text-gray-400">Diagnostics now · proposed writes remain review-only</span>
             <button
               type="button"
               disabled={running}

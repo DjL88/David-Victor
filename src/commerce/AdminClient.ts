@@ -396,7 +396,30 @@ export interface AdminClient {
   /**
    * Places an isolated test pickup order via Deliverect Commerce Basket API
    */
-  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string }): Promise<any>;
+  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string }): Promise<any>;
+
+  /** Lists server-authorized assistant actions, including proposal-only write actions. */
+  getAssistantActions?(tenantId?: string): Promise<any>;
+
+  /** Creates a durable, reviewable proposal. This never applies the mutation. */
+  createAssistantChangeSet?(tenantId: string, proposal: {
+    prompt?: string;
+    actions: Array<{ actionName: string; input?: Record<string, unknown> }>;
+    idempotencyKey?: string;
+    conversationId?: string;
+  }): Promise<any>;
+
+  /** Retrieves one tenant-bound assistant change set. */
+  getAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Records human approval. */
+  approveAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Explicitly applies a human-approved change set when a typed resource adapter is available. */
+  applyAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
+
+  /** Rolls back an applied reversible change set when the live resource has not drifted. */
+  rollbackAssistantChangeSet?(tenantId: string, changeSetId: string): Promise<any>;
 
   placePickupTestOrder?(
     tenantId: string,

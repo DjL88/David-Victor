@@ -43,8 +43,10 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
-import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan } from '../admin/adminActionRegistry';
+import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
+import { AdminChangeSetService } from '../admin/adminChangeSetService';
+import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -97,6 +99,7 @@ import {
   AssetFinalizeSchema,
   AdminAssistantPlanSchema,
   AdminAssistantExecuteSchema,
+  AdminAssistantChangeSetSchema,
 } from './schemas';
 
 export const v1Router = Router();
@@ -415,6 +418,29 @@ function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 
     }
 
     next();
+  };
+}
+
+/**
+ * Middleware requiring Platform SuperAdmin privileges (Section 8, 27)
+ */
+function requireAdminCapability(capability: ServerAdminCapability) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const admin = req.adminUser || (req as any).adminUser;
+    if (!admin) {
+      return res.status(401).json({
+        error: 'Unauthorized: Admin authentication required before capability checks.',
+        code: 'AUTH_REQUIRED',
+      });
+    }
+    if (admin.isSuperAdmin || admin.role === 'platformSuperAdmin' || hasServerAdminCapability(admin.role, capability)) {
+      return next();
+    }
+    return res.status(403).json({
+      error: `Forbidden: Missing admin capability ${capability}.`,
+      code: 'ADMIN_CAPABILITY_REQUIRED',
+      capability,
+    });
   };
 }
 
@@ -2815,7 +2841,7 @@ v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const actions = listAssistantActionsForRole(authAdmin.role);
   res.json({
-    mode: 'READ_ONLY_FOUNDATION',
+    mode: 'READ_AND_PROPOSE_FOUNDATION',
     tenantId: authAdmin.tenantId,
     actions,
   });
@@ -2823,7 +2849,7 @@ v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request
 
 // 9.0.0a Create a deterministic assistant action plan.
 // Tenant scope always comes from authenticated server context, never from the model payload.
-v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/plan', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
@@ -2854,7 +2880,7 @@ v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAss
 
 // 9.0.0b Execute deterministic READ actions only.
 // Write actions remain fail-closed until change-set approval and rollback persistence are connected.
-v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(AdminAssistantExecuteSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/execute', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantExecuteSchema), async (req: Request, res: Response) => {
   res.status(400).json({
     error: 'Plan-ID execution is not enabled. Use /admin/assistant/run for deterministic read-only actions.',
     code: 'ADMIN_ACTION_PLAN_EXECUTION_DISABLED',
@@ -2862,7 +2888,7 @@ v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(Admin
   });
 });
 
-v1Router.post('/admin/assistant/run', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/run', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
@@ -2900,6 +2926,372 @@ v1Router.post('/admin/assistant/run', requireAdminAuth(), validateBody(AdminAssi
   }
 });
 
+// 9.0.0c Persist previewable assistant write proposals as durable change sets.
+// This endpoint NEVER applies the proposed mutation. Tenant and actor identity come from server auth.
+v1Router.post(
+  '/admin/assistant/change-sets',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.use'),
+  validateBody(AdminAssistantChangeSetSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+
+      if (req.body.actions.filter((action: any) => action.actionName === 'branding.proposeUpdate').length > 1) {
+        return res.status(400).json({
+          error: 'A change set can contain only one tenant branding action.',
+          code: 'ADMIN_CHANGESET_DUPLICATE_RESOURCE_ACTION',
+        });
+      }
+
+      const preparedActions = [];
+      for (let index = 0; index < req.body.actions.length; index += 1) {
+        const requestedAction = req.body.actions[index];
+        preparedActions.push(
+          await AdminResourceAdapterRegistry.prepareProposal({
+            tenantId,
+            actorId: authAdmin.uid,
+            actionName: requestedAction.actionName,
+            input: requestedAction.input,
+            idempotencyKey: req.body.idempotencyKey
+              ? `${req.body.idempotencyKey}:${index}`
+              : undefined,
+          })
+        );
+      }
+
+      const affectedResourceMap = new Map<string, { type: string; id: string; label?: string }>();
+      for (const prepared of preparedActions) {
+        for (const resource of prepared.affectedResources) {
+          affectedResourceMap.set(`${resource.type}:${resource.id}`, resource);
+        }
+      }
+
+      const evidenceFor = (key: 'beforeSnapshot' | 'afterSnapshot' | 'diff') => {
+        const populated = preparedActions
+          .filter((prepared) => prepared[key] !== undefined)
+          .map((prepared) => ({ actionName: prepared.actionName, value: prepared[key] }));
+        if (populated.length === 0) return undefined;
+        return populated.length === 1 ? populated[0].value : populated;
+      };
+
+      const changeSet = await AdminChangeSetService.createProposedChangeSet({
+        tenantId,
+        actorId: authAdmin.uid,
+        actorRole: authAdmin.role,
+        prompt: req.body.prompt,
+        actions: preparedActions.map((prepared) => ({
+          actionName: prepared.actionName,
+          input: prepared.input,
+        })),
+        affectedResources: Array.from(affectedResourceMap.values()),
+        beforeSnapshot: evidenceFor('beforeSnapshot'),
+        afterSnapshot: evidenceFor('afterSnapshot'),
+        diff: evidenceFor('diff'),
+        warnings: preparedActions.flatMap((prepared) => prepared.warnings),
+        revisionIds: preparedActions.flatMap((prepared) => prepared.revisionIds),
+        idempotencyKey: req.body.idempotencyKey,
+        conversationId: req.body.conversationId,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Integration',
+        action: 'Assistant change set proposed',
+        details: JSON.stringify({
+          changeSetId: changeSet.id,
+          actions: changeSet.actions.map((action) => action.actionName),
+          affectedResources: changeSet.affectedResources,
+        }),
+        actorType: 'assistant',
+        changeSetId: changeSet.id,
+        sourcePrompt: changeSet.prompt,
+        actionRisk: changeSet.actions.some((action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED')
+          ? 'HIGH_WRITE'
+          : 'LOW_WRITE',
+        beforeState: changeSet.beforeSnapshot,
+        afterState: changeSet.afterSnapshot,
+        reversible: changeSet.reversible,
+      });
+
+      res.status(201).json({
+        changeSet,
+        mode: 'PROPOSAL_ONLY',
+        autonomousExecutionEnabled: false,
+        safety: {
+          tenantBoundByServer: true,
+          approvalRequired: true,
+          credentialsExposed: false,
+          arbitraryNetworkAccess: false,
+        },
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to create assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_CREATE_FAILED',
+      });
+    }
+  }
+);
+
+v1Router.get('/admin/assistant/change-sets/:changeSetId', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    if (!hasServerAdminCapability(authAdmin.role, 'assistant.use')) {
+      return res.status(403).json({ error: 'Assistant access is not permitted.', code: 'ADMIN_CAPABILITY_REQUIRED' });
+    }
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    const changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+    res.json({ changeSet, autonomousExecutionEnabled: false });
+  } catch (err: any) {
+    res.status(err?.statusCode || 400).json({
+      error: err?.message || 'Unable to load assistant change set.',
+      code: err?.code || 'ADMIN_CHANGESET_READ_FAILED',
+    });
+  }
+});
+
+// Approval is a recorded human decision only. Applying approved changes remains fail-closed.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/approve',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.use'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const changeSet = await AdminChangeSetService.approveChangeSet({
+        tenantId,
+        changeSetId: req.params.changeSetId,
+        actorId: authAdmin.uid,
+        actorRole: authAdmin.role,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Integration',
+        action: 'Assistant change set approved',
+        details: JSON.stringify({
+          changeSetId: changeSet.id,
+          actions: changeSet.actions.map((action) => action.actionName),
+        }),
+        actorType: 'human',
+        changeSetId: changeSet.id,
+        actionRisk: changeSet.actions.some((action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED')
+          ? 'HIGH_WRITE'
+          : 'LOW_WRITE',
+        reversible: changeSet.reversible,
+      });
+
+      res.json({
+        changeSet,
+        autonomousExecutionEnabled: false,
+        applyAvailable: changeSet.applyAvailable,
+        message: changeSet.applyAvailable
+          ? 'Approved and recorded. This Branding change can now be applied explicitly.'
+          : 'Approved and recorded. Apply remains disabled until a versioned resource adapter is connected.',
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to approve assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_APPROVAL_FAILED',
+      });
+    }
+  }
+);
+
+// 9.0.0d Apply an approved LOW_WRITE change set through its typed resource adapter.
+// Branding is the only executable adapter in this foundation. All other write actions remain fail-closed.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/apply',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.executeLowRisk'),
+  requireAdminCapability('branding.write'),
+  async (req: Request, res: Response) => {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    let changeSet;
+    try {
+      changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+      if (!['APPROVED', 'APPLYING'].includes(changeSet.status)) {
+        return res.status(409).json({
+          error: `Change set cannot be applied from state ${changeSet.status}.`,
+          code: 'ADMIN_CHANGESET_INVALID_STATE',
+        });
+      }
+      if (
+        changeSet.actions.length !== 1 ||
+        changeSet.actions[0].actionName !== 'branding.proposeUpdate' ||
+        changeSet.actions[0].risk !== 'LOW_WRITE' ||
+        changeSet.revisionIds.length !== 1
+      ) {
+        return res.status(409).json({
+          error: 'This change set does not have an executable Branding adapter.',
+          code: 'ADMIN_CHANGESET_APPLY_NOT_CONNECTED',
+        });
+      }
+
+      if (changeSet.status === 'APPROVED') {
+        changeSet = await AdminChangeSetService.transitionChangeSet({
+          tenantId,
+          changeSetId: changeSet.id,
+          actorId: authAdmin.uid,
+          status: 'APPLYING',
+        });
+      }
+
+      const execution = await AdminResourceAdapterRegistry.applyRevision({
+        tenantId,
+        actorId: authAdmin.uid,
+        actionName: changeSet.actions[0].actionName,
+        revisionId: changeSet.revisionIds[0],
+      });
+
+      const applied = await AdminChangeSetService.transitionChangeSet({
+        tenantId,
+        changeSetId: changeSet.id,
+        actorId: authAdmin.uid,
+        status: 'APPLIED',
+        afterSnapshot: execution.result,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Branding',
+        action: 'Assistant branding change applied',
+        details: JSON.stringify({
+          changeSetId: applied.id,
+          revisionId: execution.revisionId,
+        }),
+        actorType: 'human',
+        changeSetId: applied.id,
+        actionRisk: 'LOW_WRITE',
+        beforeState: applied.beforeSnapshot,
+        afterState: applied.afterSnapshot,
+        reversible: applied.reversible,
+      });
+
+      res.json({
+        changeSet: applied,
+        revisionId: execution.revisionId,
+        result: execution.result,
+        autonomousExecutionEnabled: false,
+      });
+    } catch (err: any) {
+      const definitelyNotApplied = new Set([
+        'ADMIN_REVISION_RESOURCE_MISMATCH',
+        'ADMIN_REVISION_NOT_VALIDATED',
+        'ADMIN_REVISION_LIVE_STATE_CONFLICT',
+        'ADMIN_CHANGESET_APPLY_NOT_CONNECTED',
+      ]);
+      if (changeSet?.status === 'APPLYING' && definitelyNotApplied.has(err?.code)) {
+        try {
+          await AdminChangeSetService.transitionChangeSet({
+            tenantId,
+            changeSetId: changeSet.id,
+            actorId: authAdmin.uid,
+            status: 'FAILED',
+            warning: err?.message || 'Branding apply failed before any write.',
+          });
+        } catch {}
+      }
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to apply assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_APPLY_FAILED',
+        retrySafe: changeSet?.status === 'APPLYING' && !definitelyNotApplied.has(err?.code),
+      });
+    }
+  }
+);
+
+// 9.0.0e Undo an applied Branding change set by publishing a new revision.
+// Rollback refuses to proceed if Branding has changed again since this change set was applied.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/rollback',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.executeLowRisk'),
+  requireAdminCapability('branding.write'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+      if (changeSet.status !== 'APPLIED') {
+        return res.status(409).json({
+          error: `Change set cannot be rolled back from state ${changeSet.status}.`,
+          code: 'ADMIN_CHANGESET_INVALID_STATE',
+        });
+      }
+      if (
+        changeSet.actions.length !== 1 ||
+        changeSet.actions[0].actionName !== 'branding.proposeUpdate' ||
+        changeSet.revisionIds.length !== 1
+      ) {
+        return res.status(409).json({
+          error: 'This change set does not have a reversible Branding adapter.',
+          code: 'ADMIN_CHANGESET_ROLLBACK_NOT_CONNECTED',
+        });
+      }
+
+      const rollback = await AdminResourceAdapterRegistry.rollbackRevision({
+        tenantId,
+        actorId: authAdmin.uid,
+        actionName: changeSet.actions[0].actionName,
+        revisionId: changeSet.revisionIds[0],
+      });
+
+      const rolledBack = await AdminChangeSetService.transitionChangeSet({
+        tenantId,
+        changeSetId: changeSet.id,
+        actorId: authAdmin.uid,
+        status: 'ROLLED_BACK',
+        afterSnapshot: rollback.result,
+        rollbackRevisionIds: [rollback.revisionId],
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Branding',
+        action: 'Assistant branding change rolled back',
+        details: JSON.stringify({
+          changeSetId: rolledBack.id,
+          rollbackRevisionId: rollback.revisionId,
+        }),
+        actorType: 'human',
+        changeSetId: rolledBack.id,
+        actionRisk: 'LOW_WRITE',
+        afterState: rolledBack.afterSnapshot,
+        reversible: false,
+        reversedAt: rolledBack.rolledBackAt,
+      });
+
+      res.json({
+        changeSet: rolledBack,
+        rollbackRevisionId: rollback.revisionId,
+        result: rollback.result,
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to roll back assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_ROLLBACK_FAILED',
+      });
+    }
+  }
+);
+
 // 9.0.1 Admin Memberships Management (Section 7, 27)
 // List memberships: platformSuperAdmin can list all or filter by tenantId; tenantAdmin can list their tenant's memberships.
 v1Router.get('/admin/memberships', requireAdminAuth(), async (req: Request, res: Response) => {
@@ -2933,7 +3325,7 @@ v1Router.get('/admin/memberships', requireAdminAuth(), async (req: Request, res:
 // Create/Invite membership:
 // platformSuperAdmin can create any role (including platformSuperAdmin or tenant roles).
 // tenant roles can only grant roles at or below their own authority, within their tenant.
-v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('memberships.manage'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const { email, role, tenantId: requestedTenantId, name } = req.body || {};
@@ -3042,7 +3434,7 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
 });
 
 // Delete/Revoke membership
-v1Router.delete('/admin/memberships/:id', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapability('memberships.manage'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const membershipId = req.params.id;
@@ -3161,7 +3553,7 @@ v1Router.get('/admin/tenants/:id', requireAdminAuth(), async (req: Request, res:
 });
 
 // 9.4 Update Tenant Branding
-v1Router.patch('/admin/tenants/:id', requireAdminAuth('marketingEditor'), validateBody(UpdateTenantConfigSchema), async (req: Request, res: Response) => {
+v1Router.patch('/admin/tenants/:id', requireAdminAuth(), requireAdminCapability('branding.write'), validateBody(UpdateTenantConfigSchema), async (req: Request, res: Response) => {
   try {
     const updated = await FirestorePlatformService.updateTenantConfig(req.params.id, req.body);
 
@@ -3735,7 +4127,7 @@ v1Router.get('/admin/tenants/:id/stores', requireAdminAuth(), async (req: Reques
   }
 });
 
-v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), requireAdminCapability('stores.write'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.params.id;
     const storeId = req.params.storeId;
@@ -3916,7 +4308,7 @@ v1Router.patch('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), valid
 });
 
 // 9.9 Real AssetService: Uploads for Logos, Favicons, Fonts & Stories
-v1Router.post('/admin/assets/upload', requireAdminAuth(), validateBody(AssetUploadSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/upload', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetUploadSchema), async (req: Request, res: Response) => {
   try {
     if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
       return res.status(403).json({
@@ -3968,7 +4360,7 @@ v1Router.post('/admin/assets/upload', requireAdminAuth(), validateBody(AssetUplo
   }
 });
 
-v1Router.post('/admin/assets/upload-url', requireAdminAuth(), validateBody(AssetUploadUrlSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/upload-url', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetUploadUrlSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, type, fileName, contentType, byteSize } = req.body;
@@ -3999,7 +4391,7 @@ v1Router.post('/admin/assets/upload-url', requireAdminAuth(), validateBody(Asset
   }
 });
 
-v1Router.put('/admin/assets/direct-upload/:assetId', express.raw({ type: '*/*', limit: '100mb' }), async (req: Request, res: Response) => {
+v1Router.put('/admin/assets/direct-upload/:assetId', requireAdminAuth(), requireAdminCapability('assets.write'), express.raw({ type: '*/*', limit: '100mb' }), async (req: Request, res: Response) => {
   try {
     const { assetId } = req.params;
     const contentType = (req.headers['content-type'] as string) || 'application/octet-stream';
@@ -4012,7 +4404,7 @@ v1Router.put('/admin/assets/direct-upload/:assetId', express.raw({ type: '*/*', 
   }
 });
 
-v1Router.post('/admin/assets/finalize', requireAdminAuth(), validateBody(AssetFinalizeSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/finalize', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetFinalizeSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, assetId } = req.body;
@@ -4079,7 +4471,7 @@ v1Router.get('/assets/:tenantId/:assetId', async (req: Request, res: Response) =
   }
 });
 
-v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), requireAdminCapability('assets.write'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let tenantId = req.params.tenantId;
@@ -4125,7 +4517,7 @@ v1Router.get('/admin/tenants/:id/media-health', requireAdminAuth(), async (req: 
   }
 });
 
-v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), requireAdminCapability('catalog.diagnostics'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
@@ -4241,7 +4633,7 @@ v1Router.get('/admin/health', async (req: Request, res: Response) => {
   });
 });
 
-v1Router.post('/admin/test-oauth', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/test-oauth', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { environment, tenantId: requestedTenantId, clientId, clientSecret } = req.body || {};
 
@@ -4298,7 +4690,7 @@ v1Router.post(
   }
 );
 
-v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const tenantId = req.params.id;
   const { environment, clientId, clientSecret } = req.body || {};
@@ -4316,7 +4708,7 @@ v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), a
   res.status(result.success ? 200 : (result.status === 'UNCONFIGURED' ? 400 : 401)).json(result);
 });
 
-v1Router.post('/admin/test-connection', requireAdminAuth(), validateBody(TestConnectionSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/test-connection', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), validateBody(TestConnectionSchema), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { deliverectAccountId, environment, tenantId: requestedTenantId, clientId, clientSecret, channelLinkId, testType, oauthOnly } = req.body;
 
@@ -4383,7 +4775,7 @@ v1Router.post('/admin/test-connection', requireAdminAuth(), validateBody(TestCon
 /**
  * Tenant-scoped Connection Test Endpoint
  */
-v1Router.post('/admin/tenants/:id/integration/test', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/integration/test', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const tenantId = req.params.id;
 
@@ -5043,7 +5435,7 @@ v1Router.get('/admin/connection/health', requireAdminAuth(), async (req: Request
  * Supports demonstrating both successful traces and forced failure scenarios:
  * NOT_CONFIGURED, PERMISSION_DENIED, UPSTREAM_ERROR, EMPTY_VALID_RESPONSE, UNMAPPED_LOCATION, RENDER_FILTERED.
  */
-v1Router.post('/admin/connection/trace', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/connection/trace', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const requestedTenantId = (req.headers['x-tenant-id'] as string) || req.body?.tenantId;
