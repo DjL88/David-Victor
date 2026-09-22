@@ -449,6 +449,9 @@ export function findMissedBundleOffers(
 ): MissedBundleOffer[] {
   const basketQtyByPlu = new Map<string, number>();
   basketItems.forEach((item) => basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity));
+  // candidateProducts is catalogue metadata, not a second basket/allocation list.
+  // Some legacy callers/tests include quantity on these objects; quantity must not
+  // make an otherwise valid product unavailable.
   const productByPlu = new Map(candidateProducts.map((product) => [product.plu, product]));
   const hasProductCatalogue = candidateProducts.length > 0;
   const offers: MissedBundleOffer[] = [];
@@ -515,9 +518,24 @@ export function findMissedBundleOffers(
     });
   }
 
-  // Prefer the closest/best-priced opportunity per bundle. Do not dedupe by one
-  // arbitrary missing PLU because a section may intentionally offer alternatives.
-  return offers.sort((a, b) => b.matchRatio - a.matchRatio || String(a.bundle.id).localeCompare(String(b.bundle.id)));
+  // A customer should see one actionable prompt for the same opportunity, not
+  // competing prompts for equivalent bundles. Rank by completeness first, then
+  // by the bundle price (lower is the stronger saving opportunity), with a stable
+  // id tie-breaker. Opportunities with different missing choice sets remain valid.
+  const sorted = offers.sort((a, b) =>
+    b.matchRatio - a.matchRatio ||
+    (a.bundle.priceMinor ?? a.bundle.price ?? Number.MAX_SAFE_INTEGER) -
+      (b.bundle.priceMinor ?? b.bundle.price ?? Number.MAX_SAFE_INTEGER) ||
+    String(a.bundle.id).localeCompare(String(b.bundle.id))
+  );
+  const seenOpportunities = new Set<string>();
+  return sorted.filter((offer) => {
+    const choiceKey = offer.missingSection.choices.map((choice) => choice.plu).sort().join('|');
+    const key = `${offer.missingSection.sectionId}::${choiceKey}`;
+    if (seenOpportunities.has(key)) return false;
+    seenOpportunities.add(key);
+    return true;
+  });
 }
 
 /**
