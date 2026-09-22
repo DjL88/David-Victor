@@ -22,7 +22,7 @@ import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
 import { checkoutAndPaymentRateLimiter } from '../rateLimiter';
 import { CheckoutResult } from '../../src/domain/models';
-import { TenantConfig } from '../../src/commerce/models';
+import { TenantConfig, Product } from '../../src/commerce/models';
 import { MOCK_TENANTS } from '../../src/commerce/mockData';
 import { GOOGLE_FONTS_CATALOG } from '../../src/commerce/googleFonts';
 import { BFFError, CommerceError } from '../errors';
@@ -915,7 +915,7 @@ async function enforceRulesForBasketAdd(
     return;
   }
 
-  const productsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+  const productsByPlu = new Map<string, Product>(((catalog.products || []) as Product[]).map((p) => [p.plu, p]));
   const context = { storeId: basket.storeId, fulfillmentType: basket.fulfillmentType };
 
   for (const { plu, quantity } of itemsToCheck) {
@@ -1659,7 +1659,7 @@ v1Router.post(
           .getStoreCatalog(checkoutBasket.storeId, checkoutBasket.fulfillmentType)
           .catch(() => null);
         if (checkoutCatalog) {
-          const productsByPlu = new Map((checkoutCatalog.products || []).map((p) => [p.plu, p]));
+          const productsByPlu = new Map<string, Product>(((checkoutCatalog.products || []) as Product[]).map((p) => [p.plu, p]));
           await assertBasketCheckoutAllowed(resolvedTenant, checkoutBasket, productsByPlu, {
             storeId: checkoutBasket.storeId,
             fulfillmentType: checkoutBasket.fulfillmentType,
