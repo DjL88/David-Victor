@@ -15,7 +15,14 @@ describe('findMissedBundleOffers', () => {
   it('prompts only when exactly one required unit remains', () => {
     const offers = findMissedBundleOffers([{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 1 }], [bundle]);
     expect(offers).toHaveLength(1);
-    expect(offers[0].missingComponents).toEqual([{ plu: 'D1', name: 'Drink A', quantityNeeded: 1 }]);
+    expect(offers[0].missingComponents).toEqual([{
+      plu: 'D1',
+      name: 'Drink A',
+      quantityNeeded: 1,
+      sectionId: 'drink',
+      modifierId: 'd1',
+      imageUrl: undefined,
+    }]);
   });
 
   it('does not prompt at an arbitrary percentage when two required units remain', () => {
