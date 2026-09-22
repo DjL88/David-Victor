@@ -709,7 +709,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           setActiveDealForModal(deal);
         }}
         bundles={catalog?.bundleCatalog?.bundles || []}
-        onOpenBundleDialog={(bundle) => setActiveBundleForModal(bundle)}
+        onOpenBundleDialog={(bundle) => {
+          // Never stack the bundle dialog behind the basket drawer.
+          setIsCartOpen(false);
+          setActiveBundleForModal(bundle);
+        }}
         loading={basketLoading}
       />
 
