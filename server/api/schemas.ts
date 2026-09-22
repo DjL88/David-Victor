@@ -75,6 +75,7 @@ export const AddBasketBundleSchema = z
     bundleId: z.string().min(1).optional(),
     bundlePlu: z.string().min(1).optional(),
     quantity: z.number().int().min(1).max(99).optional().default(1),
+    claimExistingBasketItems: z.boolean().optional().default(false),
     selections: z
       .array(
         z.object({
