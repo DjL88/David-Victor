@@ -15,7 +15,7 @@ describe('AdminChangeSetService', () => {
     });
 
     expect(changeSet.status).toBe('APPROVAL_REQUIRED');
-    expect(changeSet.executionEnabled).toBe(false);
+    expect(changeSet.autonomousExecutionEnabled).toBe(false);
     expect(changeSet.actions[0].risk).toBe('HIGH_WRITE');
     expect(changeSet.reversible).toBe(true);
   });
@@ -64,7 +64,7 @@ describe('AdminChangeSetService', () => {
       actorRole: 'tenantAdmin',
     });
     expect(approved.status).toBe('APPROVED');
-    expect(approved.executionEnabled).toBe(false);
+    expect(approved.autonomousExecutionEnabled).toBe(false);
   });
 
   it('does not allow read actions to be wrapped as write proposals', async () => {
