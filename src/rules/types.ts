@@ -402,6 +402,153 @@ export interface EventDeliveryAttempt {
 }
 
 // ==========================================
+// TRUST, REFUNDS & CUSTOMER CARE
+// ==========================================
+
+export type CustomerDataVisibility = 'NONE' | 'MASKED' | 'FULL';
+export type RefundAuthority = 'NONE' | 'STORE' | 'CENTRAL' | 'BOTH';
+
+export interface CustomerCareAccessPolicy {
+  refundAuthority: RefundAuthority;
+  customerDataVisibility: CustomerDataVisibility;
+  canViewRiskSignals: boolean;
+  canIssuePartialRefund: boolean;
+  canIssueFullRefund: boolean;
+  canIssueVoucher: boolean;
+  canResendOrder: boolean;
+  canOverrideAutomatedDecision: boolean;
+  /** Optional location scope for store-operated support teams. */
+  storeIds?: string[];
+  locationGroupIds?: string[];
+  maximumRefundAmountMinor?: number;
+}
+
+export interface TenantCustomerCarePolicy {
+  /** Retailers can disable automatic refunds completely. */
+  automaticRefundsEnabled: boolean;
+  selfServiceClaimsEnabled: boolean;
+  claimWindowMinutes: number;
+  /** Optional SLA after which an unresolved eligible review can auto-resolve. */
+  reviewSlaMinutes?: number;
+  onReviewSlaExpired: 'AUTO_REFUND_IF_ELIGIBLE' | 'ESCALATE' | 'KEEP_OPEN';
+  rolePolicies: Partial<Record<'platformSuperAdmin' | 'tenantAdmin' | 'marketingEditor' | 'operationsEditor' | 'viewer', CustomerCareAccessPolicy>>;
+}
+
+export type CustomerIssueType =
+  | 'ORDER_NOT_RECEIVED'
+  | 'ITEM_MISSING'
+  | 'ITEM_DAMAGED'
+  | 'ITEM_EXPIRED'
+  | 'WRONG_ITEM'
+  | 'QUALITY_ISSUE'
+  | 'OTHER';
+
+export type CustomerCaseStatus =
+  | 'OPEN'
+  | 'EVIDENCE_REQUIRED'
+  | 'AUTO_APPROVED'
+  | 'REVIEW_REQUIRED'
+  | 'APPROVED'
+  | 'DECLINED'
+  | 'REFUND_PENDING'
+  | 'REFUNDED'
+  | 'RESEND_PENDING'
+  | 'RESOLVED'
+  | 'ESCALATED';
+
+export interface CustomerCase {
+  caseId: string;
+  tenantId: string;
+  orderId: string;
+  storeId: string;
+  customerId?: string;
+  issueType: CustomerIssueType;
+  status: CustomerCaseStatus;
+  source: 'SELF_SERVICE' | 'PHONE' | 'ADMIN' | 'SYSTEM';
+  affectedItems?: Array<{ plu: string; quantity: number; amountMinor?: number }>;
+  requestedAmountMinor?: number;
+  currency: string;
+  riskAssessmentId?: string;
+  openedAt: string;
+  reviewDueAt?: string;
+  resolvedAt?: string;
+  assignedTo?: string;
+}
+
+export type ResolutionType = 'PARTIAL_REFUND' | 'FULL_REFUND' | 'VOUCHER' | 'ORDER_RESEND' | 'DECLINE';
+
+export interface CaseResolution {
+  resolutionId: string;
+  caseId: string;
+  type: ResolutionType;
+  amountMinor?: number;
+  currency?: string;
+  voucherId?: string;
+  replacementOrderId?: string;
+  reasonCode: string;
+  actorId: string;
+  actorScope: 'STORE' | 'CENTRAL' | 'SYSTEM';
+  createdAt: string;
+}
+
+export type RiskDecision = 'ALLOW' | 'STEP_UP' | 'LIMIT' | 'MANUAL_REVIEW' | 'TEMPORARY_HOLD';
+
+export interface RiskSignal {
+  code:
+    | 'ORDER_VELOCITY'
+    | 'ADDRESS_ACCOUNT_VELOCITY'
+    | 'PAYMENT_INSTRUMENT_VELOCITY'
+    | 'DECLINE_VELOCITY'
+    | 'LOW_VALUE_BASKET_PATTERN'
+    | 'REFUND_CLAIM_VELOCITY'
+    | 'MISSING_ITEM_CLAIM_RATE'
+    | 'WHOLE_ORDER_CLAIM_RATE'
+    | 'DEVICE_ACCOUNT_VELOCITY'
+    | 'COHORT_INCIDENT';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  observedValue?: number;
+  thresholdReference?: string;
+}
+
+export interface RiskAssessment {
+  assessmentId: string;
+  tenantId: string;
+  subjectReference: string;
+  /** Store only privacy-minimised/hashed linkage references where practical. */
+  linkageReferences?: string[];
+  signals: RiskSignal[];
+  decision: RiskDecision;
+  reasonCodes: string[];
+  createdAt: string;
+  expiresAt?: string;
+  requiresHumanReview: boolean;
+}
+
+export interface DeliveryEvidence {
+  orderId: string;
+  provider: string;
+  eventType: string;
+  occurredAt: string;
+  proofReference?: string;
+  locationReference?: string;
+  recipientReference?: string;
+}
+
+export interface CourierCompensationClaim {
+  claimId: string;
+  tenantId: string;
+  orderId: string;
+  customerCaseId?: string;
+  provider: string;
+  status: 'ELIGIBLE' | 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'PAID';
+  amountMinor?: number;
+  currency?: string;
+  evidenceReferences: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==========================================
 // DISPATCH & COURIER ORCHESTRATION RULES
 // ==========================================
 
