@@ -467,14 +467,13 @@ export class FirestoreService {
     status?: 'active' | 'pending';
   }): Promise<DomainRecord> {
     const cleanHost = (params.hostname || '').toLowerCase().trim().split(':')[0];
-    if (!cleanHost) {
-      throw new BFFError('INVALID_INPUT', 'A valid hostname or domain name is required.', 400);
-    }
+    if (!cleanHost) throw new BFFError('INVALID_INPUT', 'A valid hostname or domain name is required.', 400);
     const tenantId = params.tenantId.trim();
+    if (!tenantId) throw new BFFError('INVALID_INPUT', 'A tenant ID is required for domain registration.', 400);
+
     const now = new Date().toISOString();
     const domainSlug = cleanHost.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
     const domainId = `dom_${domainSlug}`;
-
     const record: DomainRecord = {
       domainId,
       hostname: cleanHost,
@@ -485,50 +484,52 @@ export class FirestoreService {
       updatedAt: now,
     };
 
-    // 1. Update in-memory & disk persistence
-    inMemoryDomains[cleanHost] = record;
-    savePersistedDomains(inMemoryDomains);
-
-    // 2. Persist to Firestore if available
     const db = getFirestoreDb();
-    if (db && !isFirestorePermissionDenied()) {
-      try {
-        const topDomainRef = db.collection('domains').doc(domainSlug);
-        await topDomainRef.set(
-          {
-            domainId,
-            hostname: cleanHost,
-            tenantId,
-            isPrimary: record.isPrimary,
-            status: record.status,
-            updatedAt: now,
-          },
-          { merge: true }
-        );
-
-        // Also record under tenant subcollection
-        const tenantDomainRef = db.collection('tenants').doc(tenantId).collection('domains').doc(domainSlug);
-        await tenantDomainRef.set(
-          {
-            domain: cleanHost,
-            hostname: cleanHost,
-            tenantId,
-            isPrimary: record.isPrimary,
-            status: record.status,
-            updatedAt: now,
-          },
-          { merge: true }
-        );
-      } catch (err: any) {
-        if (isFirestorePermissionDeniedError(err)) {
-          markFirestorePermissionDenied(err);
-        } else {
-          console.warn('[FirestoreService] Could not persist domain to Firestore:', err.message);
-        }
+    if (!db || isFirestorePermissionDenied()) {
+      if (isDemoMode() || isTestMode()) {
+        inMemoryDomains[cleanHost] = record;
+        savePersistedDomains(inMemoryDomains);
+        return record;
       }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain mapping could not be saved because durable storage is unavailable.', 503, true);
     }
 
-    return record;
+    try {
+      const topDomainRef = db.collection('domains').doc(domainSlug);
+      const tenantDomainRef = db.collection('tenants').doc(tenantId).collection('domains').doc(domainSlug);
+      const batch = db.batch();
+      batch.set(topDomainRef, {
+        domainId,
+        hostname: cleanHost,
+        tenantId,
+        isPrimary: record.isPrimary,
+        status: record.status,
+        createdAt: record.createdAt,
+        updatedAt: now,
+      }, { merge: true });
+      batch.set(tenantDomainRef, {
+        domain: cleanHost,
+        hostname: cleanHost,
+        tenantId,
+        isPrimary: record.isPrimary,
+        status: record.status,
+        createdAt: record.createdAt,
+        updatedAt: now,
+      }, { merge: true });
+      await batch.commit();
+
+      inMemoryDomains[cleanHost] = record;
+      if (isDemoMode() || isTestMode()) savePersistedDomains(inMemoryDomains);
+      return record;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      if (isDemoMode() || isTestMode()) {
+        inMemoryDomains[cleanHost] = record;
+        savePersistedDomains(inMemoryDomains);
+        return record;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain mapping could not be saved to durable storage.', 503, true);
+    }
   }
 
   /**
