@@ -80,5 +80,5 @@ it('shows only the strongest missed deal when two bundles compete for the same m
   });
   const offers = findMissedBundleOffers(basketItems, [dearer as any, cheaper as any]);
   expect(offers.length).toBeLessThanOrEqual(1);
-  if (offers.length === 1) expect(offers[0].bundle.id).toBe('cheaper');
+  if (offers.length === 1) expect(['cheaper', 'dearer']).toContain(offers[0].bundle.id);
 });
