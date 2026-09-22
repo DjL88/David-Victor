@@ -291,7 +291,17 @@ v1Router.use(async (req: Request, res: Response, next) => {
       host === '127.0.0.1';
 
     if (isContainerOrPreviewHost) {
-      (req as any).resolvedTenantId = requestedOverride || process.env.PREVIEW_TENANT_ID || 'brand-alpha';
+      const previewTenantId =
+        requestedOverride ||
+        process.env.PREVIEW_TENANT_ID ||
+        (isDemoMode() || isTestMode() ? 'brand-alpha' : undefined);
+      if (!previewTenantId) {
+        return res.status(503).json({
+          code: 'PREVIEW_TENANT_NOT_CONFIGURED',
+          message: 'This preview host has no configured tenant.',
+        });
+      }
+      (req as any).resolvedTenantId = previewTenantId;
       return next();
     }
 
@@ -341,8 +351,15 @@ function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 
     if (!tenantId) {
       try {
         tenantId = resolveTenant(req);
-      } catch {
-        tenantId = 'brand-alpha';
+      } catch (err) {
+        if (isDemoMode() || isTestMode()) {
+          tenantId = 'brand-alpha';
+        } else {
+          return res.status(400).json({
+            error: 'A tenant scope is required for this admin request.',
+            code: 'TENANT_SCOPE_REQUIRED',
+          });
+        }
       }
     }
 
