@@ -188,6 +188,17 @@ async function projectBrandingRevision(args: {
       statusCode: 409,
     });
   }
+  if (revision.status === 'PUBLISHED') {
+    const current = await ConfigurationRevisionService.resolvePublishedConfiguration<BrandingSnapshot>(
+      args.tenantId,
+      'tenantBranding',
+      args.tenantId
+    );
+    if (current?.pointer.currentRevisionId === revision.revisionId) {
+      const tenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+      return { revisionId: revision.revisionId, tenant };
+    }
+  }
   if (revision.status !== 'VALIDATED') {
     throw Object.assign(new Error('Branding revision is not validated and cannot be applied.'), {
       code: 'ADMIN_REVISION_NOT_VALIDATED',
@@ -246,8 +257,8 @@ async function rollbackBrandingRevision(args: {
       statusCode: 409,
     });
   }
-  if (applied.status !== 'PUBLISHED' || !applied.basedOnRevisionId) {
-    throw Object.assign(new Error('Branding change cannot be rolled back from its current revision state.'), {
+  if (!applied.basedOnRevisionId) {
+    throw Object.assign(new Error('Branding change does not have a prior revision to restore.'), {
       code: 'ADMIN_REVISION_ROLLBACK_INVALID',
       statusCode: 409,
     });
@@ -262,7 +273,17 @@ async function rollbackBrandingRevision(args: {
     'tenantBranding',
     args.tenantId
   );
-  if (!current || current.pointer.currentRevisionId !== applied.revisionId) {
+
+  if (
+    applied.status === 'SUPERSEDED' &&
+    current?.revision.basedOnRevisionId === applied.revisionId &&
+    diffConfiguration(current.revision.payload, target.payload).length === 0
+  ) {
+    const tenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+    return { revisionId: current.revision.revisionId, tenant };
+  }
+
+  if (applied.status !== 'PUBLISHED' || !current || current.pointer.currentRevisionId !== applied.revisionId) {
     throw Object.assign(
       new Error('Branding changed again after this change set was applied; automatic rollback is unsafe.'),
       { code: 'ADMIN_REVISION_ROLLBACK_CONFLICT', statusCode: 409 }
