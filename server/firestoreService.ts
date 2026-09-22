@@ -245,7 +245,7 @@ function savePersistedIntegrations(integrations: Record<string, IntegrationConfi
 // In-memory tenant registry with disk persistence fallback
 const inMemoryTenants: Record<string, TenantConfig> = {
   ...(isDemoMode() || isTestMode() ? MOCK_TENANTS : {}),
-  ...loadPersistedTenants(),
+  ...(isDemoMode() || isTestMode() ? loadPersistedTenants() : {}),
 };
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...(isDemoMode() || isTestMode() ? loadPersistedIntegrations() : {}) };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
@@ -334,14 +334,15 @@ export class FirestoreService {
         }
       });
 
-      // Merge in-memory and disk provisioned tenants
-      for (const [id, t] of Object.entries(inMemoryTenants)) {
-        if (!seenIds.has(id)) {
-          list.push(t);
+      // Local tenant state is a demo/test convenience only. Live listings are durable-storage authoritative.
+      if (isDemoMode() || isTestMode()) {
+        for (const [id, t] of Object.entries(inMemoryTenants)) {
+          if (!seenIds.has(id)) {
+            list.push(t);
+          }
         }
+        savePersistedTenants(inMemoryTenants);
       }
-
-      savePersistedTenants(inMemoryTenants);
       return list;
     } catch (err: any) {
       if (isFirestorePermissionDeniedError(err)) {
