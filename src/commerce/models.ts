@@ -1016,6 +1016,14 @@ export interface AuditLogEntry {
   category: 'Tenant' | 'Branding' | 'Stories' | 'Fees' | 'Rules' | 'Features' | 'Stores' | 'Integration' | 'Assets' | 'Compliance' | 'Payment';
   action: string;
   details: string;
+  actorType?: 'human' | 'assistant' | 'system';
+  changeSetId?: string;
+  sourcePrompt?: string;
+  actionRisk?: 'READ' | 'LOW_WRITE' | 'HIGH_WRITE' | 'RESTRICTED';
+  beforeState?: unknown;
+  afterState?: unknown;
+  reversible?: boolean;
+  reversedAt?: string;
 }
 
 export interface CheckoutSummary {

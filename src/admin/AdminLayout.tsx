@@ -25,6 +25,8 @@ import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
 import { BwydiLogo } from '../components/BwydiLogo';
+import { AdminWorkspaceProvider } from './AdminWorkspaceContext';
+import { AdminAssistantDrawer } from './AdminAssistantDrawer';
 const bwydiFullLogo = '/bwydi-green.png';
 import {
   Palette,
@@ -106,6 +108,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const [allTenants, setAllTenants] = useState<TenantConfig[]>([]);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
   const [tenantLoadError, setTenantLoadError] = useState<string>('');
+  const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
 
   useEffect(() => {
     defaultAdminClient.setActiveAdminUser?.(currentUser);
@@ -226,6 +229,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   };
 
   return (
+    <AdminWorkspaceProvider tenantId={currentTenantId} section={activeTab} actor={currentUser}>
     <div className="min-h-screen bg-gray-50 flex flex-col text-gray-900 font-sans">
       {/* TOP ADMIN HEADER */}
       <header className="sticky top-0 z-40 bg-[#56356b] text-white border-b border-white/10 px-3 lg:px-5 py-2 shrink-0">
@@ -307,6 +311,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* SIDEBAR ASSISTANT ENTRY */}
+          <div className="px-3 pb-3">
+            <button
+              type="button"
+              onClick={() => setIsAssistantOpen(true)}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-xs font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-2.5"
+              aria-label="Open Admin Assistant"
+            >
+              <span className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block">Ask Admin Assistant</span>
+                <span className="block text-[10px] font-medium text-gray-400 mt-0.5">Context-aware · read only</span>
+              </span>
+            </button>
           </div>
 
           {/* SIDEBAR FOOTER METADATA */}
@@ -396,6 +418,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           </div>
         </main>
       </div>
+      <AdminAssistantDrawer open={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
     </div>
+    </AdminWorkspaceProvider>
   );
 };

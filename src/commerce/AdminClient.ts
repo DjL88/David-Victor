@@ -396,6 +396,8 @@ export interface AdminClient {
   /**
    * Places an isolated test pickup order via Deliverect Commerce Basket API
    */
+  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string }): Promise<any>;
+
   placePickupTestOrder?(
     tenantId: string,
     options?: {

@@ -43,6 +43,8 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
+import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan } from '../admin/adminActionRegistry';
+import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -93,6 +95,8 @@ import {
   AssetUploadSchema,
   AssetUploadUrlSchema,
   AssetFinalizeSchema,
+  AdminAssistantPlanSchema,
+  AdminAssistantExecuteSchema,
 } from './schemas';
 
 export const v1Router = Router();
@@ -2803,6 +2807,97 @@ v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
     ...userWithId,
     user: userWithId,
   });
+});
+
+// 9.0.0 Assistant capability discovery
+// This endpoint intentionally exposes metadata only. It does not execute actions.
+v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request, res: Response) => {
+  const authAdmin = (req as AuthenticatedRequest).adminUser!;
+  const actions = listAssistantActionsForRole(authAdmin.role);
+  res.json({
+    mode: 'READ_ONLY_FOUNDATION',
+    tenantId: authAdmin.tenantId,
+    actions,
+  });
+});
+
+// 9.0.0a Create a deterministic assistant action plan.
+// Tenant scope always comes from authenticated server context, never from the model payload.
+v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    const action = assertAssistantActionAllowed(authAdmin.role, req.body.actionName);
+    const plan = buildReadOnlyActionPlan({
+      action,
+      tenantId,
+      actorId: authAdmin.uid,
+      input: req.body.input,
+    });
+
+    res.json({
+      plan,
+      context: req.body.context || null,
+      safety: {
+        tenantBoundByServer: true,
+        credentialsExposed: false,
+        arbitraryNetworkAccess: false,
+      },
+    });
+  } catch (err: any) {
+    res.status(err?.statusCode || 400).json({
+      error: err?.message || 'Unable to create admin action plan.',
+      code: err?.code || 'ADMIN_ACTION_PLAN_FAILED',
+    });
+  }
+});
+
+// 9.0.0b Execute deterministic READ actions only.
+// Write actions remain fail-closed until change-set approval and rollback persistence are connected.
+v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(AdminAssistantExecuteSchema), async (req: Request, res: Response) => {
+  res.status(400).json({
+    error: 'Plan-ID execution is not enabled. Use /admin/assistant/run for deterministic read-only actions.',
+    code: 'ADMIN_ACTION_PLAN_EXECUTION_DISABLED',
+    mode: 'READ_ONLY',
+  });
+});
+
+v1Router.post('/admin/assistant/run', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    const execution = await AdminAssistantActionService.executeReadOnly({
+      actor: { uid: authAdmin.uid, role: authAdmin.role, tenantId: authAdmin.tenantId },
+      tenantId,
+      actionName: req.body.actionName,
+      input: req.body.input,
+    });
+
+    await FirestorePlatformService.addAuditLog(tenantId, {
+      userId: authAdmin.uid,
+      userName: authAdmin.name || authAdmin.email || 'Admin',
+      userRole: authAdmin.role,
+      tenantId,
+      category: 'Integration',
+      action: `Assistant read: ${req.body.actionName}`,
+      details: JSON.stringify({
+        planId: execution.plan.planId,
+        evidence: execution.evidence,
+        context: req.body.context || null,
+      }),
+      actorType: 'assistant',
+      changeSetId: execution.plan.planId,
+      actionRisk: 'READ',
+      reversible: false,
+    });
+
+    res.json(execution);
+  } catch (err: any) {
+    res.status(err?.statusCode || 400).json({
+      error: err?.message || 'Assistant action failed.',
+      code: err?.code || 'ADMIN_ACTION_FAILED',
+    });
+  }
 });
 
 // 9.0.1 Admin Memberships Management (Section 7, 27)

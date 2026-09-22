@@ -153,6 +153,9 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
                       {log.category}
                     </span>
                     <span className="text-xs font-bold text-gray-900">{log.action}</span>
+                    {log.actorType === 'assistant' && <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-100 text-indigo-800">Assistant</span>}
+                    {log.reversible && !log.reversedAt && <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800">Reversible</span>}
+                    {log.reversedAt && <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-gray-200 text-gray-700">Reversed</span>}
                   </div>
 
                   <div className="flex items-center gap-3 text-[11px] text-gray-500">
@@ -169,6 +172,8 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
                   </div>
                 </div>
 
+                {log.changeSetId && <div className="text-[10px] text-gray-500 font-mono">Change set: {log.changeSetId}</div>}
+                {log.sourcePrompt && <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2 text-[11px] text-indigo-900"><span className="font-bold">Requested:</span> {log.sourcePrompt}</div>}
                 <div className="bg-gray-50 rounded-xl p-2.5 font-mono text-[11px] text-gray-700 border border-gray-100 overflow-x-auto">
                   {typeof log.details === 'object'
                     ? JSON.stringify(log.details, null, 2)
