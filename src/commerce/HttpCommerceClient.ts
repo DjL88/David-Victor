@@ -287,7 +287,8 @@ export class HttpCommerceClient implements CommerceClient {
     basketId: string,
     bundle: BundleProduct,
     selectedModifiers: SelectedBundleModifier[],
-    quantity: number = 1
+    quantity: number = 1,
+    options?: { claimExistingBasketItems?: boolean }
   ): Promise<Basket> {
     return this.request<Basket>(
       `/baskets/${encodeURIComponent(basketId)}/bundles`,
@@ -297,6 +298,7 @@ export class HttpCommerceClient implements CommerceClient {
           bundleId: bundle.id,
           bundlePlu: bundle.plu,
           quantity: Math.max(1, quantity),
+          claimExistingBasketItems: options?.claimExistingBasketItems === true,
           selections: selectedModifiers.map((modifier) => ({
             sectionId: modifier.sectionId,
             modifierId: modifier.modifierId,
