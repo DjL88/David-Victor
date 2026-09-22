@@ -81,7 +81,7 @@ import {
   BundleCatalog,
 } from './bundleModels';
 import { defaultRuleEngine } from '../rules/RuleEngine';
-import { defaultAdminClient, sharedProductRules, initSharedData } from './MockAdminClient';
+import { defaultAdminClient, sharedProductRules, sharedFeePolicies, initSharedData } from './MockAdminClient';
 import { applySearchMerchandising, DEFAULT_SEARCH_CONFIG, getActiveSearchConfig } from './searchMerchEngine';
 import { catalogStore, normalizeStoreId } from './catalogStore';
 import { getCategoryAndAllDescendantIds } from './categoryHierarchy';
@@ -3584,7 +3584,15 @@ export class MockCommerceClient implements CommerceClient {
     const depositTotalMajor = basket.items.reduce((sum, i) => sum + getItemDeposit(i) * i.quantity, 0);
 
     const charges: BasketCharge[] = [];
-    const policy = MOCK_FEE_POLICIES[this.currentTenantId] || MOCK_FEE_POLICIES['brand-alpha'];
+    // Read the admin-editable live policy (shared with MockAdminClient),
+    // not the frozen MOCK_FEE_POLICIES constant — otherwise fee changes
+    // saved in the admin Fees screen silently never applied to any basket.
+    initSharedData();
+    const policy =
+      sharedFeePolicies.get(this.currentTenantId) ||
+      sharedFeePolicies.get('brand-alpha') ||
+      MOCK_FEE_POLICIES[this.currentTenantId] ||
+      MOCK_FEE_POLICIES['brand-alpha'];
 
     const store = MOCK_STORES.find((s) => s.id === basket.storeId);
 

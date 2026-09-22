@@ -24,7 +24,7 @@ import { SchedulingPolicy, TenantSubstitutionPolicy } from './postCheckoutModels
 
 const sharedTenants = new Map<string, any>();
 const sharedStories = new Map<string, Story[]>();
-const sharedFeePolicies = new Map<string, TenantFeePolicy>();
+export const sharedFeePolicies = new Map<string, TenantFeePolicy>();
 export const sharedProductRules = new Map<string, VisualRule[]>();
 const sharedCountryRules = new Map<string, Map<string, any[]>>();
 const sharedAuditLogs = new Map<string, AuditLogEntry[]>();

@@ -1,6 +1,7 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { getDeliverectAdapterAsync, getDispatchAdapter, PaymentService, DispatchOrchestrationService } from '../deliverect';
+import type { DeliverectAdapter } from '../deliverect/DeliverectAdapter';
 import { setStoreOverride } from '../deliverect/DeliverectApiClient';
 import { CommerceDiscoveryService } from '../deliverect/CommerceDiscoveryService';
 import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
@@ -24,7 +25,8 @@ import { CheckoutResult } from '../../src/domain/models';
 import { TenantConfig } from '../../src/commerce/models';
 import { MOCK_TENANTS } from '../../src/commerce/mockData';
 import { GOOGLE_FONTS_CATALOG } from '../../src/commerce/googleFonts';
-import { BFFError } from '../errors';
+import { BFFError, CommerceError } from '../errors';
+import { assertProductAddAllowed, assertBasketCheckoutAllowed } from '../ruleEnforcementService';
 import { SecretManager } from '../secrets';
 import { CmsService } from '../cmsService';
 import { isMarketingContentVisible } from '../marketingSchedule';
@@ -870,11 +872,54 @@ v1Router.get('/baskets/:basketId', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Server-side Product Rules gate for basket-add/update calls. Fetches the
+ * target store's catalogue once and checks each requested (plu, quantity)
+ * against the tenant's rules before the mutation is allowed through — this
+ * is what closes the "bypass the storefront UI entirely" gap, since the
+ * client-side RuleEngine (AppLayout.tsx) obviously can't stop a direct API
+ * call. Resolves silently (no-op) if the basket/catalogue can't be loaded,
+ * so a transient lookup failure here never blocks a legitimate request that
+ * the underlying adapter call would itself handle/reject on its own terms.
+ */
+async function enforceRulesForBasketAdd(
+  tenantId: string,
+  adapter: DeliverectAdapter,
+  basketId: string,
+  itemsToCheck: Array<{ plu: string; quantity: number }>
+): Promise<void> {
+  let basket;
+  try {
+    basket = await adapter.getBasket(basketId);
+  } catch {
+    return;
+  }
+  if (!basket) return;
+
+  let catalog;
+  try {
+    catalog = await adapter.getStoreCatalog(basket.storeId, basket.fulfillmentType);
+  } catch {
+    return;
+  }
+
+  const productsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+  const context = { storeId: basket.storeId, fulfillmentType: basket.fulfillmentType };
+
+  for (const { plu, quantity } of itemsToCheck) {
+    if (!quantity || quantity <= 0) continue; // a removal never needs a rule check
+    const product = productsByPlu.get(plu);
+    if (!product) continue; // let the adapter's own "product not found" handling apply
+    await assertProductAddAllowed(tenantId, product, context, basket.items, quantity);
+  }
+}
+
 v1Router.patch('/baskets/:basketId', validateBody(UpdateBasketItemSchema), async (req: Request, res: Response) => {
   try {
     const { productId, quantity } = req.body;
     const tenantId = resolveTenant(req);
     const adapter = await getDeliverectAdapterAsync(tenantId);
+    await enforceRulesForBasketAdd(tenantId, adapter, req.params.basketId, [{ plu: productId, quantity }]);
     const basket = await adapter.updateBasketItem(req.params.basketId, productId, quantity);
     res.json(basket);
   } catch (err: any) {
@@ -887,6 +932,12 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
     const { items } = req.body;
     const tenantId = resolveTenant(req);
     const adapter = await getDeliverectAdapterAsync(tenantId);
+    await enforceRulesForBasketAdd(
+      tenantId,
+      adapter,
+      req.params.basketId,
+      (items || []).map((i: any) => ({ plu: i.plu, quantity: i.quantity }))
+    );
     const basket = await adapter.updateBasketItems(req.params.basketId, items);
     res.json(basket);
   } catch (err: any) {
@@ -1056,6 +1107,27 @@ v1Router.post('/baskets/:basketId/validate', validateBody(ValidateBasketSchema),
     const tenantId = resolveTenant(req);
     const adapter = await getDeliverectAdapterAsync(tenantId);
     const validation = await adapter.validateBasket(req.params.basketId);
+
+    // Merge Product Rules issues (hidden/prevented items, over-limit
+    // quantities, cross-SKU group caps) into the same validation report,
+    // rather than hard-failing the HTTP call — this endpoint's job is to
+    // surface problems before checkout, not to reject the request itself.
+    try {
+      const basket = await adapter.getBasket(req.params.basketId);
+      if (basket) {
+        const catalog = await adapter.getStoreCatalog(basket.storeId, basket.fulfillmentType);
+        const productsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+        await assertBasketCheckoutAllowed(tenantId, basket, productsByPlu, {
+          storeId: basket.storeId,
+          fulfillmentType: basket.fulfillmentType,
+        });
+      }
+    } catch (ruleErr: any) {
+      const ruleIssues: string[] = ruleErr?.details?.blockingIssues || [ruleErr?.message || 'Basket violates a store policy.'];
+      validation.valid = false;
+      validation.issues = [...(validation.issues || []), ...ruleIssues];
+    }
+
     res.json(validation);
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to validate basket');
@@ -1560,6 +1632,28 @@ v1Router.post(
         `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
       );
       return res.status(200).json(existingBasketCheckout);
+    }
+
+    // Final server-side Product Rules gate before an order is actually
+    // submitted — this is the true "can't skip the UI" backstop; the
+    // basket-add-time check can't catch a rule that started matching after
+    // the item was added (e.g. a store went out of stock, or an admin
+    // enabled a new restriction mid-session).
+    {
+      const checkoutAdapter = await getDeliverectAdapterAsync(resolvedTenant);
+      const checkoutBasket = await checkoutAdapter.getBasket(basketId).catch(() => null);
+      if (checkoutBasket) {
+        const checkoutCatalog = await checkoutAdapter
+          .getStoreCatalog(checkoutBasket.storeId, checkoutBasket.fulfillmentType)
+          .catch(() => null);
+        if (checkoutCatalog) {
+          const productsByPlu = new Map((checkoutCatalog.products || []).map((p) => [p.plu, p]));
+          await assertBasketCheckoutAllowed(resolvedTenant, checkoutBasket, productsByPlu, {
+            storeId: checkoutBasket.storeId,
+            fulfillmentType: checkoutBasket.fulfillmentType,
+          });
+        }
+      }
     }
 
     // Quest-first online payment: pre-authorise through DPay before the Retail
