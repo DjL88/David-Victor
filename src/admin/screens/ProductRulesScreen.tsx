@@ -28,6 +28,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [tenantStores, setTenantStores] = useState<Store[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     loadRules();
@@ -37,20 +38,43 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   // select real values instead of guessing/typing them from memory.
   useEffect(() => {
     const commerceClient = getCommerceClient(tenantId) as any;
-    commerceClient
-      .getProducts?.()
-      .then((products: Product[]) => setCatalogProducts(products || []))
+    Promise.all([
+      commerceClient.getProducts?.() || Promise.resolve([]),
+      commerceClient.getCatalog?.() || Promise.resolve(null),
+    ])
+      .then(([products, catalog]: [Product[], any]) => {
+        setCatalogProducts(products || []);
+        const flatten = (categories: any[], depth = 0): Array<{ id: string; name: string }> =>
+          (categories || []).flatMap((category) => [
+            { id: String(category.id), name: `${'— '.repeat(depth)}${category.name || category.id}` },
+            ...flatten(category.subcategories || [], depth + 1),
+          ]);
+        setCatalogCategories(flatten(catalog?.categories || []));
+      })
       .catch((err: unknown) => console.warn('[ProductRulesScreen] Could not load catalog for condition pickers:', err));
   }, [tenantId]);
 
   const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
+    const labels = new Map<string, string>();
     catalogProducts.forEach((p) => {
-      (p.productTags || []).forEach((t) => tagSet.add(String(t)));
-      (p.tags || []).forEach((t) => tagSet.add(String(t)));
+      (p.productTags || []).forEach((tag, index) => {
+        const value = String(tag);
+        const label = p.productTagLabels?.[index] || (!/^\d+$/.test(value) ? value : undefined);
+        if (label) labels.set(value, label);
+      });
+      (p.tags || []).forEach((tag) => {
+        const value = String(tag);
+        if (!/^\d+$/.test(value)) labels.set(value, value);
+      });
     });
-    return Array.from(tagSet).sort();
+    return Array.from(labels, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [catalogProducts]);
+
+  const tagLabel = (value: unknown) =>
+    availableTags.find((tag) => tag.value === String(value))?.label || String(value);
+  const categoryLabel = (value: unknown) =>
+    catalogCategories.find((category) => category.id === String(value))?.name || String(value);
 
   // Live store geography for the "Applies in" picker, so staff choose real
   // Country/Nation/Region/County values derived from actual store addresses
@@ -715,7 +739,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                       key={i}
                       className="px-2 py-0.5 rounded-lg bg-gray-100 text-gray-700 font-mono text-[11px]"
                     >
-                      {cond.field} {cond.operator} "{String(cond.value)}"
+                      {cond.field} {cond.operator} "{cond.field === 'productTag' ? tagLabel(cond.value) : cond.field === 'category' ? categoryLabel(cond.value) : String(cond.value)}"
                     </span>
                   ))}
                 </div>
@@ -835,14 +859,23 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
                   <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
                   <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
-                  <input
-                    type="text"
-                    value={String(condition.value||'')}
-                    onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}}
-                    className="px-2 py-2 border border-gray-200 rounded-lg bg-white"
-                    placeholder={condition.field==='isAlcohol'?'true':condition.field==='plu'?'Search PLU or product name…':condition.field==='productTag'?'Select a tag…':'Value'}
-                    list={condition.field==='plu'?'rule-plu-options':condition.field==='productTag'?'rule-tag-options':undefined}
-                  />
+                  {condition.field === 'productTag' ? (
+                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
+                      <option value="">Select product tag…</option>
+                      {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
+                    </select>
+                  ) : condition.field === 'category' ? (
+                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
+                      <option value="">Select category…</option>
+                      {catalogCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </select>
+                  ) : condition.field === 'isAlcohol' ? (
+                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
+                      <option value="">Choose…</option><option value="true">Yes — alcoholic</option><option value="false">No — non-alcoholic</option>
+                    </select>
+                  ) : (
+                    <input type="text" value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white" placeholder={condition.field==='plu'?'Search PLU or product name…':'Value'} list={condition.field==='plu'?'rule-plu-options':undefined}/>
+                  )}
                   <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
                 </div>)}
                 {/* Live catalog data backing the PLU/tag condition pickers above, instead of staff guessing exact values */}
@@ -850,7 +883,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   {catalogProducts.map((p) => <option key={p.plu} value={p.plu}>{p.name}</option>)}
                 </datalist>
                 <datalist id="rule-tag-options">
-                  {availableTags.map((tag) => <option key={tag} value={tag} />)}
+                  {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
                 </datalist>
               </div>
 
