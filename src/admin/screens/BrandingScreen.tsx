@@ -7,7 +7,7 @@ import {
   DEFAULT_FALLBACK_CHAINS,
   FontProcessingState,
 } from '../../commerce/fontModels';
-import { applyTenantFonts, simulateBackendFontPipeline } from '../../tenant/fontManager';
+import { applyTenantFonts } from '../../tenant/fontManager';
 import { GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../../commerce/googleFonts';
 import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
@@ -71,38 +71,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [googleFonts, setGoogleFonts] = useState<GoogleFontFamily[]>(GOOGLE_FONTS_CATALOG);
   const [bodyFallback, setBodyFallback] = useState<string>(DEFAULT_FALLBACK_CHAINS.modernSans);
 
-  const [fontsList, setFontsList] = useState<CustomFont[]>([
-    {
-      id: 'font-pjs-bold',
-      tenantId: 'brand-alpha',
-      family: 'Plus Jakarta Sans',
-      weight: '700',
-      style: 'normal',
-      format: 'woff2',
-      fileName: 'PlusJakartaSans-Bold.woff2',
-      fileSize: 42100,
-      url: 'https://cdn.platform.example/fonts/brand-alpha/PlusJakartaSans-Bold.woff2',
-      state: 'READY',
-      licenseConfirmed: true,
-      createdAt: '2026-02-10T10:00:00Z',
-      updatedAt: '2026-02-10T10:05:00Z',
-    },
-    {
-      id: 'font-pjs-reg',
-      tenantId: 'brand-alpha',
-      family: 'Plus Jakarta Sans',
-      weight: '400',
-      style: 'normal',
-      format: 'woff2',
-      fileName: 'PlusJakartaSans-Regular.woff2',
-      fileSize: 39800,
-      url: 'https://cdn.platform.example/fonts/brand-alpha/PlusJakartaSans-Regular.woff2',
-      state: 'READY',
-      licenseConfirmed: true,
-      createdAt: '2026-02-10T10:00:00Z',
-      updatedAt: '2026-02-10T10:05:00Z',
-    },
-  ]);
+  const [fontsList, setFontsList] = useState<CustomFont[]>([]);
 
   // Upload Form states
   const [uploadFamily, setUploadFamily] = useState('');
@@ -277,8 +246,8 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
   const handleUploadFont = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadFamily.trim() || (!uploadFileName.trim() && !uploadFile)) {
-      setUploadError('Please specify font family and select a font file.');
+    if (!uploadFamily.trim() || !uploadFile) {
+      setUploadError('Please specify the font family and choose a real font file to upload.');
       return;
     }
     if (!licenseConfirmed) {
@@ -290,92 +259,42 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
     setIsUploading(true);
 
     try {
-      let fontUrl: string | undefined;
-      let fontId: string | undefined;
-      let fileSize = uploadFile ? uploadFile.size : 45000;
+      setUploadStateStatus('VALIDATING');
+      const uploadedAsset = await defaultAdminClient.uploadAssetFile(uploadFile, 'FONT', tenantId);
+      setUploadStateStatus('READY');
 
-      // Real Cloud Storage asset upload if a real file is supplied
-      if (uploadFile) {
-        setUploadStateStatus('VALIDATING');
-        const uploadedAsset = await defaultAdminClient.uploadAssetFile(uploadFile, 'FONT', tenantId);
-        fontUrl = uploadedAsset.publicUrl;
-        fontId = uploadedAsset.id;
-        fileSize = uploadedAsset.byteSize || uploadFile.size;
-      }
+      const newFont: CustomFont = {
+        id: uploadedAsset.id,
+        tenantId,
+        family: uploadFamily.trim(),
+        format: uploadFormat,
+        weight: uploadWeight,
+        style: uploadStyle,
+        fileName: uploadFile.name,
+        fileSize: uploadedAsset.byteSize || uploadFile.size,
+        url: uploadedAsset.publicUrl,
+        state: 'READY',
+        licenseConfirmed,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-      if (fontUrl && fontId) {
-        setUploadStateStatus('READY');
-        const newFont: CustomFont = {
-          id: fontId,
-          tenantId,
-          family: uploadFamily.trim(),
-          format: uploadFormat,
-          weight: uploadWeight,
-          style: uploadStyle,
-          fileName: uploadFile?.name || uploadFileName.trim(),
-          fileSize,
-          url: fontUrl,
-          state: 'READY',
-          licenseConfirmed,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        setFontsList((prev) => {
-          const updated = [...prev, newFont];
-          applyTenantFonts({
-            headingFontFamily: newFont.family,
-            headingFallbackChain: headingFallback,
-            bodyFontFamily: bodyFamily,
-            bodyFallbackChain: bodyFallback,
-            customFonts: updated,
-          });
-          return updated;
+      setFontsList((prev) => {
+        const updated = [...prev, newFont];
+        applyTenantFonts({
+          headingFontFamily: newFont.family,
+          headingFallbackChain: headingFallback,
+          bodyFontFamily: bodyFamily,
+          bodyFallbackChain: bodyFallback,
+          customFonts: updated,
         });
-        setHeadingFamily(newFont.family);
-        setUploadFamily('');
-        setUploadFileName('');
-        setUploadFile(null);
-        setLicenseConfirmed(false);
-      } else {
-        // Fallback pipeline for simulated tests
-        const newFont = await simulateBackendFontPipeline(
-          {
-            tenantId,
-            family: uploadFamily.trim(),
-            format: uploadFormat,
-            weight: uploadWeight,
-            style: uploadStyle,
-            fileName: uploadFileName.trim() || (uploadFile ? uploadFile.name : 'font.woff2'),
-            fileSize,
-            licenseConfirmed,
-          },
-          (state) => {
-            setUploadStateStatus(state);
-          }
-        );
-
-        if (newFont.state === 'READY') {
-          setFontsList((prev) => {
-            const updated = [...prev, newFont];
-            applyTenantFonts({
-              headingFontFamily: newFont.family,
-              headingFallbackChain: headingFallback,
-              bodyFontFamily: bodyFamily,
-              bodyFallbackChain: bodyFallback,
-              customFonts: updated,
-            });
-            return updated;
-          });
-          setHeadingFamily(newFont.family);
-          setUploadFamily('');
-          setUploadFileName('');
-          setUploadFile(null);
-          setLicenseConfirmed(false);
-        } else if (newFont.state === 'FAILED') {
-          setUploadError(newFont.validationErrors?.join(' ') || 'Font validation failed.');
-        }
-      }
+        return updated;
+      });
+      setHeadingFamily(newFont.family);
+      setUploadFamily('');
+      setUploadFileName('');
+      setUploadFile(null);
+      setLicenseConfirmed(false);
     } catch (err: any) {
       setUploadError(err?.message || 'Font processing encountered an error.');
     } finally {
@@ -400,10 +319,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Palette className="w-5 h-5 text-indigo-600" />
-            <span>Brand Identity & Dynamic Typography</span>
+            <span>Branding</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Configure white-label colours, layout radii, and validated custom fonts for {config.brandName}.
+            Manage logos, colours, typography and storefront presentation for {config.brandName}.
           </p>
         </div>
 
@@ -840,6 +759,11 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             <div>
               <h4 className="text-xs font-bold text-gray-800 mb-2">Installed fonts</h4>
               <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
+                {fontsList.length === 0 && (
+                  <div className="p-4 text-xs text-gray-500 bg-gray-50">
+                    No custom fonts uploaded for this brand yet. Google/system fonts remain available above.
+                  </div>
+                )}
                 {fontsList.map((f) => (
                   <div key={f.id} className="p-3 flex items-center justify-between text-xs bg-white">
                     <div className="flex items-center gap-3">
