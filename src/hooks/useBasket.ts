@@ -349,7 +349,11 @@ export function useBasket(
       if (!basket) return;
       try {
         const updated = await client.removeBasketItem(basket.id, plu);
-        rememberBasket(updated);
+        // Deliverect Commerce cannot PATCH an empty items array. The BFF treats
+        // removal of the final line as basket exit; drop the local basket id so
+        // the next add creates a fresh upstream basket instead of resurrecting
+        // the old final line.
+        rememberBasket(updated.items.length === 0 ? null : updated);
 
         defaultAnalyticsClient.track({
           type: 'REMOVE_FROM_BASKET',
