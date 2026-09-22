@@ -595,3 +595,19 @@ export const AssetFinalizeSchema = z.object({
   tenantId: z.string().optional(),
   assetId: z.string().min(1, 'assetId is required'),
 });
+
+
+export const AdminAssistantPlanSchema = z.object({
+  actionName: z.string().min(1).max(100),
+  input: z.record(z.string(), z.unknown()).optional().default({}),
+  context: z.object({
+    section: z.string().min(1).max(100).optional(),
+    resourceType: z.string().min(1).max(100).optional(),
+    resourceId: z.string().min(1).max(500).optional(),
+  }).optional(),
+});
+
+export const AdminAssistantExecuteSchema = z.object({
+  planId: z.string().min(1).max(200),
+  confirmationToken: z.string().min(1).max(500).optional(),
+});
