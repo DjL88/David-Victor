@@ -1230,7 +1230,7 @@ export class HttpAdminClient implements AdminClient {
     tenantId: string,
     actionName: string,
     input: Record<string, unknown> = {},
-    context?: { section?: string; resourceType?: string; resourceId?: string }
+    context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string }
   ): Promise<any> {
     this.currentTenantId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();
