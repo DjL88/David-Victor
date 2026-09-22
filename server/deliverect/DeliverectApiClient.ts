@@ -2640,16 +2640,34 @@ export class DeliverectApiClient implements DeliverectAdapter {
             valid = false;
             break;
           }
+          const isOptionalUpsell = section.isUpsell === true || section.min === 0;
+          const priorPlu = String(priorComponent.componentPlu || '').trim();
           const product = destinationProducts.find(
             (candidate) =>
+              candidate.plu === priorPlu ||
               candidate.plu === String(modifier.standalonePlu || '').trim() ||
               candidate.plu === String(modifier.plu || '').trim()
           );
           const shelfPrice = product ? getPriceMinor(product) : undefined;
-          if (!product || product.active === false || product.stockStatus === 'OUT_OF_STOCK' || shelfPrice === undefined) {
+          if (
+            product?.active === false ||
+            product?.stockStatus === 'OUT_OF_STOCK' ||
+            (!product && !isOptionalUpsell) ||
+            (product && shelfPrice === undefined)
+          ) {
             valid = false;
             break;
           }
+          // Optional modifier-only upsells survive a store switch without being
+          // forced through the normal-product catalogue. Their configured uplift
+          // remains the deal price; if a shelf product exists, allocation clamps
+          // against that destination-store shelf price.
+          const resolvedPlu = product?.plu || String(modifier.plu || priorPlu).trim();
+          const resolvedStandalonePrice =
+            shelfPrice ??
+            (Number.isInteger(priorComponent.standaloneUnitPriceMinor)
+              ? priorComponent.standaloneUnitPriceMinor
+              : Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0)));
           selectedModifiers.push({
             modifierId: modifier.id,
             plu: modifier.plu,
@@ -2657,13 +2675,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
             quantity: Math.max(1, Math.round(priorComponent.quantity / Math.max(1, prior.bundleQuantity))),
             price: modifier.priceMinor ?? modifier.price ?? 0,
             priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
-            standalonePlu: product.plu,
-            standalonePriceMinor: shelfPrice,
+            standalonePlu: product?.plu || (isOptionalUpsell ? undefined : resolvedPlu),
+            standalonePriceMinor: resolvedStandalonePrice,
             sectionId: section.id,
             sectionName: section.name,
           });
-          modifier.standalonePlu = product.plu;
-          modifier.standalonePriceMinor = shelfPrice;
+          modifier.standalonePlu = product?.plu || (isOptionalUpsell ? undefined : resolvedPlu);
+          modifier.standalonePriceMinor = resolvedStandalonePrice;
         }
         if (!valid) continue;
         try {
