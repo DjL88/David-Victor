@@ -453,7 +453,8 @@ export function useBasket(
     async (
       bundle: BundleProduct,
       selectedModifiers: SelectedBundleModifier[],
-      quantity: number = 1
+      quantity: number = 1,
+      options?: { claimExistingBasketItems?: boolean }
     ) => {
       try {
         setSnoozeWarning(null);
@@ -513,7 +514,8 @@ export function useBasket(
             currentBasket.id,
             bundle,
             selectedModifiers,
-            quantity
+            quantity,
+            options
           );
           rememberBasket(updated);
 
