@@ -1233,6 +1233,26 @@ export class HttpAdminClient implements AdminClient {
     return this.safeJson(res, 'Failed to approve assistant change set');
   }
 
+  async applyAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/apply`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to apply assistant change set');
+  }
+
+  async rollbackAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/rollback`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to roll back assistant change set');
+  }
+
   async runAssistantAction(
     tenantId: string,
     actionName: string,
