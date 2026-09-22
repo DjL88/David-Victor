@@ -484,7 +484,7 @@ export function findMissedBundleOffers(
   // the server allocation ledger's exclusivity and prevents e.g. a nut already
   // used in a meal deal from triggering a second 2-for-X suggestion.
   for (const bundle of bundles) {
-    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
+    if (bundle.stockStatus === 'OUT_OF_STOCK' || requiredSections(bundle).length === 0) continue;
     while (consumeBundleIfComplete(bundle)) {
       // A basket may legitimately contain more than one complete instance.
     }
