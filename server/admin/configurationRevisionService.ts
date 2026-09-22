@@ -410,7 +410,10 @@ export class ConfigurationRevisionService {
         const previousRef = db.collection('tenants').doc(tenantId).collection('configurationRevisions').doc(currentId);
         const previousSnap = await transaction.get(previousRef);
         if (previousSnap.exists) {
-          transaction.set(previousRef, { ...previousSnap.data(), status: 'SUPERSEDED' });
+          transaction.set(previousRef, {
+            ...(previousSnap.data() as ConfigurationRevision),
+            status: 'SUPERSEDED',
+          });
         }
       }
 
