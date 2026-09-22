@@ -45,6 +45,7 @@ import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
 import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
+import { AdminChangeSetService } from '../admin/adminChangeSetService';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -97,6 +98,7 @@ import {
   AssetFinalizeSchema,
   AdminAssistantPlanSchema,
   AdminAssistantExecuteSchema,
+  AdminAssistantChangeSetSchema,
 } from './schemas';
 
 export const v1Router = Router();
@@ -2838,7 +2840,7 @@ v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const actions = listAssistantActionsForRole(authAdmin.role);
   res.json({
-    mode: 'READ_ONLY_FOUNDATION',
+    mode: 'READ_AND_PROPOSE_FOUNDATION',
     tenantId: authAdmin.tenantId,
     actions,
   });
@@ -2922,6 +2924,141 @@ v1Router.post('/admin/assistant/run', requireAdminAuth(), requireAdminCapability
     });
   }
 });
+
+// 9.0.0c Persist previewable assistant write proposals as durable change sets.
+// This endpoint NEVER applies the proposed mutation. Tenant and actor identity come from server auth.
+v1Router.post(
+  '/admin/assistant/change-sets',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.use'),
+  validateBody(AdminAssistantChangeSetSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const changeSet = await AdminChangeSetService.createProposedChangeSet({
+        tenantId,
+        actorId: authAdmin.uid,
+        actorRole: authAdmin.role,
+        prompt: req.body.prompt,
+        actions: req.body.actions,
+        affectedResources: req.body.affectedResources,
+        beforeSnapshot: req.body.beforeSnapshot,
+        afterSnapshot: req.body.afterSnapshot,
+        diff: req.body.diff,
+        warnings: req.body.warnings,
+        idempotencyKey: req.body.idempotencyKey,
+        conversationId: req.body.conversationId,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Integration',
+        action: 'Assistant change set proposed',
+        details: JSON.stringify({
+          changeSetId: changeSet.id,
+          actions: changeSet.actions.map((action) => action.actionName),
+          affectedResources: changeSet.affectedResources,
+        }),
+        actorType: 'assistant',
+        changeSetId: changeSet.id,
+        sourcePrompt: changeSet.prompt,
+        actionRisk: changeSet.actions.some((action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED')
+          ? 'HIGH_WRITE'
+          : 'LOW_WRITE',
+        beforeState: changeSet.beforeSnapshot,
+        afterState: changeSet.afterSnapshot,
+        reversible: changeSet.reversible,
+      });
+
+      res.status(201).json({
+        changeSet,
+        mode: 'PROPOSAL_ONLY',
+        executionEnabled: false,
+        safety: {
+          tenantBoundByServer: true,
+          approvalRequired: true,
+          credentialsExposed: false,
+          arbitraryNetworkAccess: false,
+        },
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to create assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_CREATE_FAILED',
+      });
+    }
+  }
+);
+
+v1Router.get('/admin/assistant/change-sets/:changeSetId', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    if (!hasServerAdminCapability(authAdmin.role, 'assistant.use')) {
+      return res.status(403).json({ error: 'Assistant access is not permitted.', code: 'ADMIN_CAPABILITY_REQUIRED' });
+    }
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    const changeSet = await AdminChangeSetService.getChangeSet(tenantId, req.params.changeSetId);
+    res.json({ changeSet, executionEnabled: false });
+  } catch (err: any) {
+    res.status(err?.statusCode || 400).json({
+      error: err?.message || 'Unable to load assistant change set.',
+      code: err?.code || 'ADMIN_CHANGESET_READ_FAILED',
+    });
+  }
+});
+
+// Approval is a recorded human decision only. Applying approved changes remains fail-closed.
+v1Router.post(
+  '/admin/assistant/change-sets/:changeSetId/approve',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.use'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const changeSet = await AdminChangeSetService.approveChangeSet({
+        tenantId,
+        changeSetId: req.params.changeSetId,
+        actorId: authAdmin.uid,
+        actorRole: authAdmin.role,
+      });
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name || authAdmin.email || 'Admin',
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Integration',
+        action: 'Assistant change set approved',
+        details: JSON.stringify({
+          changeSetId: changeSet.id,
+          actions: changeSet.actions.map((action) => action.actionName),
+        }),
+        actorType: 'human',
+        changeSetId: changeSet.id,
+        actionRisk: changeSet.actions.some((action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED')
+          ? 'HIGH_WRITE'
+          : 'LOW_WRITE',
+        reversible: changeSet.reversible,
+      });
+
+      res.json({
+        changeSet,
+        executionEnabled: false,
+        message: 'Approved and recorded. Execution remains disabled until a versioned resource adapter is connected.',
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 400).json({
+        error: err?.message || 'Unable to approve assistant change set.',
+        code: err?.code || 'ADMIN_CHANGESET_APPROVAL_FAILED',
+      });
+    }
+  }
+);
 
 // 9.0.1 Admin Memberships Management (Section 7, 27)
 // List memberships: platformSuperAdmin can list all or filter by tenantId; tenantAdmin can list their tenant's memberships.
