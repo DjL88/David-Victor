@@ -3188,20 +3188,27 @@ v1Router.post(
         autonomousExecutionEnabled: false,
       });
     } catch (err: any) {
-      if (changeSet?.status === 'APPLYING') {
+      const definitelyNotApplied = new Set([
+        'ADMIN_REVISION_RESOURCE_MISMATCH',
+        'ADMIN_REVISION_NOT_VALIDATED',
+        'ADMIN_REVISION_LIVE_STATE_CONFLICT',
+        'ADMIN_CHANGESET_APPLY_NOT_CONNECTED',
+      ]);
+      if (changeSet?.status === 'APPLYING' && definitelyNotApplied.has(err?.code)) {
         try {
           await AdminChangeSetService.transitionChangeSet({
             tenantId,
             changeSetId: changeSet.id,
             actorId: authAdmin.uid,
             status: 'FAILED',
-            warning: err?.message || 'Branding apply failed.',
+            warning: err?.message || 'Branding apply failed before any write.',
           });
         } catch {}
       }
       res.status(err?.statusCode || 400).json({
         error: err?.message || 'Unable to apply assistant change set.',
         code: err?.code || 'ADMIN_CHANGESET_APPLY_FAILED',
+        retrySafe: changeSet?.status === 'APPLYING' && !definitelyNotApplied.has(err?.code),
       });
     }
   }
