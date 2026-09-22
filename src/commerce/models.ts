@@ -857,6 +857,8 @@ export interface Basket {
   items: BasketItem[];
   subtotal: Money; // Authoritative minor-unit money
   discounts: BasketDiscount[];
+  /** Bwydi-owned bundle units already allocated to a deal; never reusable by missed-deal qualification. */
+  bundleAllocatedUnits?: Array<{ plu: string; quantity: number }>;
   charges: BasketCharge[];
   depositTotal?: Money;
   tax?: Money;
