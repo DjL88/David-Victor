@@ -614,6 +614,18 @@ export class FirestoreService {
       if (inMemoryDomains[equivalentHost]) return inMemoryDomains[equivalentHost].tenantId;
     }
 
+    // Explicit preview routing is configuration, not a hostname fallback. Resolve it before durable lookup.
+    if (process.env.PREVIEW_TENANT_ID && (
+      cleanHost.includes('ai.studio') ||
+      cleanHost.includes('aistudio') ||
+      cleanHost.includes('run.app') ||
+      cleanHost.includes('localhost') ||
+      cleanHost.includes('127.0.0.1') ||
+      cleanHost.includes('googleusercontent.com')
+    )) {
+      return process.env.PREVIEW_TENANT_ID;
+    }
+
     // Firestore is authoritative for live domain routing. Storage outage is distinct from an unknown hostname.
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
@@ -654,18 +666,6 @@ export class FirestoreService {
       }
       const candidateSlug = cleanHost.split('.')[0]?.toLowerCase();
       if (candidateSlug && inMemoryTenants[candidateSlug]) return candidateSlug;
-    }
-
-    // 6. Explicit authorized preview environment variable (if authorized by server configuration)
-    if (process.env.PREVIEW_TENANT_ID && (
-      cleanHost.includes('ai.studio') ||
-      cleanHost.includes('aistudio') ||
-      cleanHost.includes('run.app') ||
-      cleanHost.includes('localhost') ||
-      cleanHost.includes('127.0.0.1') ||
-      cleanHost.includes('googleusercontent.com')
-    )) {
-      return process.env.PREVIEW_TENANT_ID;
     }
 
     return null;
