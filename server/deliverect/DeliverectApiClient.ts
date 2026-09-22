@@ -2316,7 +2316,17 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     // The bundle parent is deliberately NOT added to Deliverect. Every chosen
     // component becomes a normal product line so Quest can amend/remove/substitute
-    // it independently.
+    // it independently. For one-tap qualification, existing basket units are
+    // claimed into the allocation and only the missing deficit is added.
+    const claimPool = new Map<string, number>();
+    if (request.claimExistingBasketItems) {
+      current.items.forEach((item) => claimPool.set(item.plu, (claimPool.get(item.plu) || 0) + item.quantity));
+      const priorLedger = await FirestorePlatformService.getBasketBundleAllocations(this.tenantId, basketId);
+      priorLedger.forEach((entry) => entry.components.forEach((component) => {
+        claimPool.set(component.componentPlu, Math.max(0, (claimPool.get(component.componentPlu) || 0) - component.quantity));
+      }));
+    }
+
     for (const component of allocation.components) {
       const product = normalProducts.find(
         (candidate) => candidate.plu === component.componentPlu
@@ -2344,18 +2354,27 @@ export class DeliverectApiClient implements DeliverectAdapter {
         component.quantity
       );
 
-      const existing = desired.find(
-        (candidate) => candidate.plu === component.componentPlu
-      );
-      if (existing) {
-        existing.quantity += component.quantity;
-      } else {
-        desired.push({
-          menuId,
-          plu: component.componentPlu,
-          quantity: component.quantity,
-          itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
-        });
+      const claimable = request.claimExistingBasketItems
+        ? Math.min(component.quantity, claimPool.get(component.componentPlu) || 0)
+        : 0;
+      if (claimable > 0) {
+        claimPool.set(component.componentPlu, (claimPool.get(component.componentPlu) || 0) - claimable);
+      }
+      const quantityToAdd = component.quantity - claimable;
+      if (quantityToAdd > 0) {
+        const existing = desired.find(
+          (candidate) => candidate.plu === component.componentPlu
+        );
+        if (existing) {
+          existing.quantity += quantityToAdd;
+        } else {
+          desired.push({
+            menuId,
+            plu: component.componentPlu,
+            quantity: quantityToAdd,
+            itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
+          });
+        }
       }
     }
 
