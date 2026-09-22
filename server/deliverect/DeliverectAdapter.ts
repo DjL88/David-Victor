@@ -47,6 +47,7 @@ export interface DeliverectAdapter {
   ): Promise<{
     products: Product[];
     summaries?: Record<string, ProductAvailabilitySummary>;
+    bundleSummaries?: Record<string, ProductAvailabilitySummary>;
     diagnostics?: CatalogDiagnostics;
   }>;
 

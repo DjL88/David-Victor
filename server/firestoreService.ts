@@ -2523,6 +2523,39 @@ export class FirestoreService {
   }
 
   /**
+   * Lists order projections for a specific customer (their own order history).
+   */
+  static async listOrderProjectionsByCustomer(
+    customerUid: string,
+    tenantId?: string,
+    limit = 50
+  ): Promise<OrderProjection[]> {
+    const memoryOrders = Object.values(inMemoryOrderProjections)
+      .filter((p) => p.customerUid === customerUid && (!tenantId || p.tenantId === tenantId))
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+    const db = getFirestoreDb();
+    if (!db) return memoryOrders.slice(0, limit);
+
+    try {
+      let query: any = db.collection('orderProjections').where('customerUid', '==', customerUid);
+      if (tenantId) {
+        query = query.where('tenantId', '==', tenantId);
+      }
+      query = query.orderBy('createdAt', 'desc').limit(limit);
+      const snap = await query.get();
+      if (!snap.empty) {
+        const results: OrderProjection[] = [];
+        snap.forEach((doc: any) => results.push(doc.data() as OrderProjection));
+        return results;
+      }
+    } catch (err) {
+      console.warn('[Firestore] Could not list order projections for customer from DB:', err);
+    }
+    return memoryOrders.slice(0, limit);
+  }
+
+  /**
    * Updates state on an existing order projection.
    */
   static async updateOrderProjectionState(

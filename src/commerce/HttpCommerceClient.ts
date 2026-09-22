@@ -43,6 +43,7 @@ import {
   DispatchAvailability,
 } from './models';
 import { BundleProduct, SelectedBundleModifier } from './bundleModels';
+import { getCurrentIdToken } from '../firebase';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
@@ -218,11 +219,13 @@ export class HttpCommerceClient implements CommerceClient {
   ): Promise<{
     products: Product[];
     summaries?: Record<string, ProductAvailabilitySummary>;
+    bundleSummaries?: Record<string, ProductAvailabilitySummary>;
     diagnostics?: CatalogDiagnostics;
   }> {
     return this.request<{
       products: Product[];
       summaries?: Record<string, ProductAvailabilitySummary>;
+      bundleSummaries?: Record<string, ProductAvailabilitySummary>;
       diagnostics?: CatalogDiagnostics;
     }>(
       '/search',
@@ -649,8 +652,22 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getUserOrders(): Promise<Order[]> {
-    // Honest customer data: returns empty array if no authenticated customer orders exist
-    return [];
+    // Real order history requires proof of identity: attach the signed-in
+    // customer's Firebase ID token so the BFF can scope results to them via
+    // getCallerUid(). No signed-in user means no orders to show — honest
+    // empty state rather than a fabricated list, and we skip the request
+    // entirely rather than let the server 401.
+    const token = await getCurrentIdToken().catch(() => null);
+    if (!token) {
+      return [];
+    }
+    return this.request<Order[]>('/orders', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+
+  async getOrderHistory(): Promise<Order[]> {
+    return this.getUserOrders();
   }
 
   async advanceOrderStatus(orderId: string): Promise<Order> {

@@ -64,6 +64,7 @@ interface HomeScreenProps {
   onClearDealFilter?: () => void;
   onOpenDealDialog?: (deal: DeliverectDeal) => void;
   bundles?: BundleProduct[];
+  bundleSummaries?: Record<string, ProductAvailabilitySummary>;
   onOpenBundleDialog?: (bundle: BundleProduct) => void;
   onAddItemsToBasket?: (plus: string[], dealTitle?: string) => void;
   activeStores?: Store[];
@@ -100,6 +101,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onClearDealFilter,
   onOpenDealDialog,
   bundles,
+  bundleSummaries,
   onOpenBundleDialog,
   onAddItemsToBasket,
   activeStores = [],
@@ -304,6 +306,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           selectedStore={selectedStore}
           products={products}
           bundles={bundles}
+          bundleSummaries={bundleSummaries}
           onOpenStorePicker={onOpenStorePicker}
           onSelectCategory={onSelectCategory}
           onSelectProductPlu={(plu) => {

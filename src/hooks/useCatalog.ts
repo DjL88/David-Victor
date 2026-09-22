@@ -84,6 +84,7 @@ export function useCatalog(selectedStoreId?: string) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [summaries, setSummaries] = useState<Record<string, ProductAvailabilitySummary>>({});
+  const [bundleSummaries, setBundleSummaries] = useState<Record<string, ProductAvailabilitySummary>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState<boolean>(false);
@@ -137,6 +138,7 @@ export function useCatalog(selectedStoreId?: string) {
       setCatalog(null);
       setProducts([]);
       setSummaries({});
+      setBundleSummaries({});
       setError(null);
       setIsStale(false);
       setSelectedCategoryId(null);
@@ -229,6 +231,7 @@ export function useCatalog(selectedStoreId?: string) {
 
       let nextProducts = res.products;
       let nextSummaries = res.summaries || {};
+      const nextBundleSummaries = res.bundleSummaries || {};
 
       if (isSequentialParent && selectedCategoryId) {
         const filtered = filterProductsToCategoryTree(
@@ -243,6 +246,7 @@ export function useCatalog(selectedStoreId?: string) {
 
       setProducts(nextProducts);
       setSummaries(nextSummaries);
+      setBundleSummaries(nextBundleSummaries);
       setIsStale(false);
 
       if (
@@ -262,6 +266,7 @@ export function useCatalog(selectedStoreId?: string) {
       // In live modes and on error: strictly clear stale products, summaries, and snapshots
       setProducts([]);
       setSummaries({});
+      setBundleSummaries({});
       setIsStale(false);
       snapshotRef.current = null;
     } finally {
@@ -325,6 +330,7 @@ export function useCatalog(selectedStoreId?: string) {
     products,
     renderableProducts,
     summaries,
+    bundleSummaries,
     selectedCategoryId,
     currentCategory,
     currentSubcategories,

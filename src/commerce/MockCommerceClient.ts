@@ -504,6 +504,7 @@ export class MockCommerceClient implements CommerceClient {
   ): Promise<{
     products: Product[];
     summaries?: Record<string, ProductAvailabilitySummary>;
+    bundleSummaries?: Record<string, ProductAvailabilitySummary>;
   }> {
     await this.simulateLatency(150);
 
@@ -559,7 +560,16 @@ export class MockCommerceClient implements CommerceClient {
       summaries[p.plu] = this.computeAvailabilitySummary(p);
     });
 
-    return { products: matches, summaries };
+    // Bundles aren't part of currentProducts/search matching, but the home
+    // carousel needs a price range for them too once no store is selected
+    // (previously nothing was returned here, so the UI always fell back to
+    // "Price unavailable" regardless of query/category).
+    const bundleSummaries: Record<string, ProductAvailabilitySummary> = {};
+    SAMPLE_DELIVERECT_BUNDLES.forEach((b) => {
+      bundleSummaries[b.plu] = this.computeBundleAvailabilitySummary(b);
+    });
+
+    return { products: matches, summaries, bundleSummaries };
   }
 
   async getProduct(
@@ -3907,6 +3917,35 @@ export class MockCommerceClient implements CommerceClient {
       maximumPrice: maxPrice,
       nearestAvailableStoreId: availableStores[0]?.id,
       deliveryAvailable: availableStores.some((s) => s.supportsDelivery && (s.dispatchAvailability ? s.dispatchAvailability.available !== false : true)),
+      collectionAvailable: availableStores.some((s) => s.collectionAvailable || s.supportsPickup),
+    };
+  }
+
+  private computeBundleAvailabilitySummary(bundle: BundleProduct): ProductAvailabilitySummary {
+    const availableStores = MOCK_STORES.filter((s) => {
+      const sections = (bundle.sections || bundle.modifierGroups || []).map((sec) => ({
+        ...sec,
+        modifiers: sec.modifiers.map((m) => {
+          const snooze = checkProductSnooze(s.id, m.plu);
+          const isSnoozed = m.snoozed || (snooze && !snooze.isAvailable && snooze.reason === 'snoozed');
+          const isActive = m.active !== false && (!snooze || snooze.isAvailable || snooze.reason !== 'out_of_stock');
+          return { ...m, snoozed: isSnoozed, active: isActive };
+        }),
+      }));
+      return evaluateBundleStockStatus(sections).stockStatus !== 'OUT_OF_STOCK';
+    });
+
+    const priceMajor = moneyToMajor(bundle.priceMinor ?? bundle.price);
+
+    return {
+      productId: bundle.id,
+      plu: bundle.plu,
+      availableStoreCount: availableStores.length,
+      eligibleStoreCount: MOCK_STORES.length,
+      minimumPrice: priceMajor,
+      maximumPrice: priceMajor,
+      nearestAvailableStoreId: availableStores[0]?.id,
+      deliveryAvailable: availableStores.some((s) => s.supportsDelivery),
       collectionAvailable: availableStores.some((s) => s.collectionAvailable || s.supportsPickup),
     };
   }

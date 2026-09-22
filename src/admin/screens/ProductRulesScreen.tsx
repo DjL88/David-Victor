@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY } from '../../commerce/models';
+import React, { useState, useEffect, useMemo } from 'react';
+import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
 import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock } from 'lucide-react';
 
@@ -25,10 +26,30 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [schedulingSaving, setSchedulingSaving] = useState<boolean>(false);
   const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     loadRules();
   }, [tenantId]);
+
+  // Live catalog data for the condition editor's PLU/tag pickers, so staff
+  // select real values instead of guessing/typing them from memory.
+  useEffect(() => {
+    const commerceClient = getCommerceClient(tenantId) as any;
+    commerceClient
+      .getProducts?.()
+      .then((products: Product[]) => setCatalogProducts(products || []))
+      .catch((err: unknown) => console.warn('[ProductRulesScreen] Could not load catalog for condition pickers:', err));
+  }, [tenantId]);
+
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    catalogProducts.forEach((p) => {
+      (p.productTags || []).forEach((t) => tagSet.add(String(t)));
+      (p.tags || []).forEach((t) => tagSet.add(String(t)));
+    });
+    return Array.from(tagSet).sort();
+  }, [catalogProducts]);
 
   const loadRules = async () => {
     setLoading(true);
@@ -780,9 +801,23 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
                   <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
                   <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
-                  <input type="text" value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white" placeholder={condition.field==='isAlcohol'?'true':'Value'} />
+                  <input
+                    type="text"
+                    value={String(condition.value||'')}
+                    onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}}
+                    className="px-2 py-2 border border-gray-200 rounded-lg bg-white"
+                    placeholder={condition.field==='isAlcohol'?'true':condition.field==='plu'?'Search PLU or product name…':condition.field==='productTag'?'Select a tag…':'Value'}
+                    list={condition.field==='plu'?'rule-plu-options':condition.field==='productTag'?'rule-tag-options':undefined}
+                  />
                   <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
                 </div>)}
+                {/* Live catalog data backing the PLU/tag condition pickers above, instead of staff guessing exact values */}
+                <datalist id="rule-plu-options">
+                  {catalogProducts.map((p) => <option key={p.plu} value={p.plu}>{p.name}</option>)}
+                </datalist>
+                <datalist id="rule-tag-options">
+                  {availableTags.map((tag) => <option key={tag} value={tag} />)}
+                </datalist>
               </div>
 
               <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">

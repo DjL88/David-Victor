@@ -18,8 +18,10 @@ import {
   FulfillmentSchedulingType,
   CatalogDiagnostics,
 } from '../../src/commerce/models';
+import { AddBundleToBasketRequest, SelectedBundleModifier } from '../../src/commerce/bundleModels';
 import { CheckoutResult } from '../../src/domain/models';
 import { getServerRuntimeMode } from '../runtimeMode';
+import { CommerceError } from '../errors';
 
 export class MockDeliverectAdapter implements DeliverectAdapter {
   readonly adapterName = 'MockDeliverectAdapter (Deliverect Commerce Simulator)';
@@ -100,6 +102,7 @@ export class MockDeliverectAdapter implements DeliverectAdapter {
   ): Promise<{
     products: Product[];
     summaries?: Record<string, ProductAvailabilitySummary>;
+    bundleSummaries?: Record<string, ProductAvailabilitySummary>;
     diagnostics?: CatalogDiagnostics;
   }> {
     return defaultCommerceClient.searchProducts(query, storeId, options);
@@ -131,6 +134,64 @@ export class MockDeliverectAdapter implements DeliverectAdapter {
     }>
   ): Promise<Basket> {
     return (defaultCommerceClient as any).updateBasketItems(basketId, items);
+  }
+
+  async addBundleToBasket(
+    basketId: string,
+    request: AddBundleToBasketRequest
+  ): Promise<Basket> {
+    const basket = await defaultCommerceClient.getBasket(basketId);
+    const catalog = await defaultCommerceClient.getStoreCatalog(basket.storeId);
+    const bundle = catalog.bundleCatalog?.bundles.find(
+      (candidate) =>
+        (request.bundleId && candidate.id === request.bundleId) ||
+        (request.bundlePlu && candidate.plu === request.bundlePlu)
+    );
+
+    if (!bundle) {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        'The selected bundle is not available in the current store catalogue.'
+      );
+    }
+    if (bundle.stockStatus === 'OUT_OF_STOCK') {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        bundle.outOfStockReason || `${bundle.name} is currently unavailable.`
+      );
+    }
+
+    const selectionByKey = new Map(
+      request.selections.map((selection) => [`${selection.sectionId}:${selection.modifierId}`, selection])
+    );
+    const selectedModifiers: SelectedBundleModifier[] = [];
+    for (const section of bundle.sections || bundle.modifierGroups || []) {
+      for (const modifier of section.modifiers) {
+        const selected = selectionByKey.get(`${section.id}:${modifier.id}`);
+        if (!selected) continue;
+        selectedModifiers.push({
+          modifierId: modifier.id,
+          plu: modifier.plu,
+          name: modifier.name,
+          quantity: selected.quantity,
+          price: modifier.priceMinor ?? modifier.price ?? 0,
+          priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+          standalonePlu: modifier.standalonePlu,
+          standalonePriceMinor: modifier.standalonePriceMinor,
+          sectionId: section.id,
+          sectionName: section.name,
+        });
+      }
+    }
+
+    if (selectedModifiers.length !== request.selections.length) {
+      throw new CommerceError(
+        'INVALID_BUNDLE_SELECTION',
+        'One or more selected bundle components are not valid for this store.'
+      );
+    }
+
+    return defaultCommerceClient.addBundleToBasket(basketId, bundle, selectedModifiers, request.quantity || 1);
   }
 
   async updateBasketCustomer(

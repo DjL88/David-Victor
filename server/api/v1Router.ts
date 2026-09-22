@@ -7,12 +7,12 @@ import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
 import { connectionHealthService } from '../deliverect/ConnectionHealthService';
 import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
-import { FirestorePlatformService, FirestoreService } from '../firestoreService';
+import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
 import { getFirestoreDb, getFirebaseStorage, getFirebaseAuth, getFirebaseAdminAuth, verifyAdminSession, verifyAdminSessionWithStatus, AuthenticatedAdmin } from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
 import { MediaHealthService } from '../mediaHealthService';
 import { LocationService } from '../locationService';
-import { WebhookService } from '../deliverect/WebhookService';
+import { WebhookService, WebhookProcessingResult } from '../deliverect/WebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
@@ -291,7 +291,17 @@ v1Router.use(async (req: Request, res: Response, next) => {
       host === '127.0.0.1';
 
     if (isContainerOrPreviewHost) {
-      (req as any).resolvedTenantId = requestedOverride || process.env.PREVIEW_TENANT_ID || 'brand-alpha';
+      const previewTenantId =
+        requestedOverride ||
+        process.env.PREVIEW_TENANT_ID ||
+        (isDemoMode() || isTestMode() ? 'brand-alpha' : undefined);
+      if (!previewTenantId) {
+        return res.status(503).json({
+          code: 'PREVIEW_TENANT_NOT_CONFIGURED',
+          message: 'This preview host has no configured tenant.',
+        });
+      }
+      (req as any).resolvedTenantId = previewTenantId;
       return next();
     }
 
@@ -341,8 +351,15 @@ function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 
     if (!tenantId) {
       try {
         tenantId = resolveTenant(req);
-      } catch {
-        tenantId = 'brand-alpha';
+      } catch (err) {
+        if (isDemoMode() || isTestMode()) {
+          tenantId = 'brand-alpha';
+        } else {
+          return res.status(400).json({
+            error: 'A tenant scope is required for this admin request.',
+            code: 'TENANT_SCOPE_REQUIRED',
+          });
+        }
       }
     }
 
@@ -1160,6 +1177,10 @@ v1Router.post('/dispatch/cancel', validateBody(CancelDispatchSchema), async (req
 
 v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
   try {
+    const tenantId = resolveTenant(req);
+    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    await WebhookService.verifyDispatchWebhookAuth(rawBody, req.headers, tenantId);
+
     const eventId =
       (req.headers['x-dispatch-event-id'] as string) ||
       req.body.eventId ||
@@ -1168,6 +1189,10 @@ v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
     const updated = await DispatchOrchestrationService.handleDispatchWebhook(req.body, eventId);
     res.json({ success: true, eventId, dispatch: updated });
   } catch (err: any) {
+    if (err.statusCode === 401) {
+      console.error(`[Dispatch Webhook Auth Error] (${err.code}):`, err.message);
+      return res.status(401).json({ error: err.message, code: err.code });
+    }
     handleCommerceError(res, err, 'Failed to process dispatch webhook');
   }
 });
@@ -2133,7 +2158,71 @@ function normalizeQuestPickingStatusPayload(payload: any): any {
   };
 }
 
-function normalizeQuestAmendmentsPayload(payload: any): any {
+/**
+ * Deliverect does not publish a discriminator-field schema for the Retail/Quest
+ * "Picking Amendments" POST callback (confirmed against developers.deliverect.com —
+ * no field lists a substitution vs. quantity-change vs. removal vs. cancellation
+ * type). This checks every alias Deliverect is known to use elsewhere for event
+ * typing, then falls back to inferring the amendment type from which fields are
+ * actually populated on the item, rather than guessing a single status for
+ * everything (which silently dropped substitutions/removals/cancellations).
+ */
+function classifyQuestAmendment(item: any): string {
+  const explicit = String(
+    item?.type ??
+      item?.event ??
+      item?.eventType ??
+      item?.action ??
+      item?.status ??
+      item?.amendmentType ??
+      ''
+  )
+    .trim()
+    .toUpperCase();
+
+  if (
+    ['ITEM_SUBSTITUTED', 'BEST_MATCH_SUBSTITUTION', 'ITEM_SUBSTITUTION', 'ITEM_SUBSTITUTION_CATALOG', 'SUBSTITUTION'].includes(
+      explicit
+    )
+  ) {
+    return 'BEST_MATCH_SUBSTITUTION';
+  }
+  if (['CUSTOMER_SELECTED_SUBSTITUTION', 'ITEM_SUBSTITUTION_CUSTOMER'].includes(explicit)) {
+    return 'CUSTOMER_SELECTED_SUBSTITUTION';
+  }
+  if (['ITEM_QUANTITY_AMENDED', 'QUANTITY_REDUCED', 'ITEM_AMENDMENT'].includes(explicit)) {
+    return 'ITEM_QUANTITY_AMENDED';
+  }
+  if (['ITEM_REMOVED', 'REMOVE_IF_UNAVAILABLE', 'ITEM_REMOVE'].includes(explicit)) {
+    return 'ITEM_REMOVED';
+  }
+  if (['ORDER_CANCELLED_UNAVAILABLE_ITEM', 'ORDER_CANCELLED', 'CANCELLED'].includes(explicit)) {
+    return 'ORDER_CANCELLED_UNAVAILABLE_ITEM';
+  }
+
+  // No explicit type field present — infer structurally.
+  if (item?.substitutePlu || item?.substitute?.plu || item?.newPlu) {
+    return item?.type === 'CUSTOMER_SELECTED' || item?.substitutionType === 'CUSTOMER_SELECTED'
+      ? 'CUSTOMER_SELECTED_SUBSTITUTION'
+      : 'BEST_MATCH_SUBSTITUTION';
+  }
+  if (item?.cancelled === true || item?.orderCancelled === true) {
+    return 'ORDER_CANCELLED_UNAVAILABLE_ITEM';
+  }
+  const suppliedQuantity =
+    item?.amendedQuantity ?? item?.suppliedQuantity ?? item?.newQuantity ?? item?.quantity;
+  if (item?.removed === true || item?.unavailable === true || suppliedQuantity === 0) {
+    return 'ITEM_REMOVED';
+  }
+  if (suppliedQuantity !== undefined) {
+    return 'ITEM_QUANTITY_AMENDED';
+  }
+
+  // Genuinely unclassifiable: preserve prior behavior rather than guessing wrong.
+  return 'PICKING_WITH_CHANGES';
+}
+
+function extractQuestAmendmentItems(payload: any): any[] {
   const amendments =
     payload?.amendments ||
     payload?.itemAmendments ||
@@ -2142,20 +2231,56 @@ function normalizeQuestAmendmentsPayload(payload: any): any {
     payload?.data?.items ||
     [];
 
-  return {
-    ...payload,
-    status: 'PICKING_WITH_CHANGES',
-    eventType: 'PICKING_AMENDMENTS',
-    amendments,
-    channelOrderId:
-      payload?.channelOrderId ||
-      payload?.order?.channelOrderId ||
-      payload?.data?.channelOrderId,
-    orderId:
-      payload?.orderId ||
-      payload?.order?.id ||
-      payload?.data?.orderId,
-  };
+  return Array.isArray(amendments) && amendments.length > 0 ? amendments : [payload];
+}
+
+/**
+ * Deliverect's amendments callback can carry several amendments (substitution,
+ * quantity change, removal, cancellation) in a single POST. Each one is a
+ * distinct event and is processed as its own call into WebhookService so the
+ * correct per-type branch (and per-item Firestore/payment update) actually
+ * runs, instead of collapsing the whole batch into one generic status.
+ */
+async function processQuestAmendments(
+  payload: any,
+  rawBody: Buffer | string,
+  headers: Record<string, string | string[] | undefined>,
+  tenantId: string
+): Promise<WebhookProcessingResult[]> {
+  const items = extractQuestAmendmentItems(payload);
+  const parentChannelOrderId =
+    payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
+  const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
+  const baseEventId =
+    (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
+
+  const results: WebhookProcessingResult[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const status = classifyQuestAmendment(item);
+    const itemPayload = {
+      ...item,
+      status,
+      eventType: status,
+      channelOrderId: item?.channelOrderId || parentChannelOrderId,
+      orderId: item?.orderId || parentOrderId,
+    };
+
+    // Every item in a batch must get its own idempotency key. WebhookService
+    // derives dedup identity from the x-deliverect-event-id header (or the
+    // shared rawBody's content hash) first — if left untouched, every item
+    // after the first in a multi-item batch would be silently deduplicated
+    // against the first item's key.
+    const itemHeaders = { ...headers };
+    if (items.length > 1) {
+      const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
+      itemHeaders['x-deliverect-event-id'] = `${baseEventId || 'evt'}_${i}_${plu}`;
+    }
+
+    results.push(await WebhookService.processWebhook(itemPayload, rawBody, itemHeaders, tenantId));
+  }
+
+  return results;
 }
 
 async function handleQuestRetailCallback(
@@ -2168,24 +2293,19 @@ async function handleQuestRetailCallback(
     const rawBody =
       (req as any).rawBody ||
       Buffer.from(JSON.stringify(req.body), 'utf8');
-    const payload =
-      kind === 'status'
-        ? normalizeQuestPickingStatusPayload(req.body)
-        : normalizeQuestAmendmentsPayload(req.body);
 
-    const result = await WebhookService.processWebhook(
-      payload,
-      rawBody,
-      req.headers,
-      tenantId
-    );
+    if (kind === 'status') {
+      const payload = normalizeQuestPickingStatusPayload(req.body);
+      const result = await WebhookService.processWebhook(payload, rawBody, req.headers, tenantId);
+      return res.status(200).json({ ...result, callbackType: 'PICKING_STATUS' });
+    }
 
+    const results = await processQuestAmendments(req.body, rawBody, req.headers, tenantId);
+    const last = results[results.length - 1];
     return res.status(200).json({
-      ...result,
-      callbackType:
-        kind === 'status'
-          ? 'PICKING_STATUS'
-          : 'PICKING_AMENDMENTS',
+      ...last,
+      results,
+      callbackType: 'PICKING_AMENDMENTS',
     });
   } catch (err: any) {
     const status = err.status || err.statusCode || 500;
@@ -2247,6 +2367,82 @@ v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], asyn
   }
 });
 
+/**
+ * Maps a Firestore order projection to the frontend Order shape. Shared by
+ * the single-order fallback path and the customer order-history list so the
+ * two never drift apart.
+ */
+function mapOrderProjectionToOrder(proj: OrderProjection, tenant?: { currency?: string } | null): any {
+  const currency = proj.metadata?.currency || tenant?.currency;
+  return {
+    id: proj.orderId,
+    displayId: proj.orderReference || proj.orderId,
+    storeId: proj.channelLinkId || '',
+    storeName: proj.metadata?.storeName,
+    createdAt: proj.createdAt,
+    status: proj.status as any,
+    scheduledTime: proj.metadata?.scheduledTime || { type: 'ASAP' },
+    fulfillment: { type: (proj.fulfillmentType as any) || 'delivery' },
+    currentOrder: {
+      itemCount: proj.itemsCount,
+      subtotal: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : undefined,
+      deliveryCharge: proj.metadata?.deliveryCharge !== undefined && proj.metadata?.deliveryCharge !== null && currency ? { amount: proj.metadata.deliveryCharge, currency } : undefined,
+      bagFee: proj.metadata?.bagFee !== undefined && proj.metadata?.bagFee !== null && currency ? { amount: proj.metadata.bagFee, currency } : undefined,
+      serviceCharge: proj.metadata?.serviceCharge !== undefined && proj.metadata?.serviceCharge !== null && currency ? { amount: proj.metadata.serviceCharge, currency } : undefined,
+      total: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : undefined,
+    },
+    picking: proj.picking,
+    payment: proj.paymentId && currency ? {
+      paymentId: proj.paymentId,
+      state: (proj.paymentState as any) || 'AUTHORIZED',
+      currency,
+      authorizedAmount: proj.authorizedMaximum !== undefined && proj.authorizedMaximum !== null ? { amount: proj.authorizedMaximum, currency } : undefined,
+      authorizationMaximum: proj.authorizedMaximum !== undefined && proj.authorizedMaximum !== null ? { amount: proj.authorizedMaximum, currency } : undefined,
+      finalAmount: proj.finalAmount !== undefined && proj.finalAmount !== null ? { amount: proj.finalAmount, currency } : undefined,
+      capturedAmount: proj.paymentState === 'CAPTURED' && proj.finalAmount !== undefined && proj.finalAmount !== null ? { amount: proj.finalAmount, currency } : undefined,
+      history: [],
+    } : undefined,
+  };
+}
+
+/**
+ * Customer's own order history — the frontend's OrdersScreen ("Orders"
+ * account page) calls this via HttpCommerceClient.getOrderHistory(). It was
+ * previously wired to nothing (see git history / getUserOrders), so every
+ * real customer's order history silently rendered empty.
+ */
+v1Router.get('/orders', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    let customerUid: string | undefined;
+
+    if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      customerUid = (req.query.customerUid as string) || undefined;
+    } else {
+      customerUid = await getCallerUid(req);
+      if (!customerUid) {
+        return res.status(401).json({
+          error: 'Sign in to view your order history.',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+    }
+
+    if (!customerUid) {
+      return res.json([]);
+    }
+
+    const [projections, tenant] = await Promise.all([
+      FirestorePlatformService.listOrderProjectionsByCustomer(customerUid, tenantId),
+      FirestorePlatformService.getTenantConfig(tenantId),
+    ]);
+
+    res.json(projections.map((proj) => mapOrderProjectionToOrder(proj, tenant)));
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve order history');
+  }
+});
+
 v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
@@ -2272,36 +2468,7 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
 
     if (!order && proj) {
       const tenant = await FirestorePlatformService.getTenantConfig(proj.tenantId || 'brand-alpha');
-      const currency = proj.metadata?.currency || tenant?.currency;
-      order = {
-        id: proj.orderId,
-        displayId: proj.orderReference || proj.orderId,
-        storeId: proj.channelLinkId || '',
-        storeName: proj.metadata?.storeName,
-        createdAt: proj.createdAt,
-        status: proj.status as any,
-        scheduledTime: proj.metadata?.scheduledTime || { type: 'ASAP' },
-        fulfillment: { type: (proj.fulfillmentType as any) || 'delivery' },
-        currentOrder: {
-          itemCount: proj.itemsCount,
-          subtotal: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : undefined,
-          deliveryCharge: proj.metadata?.deliveryCharge !== undefined && proj.metadata?.deliveryCharge !== null && currency ? { amount: proj.metadata.deliveryCharge, currency } : undefined,
-          bagFee: proj.metadata?.bagFee !== undefined && proj.metadata?.bagFee !== null && currency ? { amount: proj.metadata.bagFee, currency } : undefined,
-          serviceCharge: proj.metadata?.serviceCharge !== undefined && proj.metadata?.serviceCharge !== null && currency ? { amount: proj.metadata.serviceCharge, currency } : undefined,
-          total: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : undefined,
-        },
-        picking: proj.picking,
-        payment: proj.paymentId && currency ? {
-          paymentId: proj.paymentId,
-          state: (proj.paymentState as any) || 'AUTHORIZED',
-          currency,
-          authorizedAmount: proj.authorizedMaximum !== undefined && proj.authorizedMaximum !== null ? { amount: proj.authorizedMaximum, currency } : undefined,
-          authorizationMaximum: proj.authorizedMaximum !== undefined && proj.authorizedMaximum !== null ? { amount: proj.authorizedMaximum, currency } : undefined,
-          finalAmount: proj.finalAmount !== undefined && proj.finalAmount !== null ? { amount: proj.finalAmount, currency } : undefined,
-          capturedAmount: proj.paymentState === 'CAPTURED' && proj.finalAmount !== undefined && proj.finalAmount !== null ? { amount: proj.finalAmount, currency } : undefined,
-          history: [],
-        } : undefined,
-      } as any;
+      order = mapOrderProjectionToOrder(proj, tenant) as any;
     } else if (order && proj?.picking) {
       // Overwrite in-memory order picking state with authoritative Firestore projection
       order.picking = proj.picking;

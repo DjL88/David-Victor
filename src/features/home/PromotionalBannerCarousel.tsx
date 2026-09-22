@@ -23,6 +23,7 @@ import {
   Category,
   Store,
   Product,
+  ProductAvailabilitySummary,
   moneyToMinor,
 } from '../../commerce/models';
 import {
@@ -51,6 +52,7 @@ interface PromotionalBannerCarouselProps {
   selectedStore: Store | null;
   products?: Product[];
   bundles?: BundleProduct[];
+  bundleSummaries?: Record<string, ProductAvailabilitySummary>;
   onOpenStorePicker?: () => void;
   onSelectCategory?: (categoryId: string | null) => void;
   onSelectProductPlu?: (plu: string) => void;
@@ -74,6 +76,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
   selectedStore,
   products = [],
   bundles = SAMPLE_DELIVERECT_BUNDLES,
+  bundleSummaries = {},
   onOpenStorePicker,
   onSelectCategory,
   onSelectProductPlu,
@@ -697,9 +700,26 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                         {/* Larger Price without 'Build your combo' badge */}
                         <div className="pt-1">
                           <span className="text-base sm:text-lg font-black text-emerald-400">
-                            {!selectedStore
-                              ? 'Price unavailable'
-                              : `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, bundle.currency || 'GBP')}`}
+                            {(() => {
+                              if (selectedStore) {
+                                return `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, bundle.currency || 'GBP')}`;
+                              }
+                              // No store selected: show a cross-store range the same
+                              // way ProductCard does, instead of always saying
+                              // "Price unavailable" regardless of actual pricing.
+                              const summary = bundleSummaries[bundle.plu];
+                              const minPrice = summary?.minimumPrice;
+                              const maxPrice = summary?.maximumPrice;
+                              if (minPrice == null || maxPrice == null) {
+                                return 'Price unavailable';
+                              }
+                              const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
+                              const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
+                              if (minMinor !== maxMinor) {
+                                return `${formatMoney(minPrice, bundle.currency || 'GBP')} – ${formatMoney(maxPrice, bundle.currency || 'GBP')}`;
+                              }
+                              return `${hasPricedUpsells ? 'From ' : ''}${formatMoney(minPrice, bundle.currency || 'GBP')}`;
+                            })()}
                           </span>
                         </div>
                       </div>

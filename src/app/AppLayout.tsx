@@ -181,6 +181,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     products,
     renderableProducts,
     summaries,
+    bundleSummaries,
     selectedCategoryId,
     currentSubcategories,
     breadcrumbs,
@@ -417,6 +418,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               onClearDealFilter={handleClearDealFilter}
               onOpenDealDialog={(deal) => setActiveDealForModal(deal)}
               bundles={catalog?.bundleCatalog?.bundles || []}
+              bundleSummaries={bundleSummaries}
               onOpenBundleDialog={(bundle) => setActiveBundleForModal(bundle)}
               onAddItemsToBasket={handleAddAllToBasket}
               activeStores={activeStores}

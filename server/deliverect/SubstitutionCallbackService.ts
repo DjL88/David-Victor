@@ -102,6 +102,76 @@ export class SubstitutionCallbackService {
   }
 
   /**
+   * Best-effort re-ranking of Deliverect-supplied substitute candidates so the
+   * picker sees the closest matches first: same category as the original
+   * item, then within roughly +/-20% of its price. This only REORDERS —
+   * Deliverect's DV-09 candidate schema is still unconfirmed (see
+   * docs/DELIVERECT_VERIFICATION.md), so nothing here changes candidate
+   * shape or drops a candidate Deliverect sent. Any catalog lookup failure
+   * (unknown store, adapter error) falls back to the original order.
+   */
+  private static async rankSubstituteCandidates(
+    rawCandidates: any[],
+    originalPlu: string,
+    originalPriceAmount: number | undefined,
+    channelLinkId: string | undefined,
+    tenantId: string
+  ): Promise<any[]> {
+    if (!Array.isArray(rawCandidates) || rawCandidates.length <= 1 || !channelLinkId) {
+      return rawCandidates;
+    }
+
+    try {
+      const adapter = getDeliverectAdapter(tenantId);
+      const catalog = await adapter.getStoreCatalog(channelLinkId);
+      const productsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+
+      const originalCategoryIds = new Set(productsByPlu.get(originalPlu)?.categoryIds || []);
+
+      const priceOfProduct = (product?: { price?: any; priceMinor?: number }): number | undefined => {
+        if (!product) return undefined;
+        if (typeof product.price === 'number') return product.price;
+        if (product.price && typeof product.price === 'object' && Number.isInteger((product.price as any).amount)) {
+          return (product.price as any).amount;
+        }
+        return Number.isInteger(product.priceMinor) ? product.priceMinor : undefined;
+      };
+
+      const scored = rawCandidates.map((candidate, index) => {
+        const product = candidate?.plu ? productsByPlu.get(candidate.plu) : undefined;
+        const candidateCategoryIds = new Set(product?.categoryIds || []);
+        const sameCategory =
+          originalCategoryIds.size > 0 &&
+          [...candidateCategoryIds].some((id) => originalCategoryIds.has(id));
+
+        const candidatePrice =
+          typeof candidate?.price === 'number'
+            ? candidate.price
+            : (candidate?.price?.amount ?? candidate?.approvedPrice?.amount ?? priceOfProduct(product));
+
+        let priceDelta = Number.POSITIVE_INFINITY;
+        if (typeof candidatePrice === 'number' && originalPriceAmount) {
+          priceDelta = Math.abs(candidatePrice - originalPriceAmount) / originalPriceAmount;
+        }
+        const withinPriceBand = priceDelta <= 0.2;
+        const rank = sameCategory && withinPriceBand ? 0 : sameCategory ? 1 : withinPriceBand ? 2 : 3;
+
+        return { candidate, index, rank, priceDelta };
+      });
+
+      scored.sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        if (a.priceDelta !== b.priceDelta) return a.priceDelta - b.priceDelta;
+        return a.index - b.index; // stable fallback
+      });
+
+      return scored.map((s) => s.candidate);
+    } catch {
+      return rawCandidates;
+    }
+  }
+
+  /**
    * Resolves the substitution policy and candidates for a specific item in an order.
    */
   static async getSubstitutionForPlu(
@@ -171,15 +241,19 @@ export class SubstitutionCallbackService {
     }
 
     const pref = pickingItem.substitutionPreference || 'BEST_MATCH';
+    const channelLinkId = orderProj?.channelLinkId || adapterOrder?.storeId;
 
     // 4. Build response according to platform rules
     switch (pref) {
       case 'BEST_MATCH': {
         const bestMatchCandidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
-        const rawBestMatchCandidates =
-          (pickingItem as any).substituteCandidates ||
-          (pickingItem as any).candidates ||
-          [];
+        const rawBestMatchCandidates = await this.rankSubstituteCandidates(
+          (pickingItem as any).substituteCandidates || (pickingItem as any).candidates || [],
+          plu,
+          originalPrice?.amount,
+          channelLinkId,
+          tenantId
+        );
         for (const c of rawBestMatchCandidates) {
           bestMatchCandidates.push({
             plu: c.plu,
@@ -214,10 +288,13 @@ export class SubstitutionCallbackService {
 
       case 'CUSTOMER_SELECTED': {
         const candidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
-        const rawCandidates =
-          (pickingItem as any).substituteCandidates ||
-          (pickingItem as any).candidates ||
-          [];
+        const rawCandidates = await this.rankSubstituteCandidates(
+          (pickingItem as any).substituteCandidates || (pickingItem as any).candidates || [],
+          plu,
+          originalPrice?.amount,
+          channelLinkId,
+          tenantId
+        );
         for (const c of rawCandidates) {
           candidates.push({
             plu: c.plu,

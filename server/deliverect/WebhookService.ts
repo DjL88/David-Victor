@@ -202,6 +202,65 @@ export class WebhookService {
   }
 
   /**
+   * Resolves the configured Dispatch webhook secret for a tenant / environment.
+   * Mirrors getWebhookSecret's precedence (tenant-specific secret, generic
+   * secret, demo fallback) — Dispatch webhooks are verified with the same
+   * HMAC SHA-256 scheme as Deliverect commerce webhooks.
+   */
+  static getDispatchWebhookSecret(tenantId: string = 'brand-alpha'): string {
+    const tenantSpecific = process.env[`DISPATCH_WEBHOOK_SECRET_${tenantId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`];
+    if (tenantSpecific) return tenantSpecific;
+
+    if (process.env.DISPATCH_WEBHOOK_SECRET) {
+      return process.env.DISPATCH_WEBHOOK_SECRET;
+    }
+
+    if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      return 'demo_dispatch_webhook_secret_key_123';
+    }
+
+    return '';
+  }
+
+  /**
+   * Verifies an inbound Dispatch webhook's HMAC signature. Unlike the
+   * Deliverect commerce webhook, POST /dispatch/webhooks previously had no
+   * signature check at all — anyone who knew an orderId could forge a
+   * DELIVERED status or a fake ageCheckResult. This fails closed: a missing
+   * signature, an unconfigured secret (outside demo/test mode), or a
+   * mismatched signature all throw a 401 rather than letting the payload
+   * through.
+   */
+  static async verifyDispatchWebhookAuth(
+    rawBody: Buffer | string,
+    headers: Record<string, string | string[] | undefined>,
+    tenantId: string
+  ): Promise<void> {
+    const signatureHeader =
+      (headers['x-dispatch-signature'] as string) ||
+      (headers['x-dispatch-hmac-sha256'] as string) ||
+      (headers['x-signature'] as string);
+
+    const secret =
+      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DISPATCH_WEBHOOK_SECRET')) ||
+      this.getDispatchWebhookSecret(tenantId);
+
+    if (!secret) {
+      const err: any = new Error('Dispatch webhook secret is not configured for this tenant.');
+      err.statusCode = 401;
+      err.code = 'DISPATCH_WEBHOOK_SECRET_MISSING';
+      throw err;
+    }
+
+    if (!this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
+      const err: any = new Error('Dispatch webhook signature verification failed.');
+      err.statusCode = 401;
+      err.code = 'DISPATCH_WEBHOOK_SIGNATURE_INVALID';
+      throw err;
+    }
+  }
+
+  /**
    * Section 24 & Item 16:
    * Resolves the webhook tenant authoritatively. Never trusts blind query or header parameters.
    * Tests HMAC verification across configured tenant secrets.

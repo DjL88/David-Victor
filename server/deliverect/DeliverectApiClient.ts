@@ -1530,6 +1530,54 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return summaries;
   }
 
+  /**
+   * Mirrors buildAvailabilitySummaries for bundles: bundles live in each
+   * store catalogue's bundleCatalog rather than catalog.products, so they
+   * never picked up a cross-store price range the same way normal products
+   * do — the home carousel always showed "Price unavailable" with no store
+   * selected regardless of actual bundle pricing.
+   */
+  private async buildBundleAvailabilitySummaries(
+    bundles: BundleProduct[],
+    stores: Store[]
+  ): Promise<Record<string, ProductAvailabilitySummary>> {
+    const eligibleStores = stores.filter((store) => this.isUsableStore(store));
+    const settled = await Promise.allSettled(
+      eligibleStores.map(async (store) => ({ store, catalog: await this.getStoreCatalog(store.id) }))
+    );
+    const storeCatalogs = settled
+      .filter((result): result is PromiseFulfilledResult<{ store: Store; catalog: Catalog }> => result.status === 'fulfilled')
+      .map((result) => result.value);
+    const summaries: Record<string, ProductAvailabilitySummary> = {};
+
+    for (const bundle of bundles) {
+      const records = storeCatalogs.flatMap(({ store, catalog }) =>
+        (catalog.bundleCatalog?.bundles || [])
+          .filter((candidate) => candidate.plu === bundle.plu && candidate.stockStatus !== 'OUT_OF_STOCK')
+          .map((candidate) => ({ store, bundle: candidate }))
+      );
+      const amounts = records
+        .map(({ bundle: candidate }) => candidate.priceMinor ?? candidate.price)
+        .filter((amount): amount is number => typeof amount === 'number');
+      const minimumAmount = amounts.length ? Math.min(...amounts) : undefined;
+      const maximumAmount = amounts.length ? Math.max(...amounts) : undefined;
+      const currency = records[0]?.bundle.currency || 'GBP';
+
+      summaries[bundle.plu] = {
+        plu: bundle.plu,
+        productId: bundle.id,
+        availableStoreCount: records.length,
+        eligibleStoreCount: storeCatalogs.length,
+        minimumPrice: minimumAmount == null ? undefined : toMoney(minimumAmount, currency),
+        maximumPrice: maximumAmount == null ? undefined : toMoney(maximumAmount, currency),
+        nearestAvailableStoreId: records[0]?.store.id,
+        deliveryAvailable: records.some(({ store }) => store.supportsDelivery),
+        collectionAvailable: records.some(({ store }) => store.supportsPickup),
+      };
+    }
+    return summaries;
+  }
+
   async getProduct(productId: string, storeId?: string): Promise<{ product: Product; summary?: ProductAvailabilitySummary } | null> {
     const catalog = storeId ? await this.getStoreCatalog(storeId) : await this.getRootCatalog();
     const product = (catalog.products || []).find((p) => p.id === productId || p.plu === productId);
@@ -1565,6 +1613,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
   ): Promise<{
     products: Product[];
     summaries?: Record<string, ProductAvailabilitySummary>;
+    bundleSummaries?: Record<string, ProductAvailabilitySummary>;
     diagnostics?: CatalogDiagnostics;
   }> {
     const catalog = storeId ? await this.getStoreCatalog(storeId) : await this.getRootCatalog();
@@ -1609,12 +1658,31 @@ export class DeliverectApiClient implements DeliverectAdapter {
           collectionAvailable: available,
         };
       }
-      return { products: filtered, summaries, diagnostics: catalog.diagnostics };
+
+      const bundleSummaries: Record<string, ProductAvailabilitySummary> = {};
+      for (const bundle of catalog.bundleCatalog?.bundles || []) {
+        const available = bundle.stockStatus !== 'OUT_OF_STOCK';
+        const price = bundle.priceMinor ?? bundle.price;
+        bundleSummaries[bundle.plu] = {
+          plu: bundle.plu,
+          productId: bundle.id,
+          availableStoreCount: available ? 1 : 0,
+          eligibleStoreCount: 1,
+          minimumPrice: available ? price : undefined,
+          maximumPrice: available ? price : undefined,
+          nearestAvailableStoreId: available ? storeId : undefined,
+          deliveryAvailable: available,
+          collectionAvailable: available,
+        };
+      }
+
+      return { products: filtered, summaries, bundleSummaries, diagnostics: catalog.diagnostics };
     }
 
     const stores = await this.getStores();
     const summaries = await this.buildAvailabilitySummaries(filtered, stores);
-    return { products: filtered, summaries, diagnostics: catalog.diagnostics };
+    const bundleSummaries = await this.buildBundleAvailabilitySummaries(catalog.bundleCatalog?.bundles || [], stores);
+    return { products: filtered, summaries, bundleSummaries, diagnostics: catalog.diagnostics };
   }
 
   private async getCommerceBasketApi(): Promise<DeliverectCommerceBasketApiClient> {
