@@ -441,11 +441,11 @@ export class ConfigurationRevisionService {
       transaction.set(revisionRef, published);
       transaction.set(pointerRef, pointer);
       if (projection) {
-        transaction.set(
-          projection.documentRef,
-          projection.data,
-          projection.merge === false ? undefined : { merge: true }
-        );
+        if (projection.merge === false) {
+          transaction.set(projection.documentRef, projection.data);
+        } else {
+          transaction.set(projection.documentRef, projection.data, { merge: true });
+        }
       }
       return { revision: published, pointer };
     });
