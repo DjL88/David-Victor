@@ -43,7 +43,7 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
-import { listAssistantActionsForRole } from '../admin/adminActionRegistry';
+import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan } from '../admin/adminActionRegistry';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -94,6 +94,8 @@ import {
   AssetUploadSchema,
   AssetUploadUrlSchema,
   AssetFinalizeSchema,
+  AdminAssistantPlanSchema,
+  AdminAssistantExecuteSchema,
 } from './schemas';
 
 export const v1Router = Router();
@@ -2815,6 +2817,46 @@ v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request
     mode: 'READ_ONLY_FOUNDATION',
     tenantId: authAdmin.tenantId,
     actions,
+  });
+});
+
+// 9.0.0a Create a deterministic assistant action plan.
+// Tenant scope always comes from authenticated server context, never from the model payload.
+v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+    const action = assertAssistantActionAllowed(authAdmin.role, req.body.actionName);
+    const plan = buildReadOnlyActionPlan({
+      action,
+      tenantId,
+      actorId: authAdmin.uid,
+      input: req.body.input,
+    });
+
+    res.json({
+      plan,
+      context: req.body.context || null,
+      safety: {
+        tenantBoundByServer: true,
+        credentialsExposed: false,
+        arbitraryNetworkAccess: false,
+      },
+    });
+  } catch (err: any) {
+    res.status(err?.statusCode || 400).json({
+      error: err?.message || 'Unable to create admin action plan.',
+      code: err?.code || 'ADMIN_ACTION_PLAN_FAILED',
+    });
+  }
+});
+
+// 9.0.0b Execution is intentionally fail-closed until each action has a deterministic executor.
+v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(AdminAssistantExecuteSchema), async (_req: Request, res: Response) => {
+  res.status(501).json({
+    error: 'Assistant action execution is not enabled yet. Use the plan endpoint to preview allowed actions.',
+    code: 'ADMIN_ACTION_EXECUTION_DISABLED',
+    mode: 'PLAN_ONLY',
   });
 });
 
