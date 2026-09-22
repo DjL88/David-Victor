@@ -259,9 +259,12 @@ export function evaluateProductRules(
     for (const item of basketItems) {
       if (item.plu === product.plu) continue;
       const basketProduct = (item as BasketItem & { product?: Product }).product;
-      if (basketProduct && matchesCondition(basketProduct, rule.conditions, context)) {
-        otherGroupQuantityInBasket += item.quantity;
-      }
+      // Server/basket projections may include the product, while older basket
+      // lines expose the matching rule IDs. Support both representations.
+      const belongsToRule =
+        (basketProduct && matchesCondition(basketProduct, rule.conditions, context)) ||
+        item.appliedRules?.includes(rule.id);
+      if (belongsToRule) otherGroupQuantityInBasket += item.quantity;
     }
 
     const currentItemQty = currentBasketQuantity;
