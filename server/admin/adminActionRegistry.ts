@@ -238,20 +238,21 @@ export function validateAdminActionInput(
   action: AdminActionDefinition,
   input: Record<string, unknown> | undefined
 ): Record<string, unknown> {
-  const parsed = action.inputSchema.safeParse(input || {});
+  const rawInput = input || {};
+  const sensitiveKey = findSensitiveInputKey(rawInput);
+  if (sensitiveKey) {
+    throw Object.assign(
+      new Error(`Sensitive credential fields are not allowed in assistant action input (${sensitiveKey}).`),
+      { code: 'ADMIN_ACTION_SENSITIVE_INPUT_FORBIDDEN', statusCode: 400 }
+    );
+  }
+  const parsed = action.inputSchema.safeParse(rawInput);
   if (!parsed.success) {
     throw Object.assign(new Error(parsed.error.issues.map((issue) => issue.message).join('; ')), {
       code: 'ADMIN_ACTION_INPUT_INVALID',
       statusCode: 400,
       issues: parsed.error.issues,
     });
-  }
-  const sensitiveKey = findSensitiveInputKey(parsed.data);
-  if (sensitiveKey) {
-    throw Object.assign(
-      new Error(`Sensitive credential fields are not allowed in assistant action input (${sensitiveKey}).`),
-      { code: 'ADMIN_ACTION_SENSITIVE_INPUT_FORBIDDEN', statusCode: 400 }
-    );
   }
   return parsed.data as Record<string, unknown>;
 }
