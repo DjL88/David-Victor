@@ -152,9 +152,17 @@ export function allocateProtectedBundlePrices(
     }
   });
 
-  const baseBundlePriceMinor = Math.max(
+  const configuredBaseBundlePriceMinor = Math.max(
     0,
     Math.round(bundle.priceMinor ?? bundle.price ?? 0)
+  );
+  // A combo is a ceiling, never a surcharge. If the selected required items
+  // are cheaper than the configured fixed bundle price, charge their shelf
+  // total and create no negative "saving".
+  const requiredShelfTotalOneBundle = baseUnits.reduce((sum, unit) => sum + unit.weight, 0);
+  const baseBundlePriceMinor = Math.min(
+    configuredBaseBundlePriceMinor,
+    requiredShelfTotalOneBundle
   );
   const oneBundleBaseAllocations = allocateByLargestRemainder(
     baseBundlePriceMinor,
@@ -236,12 +244,6 @@ export function allocateProtectedBundlePrices(
   if (protectedTotalMinor !== targetBundleTotalMinor) {
     throw new Error(
       `Bundle allocation mismatch: protected total ${protectedTotalMinor} does not equal target ${targetBundleTotalMinor}.`
-    );
-  }
-
-  if (targetBundleTotalMinor > standaloneTotalMinor) {
-    throw new Error(
-      `Bundle "${bundle.name}" would cost more than buying the selected items individually.`
     );
   }
 
