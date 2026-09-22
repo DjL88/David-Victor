@@ -431,4 +431,5 @@ export { defaultHttpAdminClient, defaultAdminClient } from './HttpAdminClient';
  */
 export function getAdminClient(): AdminClient {
   return defaultHttpAdminClient;
+  runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string }): Promise<any>;
 }
