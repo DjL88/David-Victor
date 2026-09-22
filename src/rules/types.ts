@@ -597,6 +597,59 @@ export interface CourierCompensationClaim {
 }
 
 // ==========================================
+// STOREFRONT NETWORKS & MARKETPLACES
+// ==========================================
+
+export type StorefrontNetworkMode = 'SINGLE_TENANT' | 'MULTI_TENANT_MARKETPLACE' | 'BRAND_GROUP';
+
+export interface StorefrontNetworkMember {
+  tenantId: string;
+  enabled: boolean;
+  displayNameOverride?: string;
+  sortOrder?: number;
+  /** Optional group/operating-company label while preserving the underlying consumer brand. */
+  operatorLabel?: string;
+  locationGroupIds?: string[];
+}
+
+export interface StorefrontNetwork {
+  networkId: string;
+  name: string;
+  mode: StorefrontNetworkMode;
+  enabled: boolean;
+  /** Membership is an explicit allow-list: tenants not listed never appear in this storefront. */
+  members: StorefrontNetworkMember[];
+  defaultTenantId?: string;
+  /** Network presentation can be independent from each member tenant's own white-label storefront. */
+  brandingProfileId?: string;
+  loyaltyProfileId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StorefrontNetworkContext {
+  networkId: string;
+  selectedTenantId?: string;
+  eligibleTenantIds: string[];
+  /** Orders remain tenant-owned even when discovery starts in a shared marketplace. */
+  orderTenantId?: string;
+}
+
+/**
+ * A network is a discovery/presentation boundary, not a replacement tenancy model.
+ * Configuration, permissions, order ownership, refunds, risk, residency and audit remain
+ * scoped to the selected member tenant unless an explicit cross-tenant capability says otherwise.
+ */
+export interface NetworkCapabilityPolicy {
+  networkId: string;
+  sharedCustomerIdentity: boolean;
+  sharedLoyalty: boolean;
+  sharedBasket: boolean;
+  crossTenantCheckout: boolean;
+  sharedCustomerCare: boolean;
+}
+
+// ==========================================
 // DATA RESIDENCY & REGIONAL FAILOVER
 // ==========================================
 
