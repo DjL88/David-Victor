@@ -1,5 +1,7 @@
 import type { TenantConfig } from '../../src/commerce/models';
 import { FirestorePlatformService } from '../firestoreService';
+import { getFirestoreDb } from '../firebase';
+import { isDemoMode, isTestMode } from '../runtimeMode';
 import {
   ConfigurationRevisionService,
   diffConfiguration,
@@ -171,7 +173,194 @@ async function prepareBrandingProposal(args: {
   };
 }
 
+async function projectBrandingRevision(args: {
+  tenantId: string;
+  actorId: string;
+  revisionId: string;
+}): Promise<{ revisionId: string; tenant: TenantConfig }> {
+  const revision = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+    args.tenantId,
+    args.revisionId
+  );
+  if (revision.resourceType !== 'tenantBranding' || revision.resourceId !== args.tenantId) {
+    throw Object.assign(new Error('Revision does not belong to this tenant branding resource.'), {
+      code: 'ADMIN_REVISION_RESOURCE_MISMATCH',
+      statusCode: 409,
+    });
+  }
+  if (revision.status !== 'VALIDATED') {
+    throw Object.assign(new Error('Branding revision is not validated and cannot be applied.'), {
+      code: 'ADMIN_REVISION_NOT_VALIDATED',
+      statusCode: 409,
+    });
+  }
+
+  const currentTenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+  const updatedAt = new Date().toISOString();
+  const fullTenant = {
+    ...currentTenant,
+    ...revision.payload,
+    updatedAt,
+  } as TenantConfig;
+
+  const db = getFirestoreDb();
+  if (!db) {
+    if (!isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test') {
+      throw Object.assign(new Error('Durable Firestore persistence is unavailable.'), {
+        code: 'ADMIN_REVISION_STORE_UNAVAILABLE',
+        statusCode: 503,
+      });
+    }
+    const tenant = await FirestorePlatformService.updateTenantConfig(args.tenantId, revision.payload);
+    await ConfigurationRevisionService.publishRevision(args.tenantId, revision.revisionId, args.actorId);
+    return { revisionId: revision.revisionId, tenant };
+  }
+
+  const tenantRef = db.collection('tenants').doc(args.tenantId);
+  await ConfigurationRevisionService.publishRevision(
+    args.tenantId,
+    revision.revisionId,
+    args.actorId,
+    {
+      documentRef: tenantRef,
+      data: { ...revision.payload, updatedAt },
+      merge: true,
+    }
+  );
+  FirestorePlatformService.cacheTenantConfigSnapshot(args.tenantId, fullTenant);
+  return { revisionId: revision.revisionId, tenant: fullTenant };
+}
+
+async function rollbackBrandingRevision(args: {
+  tenantId: string;
+  actorId: string;
+  appliedRevisionId: string;
+}): Promise<{ revisionId: string; tenant: TenantConfig }> {
+  const applied = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+    args.tenantId,
+    args.appliedRevisionId
+  );
+  if (applied.resourceType !== 'tenantBranding' || applied.resourceId !== args.tenantId) {
+    throw Object.assign(new Error('Revision does not belong to this tenant branding resource.'), {
+      code: 'ADMIN_REVISION_RESOURCE_MISMATCH',
+      statusCode: 409,
+    });
+  }
+  if (applied.status !== 'PUBLISHED' || !applied.basedOnRevisionId) {
+    throw Object.assign(new Error('Branding change cannot be rolled back from its current revision state.'), {
+      code: 'ADMIN_REVISION_ROLLBACK_INVALID',
+      statusCode: 409,
+    });
+  }
+
+  const target = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+    args.tenantId,
+    applied.basedOnRevisionId
+  );
+  const current = await ConfigurationRevisionService.resolvePublishedConfiguration<BrandingSnapshot>(
+    args.tenantId,
+    'tenantBranding',
+    args.tenantId
+  );
+  if (!current || current.pointer.currentRevisionId !== applied.revisionId) {
+    throw Object.assign(
+      new Error('Branding changed again after this change set was applied; automatic rollback is unsafe.'),
+      { code: 'ADMIN_REVISION_ROLLBACK_CONFLICT', statusCode: 409 }
+    );
+  }
+
+  const rollbackDraft = await ConfigurationRevisionService.createRevision({
+    tenantId: args.tenantId,
+    resourceType: 'tenantBranding',
+    resourceId: args.tenantId,
+    payload: target.payload,
+    actorId: args.actorId,
+    expectedCurrentRevisionId: applied.revisionId,
+    idempotencyKey: `rollback:${applied.revisionId}`,
+  });
+  await ConfigurationRevisionService.validateRevision(
+    args.tenantId,
+    rollbackDraft.revisionId,
+    args.actorId
+  );
+
+  const liveTenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+  const updatedAt = new Date().toISOString();
+  const fullTenant = {
+    ...liveTenant,
+    ...target.payload,
+    updatedAt,
+  } as TenantConfig;
+  const db = getFirestoreDb();
+
+  if (!db) {
+    if (!isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test') {
+      throw Object.assign(new Error('Durable Firestore persistence is unavailable.'), {
+        code: 'ADMIN_REVISION_STORE_UNAVAILABLE',
+        statusCode: 503,
+      });
+    }
+    const tenant = await FirestorePlatformService.updateTenantConfig(args.tenantId, target.payload);
+    await ConfigurationRevisionService.publishRevision(
+      args.tenantId,
+      rollbackDraft.revisionId,
+      args.actorId
+    );
+    return { revisionId: rollbackDraft.revisionId, tenant };
+  }
+
+  const tenantRef = db.collection('tenants').doc(args.tenantId);
+  await ConfigurationRevisionService.publishRevision(
+    args.tenantId,
+    rollbackDraft.revisionId,
+    args.actorId,
+    {
+      documentRef: tenantRef,
+      data: { ...target.payload, updatedAt },
+      merge: true,
+    }
+  );
+  FirestorePlatformService.cacheTenantConfigSnapshot(args.tenantId, fullTenant);
+  return { revisionId: rollbackDraft.revisionId, tenant: fullTenant };
+}
+
 export class AdminResourceAdapterRegistry {
+  static async applyRevision(args: {
+    tenantId: string;
+    actorId: string;
+    actionName: string;
+    revisionId: string;
+  }): Promise<{ revisionId: string; result: unknown }> {
+    if (args.actionName !== 'branding.proposeUpdate') {
+      throw Object.assign(new Error('This admin action does not have an executable resource adapter.'), {
+        code: 'ADMIN_ACTION_APPLY_NOT_CONNECTED',
+        statusCode: 409,
+      });
+    }
+    const applied = await projectBrandingRevision(args);
+    return { revisionId: applied.revisionId, result: applied.tenant };
+  }
+
+  static async rollbackRevision(args: {
+    tenantId: string;
+    actorId: string;
+    actionName: string;
+    revisionId: string;
+  }): Promise<{ revisionId: string; result: unknown }> {
+    if (args.actionName !== 'branding.proposeUpdate') {
+      throw Object.assign(new Error('This admin action does not have a rollback resource adapter.'), {
+        code: 'ADMIN_ACTION_ROLLBACK_NOT_CONNECTED',
+        statusCode: 409,
+      });
+    }
+    const rolledBack = await rollbackBrandingRevision({
+      tenantId: args.tenantId,
+      actorId: args.actorId,
+      appliedRevisionId: args.revisionId,
+    });
+    return { revisionId: rolledBack.revisionId, result: rolledBack.tenant };
+  }
+
   static async prepareProposal(args: {
     tenantId: string;
     actorId: string;
