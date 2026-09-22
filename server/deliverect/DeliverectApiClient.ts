@@ -2342,18 +2342,6 @@ export class DeliverectApiClient implements DeliverectAdapter {
         );
       }
 
-      // Bundle components are exploded into normal product lines (see comment
-      // above), so each one needs the same Product Rules gate a direct
-      // basket-add gets — otherwise a restricted/hidden item could reach the
-      // basket simply by being bundled rather than added standalone.
-      await assertProductAddAllowed(
-        this.tenantId,
-        product,
-        { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
-        current.items,
-        component.quantity
-      );
-
       const claimable = request.claimExistingBasketItems
         ? Math.min(component.quantity, claimPool.get(component.componentPlu) || 0)
         : 0;
@@ -2362,6 +2350,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
       }
       const quantityToAdd = component.quantity - claimable;
       if (quantityToAdd > 0) {
+        // Only newly-added units need the add-rule gate. Units claimed from the
+        // basket already passed that gate when the customer originally added them.
+        await assertProductAddAllowed(
+          this.tenantId,
+          product,
+          { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
+          current.items,
+          quantityToAdd
+        );
         const existing = desired.find(
           (candidate) => candidate.plu === component.componentPlu
         );
