@@ -537,33 +537,67 @@ export class FirestoreService {
    */
   static async deleteDomain(domainIdOrHostname: string): Promise<boolean> {
     const target = domainIdOrHostname.toLowerCase().trim();
-    let foundHostname: string | null = null;
+    if (!target) throw new BFFError('INVALID_INPUT', 'A domain ID or hostname is required.', 400);
 
+    let cachedHostname: string | null = null;
+    let cachedRecord: DomainRecord | undefined;
     for (const [host, rec] of Object.entries(inMemoryDomains)) {
       if (host === target || rec.domainId === target) {
-        foundHostname = host;
-        delete inMemoryDomains[host];
+        cachedHostname = host;
+        cachedRecord = rec;
         break;
       }
     }
 
-    if (foundHostname) {
-      savePersistedDomains(inMemoryDomains);
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) {
+      if (isDemoMode() || isTestMode()) {
+        if (cachedHostname) delete inMemoryDomains[cachedHostname];
+        savePersistedDomains(inMemoryDomains);
+        return true;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain mapping could not be deleted because durable storage is unavailable.', 503, true);
     }
 
-    const db = getFirestoreDb();
-    if (db && !isFirestorePermissionDenied()) {
-      try {
-        const slug = (foundHostname || target).replace(/^dom_/, '').replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
-        await db.collection('domains').doc(slug).delete();
-      } catch (err: any) {
-        if (isFirestorePermissionDeniedError(err)) {
-          markFirestorePermissionDenied(err);
+    try {
+      let hostname = cachedHostname;
+      let tenantId = cachedRecord?.tenantId;
+      let slug = target.replace(/^dom_/, '').replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
+
+      if (!hostname || !tenantId) {
+        const direct = await db.collection('domains').doc(slug).get();
+        if (direct.exists) {
+          const data = direct.data();
+          hostname = data?.hostname || hostname;
+          tenantId = data?.tenantId || tenantId;
+        } else if (!target.startsWith('dom_')) {
+          const byHost = await db.collection('domains').where('hostname', '==', target).limit(1).get();
+          if (!byHost.empty) {
+            slug = byHost.docs[0].id;
+            const data = byHost.docs[0].data();
+            hostname = data?.hostname || target;
+            tenantId = data?.tenantId;
+          }
         }
       }
-    }
 
-    return true;
+      const batch = db.batch();
+      batch.delete(db.collection('domains').doc(slug));
+      if (tenantId) batch.delete(db.collection('tenants').doc(tenantId).collection('domains').doc(slug));
+      await batch.commit();
+
+      if (hostname) delete inMemoryDomains[hostname.toLowerCase()];
+      if (isDemoMode() || isTestMode()) savePersistedDomains(inMemoryDomains);
+      return true;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      if (isDemoMode() || isTestMode()) {
+        if (cachedHostname) delete inMemoryDomains[cachedHostname];
+        savePersistedDomains(inMemoryDomains);
+        return true;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain mapping could not be deleted from durable storage.', 503, true);
+    }
   }
 
   /**
