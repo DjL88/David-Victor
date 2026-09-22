@@ -110,6 +110,11 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           section: workspace.section,
           resourceType: workspace.resource?.type,
           resourceId: workspace.resource?.id,
+          organizationId: workspace.scope.organizationId,
+          market: workspace.scope.market,
+          region: workspace.scope.region,
+          locationGroupId: workspace.scope.locationGroupId,
+          locationId: workspace.scope.locationId,
         }
       );
       setAnswer(result);
@@ -158,6 +163,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             <div className="flex justify-between gap-3"><span className="text-gray-500">Brand</span><span className="font-bold text-gray-900 truncate">{workspace.tenantId}</span></div>
             <div className="flex justify-between gap-3"><span className="text-gray-500">Area</span><span className="font-bold text-gray-900">{sectionLabel}</span></div>
             <div className="flex justify-between gap-3"><span className="text-gray-500">Access</span><span className="font-bold text-gray-900">{workspace.actor.role}</span></div>
+            {workspace.scope.locationId && <div className="flex justify-between gap-3"><span className="text-gray-500">Location</span><span className="font-bold text-gray-900 truncate">{workspace.scope.locationId}</span></div>}
             {workspace.resource && <div className="flex justify-between gap-3"><span className="text-gray-500">Selected</span><span className="font-bold text-gray-900 truncate">{workspace.resource.label || workspace.resource.id}</span></div>}
           </div>
         </div>
