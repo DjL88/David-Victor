@@ -95,15 +95,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const { appMode } = useTenant();
   const isDemo = appMode === 'demo';
 
-  // Current authenticated user
+  // Demo identities are a sandbox convenience only. Live admin entry should provide the authenticated user.
+  const demoFallbackUser = ALL_MOCK_ADMIN_USERS[0];
   const [currentUser, setCurrentUser] = useState<AdminUser>(
-    initialUser || ALL_MOCK_ADMIN_USERS[0]
+    initialUser || demoFallbackUser
   );
   const [currentTenantId, setCurrentTenantId] = useState<string>(currentUser.tenantId);
   const [activeTab, setActiveTab] = useState<AdminTab>('insights');
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
   const [allTenants, setAllTenants] = useState<TenantConfig[]>([]);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
+  const [tenantLoadError, setTenantLoadError] = useState<string>('');
 
   useEffect(() => {
     defaultAdminClient.setActiveAdminUser?.(currentUser);
@@ -133,11 +135,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   };
 
   const loadTenant = async () => {
+    setTenantLoadError('');
     try {
       const config = await defaultAdminClient.getBranding(currentTenantId);
       setTenantConfig(config);
     } catch (e) {
       console.error(e);
+      setTenantConfig(null);
+      setTenantLoadError('Unable to load this brand configuration.');
     }
   };
 
@@ -318,8 +323,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span>API Gateway</span>
-              <span className="text-emerald-400 font-semibold">Online (99.99%)</span>
+              <span>Brand config</span>
+              <span className={`font-semibold ${tenantLoadError ? 'text-rose-300' : tenantConfig ? 'text-emerald-400' : 'text-gray-400'}`}>
+                {tenantLoadError ? 'Unavailable' : tenantConfig ? 'Loaded' : 'Loading…'}
+              </span>
             </div>
           </div>
         </aside>
@@ -327,6 +334,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         {/* ACTIVE SCREEN CONTENT */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
+            {tenantLoadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between gap-3"><span>{tenantLoadError}</span><button type="button" onClick={loadTenant} className="font-bold underline">Retry</button></div>}
             {activeTab === 'brands' && (
               <BrandsScreen
                 currentUser={currentUser}

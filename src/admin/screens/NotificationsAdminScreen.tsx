@@ -40,6 +40,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
   });
   const [selectedRuleId, setSelectedRuleId] = useState<string>(rules[0]?.id || 'rule-order-created');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [testNotificationToast, setTestNotificationToast] = useState<{
     channel: string;
     title: string;
@@ -52,6 +53,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
     if (existing?.eventRules?.length > 0) {
       setRules(existing.eventRules);
       setSelectedRuleId(existing.eventRules[0]?.id || 'rule-order-created');
+      setIsDirty(false);
     }
   }, [tenantId]);
 
@@ -72,6 +74,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
       eventRules: rules,
       updatedAt: new Date().toISOString(),
     });
+    setIsDirty(false);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
@@ -109,6 +112,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
         const channels = r.channels.includes(channel)
           ? r.channels.filter((c) => c !== channel)
           : [...r.channels, channel];
+        setIsDirty(true);
         return { ...r, channels };
       })
     );
@@ -206,10 +210,10 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Bell className="w-5 h-5 text-indigo-600" />
-            <span>Order Notifications & Live Activity Engine</span>
+            <span>Order notifications</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Configure multi-channel triggers (SMS, Push, WhatsApp, Email) and preview iOS Dynamic Island & Android live status states.
+            Configure customer notification triggers and preview how live order updates will appear across supported channels.
           </p>
         </div>
 
@@ -217,7 +221,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
           {saveSuccess && (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
               <Check className="w-3.5 h-3.5" />
-              Templates & debounce rules updated
+              Notification rules saved
             </span>
           )}
           <button
@@ -226,7 +230,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5"
           >
             <Check className="w-4 h-4" />
-            <span>Save Notification Rules</span>
+            <span>{isDirty ? 'Save changes' : 'Save notification rules'}</span>
           </button>
         </div>
       </div>

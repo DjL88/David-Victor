@@ -970,6 +970,9 @@ export type VisualRuleAction =
   | { type: 'MINIMUM_AGE'; minimumAge: number; requiresGate?: boolean; requiresAcknowledgement?: boolean; params?: Record<string, unknown> }
   | { type: 'PREVENT_UPSELL'; params?: Record<string, unknown> }
   | { type: 'PREVENT_RECOMMENDATION'; params?: Record<string, unknown> }
+  | { type: 'EXCLUDE_FROM_DISCOUNTS'; params?: Record<string, unknown> }
+  | { type: 'PREVENT_STORY_PLACEMENT'; params?: Record<string, unknown> }
+  | { type: 'PREVENT_CAROUSEL_PLACEMENT'; params?: Record<string, unknown> }
   | { type: 'PREVENT_PURCHASE'; reason?: string; params?: Record<string, unknown> }
   | { type: 'HIDE_PRODUCT'; params?: Record<string, unknown> }
   | { type: 'MAX_QUANTITY_PER_ORDER'; maximum: number; reason?: string; params?: Record<string, unknown> }

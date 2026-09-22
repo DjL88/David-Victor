@@ -4,7 +4,7 @@ import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
 const defaultCommerceClient = getCommerceClient() as any;
-import { Eye, Smartphone, Monitor, RefreshCw, ShoppingBag, ArrowRight } from 'lucide-react';
+import { Eye, Smartphone, Monitor, RefreshCw } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 
 interface PreviewScreenProps {
@@ -18,6 +18,7 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [deviceView, setDeviceView] = useState<'mobile' | 'desktop'>('mobile');
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     loadPreviewData();
@@ -25,6 +26,7 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
 
   const loadPreviewData = async () => {
     setLoading(true);
+    setError('');
     try {
       const branding = await defaultAdminClient.getBranding(tenantId);
       const storeList = await defaultAdminClient.getStores(tenantId);
@@ -36,18 +38,25 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
         setSelectedStoreId(storeList[0].id);
       }
       setProducts(productList.slice(0, 8));
+    } catch (err) {
+      console.error(err);
+      setError('Unable to load the storefront preview.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="p-8 flex items-center justify-center text-gray-500">
         <RefreshCw className="w-6 h-6 animate-spin mr-2" />
         <span>Loading preview environment...</span>
       </div>
     );
+  }
+
+  if (!config) {
+    return <div className="p-8 text-center"><div role="alert" className="text-sm font-semibold text-rose-700">{error || 'Storefront preview is unavailable.'}</div><button type="button" onClick={loadPreviewData} className="mt-3 text-xs font-bold text-indigo-700 underline">Retry</button></div>;
   }
 
   const selectedStore = stores.find((s) => s.id === selectedStoreId) || stores[0];
@@ -58,10 +67,10 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Eye className="w-5 h-5 text-indigo-600" />
-            <span>Storefront Live Sandbox Preview</span>
+            <span>Storefront preview</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Simulates the guest-facing storefront with the current tenant's branding, active stories, and live fee policies.
+            Preview this brand's current storefront styling and a sample of its available content.
           </p>
         </div>
 
@@ -153,17 +162,15 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
                 }}
               >
                 <span className="text-[9px] font-bold uppercase tracking-wider opacity-80">
-                  Curated Essentials
+                  Featured
                 </span>
-                <h3 className="text-sm font-black leading-tight">Essex Artisan Harvest Drop</h3>
-                <p className="text-[11px] opacity-90">
-                  Delivered in 20–30 mins from our micro-hub.
-                </p>
+                <h3 className="text-sm font-black leading-tight">{config.tagline || config.brandName}</h3>
+                <p className="text-[11px] opacity-90">Preview of your current brand styling.</p>
               </div>
 
               {/* Product Grid */}
               <div className="space-y-2">
-                <span className="text-xs font-bold text-gray-900 block">Popular Groceries</span>
+                <span className="text-xs font-bold text-gray-900 block">Products</span>
                 <div className="grid grid-cols-2 gap-2.5">
                   {products.map((p) => (
                     <div
@@ -171,7 +178,7 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
                       className="p-2.5 rounded-xl border border-gray-100 bg-gray-50/60 flex flex-col justify-between space-y-2"
                     >
                       <img
-                        src={p.images?.[0] || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=200'}
+                        src={p.images?.[0] || config.logoUrl || ''}
                         alt={p.name}
                         className="w-full h-20 object-cover rounded-lg bg-white"
                       />
@@ -196,15 +203,8 @@ export const PreviewScreen: React.FC<PreviewScreenProps> = ({ tenantId }) => {
 
             {/* Bottom Preview Bar */}
             <div className="p-3 border-t border-gray-100 bg-white flex items-center justify-between text-xs">
-              <span className="text-gray-500 font-semibold">Authoritative Basket Active</span>
-              <button
-                type="button"
-                className="px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1 shadow-xs"
-                style={{ backgroundColor: config.primaryColour }}
-              >
-                <span>View Storefront</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <span className="text-gray-500 font-semibold">Preview only — actions are disabled</span>
+              <span className="px-3 py-1.5 rounded-xl bg-gray-100 text-gray-600 font-bold text-[10px]">Admin preview</span>
             </div>
           </div>
         </div>

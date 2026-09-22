@@ -303,13 +303,13 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                   Step {wizardStep} of 7
                 </span>
                 <h2 className="text-lg font-bold text-gray-900">
-                  {wizardStep === 1 && '1. Brand Basics'}
-                  {wizardStep === 2 && '2. Visual Identity & Theme'}
-                  {wizardStep === 3 && '3. Typography'}
-                  {wizardStep === 4 && '4. Languages & Currency'}
-                  {wizardStep === 5 && '5. Storefront Domain'}
-                  {wizardStep === 6 && '6. Tenant Administrator Invite'}
-                  {wizardStep === 7 && '7. Review & Provision'}
+                  {wizardStep === 1 && 'Brand basics'}
+                  {wizardStep === 2 && 'Visual identity'}
+                  {wizardStep === 3 && 'Typography'}
+                  {wizardStep === 4 && 'Language & currency'}
+                  {wizardStep === 5 && 'Storefront domain'}
+                  {wizardStep === 6 && 'Administrator'}
+                  {wizardStep === 7 && 'Review'}
                 </h2>
               </div>
               <button
@@ -328,15 +328,15 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-xl font-bold text-gray-900">Brand Provisioned Successfully!</h3>
+                  <h3 className="text-xl font-bold text-gray-900">Brand created</h3>
                   <p className="text-xs text-gray-500">
-                    Tenant <strong>{provisionSuccess.tenantId}</strong> is now live in Firestore.
+                    Tenant <strong>{provisionSuccess.tenantId}</strong> has been created successfully.
                   </p>
                 </div>
                 <div className="p-4 bg-gray-50 rounded-2xl text-left text-xs space-y-2 font-mono">
                   <div>Brand: {provisionSuccess.brandName}</div>
                   <div>Tenant ID: {provisionSuccess.tenantId}</div>
-                  <div>Status: Standalone / Ready for Channel Mapping</div>
+                  <div>Status: Brand configuration created</div>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button
@@ -384,7 +384,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                         placeholder="e.g. daylesford"
                         className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-600"
                       />
-                      <p className="text-[11px] text-gray-400 mt-1">Unique slug used in API routes and multi-tenant isolation.</p>
+                      <p className="text-[11px] text-gray-400 mt-1">Unique identifier used to keep this brand's configuration separate.</p>
                     </div>
                   </div>
                 )}
@@ -555,7 +555,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                         className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
                       />
                       <p className="text-[11px] text-gray-400 mt-1">
-                        Creates the initial <code>tenantMemberships</code> document granting <code>tenantAdmin</code> access.
+                        Sets the initial administrator for this brand.
                       </p>
                     </div>
                   </div>
@@ -586,8 +586,8 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                         <span className="font-mono">{adminEmail || 'None'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Upstream Integration:</span>
-                        <span className="text-emerald-700 font-semibold">Standalone (Credentials unconfigured)</span>
+                        <span className="text-gray-500">Integration:</span>
+                        <span className="text-emerald-700 font-semibold">Configure separately</span>
                       </div>
                     </div>
                   </div>
@@ -624,7 +624,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                       onClick={handleProvisionBrand}
                       className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                     >
-                      {isSubmitting ? 'Provisioning...' : 'Provision Brand in Firestore'}
+                      {isSubmitting ? 'Provisioning...' : 'Create brand'}
                     </button>
                   )}
                 </div>

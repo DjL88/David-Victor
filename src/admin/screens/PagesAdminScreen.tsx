@@ -29,16 +29,23 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [loading, setLoading] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showBlockPicker, setShowBlockPicker] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setError('');
     auth.currentUser?.getIdToken().then((token) => fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } }))
       .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to load pages')))
       .then((data) => { const loaded = data.pages || []; setPages(loaded); setSelectedPage(loaded[0] || blankPage()); })
+      .catch((err) => { console.error(err); setPages([]); setSelectedPage(blankPage()); setError('Could not load CMS pages. Check your admin session and try again.'); })
       .finally(() => setLoading(false));
   }, [tenantId]);
 
   const handleSavePage = async () => {
+    setSaving(true); setError('');
+    try {
+    setError('');
     const token = await auth.currentUser?.getIdToken();
     const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId }, body: JSON.stringify(selectedPage) });
     if (!response.ok) throw new Error('Failed to save CMS page');
@@ -46,6 +53,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     setSelectedPage(saved);
     setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
     setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
+    finally { setSaving(false); }
   };
 
   const createPage = () => setSelectedPage(blankPage());
@@ -68,11 +77,11 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'Hero',
           order: newOrder,
-          headline: 'Seasonal Harvest Arriving Daily',
-          subheadline: 'Hand-picked from certified sustainable farms.',
-          badge: 'New Season',
-          imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=1200',
-          ctaText: 'Shop Essentials',
+          headline: 'Add a headline',
+          subheadline: 'Add supporting text for this page.',
+          badge: '',
+          imageUrl: '',
+          ctaText: 'Learn more',
         };
         break;
       case 'RichText':
@@ -80,7 +89,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'RichText',
           order: newOrder,
-          content: 'Add your story and artisanal heritage details here. Safe, structured prose.',
+          content: 'Add your page content here.',
         };
         break;
       case 'ProductCarousel':
@@ -88,8 +97,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'ProductCarousel',
           order: newOrder,
-          title: 'Featured Organic Essentials',
-          productPlus: ['PLU-SOURDOUGH-01', 'PLU-ORGANIC-EGGS-6PK'],
+          title: 'Featured products',
+          productPlus: [],
         };
         break;
       case 'OfferCarousel':
@@ -97,8 +106,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'OfferCarousel',
           order: newOrder,
-          title: 'Special Deals & Promo Spotlights',
-          subtitle: 'Limited-time bundles and seasonal savings',
+          title: 'Featured offers',
+          subtitle: 'Add an optional description',
         };
         break;
       case 'FAQ':
@@ -108,7 +117,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           order: newOrder,
           title: 'Frequently Asked Questions',
           items: [
-            { question: 'What is the delivery cutoff time?', answer: 'Orders placed before 9 PM arrive by 10 AM next morning.' },
+            { question: 'Add a question', answer: 'Add an answer' },
           ],
         };
         break;
@@ -117,7 +126,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           id: `b_${Date.now()}`,
           type: 'StoreFinder',
           order: newOrder,
-          title: 'Find Your Nearest Artisan Hub',
+          title: 'Find a store',
         };
         break;
       case 'Divider':
@@ -176,14 +185,14 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <FileText className="w-5 h-5 text-indigo-600" />
-              <span>Structured CMS Page Builder</span>
+              <span>Pages</span>
             </h1>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              Tenant persisted
+              Saved per brand
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Build SEO-optimized landing pages and narrative stories with live Deliverect references and zero arbitrary code execution.
+            Create landing pages, policies and brand content using reusable storefront blocks.
           </p>
         </div>
 
@@ -194,14 +203,16 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           <button
             type="button"
             onClick={handleSavePage}
-            disabled={loading}
+            disabled={loading || saving}
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
           >
             <Check className="w-4 h-4" />
-            <span>{saveSuccess ? 'Saved' : 'Save Page'}</span>
+            <span>{saving ? 'Saving…' : saveSuccess ? 'Saved' : 'Save Page'}</span>
           </button>
         </div>
       </div>
+
+      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* PAGE METADATA & SEO (LEFT 4 COLS) */}

@@ -56,6 +56,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadData();
@@ -69,12 +70,17 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
 
   const loadData = async () => {
     setLoading(true);
+    setError('');
     try {
       const res = await defaultAnalyticsClient.getInsights(tenantId, timeframe);
       setData(res);
       if (activeTab === 'telemetry') {
         loadRecentEvents();
       }
+    } catch (err) {
+      console.error('Failed to load insights:', err);
+      setData(null);
+      setError('Insights could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -103,13 +109,17 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
     }
   };
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="p-12 flex items-center justify-center text-gray-500">
         <RefreshCw className="w-6 h-6 animate-spin mr-2" />
         <span>Aggregating privacy-sanitized analytics...</span>
       </div>
     );
+  }
+
+  if (!data) {
+    return <div className="p-12 text-center"><div role="alert" className="text-sm font-semibold text-rose-700">{error || 'Insights are unavailable.'}</div><button type="button" onClick={loadData} className="mt-3 text-xs font-bold text-indigo-700 underline">Retry</button></div>;
   }
 
   return (
@@ -120,14 +130,12 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-600" />
-              <span>Commerce Insights & Operational Analytics</span>
+              <span>Insights</span>
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              Demo Simulation
-            </span>
+
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Privacy-preserving telemetry across conversion funnels, catalog picking, search, and coarse regions.
+            Understand storefront conversion, product performance, search and customer journeys.
           </p>
         </div>
 
@@ -260,7 +268,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
         </div>
       </div>
 
-      {/* TELEMETRY ORIGIN & CONTRACT NOTICE */}
+      {/* ANALYTICS DATA NOTICE */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl p-4 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-800">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
@@ -268,22 +276,17 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-slate-100">Website Frontend Telemetry: ACTIVE</span>
+              <span className="font-bold text-sm text-slate-100">Storefront analytics</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live De-Identified Logging
+                Privacy-aware
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Customer sessions, product views, search queries, cart additions, and order submissions on the web app are tracked in real time.
+              Shows the analytics events available for this brand. Metrics depend on the events currently being collected.
             </p>
           </div>
         </div>
-        <div className="text-right shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Deliverect Operational Webhooks</span>
-          <span className="text-xs text-amber-300 font-medium block mt-0.5">
-            Auto-connects upon staging credential deployment
-          </span>
-        </div>
+        
       </div>
 
       {/* SUB-SECTION TABS */}
@@ -328,7 +331,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
               <span>End-to-End Grocery Conversion Funnel</span>
             </h3>
             <span className="text-xs text-gray-500 font-mono">
-              7 Funnel Stages • Zero Identity Leakage
+              Conversion by journey stage
             </span>
           </div>
 

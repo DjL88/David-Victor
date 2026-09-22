@@ -20,6 +20,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     loadFlags();
@@ -27,11 +28,13 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
 
   const loadFlags = async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await defaultAdminClient.getFeatureFlags(tenantId);
       setFlags(data);
     } catch (e) {
       console.error('Failed to load feature flags:', e);
+      setError('Feature switches could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -47,6 +50,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     if (!flags) return;
     setSaving(true);
     setSaveSuccess(false);
+    setError('');
 
     try {
       const updated = await defaultAdminClient.updateFeatureFlags(tenantId, flags, currentUser);
@@ -58,18 +62,23 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save feature flags:', err);
+      setError('Feature switches could not be saved. No changes were applied.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading || !flags) {
+  if (loading) {
     return (
       <div className="p-6 flex items-center justify-center text-gray-500 text-xs">
         <RefreshCw className="w-4 h-4 animate-spin mr-2" />
         <span>Loading feature switches for {tenantId}...</span>
       </div>
     );
+  }
+
+  if (!flags) {
+    return <div role="alert" className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800">{error || 'Feature switches are unavailable.'} <button type="button" onClick={loadFlags} className="ml-2 font-bold underline">Retry</button></div>;
   }
 
   const featureDefinitions: Array<{
@@ -140,6 +149,8 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
         )}
       </div>
 
+      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{error}</div>}
+
       <form onSubmit={handleSave} className="space-y-4">
         <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-2xs">
           {featureDefinitions.map((f) => (
@@ -156,6 +167,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
                   flags[f.key] ? 'bg-indigo-600' : 'bg-gray-200'
                 }`}
                 aria-label={`Toggle ${f.title}`}
+                aria-pressed={Boolean(flags[f.key])}
               >
                 <div
                   className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
