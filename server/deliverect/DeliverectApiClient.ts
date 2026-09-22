@@ -2595,8 +2595,125 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const before = await this.getMappedCommerceBasket(basketId);
     const { channelLinkId } = await this.resolveStoreChannelLinkId(storeId);
     const api = await this.getCommerceBasketApi();
-    const raw = await api.updateStore(basketId, channelLinkId);
-    const after = await this.mapLiveCommerceBasket(raw);
+    let raw = await api.updateStore(basketId, channelLinkId);
+    let after = await this.mapLiveCommerceBasket(raw);
+
+    // Store migration reprices normal lines upstream, so bundle allocations must
+    // be repriced too. Never carry a Combo Deal amount from the source store.
+    const existingLedger = await FirestorePlatformService.getBasketBundleAllocations(
+      this.tenantId,
+      basketId
+    );
+    if (existingLedger.length > 0) {
+      const destinationCatalog = await this.getStoreCatalog(storeId, after.fulfillmentType);
+      const normalProducts = destinationCatalog.products || [];
+      const repricedLedger: BasketBundleAllocationRecord[] = [];
+
+      const shelfPriceMinor = (product: Product): number | undefined => {
+        const price = product.price ?? product.basePrice;
+        if (typeof price === 'number' && Number.isInteger(price)) return price;
+        if (price && typeof price === 'object' && Number.isInteger((price as Money).amount)) {
+          return (price as Money).amount;
+        }
+        return Number.isInteger(product.priceMinor) ? product.priceMinor : undefined;
+      };
+
+      for (const entry of existingLedger) {
+        const bundle = destinationCatalog.bundleCatalog?.bundles.find(
+          (candidate) => candidate.id === entry.bundleId || candidate.plu === entry.bundlePlu
+        );
+        if (!bundle || bundle.stockStatus === 'OUT_OF_STOCK') continue;
+
+        const sections = (bundle.sections || bundle.modifierGroups || []).map((section) => ({
+          ...section,
+          modifiers: section.modifiers.map((modifier) => {
+            const mappedPlu = String(modifier.standalonePlu || '').trim();
+            const product = mappedPlu
+              ? normalProducts.find((candidate) => candidate.plu === mappedPlu)
+              : undefined;
+            if (product) {
+              return {
+                ...modifier,
+                standalonePlu: product.plu,
+                standalonePriceMinor: shelfPriceMinor(product),
+              };
+            }
+            if (section.isUpsell || section.min === 0) {
+              const modifierPlu = String(modifier.plu || '').trim();
+              return {
+                ...modifier,
+                standalonePlu: modifierPlu || undefined,
+                standalonePriceMinor: modifierPlu
+                  ? Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0))
+                  : undefined,
+              };
+            }
+            return { ...modifier, standalonePlu: undefined, standalonePriceMinor: undefined };
+          }),
+        }));
+        const authoritativeBundle: BundleProduct = { ...bundle, sections, modifierGroups: sections };
+
+        const selections: SelectedBundleModifier[] = [];
+        let valid = true;
+        for (const component of entry.components || []) {
+          const section = sections.find((candidate) => candidate.id === component.sectionId);
+          const modifier = section?.modifiers.find(
+            (candidate) => candidate.id === component.modifierId
+          );
+          const perBundleQuantity = component.quantity / Math.max(1, entry.bundleQuantity);
+          if (!section || !modifier || !Number.isInteger(perBundleQuantity) || perBundleQuantity <= 0) {
+            valid = false;
+            break;
+          }
+          selections.push({
+            modifierId: modifier.id,
+            plu: modifier.plu,
+            name: modifier.name,
+            quantity: perBundleQuantity,
+            price: modifier.priceMinor ?? modifier.price ?? 0,
+            priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+            standalonePlu: modifier.standalonePlu,
+            standalonePriceMinor: modifier.standalonePriceMinor,
+            sectionId: section.id,
+            sectionName: section.name,
+          });
+        }
+        if (!valid) continue;
+
+        try {
+          const allocation = allocateProtectedBundlePrices(
+            authoritativeBundle,
+            selections,
+            entry.bundleQuantity
+          );
+          repricedLedger.push({
+            ...allocation,
+            bundleInstanceId: entry.bundleInstanceId,
+            createdAt: entry.createdAt,
+          });
+        } catch {
+          // Destination store no longer has a safely priceable/valid combo.
+        }
+      }
+
+      await FirestorePlatformService.replaceBasketBundleAllocations(
+        this.tenantId,
+        basketId,
+        repricedLedger
+      );
+      const upstreamDiscounts: CommerceBasketDiscountInput[] = Array.isArray((raw as any)?.discounts)
+        ? (raw as any).discounts
+        : [];
+      const nonBundleDiscounts = upstreamDiscounts.filter(
+        (discount) => !this.isManagedBundleDiscount(discount)
+      );
+      const desiredDiscounts = [
+        ...nonBundleDiscounts,
+        ...this.buildManagedBundleDiscountLines(repricedLedger),
+      ];
+      raw = await api.updateDiscounts(basketId, desiredDiscounts);
+      after = await this.mapLiveCommerceBasket(raw);
+    }
 
     const comparison = this.compareBasketItems(before, after);
 
