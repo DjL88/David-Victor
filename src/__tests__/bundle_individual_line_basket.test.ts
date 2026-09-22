@@ -251,37 +251,18 @@ describe('individual-line bundle basket write', () => {
     ]);
     expect(replacedItems.some((item) => item.plu === 'MEAL-DEAL-PARENT')).toBe(false);
 
-    // Discount is now pro-rated per qualifying item (one item_flat_off line
-    // per component) rather than a single flat order-level line.
-    expect(appliedDiscounts).toHaveLength(3);
-    expect(appliedDiscounts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'item_flat_off',
-          provider: 'restaurant',
-          plu: 'A',
-          amount: 50,
-          name: 'Combo Deal: Meal Deal',
-        }),
-        expect.objectContaining({
-          type: 'item_flat_off',
-          provider: 'restaurant',
-          plu: 'B',
-          amount: 33,
-          name: 'Combo Deal: Meal Deal',
-        }),
-        expect.objectContaining({
-          type: 'item_flat_off',
-          provider: 'restaurant',
-          plu: 'C',
-          amount: 17,
-          name: 'Combo Deal: Meal Deal',
-        }),
-      ])
-    );
-    expect(
-      appliedDiscounts.reduce((sum: number, d: any) => sum + d.amount, 0)
-    ).toBe(100);
+    // Basket discount PATCH uses one order-level flat discount for the bundle.
+    // Component-level protected pricing remains in our allocation ledger; PLU-only
+    // item_flat_off payloads are not a valid substitute for Deliverect item references.
+    expect(appliedDiscounts).toEqual([
+      expect.objectContaining({
+        type: 'order_flat_off',
+        provider: 'restaurant',
+        amount: 100,
+        value: 100,
+        name: 'Combo Deal: Meal Deal',
+      }),
+    ]);
 
     expect(result.items.map((item: any) => item.plu)).toEqual(['A', 'B', 'C']);
     expect(result.total.amount).toBe(500);
