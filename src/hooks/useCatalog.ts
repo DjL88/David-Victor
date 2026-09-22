@@ -83,6 +83,9 @@ export function useCatalog(selectedStoreId?: string) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  // Full store-scoped saleable pool for navigation directories. Unlike `products`,
+  // this is deliberately never narrowed by the currently selected category.
+  const [directoryProducts, setDirectoryProducts] = useState<Product[]>([]);
   const [summaries, setSummaries] = useState<Record<string, ProductAvailabilitySummary>>({});
   const [bundleSummaries, setBundleSummaries] = useState<Record<string, ProductAvailabilitySummary>>({});
   const [loading, setLoading] = useState<boolean>(true);
@@ -137,6 +140,7 @@ export function useCatalog(selectedStoreId?: string) {
       prevScopeRef.current = currentScope;
       setCatalog(null);
       setProducts([]);
+      setDirectoryProducts([]);
       setSummaries({});
       setBundleSummaries({});
       setError(null);
@@ -229,6 +233,11 @@ export function useCatalog(selectedStoreId?: string) {
             : undefined,
       });
 
+      const directoryRes = selectedCategoryId
+        ? await client.searchProducts('', selectedStoreId)
+        : res;
+      setDirectoryProducts(getRenderableProducts(directoryRes.products || []));
+
       let nextProducts = res.products;
       let nextSummaries = res.summaries || {};
       const nextBundleSummaries = res.bundleSummaries || {};
@@ -265,6 +274,7 @@ export function useCatalog(selectedStoreId?: string) {
 
       // In live modes and on error: strictly clear stale products, summaries, and snapshots
       setProducts([]);
+      setDirectoryProducts([]);
       setSummaries({});
       setBundleSummaries({});
       setIsStale(false);
@@ -328,6 +338,7 @@ export function useCatalog(selectedStoreId?: string) {
   return {
     catalog,
     products,
+    directoryProducts,
     renderableProducts,
     summaries,
     bundleSummaries,
