@@ -294,72 +294,19 @@ function savePersistedDomains(domains: Record<string, DomainRecord>): void {
   }
 }
 
-// In-memory domain registry with disk persistence fallback
+// In-memory domain registry is a demo/test convenience only. Live routing is resolved from durable storage.
+const DEMO_DOMAINS: Record<string, DomainRecord> = {
+  '1bwydi.ai.studio': { domainId: 'dom_1bwydi', hostname: '1bwydi.ai.studio', tenantId: 'brand-alpha', isPrimary: true, status: 'active' },
+  'localhost': { domainId: 'dom_localhost', hostname: 'localhost', tenantId: 'brand-alpha', isPrimary: true, status: 'active' },
+  '127.0.0.1': { domainId: 'dom_127001', hostname: '127.0.0.1', tenantId: 'brand-alpha', isPrimary: true, status: 'active' },
+  'www.shop1.com': { domainId: 'dom_shop1', hostname: 'www.shop1.com', tenantId: 'brand-alpha', isPrimary: true, status: 'active' },
+  'shop1.com': { domainId: 'dom_shop1_apex', hostname: 'shop1.com', tenantId: 'brand-alpha', isPrimary: false, status: 'active' },
+  'www.shop2.com': { domainId: 'dom_shop2', hostname: 'www.shop2.com', tenantId: 'brand-beta', isPrimary: true, status: 'active' },
+  'shop2.com': { domainId: 'dom_shop2_apex', hostname: 'shop2.com', tenantId: 'brand-beta', isPrimary: false, status: 'active' },
+};
 const inMemoryDomains: Record<string, DomainRecord> = {
-  '1bwydi.ai.studio': {
-    domainId: 'dom_1bwydi',
-    hostname: '1bwydi.ai.studio',
-    tenantId: 'brand-alpha',
-    isPrimary: true,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  'localhost': {
-    domainId: 'dom_localhost',
-    hostname: 'localhost',
-    tenantId: 'brand-alpha',
-    isPrimary: true,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  '127.0.0.1': {
-    domainId: 'dom_127001',
-    hostname: '127.0.0.1',
-    tenantId: 'brand-alpha',
-    isPrimary: true,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  'www.shop1.com': {
-    domainId: 'dom_shop1',
-    hostname: 'www.shop1.com',
-    tenantId: 'brand-alpha',
-    isPrimary: true,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  'shop1.com': {
-    domainId: 'dom_shop1_apex',
-    hostname: 'shop1.com',
-    tenantId: 'brand-alpha',
-    isPrimary: false,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  'www.shop2.com': {
-    domainId: 'dom_shop2',
-    hostname: 'www.shop2.com',
-    tenantId: 'brand-beta',
-    isPrimary: true,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  'shop2.com': {
-    domainId: 'dom_shop2_apex',
-    hostname: 'shop2.com',
-    tenantId: 'brand-beta',
-    isPrimary: false,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  ...loadPersistedDomains(),
+  ...(isDemoMode() || isTestMode() ? DEMO_DOMAINS : {}),
+  ...(isDemoMode() || isTestMode() ? loadPersistedDomains() : {}),
 };
 
 export class FirestoreService {
