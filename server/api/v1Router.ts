@@ -43,6 +43,7 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
+import { listAssistantActionsForRole } from '../admin/adminActionRegistry';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -2802,6 +2803,18 @@ v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
   res.json({
     ...userWithId,
     user: userWithId,
+  });
+});
+
+// 9.0.0 Assistant capability discovery
+// This endpoint intentionally exposes metadata only. It does not execute actions.
+v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request, res: Response) => {
+  const authAdmin = (req as AuthenticatedRequest).adminUser!;
+  const actions = listAssistantActionsForRole(authAdmin.role);
+  res.json({
+    mode: 'READ_ONLY_FOUNDATION',
+    tenantId: authAdmin.tenantId,
+    actions,
   });
 });
 
