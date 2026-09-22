@@ -67,6 +67,51 @@ describe('AdminChangeSetService', () => {
     expect(approved.autonomousExecutionEnabled).toBe(false);
   });
 
+  it('tracks approved apply and rollback transitions explicitly', async () => {
+    const proposed = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+      revisionIds: ['rev-1'],
+    });
+    expect(proposed.applyAvailable).toBe(true);
+
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'admin-2',
+      actorRole: 'tenantAdmin',
+    });
+    const applying = await AdminChangeSetService.transitionChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: approved.id,
+      actorId: 'admin-2',
+      status: 'APPLYING',
+    });
+    expect(applying.status).toBe('APPLYING');
+
+    const applied = await AdminChangeSetService.transitionChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: approved.id,
+      actorId: 'admin-2',
+      status: 'APPLIED',
+      afterSnapshot: { primaryColour: '#123456' },
+    });
+    expect(applied.status).toBe('APPLIED');
+    expect(applied.appliedAt).toBeTruthy();
+
+    const rolledBack = await AdminChangeSetService.transitionChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: approved.id,
+      actorId: 'admin-2',
+      status: 'ROLLED_BACK',
+      rollbackRevisionIds: ['rev-rollback'],
+    });
+    expect(rolledBack.status).toBe('ROLLED_BACK');
+    expect(rolledBack.rollbackRevisionIds).toEqual(['rev-rollback']);
+  });
+
   it('does not allow read actions to be wrapped as write proposals', async () => {
     await expect(
       AdminChangeSetService.createProposedChangeSet({
