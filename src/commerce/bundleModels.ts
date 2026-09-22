@@ -445,7 +445,7 @@ export interface MissedBundleOffer {
 export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
-  candidateProducts: Array<{ plu: string; active?: boolean; stockStatus?: string }> = [],
+  candidateProducts: Array<{ plu: string; quantity?: number; active?: boolean; stockStatus?: string }> = [],
 ): MissedBundleOffer[] {
   const basketQtyByPlu = new Map<string, number>();
   basketItems.forEach((item) => basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity));
