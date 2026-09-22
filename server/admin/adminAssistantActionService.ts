@@ -146,7 +146,7 @@ export class AdminAssistantActionService {
       }
 
       case 'integrations.diagnose': {
-        const health = await connectionHealthService.getHealth(args.tenantId);
+        const health = await connectionHealthService.getConnectionHealth(args.tenantId);
         evidence.push({ source: 'connectionHealth', ok: true });
         result = health;
         break;
