@@ -574,10 +574,22 @@ v1Router.get('/stores/:storeId', async (req: Request, res: Response) => {
 v1Router.get('/config/maps', (_req: Request, res: Response) => {
   const apiKey =
     process.env.VITE_GOOGLE_MAPS_API_KEY ||
-    process.env.GOOGLE_MAPS_API_KEY ||
-    'xDh0vIFs-lfpjyGqlg9KJnrAMqQ=';
-  const mapId = process.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
-  res.json({ apiKey, mapId });
+    process.env.GOOGLE_MAPS_API_KEY;
+  const mapId = process.env.VITE_GOOGLE_MAPS_MAP_ID;
+
+  // Never make staging/production look configured by returning demo/sample
+  // credentials. Missing runtime configuration is an operational error.
+  if ((!apiKey || !mapId) && !isDemoMode() && !isTestMode()) {
+    return res.status(503).json({
+      code: 'INTEGRATION_NOT_CONFIGURED',
+      message: 'Google Maps is not configured for this runtime.',
+    });
+  }
+
+  res.json({
+    apiKey: apiKey || '',
+    mapId: mapId || '',
+  });
 });
 
 // ==========================================
