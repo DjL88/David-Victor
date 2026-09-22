@@ -269,6 +269,94 @@ export interface StoreSwitchReconciliation {
 }
 
 // ==========================================
+// CAPACITY & DEMAND PROTECTION
+// ==========================================
+
+/**
+ * Capacity is a reservation problem, not just a UI limit. A production implementation
+ * must atomically reserve/release capacity at checkout so concurrent shoppers cannot
+ * consume the same stock or fulfilment slot.
+ */
+export interface CapacityPolicy {
+  enabled: boolean;
+  /** Maximum accepted orders in a rolling window for a location. */
+  maxOrdersPerWindow?: number;
+  windowMinutes?: number;
+  /** Optional cap on concurrently active orders being picked/prepared. */
+  maxActiveOrders?: number;
+  /** Optional delivery capacity expressed as available driver/order slots. */
+  deliverySlots?: number;
+  /** Percentage of configured capacity at which the storefront should warn/slow intake. */
+  warningThresholdPercent?: number;
+  /** Behaviour once hard capacity is reached. */
+  onCapacityReached: 'PAUSE_CHECKOUT' | 'DELIVERY_ONLY_PAUSE' | 'NEXT_AVAILABLE_SLOT';
+}
+
+export type DemandSignalMetric =
+  | 'ORDER_RATE'
+  | 'UNIT_RATE'
+  | 'PRODUCT_UNIT_RATE'
+  | 'DISCOUNT_REDEMPTION_RATE'
+  | 'STOCK_DEPLETION_RATE';
+
+export interface DemandThreshold {
+  /** Observation window used to calculate the signal. */
+  windowMinutes: number;
+  /** Minimum sample count prevents tiny volumes being treated as a spike. */
+  minimumSamples: number;
+  /** Multiplier over the rolling baseline, e.g. 3 = 3x normal demand. */
+  baselineMultiplier: number;
+  /** Optional absolute threshold as an additional guardrail. */
+  absoluteThreshold?: number;
+}
+
+export type DemandProtectionAction =
+  | { type: 'MAX_QUANTITY_PER_ORDER'; maximum: number }
+  | { type: 'PAUSE_PRODUCT' }
+  | { type: 'PAUSE_DISCOUNT' }
+  | { type: 'REQUIRE_MANUAL_REVIEW' };
+
+export interface DemandProtectionStage {
+  threshold: DemandThreshold;
+  actions: DemandProtectionAction[];
+}
+
+/**
+ * Tenant-configurable automatic protection. Stages are evaluated in order of severity,
+ * allowing patterns such as Limit 2 -> Limit 1 -> Pause product as demand accelerates.
+ * These policies generate temporary runtime protections; they do not mutate source stock.
+ */
+export interface DemandProtectionPolicy {
+  id: string;
+  name: string;
+  enabled: boolean;
+  metric: DemandSignalMetric;
+  productPlu?: string;
+  productTag?: string;
+  category?: string;
+  discountId?: string;
+  countries?: string[];
+  storeIds?: string[];
+  /** Rolling baseline period used for comparison. */
+  baselineMinutes: number;
+  /** Automatic protection expires unless the signal remains elevated. */
+  protectionTtlMinutes: number;
+  stages: DemandProtectionStage[];
+  /** Safety option for regulated/high-impact policies. */
+  requireApproval?: boolean;
+}
+
+export interface CapacityReservation {
+  reservationId: string;
+  tenantId: string;
+  storeId: string;
+  orderId: string;
+  status: 'HELD' | 'COMMITTED' | 'RELEASED' | 'EXPIRED';
+  expiresAt: string;
+  createdAt: string;
+}
+
+// ==========================================
 // DISPATCH & COURIER ORCHESTRATION RULES
 // ==========================================
 
