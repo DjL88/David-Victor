@@ -1759,6 +1759,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
       });
     }
 
+    // Surface only the aggregate unit ownership needed by storefront
+    // qualification. The full protected-price ledger remains server-side.
+    const bundleLedger = await FirestorePlatformService.getBasketBundleAllocations(
+      this.tenantId,
+      mapped.id
+    );
+    const allocatedByPlu = new Map<string, number>();
+    bundleLedger.forEach((entry) => (entry.components || []).forEach((component) => {
+      allocatedByPlu.set(
+        component.componentPlu,
+        (allocatedByPlu.get(component.componentPlu) || 0) + component.quantity
+      );
+    }));
+    mapped.bundleAllocatedUnits = Array.from(allocatedByPlu, ([plu, quantity]) => ({ plu, quantity }));
+
     return mapped;
   }
 
