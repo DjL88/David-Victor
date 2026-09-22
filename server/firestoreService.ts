@@ -1320,14 +1320,11 @@ export class FirestoreService {
    */
   static async resetTenantHeroBanners(tenantId: string): Promise<CategoryPromoBanner[]> {
     const defaults = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
-    inMemoryHeroBanners[tenantId] = defaults;
-    inMemoryHeroBannersPurged[tenantId] = false;
-
-    const diskMap = loadPersistedHeroBanners();
-    diskMap[tenantId] = defaults;
-    savePersistedHeroBanners(diskMap);
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Banners were not reset because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         const snap = await db.collection('tenants').doc(tenantId).collection('heroBanners').get();
@@ -1339,8 +1336,14 @@ export class FirestoreService {
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to reset hero banners in Firestore:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryHeroBanners[tenantId] = defaults;
+    inMemoryHeroBannersPurged[tenantId] = false;
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = defaults;
+    savePersistedHeroBanners(diskMap);
     return defaults;
   }
 
@@ -3231,15 +3234,20 @@ export class FirestoreService {
       tenantId,
       updatedAt: new Date().toISOString(),
     };
-    inMemorySearchConfigs[tenantId] = item;
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Search configuration was not saved because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         await db.collection('tenants').doc(tenantId).collection('searchConfig').doc('default').set(item, { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save search config to Firestore:', err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemorySearchConfigs[tenantId] = item;
     return item;
   }
 
@@ -3272,15 +3280,20 @@ export class FirestoreService {
       ...existing,
       ...rules,
     };
-    inMemoryDispatchRules[tenantId] = updated;
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Dispatch rules were not saved because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         await db.collection('tenants').doc(tenantId).collection('dispatchRules').doc('default').set(cleanUndefined(updated), { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save tenant dispatch rules to Firestore:', err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryDispatchRules[tenantId] = updated;
     return updated;
   }
 }
