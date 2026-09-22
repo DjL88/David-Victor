@@ -59,6 +59,7 @@ import type {
   SelectedBundleModifier,
 } from '../../src/commerce/bundleModels';
 import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocation';
+import { qualifyAutomaticDeals } from '../../src/commerce/automaticDealEngine';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
@@ -2136,6 +2137,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
    * only ever discounts once). Returns null when nothing needs to change,
    * so callers can skip an unnecessary Deliverect discounts write.
    */
+  private async recalculateAutomaticDealDiscounts(
+    basketId: string,
+    desired: Array<{ plu: string; quantity: number }>,
+    catalog: Catalog,
+    rawDiscounts: CommerceBasketDiscountInput[]
+  ): Promise<CommerceBasketDiscountInput[]> {
+    const allocations = qualifyAutomaticDeals(
+      desired,
+      catalog.bundleCatalog?.bundles || [],
+      catalog.products || []
+    );
+    const now = new Date().toISOString();
+    const records: BasketBundleAllocationRecord[] = allocations.map((allocation, index) => ({
+      ...allocation,
+      bundleInstanceId: `auto:${allocation.bundleId}:${index}`,
+      createdAt: now,
+    }));
+    // The ledger is now a projection/diagnostic of current qualification, not
+    // persistent ownership of basket units.
+    await FirestorePlatformService.replaceBasketBundleAllocations(this.tenantId, basketId, records);
+    const nonManaged = (rawDiscounts || []).filter((discount) => !this.isManagedBundleDiscount(discount));
+    return [...nonManaged, ...this.buildManagedBundleDiscountLines(records)];
+  }
+
   private async revalidateBundleDiscounts(
     basketId: string,
     desired: Array<{ plu: string; quantity: number }>,
