@@ -57,6 +57,11 @@ export interface AssistantChangeSet {
   validatedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  applyingAt?: string;
+  appliedAt?: string;
+  failedAt?: string;
+  rolledBackAt?: string;
+  rollbackRevisionIds?: string[];
   reversible: boolean;
   executionEnabled: false;
 }
@@ -416,6 +421,111 @@ export class AdminChangeSetService {
       transaction.set(ref, approved);
       transaction.create(auditRef, event);
       return approved;
+    });
+  }
+
+  static async transitionChangeSet(args: {
+    tenantId: string;
+    changeSetId: string;
+    actorId: string;
+    status: 'APPLYING' | 'APPLIED' | 'PARTIALLY_FAILED' | 'FAILED' | 'ROLLED_BACK';
+    afterSnapshot?: unknown;
+    warning?: string;
+    rollbackRevisionIds?: string[];
+  }): Promise<AssistantChangeSet> {
+    const allowed: Record<AdminChangeSetStatus, AdminChangeSetStatus[]> = {
+      PROPOSED: [],
+      VALIDATED: [],
+      APPROVAL_REQUIRED: [],
+      APPROVED: ['APPLYING'],
+      APPLYING: ['APPLIED', 'PARTIALLY_FAILED', 'FAILED'],
+      APPLIED: ['ROLLED_BACK'],
+      PARTIALLY_FAILED: [],
+      FAILED: [],
+      ROLLED_BACK: [],
+    };
+
+    const applyTransition = (current: AssistantChangeSet): AssistantChangeSet => {
+      if (current.status === args.status) return current;
+      if (!allowed[current.status]?.includes(args.status)) {
+        throw error(
+          'ADMIN_CHANGESET_INVALID_STATE',
+          `Change set cannot move from ${current.status} to ${args.status}.`,
+          409
+        );
+      }
+      const now = new Date().toISOString();
+      const next: AssistantChangeSet = {
+        ...current,
+        status: args.status,
+        updatedAt: now,
+        afterSnapshot: args.afterSnapshot ?? current.afterSnapshot,
+        warnings: args.warning
+          ? [...current.warnings, args.warning]
+          : current.warnings,
+        rollbackRevisionIds: args.rollbackRevisionIds ?? current.rollbackRevisionIds,
+      };
+      if (args.status === 'APPLYING') next.applyingAt = now;
+      if (args.status === 'APPLIED') next.appliedAt = now;
+      if (args.status === 'FAILED' || args.status === 'PARTIALLY_FAILED') next.failedAt = now;
+      if (args.status === 'ROLLED_BACK') next.rolledBackAt = now;
+      return next;
+    };
+
+    const auditFor = (next: AssistantChangeSet): AuditEventV2 => ({
+      eventId: `aev_${crypto.randomUUID()}`,
+      tenantId: next.tenantId,
+      actor: { userId: args.actorId, actorType: 'HUMAN' },
+      action: `assistant.changeSet.${args.status.toLowerCase()}`,
+      resourceType: 'adminChangeSet',
+      resourceIds: next.affectedResources.map((resource) => resource.id),
+      changeSetId: next.id,
+      after: args.afterSnapshot,
+      approval: {
+        required: true,
+        approvedBy: next.approvedBy,
+        approvedAt: next.approvedAt,
+      },
+      result: args.status === 'FAILED' || args.status === 'PARTIALLY_FAILED' ? 'FAILED'
+        : args.status === 'ROLLED_BACK' ? 'ROLLED_BACK'
+        : 'SUCCESS',
+      reversible: next.reversible,
+      createdAt: next.updatedAt,
+    });
+
+    const db = requireDurableStore();
+    if (!db) {
+      const key = collectionKey(args.tenantId, args.changeSetId);
+      const current = inMemoryChangeSets.get(key);
+      if (!current) throw error('ADMIN_CHANGESET_NOT_FOUND', 'Change set not found.', 404);
+      const next = applyTransition(current);
+      inMemoryChangeSets.set(key, next);
+      const events = inMemoryAuditEvents.get(args.tenantId) || [];
+      events.unshift(auditFor(next));
+      inMemoryAuditEvents.set(args.tenantId, events);
+      return next;
+    }
+
+    const ref = db
+      .collection('tenants')
+      .doc(args.tenantId)
+      .collection('assistantChangeSets')
+      .doc(args.changeSetId);
+
+    return db.runTransaction(async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (!snap.exists) throw error('ADMIN_CHANGESET_NOT_FOUND', 'Change set not found.', 404);
+      const current = snap.data() as AssistantChangeSet;
+      const next = applyTransition(current);
+      const event = auditFor(next);
+      const auditRef = db
+        .collection('tenants')
+        .doc(args.tenantId)
+        .collection('auditEventsV2')
+        .doc(event.eventId);
+      transaction.set(ref, next);
+      transaction.create(auditRef, event);
+      return next;
     });
   }
 
