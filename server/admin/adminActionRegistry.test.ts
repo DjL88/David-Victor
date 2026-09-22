@@ -4,6 +4,8 @@ import {
   buildReadOnlyActionPlan,
   listAssistantActionsForRole,
   hasServerAdminCapability,
+  getAdminActionDefinition,
+  validateAdminActionInput,
 } from './adminActionRegistry';
 
 describe('adminActionRegistry', () => {
@@ -38,6 +40,20 @@ describe('adminActionRegistry', () => {
     expect(hasServerAdminCapability('viewer', 'assets.write')).toBe(false);
     expect(hasServerAdminCapability('viewer', 'stores.write')).toBe(false);
     expect(hasServerAdminCapability('tenantAdmin', 'assets.write')).toBe(true);
+  });
+
+  it('advertises previewable write actions as proposal-only', () => {
+    const actions = listAssistantActionsForRole('tenantAdmin');
+    expect(actions.find((action) => action.name === 'branding.proposeUpdate')?.assistantMode).toBe('PROPOSE_ONLY');
+    expect(actions.find((action) => action.name === 'catalog.inspect')?.assistantMode).toBe('EXECUTE_READ');
+    expect(listAssistantActionsForRole('viewer').some((action) => action.name === 'branding.proposeUpdate')).toBe(false);
+  });
+
+  it('rejects credential-shaped fields from assistant action input', () => {
+    const action = listAssistantActionsForRole('tenantAdmin').find((candidate) => candidate.name === 'branding.proposeUpdate');
+    expect(action).toBeTruthy();
+    const definition = getAdminActionDefinition('branding.proposeUpdate')!;
+    expect(() => validateAdminActionInput(definition, { clientSecret: 'do-not-store' })).toThrow('Sensitive credential fields');
   });
 
   it('builds read-only plans that are tenant-bound and executable', () => {
