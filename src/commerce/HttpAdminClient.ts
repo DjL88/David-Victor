@@ -1174,6 +1174,29 @@ export class HttpAdminClient implements AdminClient {
     }
     return res.json();
   }
+
+  async runAssistantAction(
+    tenantId: string,
+    actionName: string,
+    input: Record<string, unknown> = {},
+    context?: { section?: string; resourceType?: string; resourceId?: string }
+  ): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ actionName, input, context }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const err: any = new Error(payload.error || `Assistant action failed (HTTP ${res.status})`);
+      err.code = payload.code || 'ADMIN_ACTION_FAILED';
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
 }
 
 export const defaultHttpAdminClient = new HttpAdminClient();
