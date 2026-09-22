@@ -2308,201 +2308,67 @@ export class DeliverectApiClient implements DeliverectAdapter {
     authoritativeBundle.modifierGroups = authoritativeBundle.sections;
 
     const selectionByKey = new Map(
-      request.selections.map((selection) => [
-        `${selection.sectionId}:${selection.modifierId}`,
-        selection,
-      ])
+      request.selections.map((selection) => [`${selection.sectionId}:${selection.modifierId}`, selection])
     );
-    const selectedModifiers: SelectedBundleModifier[] = [];
+    const desired = toCommerceItemInputs(current);
 
+    // Explicit builders are now only an item-selection convenience. They add
+    // ordinary store products; the automatic deal engine recalculates pricing
+    // from the resulting basket and never persists historical ownership.
     for (const section of authoritativeBundle.sections) {
       for (const modifier of section.modifiers) {
         const selected = selectionByKey.get(`${section.id}:${modifier.id}`);
-        if (!selected) continue;
-        selectedModifiers.push({
-          modifierId: modifier.id,
-          plu: modifier.plu,
-          name: modifier.name,
-          quantity: selected.quantity,
-          price: modifier.priceMinor ?? modifier.price ?? 0,
-          priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
-          standalonePlu: modifier.standalonePlu,
-          standalonePriceMinor: modifier.standalonePriceMinor,
-          sectionId: section.id,
-          sectionName: section.name,
-        });
-      }
-    }
-
-    if (selectedModifiers.length !== request.selections.length) {
-      throw new CommerceError(
-        'INVALID_BUNDLE_SELECTION',
-        'One or more selected bundle components are not valid for this store.'
-      );
-    }
-
-    let allocation;
-    try {
-      allocation = allocateProtectedBundlePrices(
-        authoritativeBundle,
-        selectedModifiers,
-        request.quantity || 1
-      );
-    } catch (error: any) {
-      throw new CommerceError(
-        'INVALID_BUNDLE_SELECTION',
-        error?.message || 'Bundle selection could not be priced safely.'
-      );
-    }
-
-    const desired = toCommerceItemInputs(current);
-
-    // The bundle parent is deliberately NOT added to Deliverect. Every chosen
-    // component becomes a normal product line so Quest can amend/remove/substitute
-    // it independently. For one-tap qualification, existing basket units are
-    // claimed into the allocation and only the missing deficit is added.
-    const claimPool = new Map<string, number>();
-    if (request.claimExistingBasketItems) {
-      current.items.forEach((item) => claimPool.set(item.plu, (claimPool.get(item.plu) || 0) + item.quantity));
-      const priorLedger = await FirestorePlatformService.getBasketBundleAllocations(this.tenantId, basketId);
-      priorLedger.forEach((entry) => entry.components.forEach((component) => {
-        claimPool.set(component.componentPlu, Math.max(0, (claimPool.get(component.componentPlu) || 0) - component.quantity));
-      }));
-    }
-
-    for (const component of allocation.components) {
-      const product = normalProducts.find(
-        (candidate) => candidate.plu === component.componentPlu
-      );
-      const section = (authoritativeBundle.sections || authoritativeBundle.modifierGroups || []).find(
-        (candidate) => candidate.id === component.sectionId
-      );
-      const modifierOnlyUpsell = !product && (section?.isUpsell === true || section?.min === 0);
-      if (
-        (!product && !modifierOnlyUpsell) ||
-        product?.active === false ||
-        product?.stockStatus === 'OUT_OF_STOCK'
-      ) {
-        throw new CommerceError(
-          'PRODUCT_NOT_AVAILABLE',
-          `${component.componentName} is no longer available at this store.`
-        );
-      }
-
-      const claimable = request.claimExistingBasketItems
-        ? Math.min(component.quantity, claimPool.get(component.componentPlu) || 0)
-        : 0;
-      if (claimable > 0) {
-        claimPool.set(component.componentPlu, (claimPool.get(component.componentPlu) || 0) - claimable);
-      }
-      const quantityToAdd = component.quantity - claimable;
-      if (quantityToAdd > 0) {
-        // Only newly-added units need the add-rule gate. Units claimed from the
-        // basket already passed that gate when the customer originally added them.
-        if (product) {
-          await assertProductAddAllowed(
-            this.tenantId,
-            product,
-            { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
-            current.items,
-            quantityToAdd
-          );
+        if (!selected || selected.quantity <= 0) continue;
+        const componentPlu = String(modifier.standalonePlu || '').trim();
+        const product = normalProducts.find((candidate) => candidate.plu === componentPlu);
+        if (!componentPlu || !product || product.active === false || product.stockStatus === 'OUT_OF_STOCK') {
+          throw new CommerceError('PRODUCT_NOT_AVAILABLE', `${modifier.name} is no longer available at this store.`);
         }
-        const existing = desired.find(
-          (candidate) => candidate.plu === component.componentPlu
+        await assertProductAddAllowed(
+          this.tenantId,
+          product,
+          { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
+          current.items,
+          selected.quantity * Math.max(1, request.quantity || 1)
         );
-        if (existing) {
-          existing.quantity += quantityToAdd;
-        } else {
-          desired.push({
-            menuId,
-            plu: component.componentPlu,
-            quantity: quantityToAdd,
-            itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH'),
-          });
-        }
+        const quantityToAdd = selected.quantity * Math.max(1, request.quantity || 1);
+        const existing = desired.find((candidate) => candidate.plu === componentPlu);
+        if (existing) existing.quantity += quantityToAdd;
+        else desired.push({ menuId, plu: componentPlu, quantity: quantityToAdd, itemUnavailableActions: buildQuestItemUnavailableActions('BEST_MATCH') });
       }
     }
 
-    const bundleInstanceId = randomUUID();
-    const existingLedger = await FirestorePlatformService.getBasketBundleAllocations(
-      this.tenantId,
-      basketId
-    );
+    if (selectionByKey.size !== request.selections.length) {
+      throw new CommerceError('INVALID_BUNDLE_SELECTION', 'One or more selected bundle components are not valid for this store.');
+    }
 
-    const originalDiscounts: CommerceBasketDiscountInput[] = Array.isArray(
-      rawBefore?.discounts
-    )
-      ? rawBefore.discounts
-      : [];
-    const nonBundleDiscounts = originalDiscounts.filter(
-      (discount) => !this.isManagedBundleDiscount(discount)
+    const originalDiscounts: CommerceBasketDiscountInput[] = Array.isArray(rawBefore?.discounts) ? rawBefore.discounts : [];
+    const automaticDiscounts = await this.recalculateAutomaticDealDiscounts(
+      basketId,
+      desired.map((item) => ({ plu: item.plu, quantity: item.quantity })),
+      catalog,
+      originalDiscounts
     );
-
-    const managedDiscounts: CommerceBasketDiscountInput[] = this.buildManagedBundleDiscountLines([
-      ...existingLedger,
-      {
-        ...allocation,
-        bundleInstanceId,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
 
     let itemsWritten = false;
-    let discountsWritten = false;
     try {
       const afterItems = await api.replaceItems(basketId, desired);
       itemsWritten = true;
-
-      let afterPricing = afterItems;
-      const desiredDiscounts = [...nonBundleDiscounts, ...managedDiscounts];
-      if (
-        desiredDiscounts.length > 0 ||
-        originalDiscounts.length > 0
-      ) {
-        afterPricing = await api.updateDiscounts(
-          basketId,
-          desiredDiscounts
-        );
-        discountsWritten = true;
-      }
-
-      await FirestorePlatformService.saveBasketBundleAllocation(
-        this.tenantId,
-        basketId,
-        {
-          ...allocation,
-          bundleInstanceId,
-          createdAt: new Date().toISOString(),
-        }
-      );
-
-      const mapped = await this.mapLiveCommerceBasket(afterPricing);
-      if (
-        allocation.discountTotalMinor > 0 &&
-        mapped.discountTotal.amount < allocation.discountTotalMinor
-      ) {
-        throw new CommerceError(
-          'BUNDLE_DISCOUNT_NOT_APPLIED',
-          'Deliverect did not return the expected bundle discount. Basket was not accepted as safely priced.'
-        );
-      }
-
-      return mapped;
+      const afterPricing = await api.updateDiscounts(basketId, automaticDiscounts);
+      return await this.mapLiveCommerceBasket(afterPricing);
     } catch (error) {
-      // Best-effort compensation. Do not knowingly leave an individual-item bundle
-      // half-applied if discount/ledger persistence failed after the item write.
       if (itemsWritten) {
         try {
           await api.replaceItems(basketId, toCommerceItemInputs(current));
-          if (discountsWritten || originalDiscounts.length > 0) {
-            await api.updateDiscounts(basketId, originalDiscounts);
-          }
-        } catch (rollbackError) {
-          console.error(
-            '[DeliverectApiClient] Bundle basket rollback failed:',
-            rollbackError
+          await api.updateDiscounts(basketId, originalDiscounts);
+          await this.recalculateAutomaticDealDiscounts(
+            basketId,
+            current.items.map((item) => ({ plu: item.plu, quantity: item.quantity })),
+            catalog,
+            originalDiscounts
           );
+        } catch (rollbackError) {
+          console.error('[DeliverectApiClient] Bundle basket rollback failed:', rollbackError);
         }
       }
       throw error;
