@@ -127,9 +127,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     excludedAllergens: [],
   });
   const filterState = catalogFilterState || localFilterState;
-  const setFilterState = (next: CatalogFilterState) => {
-    setLocalFilterState(next);
-    onCatalogFilterStateChange?.(next);
+  const setFilterState: React.Dispatch<React.SetStateAction<CatalogFilterState>> = (next) => {
+    const resolved = typeof next === 'function' ? next(filterState) : next;
+    setLocalFilterState(resolved);
+    onCatalogFilterStateChange?.(resolved);
   };
   const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
 
