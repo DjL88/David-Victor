@@ -49,14 +49,15 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
   marketingEditor: new Set<AdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'branding.write',
     'content.read', 'content.write', 'rules.read', 'rules.write',
-    'fees.read', 'integrations.read', 'assets.read', 'assets.write', 'domains.read',
-    'audit.read', 'assets.read', 'domains.read', 'audit.read', 'assistant.use', 'assistant.executeLowRisk',
+    'fees.read', 'integrations.read', 'assets.read', 'assets.write',
+    'domains.read', 'audit.read', 'assistant.use', 'assistant.executeLowRisk',
   ]),
   operationsEditor: new Set<AdminCapability>([
     'catalog.read', 'catalog.diagnostics', 'stores.read', 'stores.write',
     'branding.read', 'content.read', 'rules.read', 'rules.write',
     'fees.read', 'fees.write', 'integrations.read', 'integrations.diagnostics',
-    'assistant.use', 'assistant.executeLowRisk',
+    'assets.read', 'domains.read', 'audit.read', 'assistant.use',
+    'assistant.executeLowRisk',
   ]),
   viewer: new Set<AdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'content.read',
