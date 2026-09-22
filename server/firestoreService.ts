@@ -940,23 +940,31 @@ export class FirestoreService {
    * Deletes tenant configuration from Firestore and memory.
    */
   static async deleteTenantConfig(tenantId: string): Promise<boolean> {
-    delete inMemoryTenants[tenantId];
-    savePersistedTenants(inMemoryTenants);
-
     const db = getFirestoreDb();
-    if (db && !isFirestorePermissionDenied()) {
-      try {
-        await db.collection('tenants').doc(tenantId).delete();
-        console.log(`[Firestore Admin] Deleted tenant config for ${tenantId}`);
-      } catch (err: any) {
-        if (isFirestorePermissionDeniedError(err)) {
-          markFirestorePermissionDenied(err);
-        } else {
-          console.error(`[Firestore Admin] Failed to delete tenant config for ${tenantId}:`, err);
-        }
+    if (!db || isFirestorePermissionDenied()) {
+      if (isDemoMode() || isTestMode()) {
+        delete inMemoryTenants[tenantId];
+        savePersistedTenants(inMemoryTenants);
+        return true;
       }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Brand configuration could not be deleted because durable storage is unavailable.', 503, true);
     }
-    return true;
+
+    try {
+      await db.collection('tenants').doc(tenantId).delete();
+      delete inMemoryTenants[tenantId];
+      if (isDemoMode() || isTestMode()) savePersistedTenants(inMemoryTenants);
+      console.log(`[Firestore Admin] Deleted tenant config for ${tenantId}`);
+      return true;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      if (isDemoMode() || isTestMode()) {
+        delete inMemoryTenants[tenantId];
+        savePersistedTenants(inMemoryTenants);
+        return true;
+      }
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Brand configuration could not be deleted from durable storage.', 503, true);
+    }
   }
 
   /**
