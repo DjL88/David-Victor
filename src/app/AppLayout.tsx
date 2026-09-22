@@ -24,6 +24,7 @@ import { CartDrawerModal } from '../features/cart/CartDrawerModal';
 import { CheckoutModal } from '../features/checkout/CheckoutModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
 import { AislesModal } from '../features/catalog/AislesModal';
+import { CatalogFilterState } from '../features/catalog/DietaryPreferencesModal';
 import { MealDealDialog } from '../components/deals/MealDealDialog';
 import { BundleSelectionDialog } from '../components/deals/BundleSelectionDialog';
 import { DeliverectDeal, getDealForStory } from '../commerce/dealModels';
@@ -67,6 +68,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   // Aisles Directory Modal
   const [isAislesModalOpen, setIsAislesModalOpen] = useState<boolean>(false);
+  const [catalogFilterState, setCatalogFilterState] = useState<CatalogFilterState>({
+    onlyFavourites: false,
+    onlyBuyAgain: false,
+    selectedDietaryTags: [],
+    excludedAllergens: [],
+  });
 
   // Location & Store management
   const {
@@ -467,6 +474,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               activeStores={activeStores}
               onSelectStore={selectStore}
               onOpenAislesModal={() => setIsAislesModalOpen(true)}
+              catalogFilterState={catalogFilterState}
+              onCatalogFilterStateChange={setCatalogFilterState}
             />
           )}
 
@@ -752,7 +761,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isOpen={isAislesModalOpen}
         onClose={() => setIsAislesModalOpen(false)}
         categories={catalog?.categories || []}
-        products={products}
+        products={catalog?.products || products}
         selectedCategoryId={selectedCategoryId}
         onSelectCategory={(catId) => {
           navigateToCategory(catId);
@@ -760,6 +769,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           setIsAislesModalOpen(false);
         }}
         storeName={selectedStore?.name}
+        filterState={catalogFilterState}
       />
 
       {/* Checkout Modal - mounted conditionally when open to guarantee consistent hook execution order */}

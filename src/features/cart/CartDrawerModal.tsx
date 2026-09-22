@@ -200,7 +200,11 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   // still has to confirm through BundleSelectionDialog to actually get it.
   const missedBundleOffers = useMemo(() => {
     if (!effectiveBasket || bundles.length === 0) return [];
-    return findMissedBundleOffers(allBasketItems, bundles);
+    return findMissedBundleOffers(
+      allBasketItems,
+      bundles,
+      effectiveBasket.bundleAllocatedUnits || []
+    );
   }, [allBasketItems, bundles, effectiveBasket]);
 
   if (!isOpen) return null;
@@ -548,7 +552,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                             <p className="text-[11px] text-emerald-800 leading-tight">{offer.bundle.name}</p>
                           </div>
                           <button type="button" disabled={loading} onClick={() => void onCompleteBundleOffer?.(offer)} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
-                            Add{saving > 0 ? ` & save ${currencySymbol}${saving.toFixed(2)}` : ' & save'}
+                            Add{saving > 0 ? ` & save ${currencySymbol}${saving.toFixed(2)}` : ''}
                           </button>
                         </>;
                       })()}

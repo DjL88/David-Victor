@@ -2,6 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Category, Product } from '../../commerce/models';
 import { useTenantStyles, useTenant } from '../../tenant/useTenant';
 import { ensureNestedCategoryTree } from '../../commerce/categoryHierarchy';
+import { CatalogFilterState } from './DietaryPreferencesModal';
+import { isProductMatchingFilters } from '../../domain/allergens';
+import { getRenderableProducts } from '../../rules/availabilityRules';
 import {
   Search,
   X,
@@ -22,6 +25,7 @@ interface AislesModalProps {
   selectedCategoryId: string | null;
   onSelectCategory: (categoryId: string | null) => void;
   storeName?: string;
+  filterState?: CatalogFilterState;
 }
 
 export const AislesModal: React.FC<AislesModalProps> = ({
@@ -32,6 +36,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
   selectedCategoryId,
   onSelectCategory,
   storeName,
+  filterState,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,7 +101,18 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     const images = new Map<string, string>();
     if (!isOpen) return { counts, images };
 
-    const activeProducts = products.filter((product) => product.active !== false);
+    // The directory receives the FULL store catalogue, not the currently
+    // selected aisle result. Preserve customer dietary/allergen preferences,
+    // while deliberately ignoring navigation category, favourites and buy-again.
+    const aisleFilterState: CatalogFilterState = {
+      onlyFavourites: false,
+      onlyBuyAgain: false,
+      selectedDietaryTags: filterState?.selectedDietaryTags || [],
+      excludedAllergens: filterState?.excludedAllergens || [],
+    };
+    const activeProducts = getRenderableProducts(products).filter((product) =>
+      isProductMatchingFilters(product, aisleFilterState, () => false, new Set<string>())
+    );
     const collectIds = (category: Category): string[] => [
       category.id,
       ...(category.subcategories || []).flatMap(collectIds),
@@ -129,7 +145,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
 
     rootCategories.forEach(visit);
     return { counts, images };
-  }, [isOpen, rootCategories, products]);
+  }, [isOpen, rootCategories, products, filterState]);
 
   if (!isOpen) return null;
 

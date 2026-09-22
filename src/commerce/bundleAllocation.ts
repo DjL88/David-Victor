@@ -130,6 +130,61 @@ export function allocateProtectedBundlePrices(
     };
   });
 
+  // A combo is a benefit, never a surcharge. If its configured fixed price
+  // plus selected uplifts is higher than buying these exact selections normally,
+  // price the allocation by item instead and create no discount.
+  const nominalBaseBundlePriceMinor = Math.max(
+    0,
+    Math.round(bundle.priceMinor ?? bundle.price ?? 0)
+  );
+  const nominalUpliftTotalMinor = selected.reduce(
+    (sum, entry) =>
+      sum + entry.upliftUnitPriceMinor * entry.selection.quantity * bundleQuantity,
+    0
+  );
+  const selectedStandaloneTotalMinor = selected.reduce(
+    (sum, entry) =>
+      sum + entry.standalonePriceMinor * entry.selection.quantity * bundleQuantity,
+    0
+  );
+  const nominalTargetTotalMinor =
+    nominalBaseBundlePriceMinor * bundleQuantity + nominalUpliftTotalMinor;
+
+  if (nominalTargetTotalMinor >= selectedStandaloneTotalMinor) {
+    const components: ProtectedBundleComponentAllocation[] = selected.map((entry) => {
+      const quantity = entry.selection.quantity * bundleQuantity;
+      const protectedUnitPricesMinor = new Array(quantity).fill(entry.standalonePriceMinor);
+      const lineTotal = entry.standalonePriceMinor * quantity;
+      return {
+        modifierId: entry.modifier.id,
+        componentPlu: entry.componentPlu,
+        componentName: entry.modifier.name,
+        sectionId: entry.section.id,
+        sectionName: entry.section.name,
+        quantity,
+        standaloneUnitPriceMinor: entry.standalonePriceMinor,
+        upliftUnitPriceMinor: entry.upliftUnitPriceMinor,
+        protectedUnitPricesMinor,
+        standaloneLineTotalMinor: lineTotal,
+        protectedLineTotalMinor: lineTotal,
+        discountLineMinor: 0,
+      };
+    });
+    return {
+      bundleId: bundle.id,
+      bundlePlu: bundle.plu,
+      bundleName: bundle.name,
+      currency: bundle.currency || 'GBP',
+      bundleQuantity,
+      baseBundlePriceMinor: nominalBaseBundlePriceMinor,
+      upliftTotalMinor: nominalUpliftTotalMinor,
+      targetBundleTotalMinor: selectedStandaloneTotalMinor,
+      standaloneTotalMinor: selectedStandaloneTotalMinor,
+      discountTotalMinor: 0,
+      components,
+    };
+  }
+
   // Expand required/base components into individual units so penny rounding remains
   // deterministic even when a section allows multiple quantities of the same PLU.
   const baseUnits: Array<{ selectedIndex: number; unitIndex: number; weight: number }> = [];
@@ -236,12 +291,6 @@ export function allocateProtectedBundlePrices(
   if (protectedTotalMinor !== targetBundleTotalMinor) {
     throw new Error(
       `Bundle allocation mismatch: protected total ${protectedTotalMinor} does not equal target ${targetBundleTotalMinor}.`
-    );
-  }
-
-  if (targetBundleTotalMinor > standaloneTotalMinor) {
-    throw new Error(
-      `Bundle "${bundle.name}" would cost more than buying the selected items individually.`
     );
   }
 

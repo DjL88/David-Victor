@@ -110,11 +110,11 @@ describe('protected bundle component allocation', () => {
     const premium = allocation.components.find((component) => component.componentPlu === 'B')!;
     const snack = allocation.components.find((component) => component.componentPlu === 'C')!;
 
-    // Largest-remainder penny rounding: 500 * 3/6 = 250,
-    // 500 * 2/6 = 166.66 -> 167, 500 * 1/6 = 83.33 -> 83.
-    expect(main.protectedUnitPricesMinor).toEqual([250]);
-    expect(premium.protectedUnitPricesMinor).toEqual([267]); // 167 allocation + £1 uplift
-    expect(snack.protectedUnitPricesMinor).toEqual([83]);
+    // £5 base + £1 uplift equals the exact £6 shelf total, so this is
+    // priced-by-item rather than inventing a zero-value discount allocation.
+    expect(main.protectedUnitPricesMinor).toEqual([300]);
+    expect(premium.protectedUnitPricesMinor).toEqual([200]);
+    expect(snack.protectedUnitPricesMinor).toEqual([100]);
 
     expect(
       allocation.components.reduce(
@@ -254,15 +254,18 @@ describe('protected bundle component allocation', () => {
     );
   });
 
-  it('refuses a bundle configured to cost more than its selected standalone products', () => {
+  it('prices by item when a configured bundle would cost more than its selected standalone products', () => {
     const expensiveBundle: BundleProduct = {
       ...bundle,
       price: 700,
       priceMinor: 700,
     };
 
-    expect(() =>
-      allocateProtectedBundlePrices(expensiveBundle, selection)
-    ).toThrow(/cost more than buying the selected items individually/i);
+    const allocation = allocateProtectedBundlePrices(expensiveBundle, selection);
+    expect(allocation.standaloneTotalMinor).toBe(600);
+    expect(allocation.targetBundleTotalMinor).toBe(600);
+    expect(allocation.discountTotalMinor).toBe(0);
+    expect(allocation.components.map((component) => component.protectedLineTotalMinor))
+      .toEqual([300, 200, 100]);
   });
 });

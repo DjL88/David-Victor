@@ -29,6 +29,38 @@ describe('findMissedBundleOffers', () => {
     expect(findMissedBundleOffers([{ plu: 'M1', quantity: 1 }], [bundle])).toHaveLength(0);
   });
 
+  it('does not reuse a unit already allocated to another bundle', () => {
+    const offers = findMissedBundleOffers(
+      [{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 1 }],
+      [bundle],
+      [{ plu: 'S1', quantity: 1 }]
+    );
+    expect(offers).toHaveLength(0);
+  });
+
+  it('keeps quantity above an existing allocation available for a legitimate offer', () => {
+    const offers = findMissedBundleOffers(
+      [{ plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 2 }],
+      [bundle],
+      [{ plu: 'S1', quantity: 1 }]
+    );
+    expect(offers).toHaveLength(1);
+    expect(offers[0].missingComponents[0].plu).toBe('D1');
+  });
+
+  it('does not let one shared PLU unit satisfy two required sections', () => {
+    const shared: BundleProduct = {
+      ...bundle,
+      id: 'shared',
+      sections: [
+        { id: 'one', name: 'One', min: 1, max: 1, modifiers: [{ id: 'x1', name: 'X', plu: 'X#1', standalonePlu: 'X', active: true, snoozed: false, price: 0 }] },
+        { id: 'two', name: 'Two', min: 1, max: 1, modifiers: [{ id: 'x2', name: 'X', plu: 'X#2', standalonePlu: 'X', active: true, snoozed: false, price: 0 }] },
+        { id: 'three', name: 'Three', min: 1, max: 1, modifiers: [{ id: 'y', name: 'Y', plu: 'Y#', standalonePlu: 'Y', active: true, snoozed: false, price: 0 }] },
+      ],
+    };
+    expect(findMissedBundleOffers([{ plu: 'X', quantity: 1 }], [shared])).toHaveLength(0);
+  });
+
   it('does not prompt after the bundle is already fully represented', () => {
     expect(findMissedBundleOffers([
       { plu: 'M1', quantity: 1 }, { plu: 'S1', quantity: 1 }, { plu: 'D1', quantity: 1 },
