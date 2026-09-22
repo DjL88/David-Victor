@@ -614,9 +614,13 @@ export class FirestoreService {
       if (inMemoryDomains[equivalentHost]) return inMemoryDomains[equivalentHost].tenantId;
     }
 
-    // Firestore is authoritative for live domain routing
+    // Firestore is authoritative for live domain routing. Storage outage is distinct from an unknown hostname.
     const db = getFirestoreDb();
-    if (db && !isFirestorePermissionDenied()) {
+    if (!db || isFirestorePermissionDenied()) {
+      if (!(isDemoMode() || isTestMode())) {
+        throw new BFFError('DATABASE_UNAVAILABLE', 'Domain routing is unavailable because durable storage cannot be reached.', 503, true);
+      }
+    } else {
       try {
         const snap = await db.collection('domains').where('hostname', '==', cleanHost).limit(1).get();
         if (!snap.empty) {
@@ -635,8 +639,9 @@ export class FirestoreService {
           }
         }
       } catch (err: any) {
-        if (isFirestorePermissionDeniedError(err)) {
-          markFirestorePermissionDenied(err);
+        if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+        if (!(isDemoMode() || isTestMode())) {
+          throw new BFFError('DATABASE_UNAVAILABLE', 'Domain routing could not be verified against durable storage.', 503, true);
         }
       }
     }
