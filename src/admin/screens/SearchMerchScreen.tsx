@@ -236,10 +236,10 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Search className="w-5 h-5 text-indigo-600" />
-            <span>Search Merchandising & Ranking Optimisation</span>
+            <span>Search & Recommendations</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Fine-tune search ranking, correct buyer typos, and boost high-margin categories without mutating Deliverect catalogue data.
+            Improve search relevance, synonyms, rewrites and product/category ranking without changing the provider-managed catalogue.
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           {saveSuccess && (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
               <Check className="w-3.5 h-3.5" />
-              Ranking rules published & saved
+              Search configuration saved
             </span>
           )}
           <button
