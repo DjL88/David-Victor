@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Category, Product } from '../../commerce/models';
 import { useTenantStyles, useTenant } from '../../tenant/useTenant';
 import { ensureNestedCategoryTree } from '../../commerce/categoryHierarchy';
+import type { CatalogFilterState } from './DietaryPreferencesModal';
+import { isProductMatchingFilters } from '../../domain/allergens';
 import {
   Search,
   X,
@@ -19,6 +21,7 @@ interface AislesModalProps {
   onClose: () => void;
   categories: Category[];
   products: Product[];
+  filterState?: CatalogFilterState;
   selectedCategoryId: string | null;
   onSelectCategory: (categoryId: string | null) => void;
   storeName?: string;
@@ -29,6 +32,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
   onClose,
   categories = [],
   products = [],
+  filterState,
   selectedCategoryId,
   onSelectCategory,
   storeName,
@@ -96,7 +100,13 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     const images = new Map<string, string>();
     if (!isOpen) return { counts, images };
 
-    const activeProducts = products.filter((product) => product.active !== false);
+    const activeProducts = products.filter((product) =>
+      product.active !== false &&
+      isProductMatchingFilters(product, {
+        selectedDietaryTags: filterState?.selectedDietaryTags || [],
+        excludedAllergens: filterState?.excludedAllergens || [],
+      })
+    );
     const collectIds = (category: Category): string[] => [
       category.id,
       ...(category.subcategories || []).flatMap(collectIds),
@@ -129,7 +139,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
 
     rootCategories.forEach(visit);
     return { counts, images };
-  }, [isOpen, rootCategories, products]);
+  }, [isOpen, rootCategories, products, filterState?.selectedDietaryTags, filterState?.excludedAllergens]);
 
   if (!isOpen) return null;
 
