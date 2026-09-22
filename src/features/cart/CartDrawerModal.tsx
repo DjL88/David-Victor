@@ -533,17 +533,12 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         const missing = offer.missingComponents[0];
                         const product = candidatePool.find((candidate) => candidate.plu === missing?.plu);
                         const imageUrl = product?.imageUrl || missing?.imageUrl;
-                        const shelfTotal = [...offer.matchedSelections, {
-                          modifierId: missing?.modifierId || '',
-                          plu: '',
-                          name: missing?.name || '',
-                          quantity: 1,
-                          price: 0,
-                          sectionId: missing?.sectionId || '',
-                        }].reduce((sum, selection) => {
-                          const candidate = candidatePool.find((p) => p.plu === selection.standalonePlu || p.plu === missing?.plu);
+                        const matchedShelfTotal = offer.matchedSelections.reduce((sum, selection) => {
+                          const candidate = candidatePool.find((p) => p.plu === selection.standalonePlu);
                           return sum + (candidate ? moneyToMajor(candidate.price) * selection.quantity : 0);
                         }, 0);
+                        const missingShelfTotal = product ? moneyToMajor(product.price) * (missing?.quantityNeeded || 1) : 0;
+                        const shelfTotal = matchedShelfTotal + missingShelfTotal;
                         const bundlePrice = ((offer.bundle.priceMinor ?? offer.bundle.price ?? 0) / 100);
                         const saving = Math.max(0, shelfTotal - bundlePrice);
                         return <>
