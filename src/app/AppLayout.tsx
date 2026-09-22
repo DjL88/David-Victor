@@ -708,6 +708,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         onOpenDealPopup={(deal) => {
           setActiveDealForModal(deal);
         }}
+        bundles={catalog?.bundleCatalog?.bundles || []}
+        onOpenBundleDialog={(bundle) => setActiveBundleForModal(bundle)}
         loading={basketLoading}
       />
 

@@ -1776,6 +1776,54 @@ export class FirestoreService {
     }
   }
 
+  /**
+   * Overwrites the full bundle allocation ledger for a basket — used when
+   * re-validating existing bundle instances against the basket's current
+   * contents (e.g. after a plain item removal/quantity decrease drops a
+   * bundle below its required components) and dropping whichever instances
+   * no longer qualify.
+   */
+  static async replaceBasketBundleAllocations(
+    tenantId: string,
+    basketId: string,
+    instances: BasketBundleAllocationRecord[]
+  ): Promise<void> {
+    if (!tenantId || !basketId) return;
+
+    const updatedAt = new Date().toISOString();
+    const document: BasketBundleAllocationsDocument = cleanUndefined({
+      tenantId,
+      basketId,
+      instances,
+      updatedAt,
+    });
+    const key = `${tenantId}:${basketId}`;
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    const db = getFirestoreDb();
+
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error(
+          'Database persistence is unavailable. Bundle allocation update rejected outside demo/test mode.'
+        );
+      }
+      inMemoryBasketBundleAllocations[key] = document;
+      return;
+    }
+
+    try {
+      await db
+        .collection('basketBundleAllocations')
+        .doc(documentId)
+        .set(cleanUndefined(document), { merge: false });
+      inMemoryBasketBundleAllocations[key] = document;
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not replace basket bundle allocations:', err);
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) throw err;
+      inMemoryBasketBundleAllocations[key] = document;
+    }
+  }
+
   static async getBasketBundleAllocations(
     tenantId: string,
     basketId: string

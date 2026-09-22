@@ -415,6 +415,88 @@ export function calculateBundlePrice(
   };
 }
 
+export interface MissedBundleOffer {
+  bundle: BundleProduct;
+  /** 0..1 — required units already present in basket / total required units for one instance. */
+  matchRatio: number;
+  presentUnits: number;
+  requiredUnits: number;
+  /** One suggested item per still-unsatisfied required section, to complete the combo. */
+  missingComponents: Array<{ plu: string; name: string; quantityNeeded: number }>;
+}
+
+/**
+ * Detects "missed offer" bundles: combos where the customer already has most
+ * (by default 70%+) of the required components in their basket, individually
+ * added, but hasn't gotten the combo discount because they never went
+ * through the explicit bundle-add flow. Purely a suggestion — completing the
+ * bundle still requires the customer to confirm via BundleSelectionDialog,
+ * the same explicit action as adding any other combo, so this never silently
+ * changes pricing on its own.
+ *
+ * Coverage per required section is capped at that section's `min` (adding 5
+ * of an item a bundle only needs 1 of doesn't "cover" a different section),
+ * and only non-upsell sections with min > 0 count toward the required total.
+ */
+export function findMissedBundleOffers(
+  basketItems: Array<{ plu: string; quantity: number }>,
+  bundles: BundleProduct[],
+  minMatchRatio: number = 0.7
+): MissedBundleOffer[] {
+  const basketQtyByPlu = new Map<string, number>();
+  basketItems.forEach((item) => {
+    basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity);
+  });
+
+  const offers: MissedBundleOffer[] = [];
+
+  for (const bundle of bundles) {
+    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
+    const sections = (bundle.sections || bundle.modifierGroups || []).filter(
+      (section) => !section.isUpsell && section.min > 0
+    );
+    if (sections.length === 0) continue;
+
+    let requiredUnits = 0;
+    let presentUnits = 0;
+    const missingComponents: MissedBundleOffer['missingComponents'] = [];
+
+    for (const section of sections) {
+      requiredUnits += section.min;
+
+      let sectionPresent = 0;
+      for (const modifier of section.modifiers) {
+        if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
+        sectionPresent += basketQtyByPlu.get(modifier.standalonePlu) || 0;
+      }
+      const covered = Math.min(sectionPresent, section.min);
+      presentUnits += covered;
+
+      if (covered < section.min) {
+        const suggestion = section.modifiers.find(
+          (modifier) => modifier.standalonePlu && modifier.active !== false && !modifier.snoozed
+        );
+        if (suggestion?.standalonePlu) {
+          missingComponents.push({
+            plu: suggestion.standalonePlu,
+            name: suggestion.name,
+            quantityNeeded: section.min - covered,
+          });
+        }
+      }
+    }
+
+    if (requiredUnits === 0) continue;
+    const matchRatio = presentUnits / requiredUnits;
+
+    if (matchRatio >= minMatchRatio && matchRatio < 1 && missingComponents.length > 0) {
+      offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents });
+    }
+  }
+
+  return offers.sort((a, b) => b.matchRatio - a.matchRatio);
+}
+
 /**
  * Standard Deliverect Bundle Catalog fixtures, reflecting the prompt's
  * Meal Deal combo with required sections, exact minor unit uplifts, and snoozed modifiers.

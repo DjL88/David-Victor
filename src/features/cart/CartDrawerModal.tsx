@@ -13,6 +13,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { calculateReverseDeals } from '../../commerce/reverseDealEngine';
 import { ReverseDealPromptCard } from '../deals/ReverseDealPromptCard';
 import { DeliverectDeal } from '../../commerce/dealModels';
+import { BundleProduct, findMissedBundleOffers } from '../../commerce/bundleModels';
 import { ItemUnavailablePreferenceModal } from './ItemUnavailablePreferenceModal';
 import {
   evaluateBasketSnoozeStatus,
@@ -57,6 +58,8 @@ interface CartDrawerModalProps {
   ) => void;
   onProceedToCheckout: () => void;
   onOpenDealPopup?: (deal: DeliverectDeal) => void;
+  bundles?: BundleProduct[];
+  onOpenBundleDialog?: (bundle: BundleProduct) => void;
   loading: boolean;
 }
 
@@ -73,6 +76,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   onUpdateSubstitution,
   onProceedToCheckout,
   onOpenDealPopup,
+  bundles = [],
+  onOpenBundleDialog,
   loading,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
@@ -139,6 +144,20 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
     [effectiveBasket]
   );
 
+  // Deliverect's basket API is order-line data, not catalog data — it never
+  // carries or echoes back a product image, so basket items are missing
+  // imageUrl regardless of how they were added. Fall back to the currently
+  // loaded store catalog (candidateProducts) by PLU.
+  const catalogImageByPlu = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    (candidateProducts || []).forEach((p) => {
+      if (p.plu) map.set(p.plu, p.imageUrl);
+    });
+    return map;
+  }, [candidateProducts]);
+  const resolveItemImageUrl = (item: { plu?: string; imageUrl?: string }): string | undefined =>
+    item.imageUrl || (item.plu ? catalogImageByPlu.get(item.plu) : undefined);
+
   // Pre-Authorisation Card Hold:
   // Holds estimated order total; customer only pays for what is picked in store
   const preAuthMaxMajor = grandTotal;
@@ -159,7 +178,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
       displayLabels: [],
       allergens: [],
       active: true,
-      imageUrl: item.imageUrl,
+      imageUrl: resolveItemImageUrl(item),
     }));
   }, [candidateProducts, effectiveBasket]);
 
@@ -171,6 +190,16 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   const reverseDealResults = useMemo(() => {
     return calculateReverseDeals(allBasketItems, candidatePool, undefined, combinedDiscounts);
   }, [allBasketItems, candidatePool, combinedDiscounts]);
+
+  // "Missed offer" combos: the customer already has most of a bundle's
+  // required items in the basket (added individually), just not through the
+  // explicit bundle-add flow, so they never got the discount. This never
+  // applies a discount itself — it only surfaces the option; the customer
+  // still has to confirm through BundleSelectionDialog to actually get it.
+  const missedBundleOffers = useMemo(() => {
+    if (!effectiveBasket || bundles.length === 0) return [];
+    return findMissedBundleOffers(allBasketItems, bundles);
+  }, [allBasketItems, bundles, effectiveBasket]);
 
   if (!isOpen) return null;
 
@@ -333,6 +362,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                     const reconciledUnavailable = item.availabilityState === 'UNAVAILABLE_AT_STORE' || item.availabilityState === 'QUANTITY_UNAVAILABLE';
                     const affected = snoozeAudit.affectedItems.find((a) => a.plu === item.plu) || (reconciledUnavailable ? { plu: item.plu, reason: 'unavailable' as const } : undefined);
                     const swap = snoozeAudit.availableSwaps.find((s) => s.originalPlu === item.plu);
+                    const itemImageUrl = resolveItemImageUrl(item);
 
                     const pseudoProduct: Product = {
                       id: item.id,
@@ -346,7 +376,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                       displayLabels: [],
                       allergens: [],
                       active: true,
-                      imageUrl: item.imageUrl,
+                      imageUrl: itemImageUrl,
                     };
 
                     return (
@@ -358,9 +388,9 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-13 h-13 rounded-xl bg-gray-50 overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center relative">
-                            {item.imageUrl ? (
+                            {itemImageUrl ? (
                               <img
-                                src={item.imageUrl}
+                                src={itemImageUrl}
                                 alt={itemName}
                                 className={`w-full h-full object-cover ${affected ? 'opacity-50 grayscale' : ''}`}
                               />
@@ -546,6 +576,37 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 </div>
               )}
 
+              {/* MISSED COMBO OFFER PROMPTS */}
+              {missedBundleOffers.length > 0 && (
+                <div className="pt-2 space-y-2">
+                  {missedBundleOffers.map((offer) => (
+                    <div
+                      key={offer.bundle.id}
+                      className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 flex items-start gap-2.5"
+                    >
+                      <BadgePercent className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-extrabold text-emerald-900 text-xs block">
+                          Missed offer: {offer.bundle.name}
+                        </span>
+                        <p className="text-[11px] text-emerald-800 leading-tight">
+                          {offer.missingComponents.length === 1
+                            ? `Add ${offer.missingComponents[0].name} to complete this combo and unlock the discount.`
+                            : `Add ${offer.missingComponents.length} more items to complete this combo and unlock the discount.`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenBundleDialog?.(offer.bundle)}
+                        className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700"
+                      >
+                        Complete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* HFSS REGULATORY COMPLIANCE BANNER */}
               {reverseDealResults.hfssBlocked.length > 0 && (
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-2 text-[11px] text-slate-700">
@@ -683,7 +744,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               displayLabels: [],
               allergens: [],
               active: true,
-              imageUrl: editingItem.item.imageUrl,
+              imageUrl: resolveItemImageUrl(editingItem.item),
             };
             onUpdateQuantity(pseudoProd, payload.quantity, payload.storeId);
           }

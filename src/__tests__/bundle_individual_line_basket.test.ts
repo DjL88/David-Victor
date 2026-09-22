@@ -195,7 +195,7 @@ describe('individual-line bundle basket write', () => {
             { id: 'line-C', plu: 'C', name: 'Snack', quantity: 1, price: { amount: 100, currency: 'GBP' } },
           ],
           subtotal: { amount: 600, currency: 'GBP' },
-          discounts: [{ code: 'bundle', title: 'Bwydi bundle: Meal Deal', amount: { amount: 100, currency: 'GBP' } }],
+          discounts: [{ code: 'bundle', title: 'Combo Deal: Meal Deal', amount: { amount: 100, currency: 'GBP' } }],
           discountTotal: { amount: 100, currency: 'GBP' },
           total: { amount: 500, currency: 'GBP' },
         };
@@ -251,15 +251,37 @@ describe('individual-line bundle basket write', () => {
     ]);
     expect(replacedItems.some((item) => item.plu === 'MEAL-DEAL-PARENT')).toBe(false);
 
-    expect(appliedDiscounts).toHaveLength(1);
-    expect(appliedDiscounts[0]).toEqual(
-      expect.objectContaining({
-        type: 'order_flat_off',
-        provider: 'restaurant',
-        amount: 100,
-        name: 'Bwydi bundle: Meal Deal',
-      })
+    // Discount is now pro-rated per qualifying item (one item_flat_off line
+    // per component) rather than a single flat order-level line.
+    expect(appliedDiscounts).toHaveLength(3);
+    expect(appliedDiscounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'item_flat_off',
+          provider: 'restaurant',
+          plu: 'A',
+          amount: 50,
+          name: 'Combo Deal: Meal Deal',
+        }),
+        expect.objectContaining({
+          type: 'item_flat_off',
+          provider: 'restaurant',
+          plu: 'B',
+          amount: 33,
+          name: 'Combo Deal: Meal Deal',
+        }),
+        expect.objectContaining({
+          type: 'item_flat_off',
+          provider: 'restaurant',
+          plu: 'C',
+          amount: 17,
+          name: 'Combo Deal: Meal Deal',
+        }),
+      ])
     );
+    expect(
+      appliedDiscounts.reduce((sum: number, d: any) => sum + d.amount, 0)
+    ).toBe(100);
 
     expect(result.items.map((item: any) => item.plu)).toEqual(['A', 'B', 'C']);
     expect(result.total.amount).toBe(500);

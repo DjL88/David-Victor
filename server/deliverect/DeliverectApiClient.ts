@@ -8,7 +8,7 @@ import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { assertProductAddAllowed } from '../ruleEnforcementService';
-import { FirestorePlatformService } from '../firestoreService';
+import { FirestorePlatformService, BasketBundleAllocationRecord } from '../firestoreService';
 import { randomUUID } from 'node:crypto';
 import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
 import {
@@ -1899,7 +1899,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
-    return this.mapLiveCommerceBasket(raw);
+
+    // A plain quantity change/removal can silently drop a bundle below its
+    // required components (e.g. removing the last unit of an item a combo
+    // needed) — re-check the ledger against the resulting basket and strip
+    // any discount that no longer qualifies.
+    const revalidatedDiscounts = await this.revalidateBundleDiscounts(
+      basketId,
+      desired,
+      Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
+    );
+    const finalRaw = revalidatedDiscounts
+      ? await api.updateDiscounts(basketId, revalidatedDiscounts)
+      : raw;
+
+    return this.mapLiveCommerceBasket(finalRaw);
   }
 
   async updateBasketItems(
@@ -2013,7 +2027,116 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const api = await this.getCommerceBasketApi();
     const raw = await api.replaceItems(basketId, desired);
-    return this.mapLiveCommerceBasket(raw);
+
+    const revalidatedDiscounts = await this.revalidateBundleDiscounts(
+      basketId,
+      desired,
+      Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
+    );
+    const finalRaw = revalidatedDiscounts
+      ? await api.updateDiscounts(basketId, revalidatedDiscounts)
+      : raw;
+
+    return this.mapLiveCommerceBasket(finalRaw);
+  }
+
+  /**
+   * Recognizes a Deliverect discount entry as one we manage for a bundle
+   * instance (as opposed to a coupon or any other third-party discount,
+   * which must be preserved untouched). Checks the current display prefix
+   * plus the legacy one so baskets created before the rename still match.
+   */
+  private isManagedBundleDiscount(discount: any): boolean {
+    const externalId = String(discount?.externalId || '');
+    const name = String(discount?.name || discount?.title || '');
+    return (
+      externalId.startsWith('bwydi-bundle:') ||
+      name.startsWith('Bwydi bundle:') ||
+      name.startsWith('Combo Deal:')
+    );
+  }
+
+  /**
+   * Renders a bundle allocation ledger into per-item Deliverect discount
+   * lines (one `item_flat_off` line per qualifying component, pro-rated via
+   * each component's already-computed `discountLineMinor`) rather than one
+   * flat order-level line — so Quest and the customer both see which
+   * specific items are discounted, not an unexplained lump sum.
+   */
+  private buildManagedBundleDiscountLines(
+    entries: BasketBundleAllocationRecord[]
+  ): CommerceBasketDiscountInput[] {
+    return entries
+      .filter((entry) => entry.discountTotalMinor > 0)
+      .flatMap((entry) =>
+        (entry.components || [])
+          .filter((component) => component.discountLineMinor > 0)
+          .map((component) => ({
+            type: 'item_flat_off' as const,
+            provider: 'restaurant' as const,
+            amount: component.discountLineMinor,
+            plu: component.componentPlu,
+            name: `Combo Deal: ${entry.bundleName}`,
+            externalId: `bwydi-bundle:${entry.bundleInstanceId}:${component.modifierId}`,
+          }))
+      );
+  }
+
+  /**
+   * Re-validates the bundle allocation ledger against the basket's current
+   * (post-mutation) item quantities and drops any bundle instance whose
+   * required components are no longer fully present — e.g. the customer
+   * removed one unit of an item that a combo depended on via a plain
+   * quantity change, not by editing the bundle itself. Consumes the pool in
+   * ledger order so two bundles can never both claim the same unit (an item
+   * only ever discounts once). Returns null when nothing needs to change,
+   * so callers can skip an unnecessary Deliverect discounts write.
+   */
+  private async revalidateBundleDiscounts(
+    basketId: string,
+    desired: Array<{ plu: string; quantity: number }>,
+    rawDiscounts: CommerceBasketDiscountInput[]
+  ): Promise<CommerceBasketDiscountInput[] | null> {
+    const ledger = await FirestorePlatformService.getBasketBundleAllocations(
+      this.tenantId,
+      basketId
+    );
+    if (ledger.length === 0) return null;
+
+    const pool = new Map<string, number>();
+    for (const item of desired) {
+      pool.set(item.plu, (pool.get(item.plu) || 0) + item.quantity);
+    }
+
+    const validEntries: BasketBundleAllocationRecord[] = [];
+    for (const entry of ledger) {
+      const components = entry.components || [];
+      const canSatisfy = components.every(
+        (component) => (pool.get(component.componentPlu) || 0) >= component.quantity
+      );
+      if (canSatisfy) {
+        components.forEach((component) => {
+          pool.set(
+            component.componentPlu,
+            (pool.get(component.componentPlu) || 0) - component.quantity
+          );
+        });
+        validEntries.push(entry);
+      }
+    }
+
+    if (validEntries.length === ledger.length) return null;
+
+    await FirestorePlatformService.replaceBasketBundleAllocations(
+      this.tenantId,
+      basketId,
+      validEntries
+    );
+
+    const nonBundleDiscounts = (rawDiscounts || []).filter(
+      (discount) => !this.isManagedBundleDiscount(discount)
+    );
+    return [...nonBundleDiscounts, ...this.buildManagedBundleDiscountLines(validEntries)];
   }
 
   async addBundleToBasket(
@@ -2213,40 +2336,23 @@ export class DeliverectApiClient implements DeliverectAdapter {
       basketId
     );
 
-    const isManagedBundleDiscount = (discount: any): boolean => {
-      const externalId = String(discount?.externalId || '');
-      const name = String(discount?.name || discount?.title || '');
-      return (
-        externalId.startsWith('bwydi-bundle:') ||
-        name.startsWith('Bwydi bundle:')
-      );
-    };
-
     const originalDiscounts: CommerceBasketDiscountInput[] = Array.isArray(
       rawBefore?.discounts
     )
       ? rawBefore.discounts
       : [];
     const nonBundleDiscounts = originalDiscounts.filter(
-      (discount) => !isManagedBundleDiscount(discount)
+      (discount) => !this.isManagedBundleDiscount(discount)
     );
 
-    const managedDiscounts: CommerceBasketDiscountInput[] = [
+    const managedDiscounts: CommerceBasketDiscountInput[] = this.buildManagedBundleDiscountLines([
       ...existingLedger,
       {
         ...allocation,
         bundleInstanceId,
         createdAt: new Date().toISOString(),
       },
-    ]
-      .filter((entry) => entry.discountTotalMinor > 0)
-      .map((entry) => ({
-        type: 'order_flat_off',
-        provider: 'restaurant',
-        amount: entry.discountTotalMinor,
-        name: `Bwydi bundle: ${entry.bundleName}`,
-        externalId: `bwydi-bundle:${entry.bundleInstanceId}`,
-      }));
+    ]);
 
     let itemsWritten = false;
     let discountsWritten = false;
