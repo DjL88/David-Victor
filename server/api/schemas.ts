@@ -623,15 +623,6 @@ export const AdminAssistantChangeSetSchema = z.object({
     actionName: z.string().min(1).max(100),
     input: z.record(z.string(), z.unknown()).optional().default({}),
   })).min(1).max(50),
-  affectedResources: z.array(z.object({
-    type: z.string().min(1).max(100),
-    id: z.string().min(1).max(500),
-    label: z.string().max(500).optional(),
-  })).max(500).optional().default([]),
-  beforeSnapshot: z.unknown().optional(),
-  afterSnapshot: z.unknown().optional(),
-  diff: z.unknown().optional(),
-  warnings: z.array(z.string().max(1000)).max(100).optional().default([]),
   idempotencyKey: z.string().min(1).max(200).optional(),
   conversationId: z.string().min(1).max(200).optional(),
-});
+}).strict();
