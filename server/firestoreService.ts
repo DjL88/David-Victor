@@ -408,43 +408,45 @@ export class FirestoreService {
   static async listAllDomains(): Promise<DomainRecord[]> {
     const list: DomainRecord[] = [];
     const seenHostnames = new Set<string>();
-
     const db = getFirestoreDb();
-    if (db && !isFirestorePermissionDenied()) {
-      try {
-        const snap = await db.collection('domains').get();
-        snap.forEach((d) => {
-          const data = d.data();
-          if (data && data.hostname && data.tenantId) {
-            const host = data.hostname.toLowerCase().trim();
-            list.push({
-              domainId: d.id,
-              hostname: host,
-              tenantId: data.tenantId,
-              isPrimary: data.isPrimary ?? false,
-              status: data.status || 'active',
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt,
-            });
-            seenHostnames.add(host);
-          }
-        });
-      } catch (err: any) {
-        if (isFirestorePermissionDeniedError(err)) {
-          markFirestorePermissionDenied(err);
+
+    if (!db || isFirestorePermissionDenied()) {
+      if (isDemoMode() || isTestMode()) return Object.values(inMemoryDomains);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain registry is unavailable because durable storage cannot be reached.', 503, true);
+    }
+
+    try {
+      const snap = await db.collection('domains').get();
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data && data.hostname && data.tenantId) {
+          const host = data.hostname.toLowerCase().trim();
+          const record: DomainRecord = {
+            domainId: d.id,
+            hostname: host,
+            tenantId: data.tenantId,
+            isPrimary: data.isPrimary ?? false,
+            status: data.status || 'active',
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          };
+          list.push(record);
+          seenHostnames.add(host);
+          inMemoryDomains[host] = record;
+        }
+      });
+
+      if (isDemoMode() || isTestMode()) {
+        for (const [host, rec] of Object.entries(inMemoryDomains)) {
+          if (!seenHostnames.has(host.toLowerCase())) list.push(rec);
         }
       }
+      return list;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      if (isDemoMode() || isTestMode()) return Object.values(inMemoryDomains);
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Domain registry could not be read from durable storage.', 503, true);
     }
-
-    // Merge in-memory and disk-persisted domains
-    for (const [host, rec] of Object.entries(inMemoryDomains)) {
-      if (!seenHostnames.has(host.toLowerCase())) {
-        list.push(rec);
-        seenHostnames.add(host.toLowerCase());
-      }
-    }
-
-    return list;
   }
 
   /**
