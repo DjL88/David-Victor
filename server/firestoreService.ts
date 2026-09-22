@@ -1011,6 +1011,16 @@ export class FirestoreService {
   }
 
   /**
+   * Refreshes the process-local tenant cache after an atomic control-plane write.
+   * This is never an authoritative persistence path; durable state must already be committed.
+   */
+  static cacheTenantConfigSnapshot(tenantId: string, config: TenantConfig): TenantConfig {
+    inMemoryTenants[tenantId] = config;
+    savePersistedTenants(inMemoryTenants);
+    return config;
+  }
+
+  /**
    * Deletes tenant configuration from Firestore and memory.
    */
   static async deleteTenantConfig(tenantId: string): Promise<boolean> {
