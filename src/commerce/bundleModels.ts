@@ -427,7 +427,7 @@ export interface MissedBundleOffer {
 
 /**
  * Detects "missed offer" bundles: combos where the customer already has most
- * (by default 70%+) of the required components in their basket, individually
+ * all but the final required unit of the bundle in their basket, individually
  * added, but hasn't gotten the combo discount because they never went
  * through the explicit bundle-add flow. Purely a suggestion — completing the
  * bundle still requires the customer to confirm via BundleSelectionDialog,
@@ -441,7 +441,6 @@ export interface MissedBundleOffer {
 export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
-  minMatchRatio: number = 0.7
 ): MissedBundleOffer[] {
   const basketQtyByPlu = new Map<string, number>();
   basketItems.forEach((item) => {
@@ -489,7 +488,9 @@ export function findMissedBundleOffers(
     if (requiredUnits === 0) continue;
     const matchRatio = presentUnits / requiredUnits;
 
-    if (matchRatio >= minMatchRatio && matchRatio < 1 && missingComponents.length > 0) {
+    // Only prompt at the genuinely useful moment: one required unit away from
+    // qualification. Percentage thresholds produce noisy prompts for larger bundles.
+    if (presentUnits === requiredUnits - 1 && missingComponents.length === 1 && missingComponents[0].quantityNeeded === 1) {
       offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents });
     }
   }
