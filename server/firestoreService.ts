@@ -738,25 +738,21 @@ export class FirestoreService {
       },
     };
 
-    inMemoryTenants[tenantId] = fullTenant;
-    savePersistedTenants(inMemoryTenants);
-
     const domainName = newTenant.domain || `${tenantId}.marketlane.app`;
-    try {
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) {
+      if (!(isDemoMode() || isTestMode())) {
+        throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant could not be provisioned because durable storage is unavailable.', 503, true);
+      }
+      inMemoryTenants[tenantId] = fullTenant;
+      savePersistedTenants(inMemoryTenants);
       await FirestoreService.addOrUpdateDomain({
         hostname: domainName,
         tenantId,
         isPrimary: true,
         status: 'active',
       });
-    } catch (dErr) {
-      console.warn('[FirestoreService] Could not auto-register domain for new tenant:', dErr);
-    }
-
-    const db = getFirestoreDb();
-    if (!db || isFirestorePermissionDenied()) {
-      console.info(`[Firestore Admin] Running in standalone/fallback mode; created tenant ${tenantId} and registered domain ${domainName}`);
-      savePersistedTenants(inMemoryTenants);
+      console.info(`[Firestore Admin] Running in demo/test fallback mode; created tenant ${tenantId} and registered domain ${domainName}`);
       await FirestorePlatformService.addAuditLog(tenantId, {
         userId: 'system-provisioner',
         userName: 'Platform Super Admin',
@@ -887,6 +883,9 @@ export class FirestoreService {
       await batch.commit();
       console.log(`[Firestore Admin] Successfully provisioned new tenant atomically: ${tenantId}`);
 
+      // Only expose/cache the tenant after the durable provisioning batch has committed.
+      inMemoryTenants[tenantId] = fullTenant;
+
       // Record audit log
       await FirestorePlatformService.addAuditLog(tenantId, {
         userId: 'system-provisioner',
@@ -903,18 +902,13 @@ export class FirestoreService {
       } else {
         handleFirestoreError(err, OperationType.CREATE, `tenants/${tenantId}`);
       }
-      console.warn(`[Firestore Admin] Batch commit fallback for ${tenantId} (${err.message})`);
-      savePersistedTenants(inMemoryTenants);
-      await FirestorePlatformService.addAuditLog(tenantId, {
-        userId: 'system-provisioner',
-        userName: 'Platform Super Admin',
-        userRole: 'platformSuperAdmin',
-        tenantId,
-        category: 'Tenant',
-        action: 'PROVISION_TENANT',
-        details: `Provisioned new tenant: ${tenantId} (${fullTenant.brandName}) with default domain ${domainName}`,
-      });
-      return fullTenant;
+      if (isDemoMode() || isTestMode()) {
+        inMemoryTenants[tenantId] = fullTenant;
+        savePersistedTenants(inMemoryTenants);
+        return fullTenant;
+      }
+      delete inMemoryTenants[tenantId];
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Tenant provisioning did not commit to durable storage.', 503, true);
     }
 
     return fullTenant;
