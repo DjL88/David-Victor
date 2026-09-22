@@ -7,6 +7,7 @@ import { resolveStoreGeography } from '../geographyService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
+import { assertProductAddAllowed } from '../ruleEnforcementService';
 import { FirestorePlatformService } from '../firestoreService';
 import { randomUUID } from 'node:crypto';
 import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
@@ -2178,6 +2179,18 @@ export class DeliverectApiClient implements DeliverectAdapter {
           `${component.componentName} is no longer available at this store.`
         );
       }
+
+      // Bundle components are exploded into normal product lines (see comment
+      // above), so each one needs the same Product Rules gate a direct
+      // basket-add gets — otherwise a restricted/hidden item could reach the
+      // basket simply by being bundled rather than added standalone.
+      await assertProductAddAllowed(
+        this.tenantId,
+        product,
+        { storeId: current.storeId, fulfillmentType: current.fulfillmentType },
+        current.items,
+        component.quantity
+      );
 
       const existing = desired.find(
         (candidate) => candidate.plu === component.componentPlu

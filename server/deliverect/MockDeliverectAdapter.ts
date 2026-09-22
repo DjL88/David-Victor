@@ -22,6 +22,7 @@ import { AddBundleToBasketRequest, SelectedBundleModifier } from '../../src/comm
 import { CheckoutResult } from '../../src/domain/models';
 import { getServerRuntimeMode } from '../runtimeMode';
 import { CommerceError } from '../errors';
+import { assertProductAddAllowed } from '../ruleEnforcementService';
 
 export class MockDeliverectAdapter implements DeliverectAdapter {
   readonly adapterName = 'MockDeliverectAdapter (Deliverect Commerce Simulator)';
@@ -188,6 +189,24 @@ export class MockDeliverectAdapter implements DeliverectAdapter {
       throw new CommerceError(
         'INVALID_BUNDLE_SELECTION',
         'One or more selected bundle components are not valid for this store.'
+      );
+    }
+
+    // Same Product Rules gate as the live adapter's bundle path: a
+    // restricted/hidden item shouldn't be reachable just by being a bundle
+    // component. Demo bundles keep the parent as one combo line rather than
+    // exploding into standalone products, so check whichever modifiers do
+    // resolve to a real catalog product via standalonePlu.
+    const catalogProductsByPlu = new Map((catalog.products || []).map((p) => [p.plu, p]));
+    for (const modifier of selectedModifiers) {
+      const product = modifier.standalonePlu ? catalogProductsByPlu.get(modifier.standalonePlu) : undefined;
+      if (!product) continue;
+      await assertProductAddAllowed(
+        'brand-alpha',
+        product,
+        { storeId: basket.storeId, fulfillmentType: basket.fulfillmentType },
+        basket.items,
+        modifier.quantity
       );
     }
 
