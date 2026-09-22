@@ -202,7 +202,11 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   // still has to confirm through BundleSelectionDialog to actually get it.
   const missedBundleOffers = useMemo(() => {
     if (!effectiveBasket || bundles.length === 0) return [];
-    return findMissedBundleOffers(allBasketItems, bundles, candidatePool);
+    // Persisted bundle allocations are represented as bundle/combo lines rather than
+    // ordinary catalogue candidates. The missed-offer helper's third argument is
+    // reserved for already-allocated ordinary units, so do not pass the catalogue
+    // pool here.
+    return findMissedBundleOffers(allBasketItems, bundles);
   }, [allBasketItems, bundles, candidatePool, effectiveBasket]);
 
   if (!isOpen) return null;
