@@ -118,34 +118,34 @@ describe('Runtime Provenance & Mock Leak Regression Tests', () => {
   // 2. Tenant Resolution Fail-Closed Behavior
   // =========================================================================
   describe('2. Tenant Resolution Fail-Closed in Live Modes', () => {
-    it('throws 404 TENANT_NOT_FOUND when non-existent tenant is queried in staging mode', async () => {
+    it('fails with 503 DATABASE_UNAVAILABLE when durable tenant storage is unavailable in staging mode', async () => {
       setServerRuntimeMode('staging');
       await expect(
         FirestorePlatformService.getTenantConfig('non-existent-tenant-xyz')
       ).rejects.toMatchObject({
-        code: 'TENANT_NOT_FOUND',
-        statusCode: 404,
+        code: 'DATABASE_UNAVAILABLE',
+        statusCode: 503,
       });
     });
 
-    it('throws 404 TENANT_NOT_FOUND when non-existent tenant is queried in production mode', async () => {
+    it('fails with 503 DATABASE_UNAVAILABLE when durable tenant storage is unavailable in production mode', async () => {
       setServerRuntimeMode('production');
       await expect(
         FirestorePlatformService.getTenantConfig('unknown-brand-999')
       ).rejects.toMatchObject({
-        code: 'TENANT_NOT_FOUND',
-        statusCode: 404,
+        code: 'DATABASE_UNAVAILABLE',
+        statusCode: 503,
       });
     });
 
-    it('GET /api/v1/bootstrap returns 404 for unknown tenant in staging mode', async () => {
+    it('GET /api/v1/bootstrap returns 503 when durable tenant storage is unavailable in staging mode', async () => {
       setServerRuntimeMode('staging');
       const res = await fetch(`${baseUrl}/bootstrap`, {
         headers: { 'x-tenant-id': 'unconfigured-tenant-abc' },
       });
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(503);
       const data = await res.json();
-      expect(data.code).toBe('TENANT_NOT_FOUND');
+      expect(data.code).toBe('DATABASE_UNAVAILABLE');
     });
   });
 
