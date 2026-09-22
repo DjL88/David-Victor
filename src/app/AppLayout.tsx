@@ -740,7 +740,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
                 sectionName: section.name,
               },
             ],
-            1
+            1,
+            { claimExistingBasketItems: true }
           );
         }}
         loading={basketLoading}
