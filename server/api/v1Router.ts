@@ -46,6 +46,7 @@ import { validateBody } from './validation';
 import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
 import { AdminChangeSetService } from '../admin/adminChangeSetService';
+import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -2936,17 +2937,60 @@ v1Router.post(
     try {
       const authAdmin = (req as AuthenticatedRequest).adminUser!;
       const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+
+      if (req.body.actions.filter((action: any) => action.actionName === 'branding.proposeUpdate').length > 1) {
+        return res.status(400).json({
+          error: 'A change set can contain only one tenant branding action.',
+          code: 'ADMIN_CHANGESET_DUPLICATE_RESOURCE_ACTION',
+        });
+      }
+
+      const preparedActions = [];
+      for (let index = 0; index < req.body.actions.length; index += 1) {
+        const requestedAction = req.body.actions[index];
+        preparedActions.push(
+          await AdminResourceAdapterRegistry.prepareProposal({
+            tenantId,
+            actorId: authAdmin.uid,
+            actionName: requestedAction.actionName,
+            input: requestedAction.input,
+            idempotencyKey: req.body.idempotencyKey
+              ? `${req.body.idempotencyKey}:${index}`
+              : undefined,
+          })
+        );
+      }
+
+      const affectedResourceMap = new Map<string, { type: string; id: string; label?: string }>();
+      for (const prepared of preparedActions) {
+        for (const resource of prepared.affectedResources) {
+          affectedResourceMap.set(`${resource.type}:${resource.id}`, resource);
+        }
+      }
+
+      const evidenceFor = (key: 'beforeSnapshot' | 'afterSnapshot' | 'diff') => {
+        const populated = preparedActions
+          .filter((prepared) => prepared[key] !== undefined)
+          .map((prepared) => ({ actionName: prepared.actionName, value: prepared[key] }));
+        if (populated.length === 0) return undefined;
+        return populated.length === 1 ? populated[0].value : populated;
+      };
+
       const changeSet = await AdminChangeSetService.createProposedChangeSet({
         tenantId,
         actorId: authAdmin.uid,
         actorRole: authAdmin.role,
         prompt: req.body.prompt,
-        actions: req.body.actions,
-        affectedResources: req.body.affectedResources,
-        beforeSnapshot: req.body.beforeSnapshot,
-        afterSnapshot: req.body.afterSnapshot,
-        diff: req.body.diff,
-        warnings: req.body.warnings,
+        actions: preparedActions.map((prepared) => ({
+          actionName: prepared.actionName,
+          input: prepared.input,
+        })),
+        affectedResources: Array.from(affectedResourceMap.values()),
+        beforeSnapshot: evidenceFor('beforeSnapshot'),
+        afterSnapshot: evidenceFor('afterSnapshot'),
+        diff: evidenceFor('diff'),
+        warnings: preparedActions.flatMap((prepared) => prepared.warnings),
+        revisionIds: preparedActions.flatMap((prepared) => prepared.revisionIds),
         idempotencyKey: req.body.idempotencyKey,
         conversationId: req.body.conversationId,
       });
