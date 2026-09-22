@@ -491,6 +491,54 @@ export interface CaseResolution {
   createdAt: string;
 }
 
+export type RefundableChargeType = 'ITEM' | 'DELIVERY_FEE' | 'SERVICE_FEE' | 'BAG_FEE' | 'TIP' | 'OTHER_FEE';
+
+export interface RefundLedgerLine {
+  lineId: string;
+  type: RefundableChargeType;
+  /** PLU is present for item-level refund lines. */
+  plu?: string;
+  originalQuantity?: number;
+  refundedQuantity: number;
+  originalAmountMinor: number;
+  refundedAmountMinor: number;
+  remainingRefundableAmountMinor: number;
+}
+
+export interface OrderRefundLedger {
+  tenantId: string;
+  orderId: string;
+  currency: string;
+  originalOrderAmountMinor: number;
+  totalRefundedAmountMinor: number;
+  remainingRefundableAmountMinor: number;
+  lines: RefundLedgerLine[];
+  version: number;
+  updatedAt: string;
+}
+
+/**
+ * Refund requests must be committed transactionally against the refund ledger using the
+ * idempotency key and expected ledger version. This prevents duplicate refunds from
+ * retries/concurrent agents and prevents an item quantity or fee being refunded twice.
+ */
+export interface RefundRequest {
+  refundRequestId: string;
+  idempotencyKey: string;
+  tenantId: string;
+  orderId: string;
+  caseId?: string;
+  expectedLedgerVersion: number;
+  lines: Array<{
+    lineId: string;
+    quantity?: number;
+    amountMinor: number;
+  }>;
+  actorId: string;
+  reasonCode: string;
+  createdAt: string;
+}
+
 export type RiskDecision = 'ALLOW' | 'STEP_UP' | 'LIMIT' | 'MANUAL_REVIEW' | 'TEMPORARY_HOLD';
 
 export interface RiskSignal {
@@ -546,6 +594,51 @@ export interface CourierCompensationClaim {
   evidenceReferences: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ==========================================
+// DATA RESIDENCY & REGIONAL FAILOVER
+// ==========================================
+
+export interface DataResidencyPolicy {
+  tenantId: string;
+  /** Logical home region chosen by retailer policy, contract or applicable law. */
+  primaryRegion: string;
+  /** Regions that may process/store regulated customer data during normal operation. */
+  approvedRegions: string[];
+  /** Explicit disaster-recovery/failover destinations; never route outside this allow-list. */
+  failoverRegions: string[];
+  /** Data classes covered by the residency boundary. */
+  protectedDataClasses: Array<'CUSTOMER_PII' | 'ORDER_PII' | 'PAYMENT_REFERENCES' | 'CUSTOMER_CARE' | 'RISK_DATA'>;
+  crossRegionFailoverEnabled: boolean;
+  /** Maximum temporary residency after an approved failover before repatriation is due. */
+  failoverResidencyTtlHours: number;
+  /** Whether the tenant requires all protected data to return to its home region. */
+  repatriationRequired: boolean;
+}
+
+export interface RegionalDataPlacement {
+  tenantId: string;
+  resourceType: string;
+  resourceId: string;
+  homeRegion: string;
+  currentRegion: string;
+  placementReason: 'PRIMARY' | 'FAILOVER';
+  failedOverAt?: string;
+  repatriateBy?: string;
+  lastVerifiedAt: string;
+}
+
+export interface RegionalFailoverEvent {
+  eventId: string;
+  tenantId: string;
+  fromRegion: string;
+  toRegion: string;
+  reasonCode: string;
+  startedAt: string;
+  recoveredAt?: string;
+  status: 'ACTIVE' | 'REPATRIATION_PENDING' | 'REPATRIATED' | 'FAILED';
+  affectedResourceIds?: string[];
 }
 
 // ==========================================
