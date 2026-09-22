@@ -8,65 +8,99 @@ export interface AutomaticDealAllocation extends ProtectedBundleAllocation {
   scoreUnits: number;
 }
 
-/**
- * Stateless supermarket-style deal qualification.
- * Basket lines are the source of truth; allocations are derived afresh after
- * every mutation/store change. A physical unit may be consumed by one deal only.
- */
+const productPriceMinor = (product?: Product): number | undefined => {
+  if (!product) return undefined;
+  const value: any = product.price ?? product.basePrice ?? product.priceMinor;
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  return value && Number.isInteger(value.amount) ? value.amount : undefined;
+};
+
+function buildCandidate(
+  bundle: BundleProduct,
+  pool: Map<string, number>,
+  productByPlu: Map<string, Product>,
+): AutomaticDealAllocation | null {
+  const selections: SelectedBundleModifier[] = [];
+  const local = new Map(pool);
+  const sections = bundle.sections || bundle.modifierGroups || [];
+
+  for (const section of sections.filter((s) => !s.isUpsell && s.min > 0)) {
+    let needed = section.min;
+    for (const modifier of section.modifiers) {
+      const plu = String(modifier.standalonePlu || '').trim();
+      const product = productByPlu.get(plu);
+      const shelf = productPriceMinor(product);
+      if (!plu || !product || product.active === false || product.stockStatus === 'OUT_OF_STOCK' || shelf === undefined) continue;
+      const take = Math.min(local.get(plu) || 0, needed);
+      if (take > 0) {
+        selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: modifier.priceMinor ?? modifier.price ?? 0, priceMinor: modifier.priceMinor ?? modifier.price ?? 0, standalonePlu: plu, standalonePriceMinor: shelf, sectionId: section.id, sectionName: section.name });
+        local.set(plu, (local.get(plu) || 0) - take);
+        needed -= take;
+      }
+      if (!needed) break;
+    }
+    if (needed > 0) return null;
+  }
+  if (!selections.length) return null;
+
+  // Optional upsells never determine whether the base deal qualifies. If their
+  // product is present, include as many as the section permits. Their modifier
+  // price is a conditional deal price; allocation clamps it to shelf price so
+  // an upsell can discount but never surcharge the customer.
+  for (const section of sections.filter((s) => s.isUpsell === true || s.min === 0)) {
+    let room = Math.max(0, section.max ?? 0);
+    if (!room) continue;
+    for (const modifier of section.modifiers) {
+      const declared = String(modifier.standalonePlu || '').trim();
+      const modifierPlu = String(modifier.plu || '').trim();
+      const product = productByPlu.get(declared) || productByPlu.get(modifierPlu);
+      const plu = product?.plu || declared || modifierPlu;
+      const shelf = productPriceMinor(product);
+      if (!plu || product?.active === false || product?.stockStatus === 'OUT_OF_STOCK') continue;
+      const available = local.get(plu) || 0;
+      const take = Math.min(available, room);
+      if (take <= 0) continue;
+      const uplift = Math.max(0, Math.round(modifier.priceMinor ?? modifier.price ?? 0));
+      selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: uplift, priceMinor: uplift, standalonePlu: product?.plu, standalonePriceMinor: shelf ?? uplift, sectionId: section.id, sectionName: section.name });
+      local.set(plu, available - take);
+      room -= take;
+      if (!room) break;
+    }
+  }
+
+  try {
+    const allocation = allocateProtectedBundlePrices(bundle, selections, 1);
+    return { ...allocation, scoreSavingMinor: allocation.discountTotalMinor, scoreUnits: allocation.components.reduce((n,c)=>n+c.quantity,0) };
+  } catch {
+    return null;
+  }
+}
+
+/** Stateless supermarket-style deal qualification. */
 export function qualifyAutomaticDeals(
   items: BasketDealInput[],
   bundles: BundleProduct[],
   products: Product[],
 ): AutomaticDealAllocation[] {
-  const pool = new Map<string, number>();
-  for (const item of items) pool.set(item.plu, (pool.get(item.plu) || 0) + Math.max(0, item.quantity));
-
+  const remaining = new Map<string, number>();
+  for (const item of items) remaining.set(item.plu, (remaining.get(item.plu) || 0) + Math.max(0, item.quantity));
   const productByPlu = new Map(products.map((product) => [product.plu, product]));
-  const priceMinor = (product?: Product): number | undefined => {
-    if (!product) return undefined;
-    const value: any = product.price ?? product.basePrice ?? product.priceMinor;
-    if (typeof value === 'number' && Number.isInteger(value)) return value;
-    return value && Number.isInteger(value.amount) ? value.amount : undefined;
-  };
-
-  // Build every currently satisfiable single-instance candidate first.
-  const candidates: AutomaticDealAllocation[] = [];
-  for (const bundle of bundles) {
-    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
-    const selections: SelectedBundleModifier[] = [];
-    let valid = true;
-    for (const section of (bundle.sections || bundle.modifierGroups || []).filter((s) => !s.isUpsell && s.min > 0)) {
-      let remaining = section.min;
-      for (const modifier of section.modifiers) {
-        const plu = String(modifier.standalonePlu || '').trim();
-        const product = productByPlu.get(plu);
-        const shelf = priceMinor(product);
-        if (!plu || !product || product.active === false || product.stockStatus === 'OUT_OF_STOCK' || shelf === undefined) continue;
-        const take = Math.min(pool.get(plu) || 0, remaining);
-        if (take > 0) {
-          selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: modifier.priceMinor ?? modifier.price ?? 0, priceMinor: modifier.priceMinor ?? modifier.price ?? 0, standalonePlu: plu, standalonePriceMinor: shelf, sectionId: section.id, sectionName: section.name });
-          remaining -= take;
-        }
-        if (remaining === 0) break;
-      }
-      if (remaining > 0) { valid = false; break; }
-    }
-    if (!valid || selections.length === 0) continue;
-    try {
-      const allocation = allocateProtectedBundlePrices(bundle, selections, 1);
-      candidates.push({ ...allocation, scoreSavingMinor: allocation.discountTotalMinor, scoreUnits: allocation.components.reduce((n,c)=>n+c.quantity,0) });
-    } catch { /* malformed deal cannot poison basket qualification */ }
-  }
-
-  // Best customer saving wins, then strongest coverage, then stable bundle ID.
-  candidates.sort((a,b) => b.scoreSavingMinor-a.scoreSavingMinor || b.scoreUnits-a.scoreUnits || a.bundleId.localeCompare(b.bundleId));
-
-  const remaining = new Map(pool);
   const chosen: AutomaticDealAllocation[] = [];
-  for (const candidate of candidates) {
-    if (candidate.components.every((c)=>(remaining.get(c.componentPlu)||0)>=c.quantity)) {
-      chosen.push(candidate);
-      candidate.components.forEach((c)=>remaining.set(c.componentPlu,(remaining.get(c.componentPlu)||0)-c.quantity));
+
+  // Re-evaluate all deal types after each allocation. This supports repeated
+  // instances (two meal-deal sets => two discounts) while ensuring a unit can
+  // never be consumed twice. Greedy choice is deterministic and customer-first.
+  while (true) {
+    const candidates = bundles
+      .filter((bundle) => bundle.stockStatus !== 'OUT_OF_STOCK')
+      .map((bundle) => buildCandidate(bundle, remaining, productByPlu))
+      .filter((candidate): candidate is AutomaticDealAllocation => Boolean(candidate))
+      .sort((a,b) => b.scoreSavingMinor-a.scoreSavingMinor || b.scoreUnits-a.scoreUnits || a.bundleId.localeCompare(b.bundleId));
+    const winner = candidates[0];
+    if (!winner || winner.scoreSavingMinor <= 0) break;
+    chosen.push(winner);
+    for (const component of winner.components) {
+      remaining.set(component.componentPlu, Math.max(0, (remaining.get(component.componentPlu) || 0) - component.quantity));
     }
   }
   return chosen;
