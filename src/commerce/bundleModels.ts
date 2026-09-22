@@ -446,20 +446,57 @@ export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
 ): MissedBundleOffer[] {
-  const basketQtyByPlu = new Map<string, number>();
+  // Basket quantity is a pool of individual units. A unit consumed by a completed
+  // bundle (or by an earlier prompt candidate) cannot qualify a second bundle.
+  const freeUnits = new Map<string, number>();
   basketItems.forEach((item) => {
-    basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity);
+    if (!item.plu || item.quantity <= 0) return;
+    freeUnits.set(item.plu, (freeUnits.get(item.plu) || 0) + item.quantity);
   });
 
-  const offers: MissedBundleOffer[] = [];
-
-  for (const bundle of bundles) {
-    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
-    const sections = (bundle.sections || bundle.modifierGroups || []).filter(
+  const requiredSections = (bundle: BundleProduct) =>
+    (bundle.sections || bundle.modifierGroups || []).filter(
       (section) => !section.isUpsell && section.min > 0
     );
+
+  const consumeBundleIfComplete = (bundle: BundleProduct): boolean => {
+    const working = new Map(freeUnits);
+    for (const section of requiredSections(bundle)) {
+      let remaining = section.min;
+      for (const modifier of section.modifiers) {
+        if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
+        const available = working.get(modifier.standalonePlu) || 0;
+        const take = Math.min(available, remaining);
+        if (take > 0) {
+          working.set(modifier.standalonePlu, available - take);
+          remaining -= take;
+        }
+        if (remaining === 0) break;
+      }
+      if (remaining > 0) return false;
+    }
+    freeUnits.clear();
+    working.forEach((quantity, plu) => freeUnits.set(plu, quantity));
+    return true;
+  };
+
+  // First reserve every already-complete combo from the free pool. This mirrors
+  // the server allocation ledger's exclusivity and prevents e.g. a nut already
+  // used in a meal deal from triggering a second 2-for-X suggestion.
+  for (const bundle of bundles) {
+    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
+    while (consumeBundleIfComplete(bundle)) {
+      // A basket may legitimately contain more than one complete instance.
+    }
+  }
+
+  const offers: MissedBundleOffer[] = [];
+  for (const bundle of bundles) {
+    if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
+    const sections = requiredSections(bundle);
     if (sections.length === 0) continue;
 
+    const working = new Map(freeUnits);
     let requiredUnits = 0;
     let presentUnits = 0;
     const missingComponents: MissedBundleOffer['missingComponents'] = [];
@@ -467,15 +504,14 @@ export function findMissedBundleOffers(
 
     for (const section of sections) {
       requiredUnits += section.min;
-
-      let sectionPresent = 0;
       let remainingNeeded = section.min;
+
       for (const modifier of section.modifiers) {
         if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
-        const available = basketQtyByPlu.get(modifier.standalonePlu) || 0;
+        const available = working.get(modifier.standalonePlu) || 0;
         const claimed = Math.min(available, remainingNeeded);
-        sectionPresent += available;
         if (claimed > 0) {
+          working.set(modifier.standalonePlu, available - claimed);
           matchedSelections.push({
             modifierId: modifier.id,
             plu: modifier.plu,
@@ -488,14 +524,13 @@ export function findMissedBundleOffers(
             sectionId: section.id,
             sectionName: section.name,
           });
+          presentUnits += claimed;
           remainingNeeded -= claimed;
         }
-        if (remainingNeeded <= 0) break;
+        if (remainingNeeded === 0) break;
       }
-      const covered = Math.min(sectionPresent, section.min);
-      presentUnits += covered;
 
-      if (covered < section.min) {
+      if (remainingNeeded > 0) {
         const suggestion = section.modifiers.find(
           (modifier) => modifier.standalonePlu && modifier.active !== false && !modifier.snoozed
         );
@@ -503,7 +538,7 @@ export function findMissedBundleOffers(
           missingComponents.push({
             plu: suggestion.standalonePlu,
             name: suggestion.name,
-            quantityNeeded: section.min - covered,
+            quantityNeeded: remainingNeeded,
             sectionId: section.id,
             modifierId: suggestion.id,
             imageUrl: suggestion.imageUrl,
@@ -514,11 +549,16 @@ export function findMissedBundleOffers(
 
     if (requiredUnits === 0) continue;
     const matchRatio = presentUnits / requiredUnits;
-
-    // Only prompt at the genuinely useful moment: one required unit away from
-    // qualification. Percentage thresholds produce noisy prompts for larger bundles.
-    if (presentUnits === requiredUnits - 1 && missingComponents.length === 1 && missingComponents[0].quantityNeeded === 1) {
+    if (
+      presentUnits === requiredUnits - 1 &&
+      missingComponents.length === 1 &&
+      missingComponents[0].quantityNeeded === 1
+    ) {
       offers.push({ bundle, matchRatio, presentUnits, requiredUnits, missingComponents, matchedSelections });
+      // Reserve the matched units for this prompt so overlapping deals cannot
+      // simultaneously advertise the same physical basket unit.
+      freeUnits.clear();
+      working.forEach((quantity, plu) => freeUnits.set(plu, quantity));
     }
   }
 
