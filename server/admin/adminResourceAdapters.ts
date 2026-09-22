@@ -196,6 +196,12 @@ async function projectBrandingRevision(args: {
     );
     if (current?.pointer.currentRevisionId === revision.revisionId) {
       const tenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+      if (diffConfiguration(revision.payload, brandingSnapshot(tenant)).length > 0) {
+        throw Object.assign(
+          new Error('The published Branding revision no longer matches live state. A newer edit must be reviewed first.'),
+          { code: 'ADMIN_REVISION_LIVE_STATE_CONFLICT', statusCode: 409 }
+        );
+      }
       return { revisionId: revision.revisionId, tenant };
     }
   }
