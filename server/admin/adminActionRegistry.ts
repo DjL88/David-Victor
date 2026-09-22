@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { AdminRole } from '../../src/commerce/models';
 
 export type AdminActionRisk = 'READ' | 'LOW_WRITE' | 'HIGH_WRITE' | 'RESTRICTED';
@@ -20,6 +21,11 @@ export type ServerAdminCapability =
   | 'integrations.configure'
   | 'memberships.read'
   | 'memberships.manage'
+  | 'assets.read'
+  | 'assets.write'
+  | 'domains.read'
+  | 'domains.manage'
+  | 'audit.read'
   | 'assistant.use'
   | 'assistant.executeLowRisk'
   | 'assistant.approveHighRisk';
@@ -27,6 +33,7 @@ export type ServerAdminCapability =
 export interface AdminActionDefinition {
   name: string;
   description: string;
+  inputSchema: z.ZodTypeAny;
   capability: ServerAdminCapability;
   risk: AdminActionRisk;
   supportsPreview: boolean;
@@ -34,13 +41,16 @@ export interface AdminActionDefinition {
   enabledForAssistant: boolean;
 }
 
+export type AdminActionMetadata = Omit<AdminActionDefinition, 'inputSchema'>;
+
 const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<ServerAdminCapability>> = {
   platformSuperAdmin: new Set<ServerAdminCapability>([
     'catalog.read', 'catalog.diagnostics', 'stores.read', 'stores.write',
     'branding.read', 'branding.write', 'content.read', 'content.write',
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
-    'memberships.read', 'memberships.manage', 'assistant.use',
+    'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
+    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   tenantAdmin: new Set<ServerAdminCapability>([
@@ -48,30 +58,45 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<ServerAdminCapability>> =
     'branding.read', 'branding.write', 'content.read', 'content.write',
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
-    'memberships.read', 'memberships.manage', 'assistant.use',
+    'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
+    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   marketingEditor: new Set<ServerAdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'branding.write',
     'content.read', 'content.write', 'rules.read', 'rules.write',
-    'fees.read', 'integrations.read', 'assistant.use', 'assistant.executeLowRisk',
+    'fees.read', 'integrations.read', 'assets.read', 'assets.write',
+    'domains.read', 'audit.read', 'assistant.use', 'assistant.executeLowRisk',
   ]),
   operationsEditor: new Set<ServerAdminCapability>([
     'catalog.read', 'catalog.diagnostics', 'stores.read', 'stores.write',
     'branding.read', 'content.read', 'rules.read', 'rules.write',
     'fees.read', 'fees.write', 'integrations.read', 'integrations.diagnostics',
-    'assistant.use', 'assistant.executeLowRisk',
+    'assets.read', 'domains.read', 'audit.read', 'assistant.use',
+    'assistant.executeLowRisk',
   ]),
   viewer: new Set<ServerAdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'content.read',
-    'rules.read', 'fees.read', 'integrations.read', 'assistant.use',
+    'rules.read', 'fees.read', 'integrations.read', 'assets.read',
+    'domains.read', 'audit.read', 'assistant.use',
   ]),
 };
+
+const EmptyInputSchema = z.object({}).passthrough();
+const CatalogueDiagnosticInputSchema = z.object({
+  query: z.string().trim().min(1).optional(),
+  plu: z.string().trim().min(1).optional(),
+  productId: z.string().trim().min(1).optional(),
+}).refine((value) => Boolean(value.query || value.plu || value.productId), {
+  message: 'A product name, PLU, barcode or product ID is required.',
+});
+const ProposalInputSchema = z.record(z.string(), z.unknown());
 
 const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'catalog.inspect',
     description: 'Inspect normalized catalogue and stock state for the active tenant.',
+    inputSchema: EmptyInputSchema,
     capability: 'catalog.read',
     risk: 'READ',
     supportsPreview: false,
@@ -81,6 +106,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'catalog.diagnoseVisibility',
     description: 'Trace why a product may not be visible in the storefront.',
+    inputSchema: CatalogueDiagnosticInputSchema,
     capability: 'catalog.diagnostics',
     risk: 'READ',
     supportsPreview: false,
@@ -90,6 +116,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'stores.inspect',
     description: 'Read location configuration and compare settings.',
+    inputSchema: EmptyInputSchema,
     capability: 'stores.read',
     risk: 'READ',
     supportsPreview: false,
@@ -99,6 +126,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'integrations.diagnose',
     description: 'Read connection and commerce diagnostics without exposing credentials.',
+    inputSchema: EmptyInputSchema,
     capability: 'integrations.diagnostics',
     risk: 'READ',
     supportsPreview: false,
@@ -108,6 +136,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'branding.proposeUpdate',
     description: 'Prepare a branding change proposal without applying it.',
+    inputSchema: ProposalInputSchema,
     capability: 'branding.write',
     risk: 'LOW_WRITE',
     supportsPreview: true,
@@ -117,6 +146,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'rules.proposeUpdate',
     description: 'Prepare a rule change proposal without applying it.',
+    inputSchema: ProposalInputSchema,
     capability: 'rules.write',
     risk: 'HIGH_WRITE',
     supportsPreview: true,
@@ -126,6 +156,7 @@ const ACTIONS: AdminActionDefinition[] = [
   {
     name: 'fees.proposeUpdate',
     description: 'Prepare a fee policy change proposal without applying it.',
+    inputSchema: ProposalInputSchema,
     capability: 'fees.write',
     risk: 'HIGH_WRITE',
     supportsPreview: true,
@@ -138,17 +169,31 @@ export function hasServerAdminCapability(role: AdminRole, capability: ServerAdmi
   return ROLE_CAPABILITIES[role]?.has(capability) ?? false;
 }
 
-export function listAssistantActionsForRole(role: AdminRole): AdminActionDefinition[] {
+export function listAssistantActionsForRole(role: AdminRole): AdminActionMetadata[] {
   if (!hasServerAdminCapability(role, 'assistant.use')) return [];
-  return ACTIONS.filter(
-    (action) => action.enabledForAssistant && hasServerAdminCapability(role, action.capability)
-  );
+  return ACTIONS
+    .filter((action) => action.enabledForAssistant && hasServerAdminCapability(role, action.capability))
+    .map(({ inputSchema: _inputSchema, ...metadata }) => metadata);
 }
 
 export function getAdminActionDefinition(name: string): AdminActionDefinition | undefined {
   return ACTIONS.find((action) => action.name === name);
 }
 
+export function validateAdminActionInput(
+  action: AdminActionDefinition,
+  input: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  const parsed = action.inputSchema.safeParse(input || {});
+  if (!parsed.success) {
+    throw Object.assign(new Error(parsed.error.issues.map((issue) => issue.message).join('; ')), {
+      code: 'ADMIN_ACTION_INPUT_INVALID',
+      statusCode: 400,
+      issues: parsed.error.issues,
+    });
+  }
+  return parsed.data as Record<string, unknown>;
+}
 
 export interface AdminActionPlan {
   planId: string;
@@ -187,6 +232,7 @@ export function buildReadOnlyActionPlan(args: {
 }): AdminActionPlan {
   const now = new Date().toISOString();
   const entropy = Math.random().toString(36).slice(2, 10);
+  const input = validateAdminActionInput(args.action, args.input);
   return {
     planId: `plan-${Date.now()}-${entropy}`,
     actionName: args.action.name,
@@ -194,7 +240,7 @@ export function buildReadOnlyActionPlan(args: {
     actorId: args.actorId,
     risk: args.action.risk,
     summary: args.action.description,
-    input: args.input || {},
+    input,
     affectedResources: [],
     requiresConfirmation: args.action.risk !== 'READ',
     executable: args.action.risk === 'READ' && args.action.enabledForAssistant,
