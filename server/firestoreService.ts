@@ -953,10 +953,14 @@ export class FirestoreService {
    * Updates tenant branding and features in Firestore.
    */
   static async updateTenantConfig(tenantId: string, updates: Partial<TenantConfig>): Promise<TenantConfig> {
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     let current: TenantConfig;
     try {
       current = await this.getTenantConfig(tenantId);
-    } catch {
+    } catch (err) {
+      // A live branding edit must never provision a missing tenant implicitly.
+      // Provisioning is a separate privileged control-plane operation.
+      if (!fallbackAllowed) throw err;
       current = await this.createTenant({
         tenantId,
         brandName: (updates as any).brandName || (updates as any).name || tenantId,
@@ -964,33 +968,46 @@ export class FirestoreService {
         currency: (updates as any).currency || 'GBP',
       });
     }
+
     const updated = {
       ...current,
       ...updates,
       updatedAt: new Date().toISOString(),
     };
 
-    inMemoryTenants[tenantId] = updated;
-    savePersistedTenants(inMemoryTenants);
+    const persistFallback = () => {
+      inMemoryTenants[tenantId] = updated;
+      savePersistedTenants(inMemoryTenants);
+      return updated;
+    };
 
     const db = getFirestoreDb();
     if (!db || isFirestorePermissionDenied()) {
-      return updated;
+      if (!fallbackAllowed) {
+        throw new BFFError(
+          'DATABASE_UNAVAILABLE',
+          'Durable Firestore persistence is unavailable. Branding changes were not applied.',
+          503
+        );
+      }
+      return persistFallback();
     }
 
     try {
       await db.collection('tenants').doc(tenantId).set(updated, { merge: true });
+      inMemoryTenants[tenantId] = updated;
+      savePersistedTenants(inMemoryTenants);
       console.log(`[Firestore Admin] Updated tenant config for ${tenantId}`);
+      return updated;
     } catch (err: any) {
       if (isFirestorePermissionDeniedError(err)) {
         markFirestorePermissionDenied(err);
       } else {
         console.error(`[Firestore Admin] Failed to update tenant config for ${tenantId}:`, err);
       }
-      return updated;
+      if (!fallbackAllowed) throw err;
+      return persistFallback();
     }
-
-    return updated;
   }
 
   /**
