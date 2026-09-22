@@ -24,10 +24,8 @@ import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
-import { BwydiLogo } from '../components/BwydiLogo';
 import { AdminWorkspaceProvider } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
-const bwydiFullLogo = '/bwydi-green.png';
 import {
   Palette,
   Film,
@@ -38,7 +36,6 @@ import {
   Store,
   Eye,
   History,
-  ArrowLeft,
   User,
   Users,
   BarChart3,
@@ -230,29 +227,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   return (
     <AdminWorkspaceProvider tenantId={currentTenantId} section={activeTab} actor={currentUser}>
-    <div className="min-h-screen bg-gray-50 flex flex-col text-gray-900 font-sans">
-      {/* TOP ADMIN HEADER */}
-      <header className="sticky top-0 z-40 bg-[#56356b] text-white border-b border-white/10 px-3 lg:px-5 py-2 shrink-0">
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <button type="button" onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} className="lg:hidden p-2 rounded-xl hover:bg-white/10 shrink-0" aria-label="Toggle admin menu" aria-expanded={isMobileNavOpen}>
-              {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <button type="button" onClick={onExitAdmin} className="p-2 rounded-xl hover:bg-white/10 shrink-0" title="Return to Customer Storefront" aria-label="Return to Customer Storefront"><ArrowLeft className="w-4 h-4" /></button>
-            <div id="bwydi-admin-header-logo" className="shrink-0 flex items-center px-1 py-0.5">
-              <img src={bwydiFullLogo} alt="bwydi" className="h-12 sm:h-14 lg:h-16 w-auto max-w-[200px] sm:max-w-[240px] object-contain drop-shadow-xs" />
-            </div>
-          </div>
-          <div className="hidden lg:flex items-center gap-4 min-w-0">
-            <div className="text-xs min-w-0"><span className="block text-white/70">Client brand</span><span className="block truncate max-w-[180px]">{tenantConfig?.brandName || currentTenantId}</span></div>
-            {currentUser.role === 'platformSuperAdmin' && <label className="text-xs min-w-0">Tenant<select aria-label="Admin tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="block bg-white/10 rounded-lg p-2 max-w-[220px] text-white">{allTenants.length ? allTenants.map((tenant, idx) => <option className="text-gray-900" key={`admin-desk-tenant-${tenant.tenantId}-${idx}`} value={tenant.tenantId}>{tenant.brandName}</option>) : <option className="text-gray-900" value={currentTenantId}>{currentTenantId}</option>}</select></label>}
-          </div>
-          <button type="button" onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} title={currentUser.name + ' · ' + currentUser.role} aria-label={'Account: ' + currentUser.name} className="p-2 rounded-xl bg-white/10 shrink-0"><User className="w-5 h-5" /></button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 flex text-gray-900 font-sans overflow-hidden">
+      {/* MOBILE NAV TRIGGER ONLY — desktop Admin is side-navigation only. */}
+      <button
+        type="button"
+        onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+        className="fixed left-3 top-3 z-50 lg:hidden p-2.5 rounded-xl bg-gray-900 text-white shadow-lg"
+        aria-label="Toggle admin menu"
+        aria-expanded={isMobileNavOpen}
+      >
+        {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </button>
 
       {/* ADMIN WORKSPACE: LEFT SIDEBAR + MAIN CONTENT AREA */}
-      <div className="flex-1 flex overflow-hidden">
         {/* BACKDROP FOR MOBILE NAVIGATION */}
         {isMobileNavOpen && (
           <div
@@ -263,14 +250,32 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
         {/* LEFT ADMIN SIDEBAR MENU */}
         <aside
-          className={`fixed lg:static inset-y-0 left-0 top-[72px] z-35 w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between overflow-y-auto transform transition-transform duration-200 ease-in-out shrink-0 ${
+          className={`fixed lg:static inset-y-0 left-0 top-0 z-40 w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between overflow-y-auto transform transition-transform duration-200 ease-in-out shrink-0 ${
             isMobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         >
           <div className="p-3.5 space-y-6">
+            <div className="px-2 pt-1">
+              <div className="min-h-14 flex items-center gap-3">
+                {(tenantConfig?.logoUrl || tenantConfig?.iconUrl) ? (
+                  <img
+                    src={tenantConfig.logoUrl || tenantConfig.iconUrl}
+                    alt={tenantConfig?.brandName || 'Brand'}
+                    className="max-h-12 max-w-[180px] w-auto object-contain object-left"
+                  />
+                ) : (
+                  <div className="min-w-0">
+                    <div className="text-sm font-black text-white truncate">
+                      {tenantConfig?.brandName || currentTenantId}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500">Admin</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="space-y-3 rounded-xl bg-white/5 p-3 text-white text-xs">
               <div><span className="block text-gray-400">Signed in</span><span>{currentUser.name}</span><span className="block text-gray-400 break-words">{currentUser.role}</span></div>
-              <div className="lg:hidden"><span className="block text-gray-400">Client brand</span><span>{tenantConfig?.brandName || currentTenantId}</span></div>
               {currentUser.role === 'platformSuperAdmin' && <label className="block lg:hidden">Tenant<select aria-label="Menu tenant" value={currentTenantId} onChange={(event) => setCurrentTenantId(event.target.value)} className="mt-1 w-full bg-gray-800 text-white rounded-lg p-2">{allTenants.length ? allTenants.map((tenant, idx) => <option key={`admin-mob-tenant-${tenant.tenantId}-${idx}`} value={tenant.tenantId}>{tenant.brandName} ({tenant.tenantId})</option>) : <option value={currentTenantId}>{currentTenantId}</option>}</select></label>}
               {isDemo && <label className="block">Demo user<select aria-label="Demo user" value={currentUser.id} onChange={(event) => handleUserSwitch(event.target.value)} className="mt-1 w-full bg-gray-800 rounded-lg p-2">{ALL_MOCK_ADMIN_USERS.map((user) => <option key={user.id} value={user.id}>{user.name} ({user.role})</option>)}</select></label>}
             </div>
@@ -326,35 +331,37 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               </span>
               <span className="min-w-0">
                 <span className="block">Ask Admin Assistant</span>
-                <span className="block text-[10px] font-medium text-gray-400 mt-0.5">Context-aware · read only</span>
+                <span className="block text-[10px] font-medium text-gray-400 mt-0.5">Context-aware · safe changes</span>
               </span>
             </button>
           </div>
 
-          {/* SIDEBAR FOOTER METADATA */}
-          <div className="p-4 border-t border-gray-800/80 text-[11px] text-gray-400 space-y-2">
-            <div className="flex items-center gap-2 pb-1.5 border-b border-gray-800/60">
-              <BwydiLogo variant="icon" color="mono" size="xs" />
-              <span className="font-croogla text-white text-xs lowercase font-bold tracking-tight">bwydi</span>
-              <span className="text-[10px] text-gray-500">• White-Label Platform</span>
-            </div>
-            <div className="flex justify-between items-center">
+          {/* SIDEBAR FOOTER — deliberately platform-neutral for white-label Admin. */}
+          <div className="p-3 border-t border-gray-800/80 text-[11px] text-gray-400 space-y-2">
+            <div className="flex justify-between items-center px-1">
               <span>Environment</span>
               <span className="font-mono text-indigo-300 font-bold">
                 {isDemo ? 'Demo Sandbox' : 'Cloud Staging'}
               </span>
             </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center px-1">
               <span>Brand config</span>
               <span className={`font-semibold ${tenantLoadError ? 'text-rose-300' : tenantConfig ? 'text-emerald-400' : 'text-gray-400'}`}>
                 {tenantLoadError ? 'Unavailable' : tenantConfig ? 'Loaded' : 'Loading…'}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={onExitAdmin}
+              className="mt-2 w-full rounded-lg border border-white/10 px-3 py-2 text-left font-bold text-gray-300 hover:bg-white/5 hover:text-white"
+            >
+              Return to storefront
+            </button>
           </div>
         </aside>
 
         {/* ACTIVE SCREEN CONTENT */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8 min-w-0">
+        <main className="flex-1 overflow-y-auto p-4 pt-16 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
             {tenantLoadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between gap-3"><span>{tenantLoadError}</span><button type="button" onClick={loadTenant} className="font-bold underline">Retry</button></div>}
             {activeTab === 'brands' && (
@@ -417,7 +424,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'audit' && <AuditHistoryScreen tenantId={currentTenantId} />}
           </div>
         </main>
-      </div>
       <AdminAssistantDrawer open={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
     </div>
     </AdminWorkspaceProvider>
