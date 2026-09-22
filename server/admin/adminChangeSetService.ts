@@ -49,6 +49,7 @@ export interface AssistantChangeSet {
   afterSnapshot?: unknown;
   diff?: unknown;
   warnings: string[];
+  revisionIds: string[];
   idempotencyKey?: string;
   requestHash: string;
   createdAt: string;
@@ -100,6 +101,7 @@ interface CreateChangeSetArgs {
   afterSnapshot?: unknown;
   diff?: unknown;
   warnings?: string[];
+  revisionIds?: string[];
   idempotencyKey?: string;
   conversationId?: string;
 }
@@ -244,6 +246,7 @@ export class AdminChangeSetService {
       beforeSnapshot: args.beforeSnapshot,
       afterSnapshot: args.afterSnapshot,
       diff: args.diff,
+      revisionIds: args.revisionIds || [],
     });
 
     const changeSet: AssistantChangeSet = {
@@ -260,6 +263,7 @@ export class AdminChangeSetService {
       afterSnapshot: args.afterSnapshot,
       diff: args.diff,
       warnings: args.warnings || [],
+      revisionIds: args.revisionIds || [],
       idempotencyKey: args.idempotencyKey,
       requestHash,
       createdAt: now,
