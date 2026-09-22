@@ -8,7 +8,6 @@ import { BrandingScreen } from './screens/BrandingScreen';
 import { StoriesAdminScreen } from './screens/StoriesAdminScreen';
 import { HeroBannersAdminScreen } from './screens/HeroBannersAdminScreen';
 import { FeesAdminScreen } from './screens/FeesAdminScreen';
-import { CountryRulesScreen } from './screens/CountryRulesScreen';
 import { ProductRulesScreen } from './screens/ProductRulesScreen';
 import { StoreConfigScreen } from './screens/StoreConfigScreen';
 import { AuditHistoryScreen } from './screens/AuditHistoryScreen';
@@ -17,7 +16,6 @@ import { SearchMerchScreen } from './screens/SearchMerchScreen';
 import { MediaHealthScreen } from './screens/MediaHealthScreen';
 import { PagesAdminScreen } from './screens/PagesAdminScreen';
 import { DomainsScreen } from './screens/DomainsScreen';
-import { NotificationsAdminScreen } from './screens/NotificationsAdminScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
@@ -37,7 +35,6 @@ import {
   Search,
   Image as ImageIcon,
   FileText,
-  Bell,
   Package,
   Link2,
   Menu,
@@ -60,11 +57,9 @@ export type AdminTab =
   | 'search_merch'
   | 'pages'
   | 'domains'
-  | 'notifications'
   | 'media_health'
   | 'stories'
   | 'fees'
-  | 'country_rules'
   | 'product_rules'
   | 'stores'
   | 'audit';
@@ -178,8 +173,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     {
       title: 'Rules',
       items: [
-        { id: 'product_rules', label: 'Product Rules', icon: ShieldCheck },
-        { id: 'country_rules', label: 'Country Rules', icon: Globe },
+        { id: 'product_rules', label: 'Rules & Fulfilment', icon: ShieldCheck },
       ],
     },
     {
@@ -198,7 +192,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         { id: 'integrations', label: 'Deliverect Setup', icon: Link2 },
         { id: 'connection_health', label: 'Connection Status', icon: Activity },
         { id: 'domains', label: 'Domains', icon: Globe },
-        { id: 'notifications', label: 'Notifications', icon: Bell },
         { id: 'media_health', label: 'Media Health', icon: ImageIcon },
       ],
     },
@@ -391,16 +384,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'search_merch' && <SearchMerchScreen tenantId={currentTenantId} />}
             {activeTab === 'pages' && <PagesAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'domains' && <DomainsScreen tenantId={currentTenantId} allTenants={allTenants} />}
-            {activeTab === 'notifications' && <NotificationsAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'media_health' && <MediaHealthScreen tenantId={currentTenantId} />}
             {activeTab === 'stories' && (
               <StoriesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'fees' && (
               <FeesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
-            )}
-            {activeTab === 'country_rules' && (
-              <CountryRulesScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'product_rules' && (
               <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} />
