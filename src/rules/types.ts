@@ -356,6 +356,51 @@ export interface CapacityReservation {
   createdAt: string;
 }
 
+/**
+ * Generic idempotency envelope for durable side effects such as checkout, order submission,
+ * capacity reservation and event delivery. Implementations persist this before invoking a
+ * non-idempotent dependency and return the recorded result on safe retries.
+ */
+export interface IdempotencyRecord {
+  tenantId: string;
+  operation: string;
+  key: string;
+  requestHash: string;
+  status: 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL';
+  resourceId?: string;
+  resultReference?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+}
+
+/**
+ * Durable platform event. Consumers acknowledge their own delivery independently so an
+ * analytics, BI or notification outage cannot make an order disappear.
+ */
+export interface PlatformEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+  eventId: string;
+  schemaVersion: number;
+  tenantId: string;
+  type: string;
+  occurredAt: string;
+  correlationId?: string;
+  locationId?: string;
+  resourceId?: string;
+  payload: TPayload;
+}
+
+export interface EventDeliveryAttempt {
+  eventId: string;
+  destinationId: string;
+  attempt: number;
+  status: 'PENDING' | 'DELIVERED' | 'RETRYING' | 'DEAD_LETTER';
+  nextAttemptAt?: string;
+  lastHttpStatus?: number;
+  lastErrorCode?: string;
+  updatedAt: string;
+}
+
 // ==========================================
 // DISPATCH & COURIER ORCHESTRATION RULES
 // ==========================================
