@@ -542,7 +542,10 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         </div>
                         <button type="button" disabled={loading} onClick={() => {
                           if (choices.length > 1) setComboChoice(offer);
-                          else if (product) onUpdateQuantity(product, 1, effectiveBasket?.storeId);
+                          else if (product) {
+                            const currentQuantity = allBasketItems.find((item) => item.plu === product.plu)?.quantity || 0;
+                            onUpdateQuantity(product, currentQuantity + 1, effectiveBasket?.storeId);
+                          }
                         }} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
                           {choices.length > 1 ? 'Choose item' : 'Add & save'}
                         </button>
@@ -567,7 +570,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         const choiceProduct = candidatePool.find((candidate) => candidate.plu === choice.plu);
                         if (!choiceProduct) return null;
                         return <button key={choice.modifierId} type="button" onClick={() => {
-                          onUpdateQuantity(choiceProduct, 1, effectiveBasket?.storeId);
+                          const currentQuantity = allBasketItems.find((item) => item.plu === choiceProduct.plu)?.quantity || 0;
+                          onUpdateQuantity(choiceProduct, currentQuantity + 1, effectiveBasket?.storeId);
                           setComboChoice(null);
                         }} className="w-full p-3 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 flex items-center gap-3 text-left">
                           {(choiceProduct.imageUrl || choice.imageUrl) ? <img src={choiceProduct.imageUrl || choice.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" /> : <Package className="w-5 h-5 text-gray-400" />}
