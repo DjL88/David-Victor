@@ -247,7 +247,7 @@ const inMemoryTenants: Record<string, TenantConfig> = {
   ...(isDemoMode() || isTestMode() ? MOCK_TENANTS : {}),
   ...loadPersistedTenants(),
 };
-const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
+const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...(isDemoMode() || isTestMode() ? loadPersistedIntegrations() : {}) };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
 const inMemoryBasketBundleAllocations: Record<string, BasketBundleAllocationsDocument> = {};
