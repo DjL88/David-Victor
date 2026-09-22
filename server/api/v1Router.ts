@@ -43,7 +43,7 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
-import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan } from '../admin/adminActionRegistry';
+import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
 
 if (isDemoMode()) {
@@ -415,6 +415,29 @@ function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 
     }
 
     next();
+  };
+}
+
+/**
+ * Middleware requiring Platform SuperAdmin privileges (Section 8, 27)
+ */
+function requireAdminCapability(capability: ServerAdminCapability) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const admin = req.adminUser || (req as any).adminUser;
+    if (!admin) {
+      return res.status(401).json({
+        error: 'Unauthorized: Admin authentication required before capability checks.',
+        code: 'AUTH_REQUIRED',
+      });
+    }
+    if (admin.isSuperAdmin || admin.role === 'platformSuperAdmin' || hasServerAdminCapability(admin.role, capability)) {
+      return next();
+    }
+    return res.status(403).json({
+      error: `Forbidden: Missing admin capability ${capability}.`,
+      code: 'ADMIN_CAPABILITY_REQUIRED',
+      capability,
+    });
   };
 }
 
@@ -2823,7 +2846,7 @@ v1Router.get('/admin/assistant/actions', requireAdminAuth(), async (req: Request
 
 // 9.0.0a Create a deterministic assistant action plan.
 // Tenant scope always comes from authenticated server context, never from the model payload.
-v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/plan', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
@@ -2854,7 +2877,7 @@ v1Router.post('/admin/assistant/plan', requireAdminAuth(), validateBody(AdminAss
 
 // 9.0.0b Execute deterministic READ actions only.
 // Write actions remain fail-closed until change-set approval and rollback persistence are connected.
-v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(AdminAssistantExecuteSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/execute', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantExecuteSchema), async (req: Request, res: Response) => {
   res.status(400).json({
     error: 'Plan-ID execution is not enabled. Use /admin/assistant/run for deterministic read-only actions.',
     code: 'ADMIN_ACTION_PLAN_EXECUTION_DISABLED',
@@ -2862,7 +2885,7 @@ v1Router.post('/admin/assistant/execute', requireAdminAuth(), validateBody(Admin
   });
 });
 
-v1Router.post('/admin/assistant/run', requireAdminAuth(), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assistant/run', requireAdminAuth(), requireAdminCapability('assistant.use'), validateBody(AdminAssistantPlanSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
@@ -2933,7 +2956,7 @@ v1Router.get('/admin/memberships', requireAdminAuth(), async (req: Request, res:
 // Create/Invite membership:
 // platformSuperAdmin can create any role (including platformSuperAdmin or tenant roles).
 // tenant roles can only grant roles at or below their own authority, within their tenant.
-v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('memberships.manage'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const { email, role, tenantId: requestedTenantId, name } = req.body || {};
@@ -3042,7 +3065,7 @@ v1Router.post('/admin/memberships', requireAdminAuth(), async (req: Request, res
 });
 
 // Delete/Revoke membership
-v1Router.delete('/admin/memberships/:id', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapability('memberships.manage'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const membershipId = req.params.id;
@@ -3735,7 +3758,7 @@ v1Router.get('/admin/tenants/:id/stores', requireAdminAuth(), async (req: Reques
   }
 });
 
-v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), requireAdminCapability('stores.write'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.params.id;
     const storeId = req.params.storeId;
@@ -3916,7 +3939,7 @@ v1Router.patch('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), valid
 });
 
 // 9.9 Real AssetService: Uploads for Logos, Favicons, Fonts & Stories
-v1Router.post('/admin/assets/upload', requireAdminAuth(), validateBody(AssetUploadSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/upload', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetUploadSchema), async (req: Request, res: Response) => {
   try {
     if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
       return res.status(403).json({
@@ -3968,7 +3991,7 @@ v1Router.post('/admin/assets/upload', requireAdminAuth(), validateBody(AssetUplo
   }
 });
 
-v1Router.post('/admin/assets/upload-url', requireAdminAuth(), validateBody(AssetUploadUrlSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/upload-url', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetUploadUrlSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, type, fileName, contentType, byteSize } = req.body;
@@ -3999,7 +4022,7 @@ v1Router.post('/admin/assets/upload-url', requireAdminAuth(), validateBody(Asset
   }
 });
 
-v1Router.put('/admin/assets/direct-upload/:assetId', express.raw({ type: '*/*', limit: '100mb' }), async (req: Request, res: Response) => {
+v1Router.put('/admin/assets/direct-upload/:assetId', requireAdminAuth(), requireAdminCapability('assets.write'), express.raw({ type: '*/*', limit: '100mb' }), async (req: Request, res: Response) => {
   try {
     const { assetId } = req.params;
     const contentType = (req.headers['content-type'] as string) || 'application/octet-stream';
@@ -4012,7 +4035,7 @@ v1Router.put('/admin/assets/direct-upload/:assetId', express.raw({ type: '*/*', 
   }
 });
 
-v1Router.post('/admin/assets/finalize', requireAdminAuth(), validateBody(AssetFinalizeSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/assets/finalize', requireAdminAuth(), requireAdminCapability('assets.write'), validateBody(AssetFinalizeSchema), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, assetId } = req.body;
@@ -4079,7 +4102,7 @@ v1Router.get('/assets/:tenantId/:assetId', async (req: Request, res: Response) =
   }
 });
 
-v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.delete('/admin/assets/:tenantId/:assetId', requireAdminAuth(), requireAdminCapability('assets.write'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let tenantId = req.params.tenantId;
@@ -4125,7 +4148,7 @@ v1Router.get('/admin/tenants/:id/media-health', requireAdminAuth(), async (req: 
   }
 });
 
-v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/media-health/check', requireAdminAuth(), requireAdminCapability('catalog.diagnostics'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
@@ -4241,7 +4264,7 @@ v1Router.get('/admin/health', async (req: Request, res: Response) => {
   });
 });
 
-v1Router.post('/admin/test-oauth', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/test-oauth', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { environment, tenantId: requestedTenantId, clientId, clientSecret } = req.body || {};
 
@@ -4298,7 +4321,7 @@ v1Router.post(
   }
 );
 
-v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const tenantId = req.params.id;
   const { environment, clientId, clientSecret } = req.body || {};
@@ -4316,7 +4339,7 @@ v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), a
   res.status(result.success ? 200 : (result.status === 'UNCONFIGURED' ? 400 : 401)).json(result);
 });
 
-v1Router.post('/admin/test-connection', requireAdminAuth(), validateBody(TestConnectionSchema), async (req: Request, res: Response) => {
+v1Router.post('/admin/test-connection', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), validateBody(TestConnectionSchema), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { deliverectAccountId, environment, tenantId: requestedTenantId, clientId, clientSecret, channelLinkId, testType, oauthOnly } = req.body;
 
@@ -4383,7 +4406,7 @@ v1Router.post('/admin/test-connection', requireAdminAuth(), validateBody(TestCon
 /**
  * Tenant-scoped Connection Test Endpoint
  */
-v1Router.post('/admin/tenants/:id/integration/test', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/tenants/:id/integration/test', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const tenantId = req.params.id;
 
@@ -5043,7 +5066,7 @@ v1Router.get('/admin/connection/health', requireAdminAuth(), async (req: Request
  * Supports demonstrating both successful traces and forced failure scenarios:
  * NOT_CONFIGURED, PERMISSION_DENIED, UPSTREAM_ERROR, EMPTY_VALID_RESPONSE, UNMAPPED_LOCATION, RENDER_FILTERED.
  */
-v1Router.post('/admin/connection/trace', requireAdminAuth(), async (req: Request, res: Response) => {
+v1Router.post('/admin/connection/trace', requireAdminAuth(), requireAdminCapability('integrations.diagnostics'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const requestedTenantId = (req.headers['x-tenant-id'] as string) || req.body?.tenantId;
