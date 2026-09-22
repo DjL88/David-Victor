@@ -3321,7 +3321,7 @@ v1Router.get('/admin/tenants/:id', requireAdminAuth(), async (req: Request, res:
 });
 
 // 9.4 Update Tenant Branding
-v1Router.patch('/admin/tenants/:id', requireAdminAuth('marketingEditor'), validateBody(UpdateTenantConfigSchema), async (req: Request, res: Response) => {
+v1Router.patch('/admin/tenants/:id', requireAdminAuth(), requireAdminCapability('branding.write'), validateBody(UpdateTenantConfigSchema), async (req: Request, res: Response) => {
   try {
     const updated = await FirestorePlatformService.updateTenantConfig(req.params.id, req.body);
 
