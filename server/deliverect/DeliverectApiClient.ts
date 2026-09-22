@@ -2066,20 +2066,21 @@ export class DeliverectApiClient implements DeliverectAdapter {
   private buildManagedBundleDiscountLines(
     entries: BasketBundleAllocationRecord[]
   ): CommerceBasketDiscountInput[] {
+    // Commerce basket discount PATCH accepts the bundle saving reliably as an
+    // order-level flat discount. Item-level attribution belongs in our bundle
+    // allocation ledger and can be projected to downstream order metadata when
+    // that contract supports item references; sending PLU-only item_flat_off
+    // discounts here causes Deliverect to reject the basket with HTTP 422.
     return entries
       .filter((entry) => entry.discountTotalMinor > 0)
-      .flatMap((entry) =>
-        (entry.components || [])
-          .filter((component) => component.discountLineMinor > 0)
-          .map((component) => ({
-            type: 'item_flat_off' as const,
-            provider: 'restaurant' as const,
-            amount: component.discountLineMinor,
-            plu: component.componentPlu,
-            name: `Combo Deal: ${entry.bundleName}`,
-            externalId: `bwydi-bundle:${entry.bundleInstanceId}:${component.modifierId}`,
-          }))
-      );
+      .map((entry) => ({
+        type: 'order_flat_off' as const,
+        provider: 'restaurant' as const,
+        amount: entry.discountTotalMinor,
+        value: entry.discountTotalMinor,
+        name: `Combo Deal: ${entry.bundleName}`,
+        externalId: `bwydi-bundle:${entry.bundleInstanceId}`,
+      }));
   }
 
   /**
