@@ -197,6 +197,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
   const handleUploadAsset = async (file: File, type: 'LOGO' | 'FAVICON') => {
     setUploadingAsset(type === 'LOGO' ? 'logo' : 'favicon');
+    setUploadError(null);
     try {
       const uploaded = await defaultAdminClient.uploadAssetFile(file, type, tenantId);
       if (type === 'LOGO') {
@@ -205,7 +206,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         setFaviconUrl(uploaded.publicUrl);
       }
     } catch (err: any) {
-      alert(`Asset upload failed: ${err.message || err}`);
+      setUploadError(`Asset upload failed: ${err.message || err}`);
     } finally {
       setUploadingAsset(null);
     }
@@ -409,7 +410,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         {savedSuccess && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 animate-in fade-in">
             <Check className="w-4 h-4" />
-            <span>Changes published & audited</span>
+            <span>Branding saved & audited</span>
           </div>
         )}
       </div>
@@ -420,7 +421,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           <form onSubmit={handleSave} className="space-y-6 bg-white p-6 rounded-2xl border border-gray-200 shadow-xs">
             <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-3">
               <Paintbrush className="w-4 h-4 text-indigo-600" />
-              <span>Theme Colours & Brand Essence</span>
+              <span>Brand colours & appearance</span>
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -696,7 +697,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5"
               >
                 {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                <span>Save & Publish Theme</span>
+                <span>Save branding</span>
               </button>
             </div>
           </form>
