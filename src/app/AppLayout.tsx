@@ -24,6 +24,7 @@ import { CartDrawerModal } from '../features/cart/CartDrawerModal';
 import { CheckoutModal } from '../features/checkout/CheckoutModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
 import { AislesModal } from '../features/catalog/AislesModal';
+import type { CatalogFilterState } from '../features/catalog/DietaryPreferencesModal';
 import { MealDealDialog } from '../components/deals/MealDealDialog';
 import { BundleSelectionDialog } from '../components/deals/BundleSelectionDialog';
 import { DeliverectDeal, getDealForStory } from '../commerce/dealModels';
@@ -67,6 +68,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   // Aisles Directory Modal
   const [isAislesModalOpen, setIsAislesModalOpen] = useState<boolean>(false);
+  const [catalogFilterState, setCatalogFilterState] = useState<CatalogFilterState>({
+    onlyFavourites: false,
+    onlyBuyAgain: false,
+    selectedDietaryTags: [],
+    excludedAllergens: [],
+  });
 
   // Location & Store management
   const {
@@ -181,6 +188,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const {
     catalog,
     products,
+    directoryProducts,
     renderableProducts,
     summaries,
     bundleSummaries,
@@ -467,6 +475,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               activeStores={activeStores}
               onSelectStore={selectStore}
               onOpenAislesModal={() => setIsAislesModalOpen(true)}
+              catalogFilterState={catalogFilterState}
+              onCatalogFilterStateChange={setCatalogFilterState}
             />
           )}
 
@@ -752,7 +762,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isOpen={isAislesModalOpen}
         onClose={() => setIsAislesModalOpen(false)}
         categories={catalog?.categories || []}
-        products={products}
+        products={directoryProducts}
+        filterState={catalogFilterState}
         selectedCategoryId={selectedCategoryId}
         onSelectCategory={(catId) => {
           navigateToCategory(catId);
