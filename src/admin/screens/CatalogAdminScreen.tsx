@@ -196,19 +196,19 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
 
   return (
     <div className="space-y-6">
-      {/* Header Banner - Explaining Deliverect as Authoritative Master */}
+      {/* Header Banner - Explaining Deliverect as Provider managed */}
       <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <Package className="w-6 h-6 text-indigo-400" />
-              <h2 className="text-xl font-bold text-white">Deliverect Catalogue Viewer</h2>
+              <h2 className="text-xl font-bold text-white">Products & Stock</h2>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                 Authoritative Master
               </span>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Deliverect Open API is the master record for products, categories, modifiers, and master pricing. Catalog changes must be made in Deliverect or your POS.
+              Operational visibility for products, pricing, ranging and stock. In live mode, Deliverect/POS remains authoritative; this page diagnoses what the storefront is receiving rather than acting as a PIM.
             </p>
           </div>
 
@@ -268,7 +268,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
               onChange={(e) => setSelectedLocationId(e.target.value)}
               className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 font-medium"
             >
-              <option value="all">All Stores Fleet ({stores.length})</option>
+              <option value="all">All locations ({stores.length})</option>
               {stores.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -424,7 +424,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
         </div>
       </div>
 
-      {/* Product Read-Only Specs Modal */}
+      {/* Product details */}
       {isDetailModalOpen && selectedProduct && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95">
