@@ -129,7 +129,7 @@ export class AdminAssistantActionService {
       }
 
       case 'stores.inspect': {
-        const stores = await FirestorePlatformService.getStores(args.tenantId);
+        const stores = await FirestorePlatformService.getTenantStores(args.tenantId);
         evidence.push({ source: 'firestore.stores', ok: true });
         result = {
           storeCount: stores.length,
