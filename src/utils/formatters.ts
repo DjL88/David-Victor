@@ -45,9 +45,9 @@ export function formatCurrency(
       return 'Price unavailable';
     }
     minorUnits = !Number.isInteger(rawVal) ? Math.round(rawVal * 100) : Math.round(rawVal);
-    if ((amount as any).currency) {
-      currencyCode = (amount as any).currency;
-    }
+    // Display currency is an explicit storefront setting. Upstream Money
+    // metadata is diagnostic/source provenance and must not override it here.
+    // This prevents a Deliverect EUR account leaking € into a GBP tenant UI.
   } else if (typeof amount === 'number') {
     if (isNaN(amount) || !isFinite(amount)) {
       return 'Price unavailable';
