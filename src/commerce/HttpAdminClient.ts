@@ -1175,6 +1175,57 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async getAssistantActions(tenantId?: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/actions`, { headers });
+    return this.safeJson(res, 'Failed to load assistant actions');
+  }
+
+  async createAssistantChangeSet(
+    tenantId: string,
+    proposal: {
+      prompt?: string;
+      actions: Array<{ actionName: string; input?: Record<string, unknown> }>;
+      affectedResources?: Array<{ type: string; id: string; label?: string }>;
+      beforeSnapshot?: unknown;
+      afterSnapshot?: unknown;
+      diff?: unknown;
+      warnings?: string[];
+      idempotencyKey?: string;
+      conversationId?: string;
+    }
+  ): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/change-sets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(proposal),
+    });
+    return this.safeJson(res, 'Failed to create assistant change set');
+  }
+
+  async getAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}`,
+      { headers }
+    );
+    return this.safeJson(res, 'Failed to load assistant change set');
+  }
+
+  async approveAssistantChangeSet(tenantId: string, changeSetId: string): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/assistant/change-sets/${encodeURIComponent(changeSetId)}/approve`,
+      { method: 'POST', headers, body: JSON.stringify({}) }
+    );
+    return this.safeJson(res, 'Failed to approve assistant change set');
+  }
+
   async runAssistantAction(
     tenantId: string,
     actionName: string,
