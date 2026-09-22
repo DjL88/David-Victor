@@ -1914,7 +1914,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (existingDiscounts.length !== nonBundleDiscounts.length) {
         await api.updateDiscounts(basketId, nonBundleDiscounts);
       }
-      await FirestorePlatformService.clearBasketBundleAllocations(this.tenantId, basketId);
+      await FirestorePlatformService.replaceBasketBundleAllocations(this.tenantId, basketId, []);
       return {
         ...current,
         items: [],
