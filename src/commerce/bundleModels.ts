@@ -445,16 +445,27 @@ export interface MissedBundleOffer {
 export function findMissedBundleOffers(
   basketItems: Array<{ plu: string; quantity: number }>,
   bundles: BundleProduct[],
+  allocatedUnits: Array<{ plu: string; quantity: number }> = [],
 ): MissedBundleOffer[] {
+  // Missed-deal qualification may only consume FREE basket units. Units already
+  // owned by a persisted bundle allocation are behind a hard wall and cannot
+  // qualify another combo. Quantities above the allocated amount remain free.
   const basketQtyByPlu = new Map<string, number>();
   basketItems.forEach((item) => {
     basketQtyByPlu.set(item.plu, (basketQtyByPlu.get(item.plu) || 0) + item.quantity);
+  });
+  allocatedUnits.forEach((item) => {
+    basketQtyByPlu.set(item.plu, Math.max(0, (basketQtyByPlu.get(item.plu) || 0) - item.quantity));
   });
 
   const offers: MissedBundleOffer[] = [];
 
   for (const bundle of bundles) {
     if (bundle.stockStatus === 'OUT_OF_STOCK') continue;
+    // Each candidate gets its own mutable copy of the FREE-unit pool. Consuming
+    // a PLU in one required section prevents the same physical unit satisfying
+    // another section of the same candidate.
+    const freeQtyByPlu = new Map(basketQtyByPlu);
     const sections = (bundle.sections || bundle.modifierGroups || []).filter(
       (section) => !section.isUpsell && section.min > 0
     );
@@ -472,9 +483,9 @@ export function findMissedBundleOffers(
       let remainingNeeded = section.min;
       for (const modifier of section.modifiers) {
         if (!modifier.standalonePlu || modifier.active === false || modifier.snoozed) continue;
-        const available = basketQtyByPlu.get(modifier.standalonePlu) || 0;
+        const available = freeQtyByPlu.get(modifier.standalonePlu) || 0;
         const claimed = Math.min(available, remainingNeeded);
-        sectionPresent += available;
+        sectionPresent += claimed;
         if (claimed > 0) {
           matchedSelections.push({
             modifierId: modifier.id,
@@ -489,6 +500,7 @@ export function findMissedBundleOffers(
             sectionName: section.name,
           });
           remainingNeeded -= claimed;
+          freeQtyByPlu.set(modifier.standalonePlu, available - claimed);
         }
         if (remainingNeeded <= 0) break;
       }
