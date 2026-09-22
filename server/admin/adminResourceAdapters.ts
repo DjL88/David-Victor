@@ -117,6 +117,7 @@ async function prepareBrandingProposal(args: {
   tenantId: string;
   actorId: string;
   input?: Record<string, unknown>;
+  idempotencyKey?: string;
 }): Promise<PreparedAdminActionProposal> {
   const definition = getAdminActionDefinition('branding.proposeUpdate');
   if (!definition) throw new Error('Branding action definition is not registered.');
@@ -142,6 +143,9 @@ async function prepareBrandingProposal(args: {
     payload: after,
     actorId: args.actorId,
     expectedCurrentRevisionId: baseline.revisionId,
+    idempotencyKey: args.idempotencyKey
+      ? `${args.idempotencyKey}:branding.proposeUpdate`
+      : undefined,
   });
   const validated = await ConfigurationRevisionService.validateRevision(
     args.tenantId,
@@ -173,6 +177,7 @@ export class AdminResourceAdapterRegistry {
     actorId: string;
     actionName: string;
     input?: Record<string, unknown>;
+    idempotencyKey?: string;
   }): Promise<PreparedAdminActionProposal> {
     if (args.actionName === 'branding.proposeUpdate') {
       return prepareBrandingProposal(args);
