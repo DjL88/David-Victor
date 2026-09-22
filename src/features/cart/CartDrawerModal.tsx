@@ -85,6 +85,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
 
   // State for active Deliveroo-style unavailable preference modal
+  const [comboChoice, setComboChoice] = useState<ReturnType<typeof findMissedBundleOffers>[number] | null>(null);
+
   const [editingItem, setEditingItem] = useState<{
     item: BasketItem;
     storeId?: string;
@@ -200,12 +202,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   // still has to confirm through BundleSelectionDialog to actually get it.
   const missedBundleOffers = useMemo(() => {
     if (!effectiveBasket || bundles.length === 0) return [];
-    return findMissedBundleOffers(
-      allBasketItems,
-      bundles,
-      effectiveBasket.bundleAllocatedUnits || []
-    );
-  }, [allBasketItems, bundles, effectiveBasket]);
+    return findMissedBundleOffers(allBasketItems, bundles, candidatePool);
+  }, [allBasketItems, bundles, candidatePool, effectiveBasket]);
 
   if (!isOpen) return null;
 
@@ -525,39 +523,60 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 </div>
               )}
 
-              {/* MISSED COMBO OFFER PROMPTS */}
+              {/* MISSED COMBO OFFER PROMPTS — adds normal products; automatic qualification owns pricing. */}
               {missedBundleOffers.length > 0 && (
                 <div className="pt-2 space-y-2">
-                  {missedBundleOffers.map((offer) => (
-                    <div
-                      key={offer.bundle.id}
-                      className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 flex items-start gap-2.5"
-                    >
-                      {(() => {
-                        const missing = offer.missingComponents[0];
-                        const product = candidatePool.find((candidate) => candidate.plu === missing?.plu);
-                        const imageUrl = product?.imageUrl || missing?.imageUrl;
-                        const matchedShelfTotal = offer.matchedSelections.reduce((sum, selection) => {
-                          const candidate = candidatePool.find((p) => p.plu === selection.standalonePlu);
-                          return sum + (candidate ? moneyToMajor(candidate.price) * selection.quantity : 0);
-                        }, 0);
-                        const missingShelfTotal = product ? moneyToMajor(product.price) * (missing?.quantityNeeded || 1) : 0;
-                        const shelfTotal = matchedShelfTotal + missingShelfTotal;
-                        const bundlePrice = ((offer.bundle.priceMinor ?? offer.bundle.price ?? 0) / 100);
-                        const saving = Math.max(0, shelfTotal - bundlePrice);
-                        return <>
-                          {imageUrl ? <img src={imageUrl} alt="" className="w-12 h-12 rounded-xl object-cover bg-white shrink-0" /> : <BadgePercent className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />}
-                          <div className="flex-1 min-w-0">
-                            <span className="font-extrabold text-emerald-900 text-xs block">{missing?.name}</span>
-                            <p className="text-[11px] text-emerald-800 leading-tight">{offer.bundle.name}</p>
-                          </div>
-                          <button type="button" disabled={loading} onClick={() => void onCompleteBundleOffer?.(offer)} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
-                            Add{saving > 0 ? ` & save ${currencySymbol}${saving.toFixed(2)}` : ''}
-                          </button>
-                        </>;
-                      })()}
+                  {missedBundleOffers.map((offer) => {
+                    const choices = offer.missingSection.choices;
+                    const first = choices[0];
+                    const product = candidatePool.find((candidate) => candidate.plu === first?.plu);
+                    const imageUrl = product?.imageUrl || first?.imageUrl;
+                    return (
+                      <div key={offer.bundle.id} className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 flex items-start gap-2.5">
+                        {imageUrl ? <img src={imageUrl} alt="" className="w-12 h-12 rounded-xl object-cover bg-white shrink-0" /> : <BadgePercent className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />}
+                        <div className="flex-1 min-w-0">
+                          <span className="font-extrabold text-emerald-900 text-xs block">{offer.bundle.name}</span>
+                          <p className="text-[11px] text-emerald-800 leading-tight">
+                            {choices.length > 1 ? `Choose 1 ${offer.missingSection.sectionName}` : `Add ${first?.name}`} to complete this deal
+                          </p>
+                        </div>
+                        <button type="button" disabled={loading} onClick={() => {
+                          if (choices.length > 1) setComboChoice(offer);
+                          else if (product) onUpdateQuantity(product, 1, effectiveBasket?.storeId);
+                        }} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
+                          {choices.length > 1 ? 'Choose item' : 'Add & save'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {comboChoice && (
+                <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => setComboChoice(null)}>
+                  <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-extrabold text-gray-900">Complete {comboChoice.bundle.name}</h3>
+                        <p className="text-xs text-gray-500">Choose an in-stock {comboChoice.missingSection.sectionName}</p>
+                      </div>
+                      <button type="button" onClick={() => setComboChoice(null)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><X className="w-4 h-4" /></button>
                     </div>
-                  ))}
+                    <div className="space-y-2">
+                      {comboChoice.missingSection.choices.map((choice) => {
+                        const choiceProduct = candidatePool.find((candidate) => candidate.plu === choice.plu);
+                        if (!choiceProduct) return null;
+                        return <button key={choice.modifierId} type="button" onClick={() => {
+                          onUpdateQuantity(choiceProduct, 1, effectiveBasket?.storeId);
+                          setComboChoice(null);
+                        }} className="w-full p-3 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 flex items-center gap-3 text-left">
+                          {(choiceProduct.imageUrl || choice.imageUrl) ? <img src={choiceProduct.imageUrl || choice.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" /> : <Package className="w-5 h-5 text-gray-400" />}
+                          <span className="flex-1 text-xs font-bold text-gray-900">{choice.name}</span>
+                          <span className="text-xs font-semibold text-gray-700">{formatCurrency(choiceProduct.price, currencySymbol)}</span>
+                        </button>;
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
 
