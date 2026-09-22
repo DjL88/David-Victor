@@ -63,7 +63,8 @@ export interface AssistantChangeSet {
   rolledBackAt?: string;
   rollbackRevisionIds?: string[];
   reversible: boolean;
-  executionEnabled: false;
+  applyAvailable: boolean;
+  autonomousExecutionEnabled: false;
 }
 
 export interface AuditEventV2 {
@@ -275,7 +276,11 @@ export class AdminChangeSetService {
       updatedAt: now,
       validatedAt: now,
       reversible: actions.every((action) => action.supportsUndo),
-      executionEnabled: false,
+      applyAvailable:
+        actions.length === 1 &&
+        actions[0].actionName === 'branding.proposeUpdate' &&
+        (args.revisionIds?.length || 0) === 1,
+      autonomousExecutionEnabled: false,
     };
 
     const db = requireDurableStore();
