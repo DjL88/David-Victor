@@ -57,6 +57,7 @@ export class AdminAssistantActionService {
       input: args.input,
     });
 
+    const input = plan.input;
     let result: unknown;
     const evidence: Array<{ source: string; ok: boolean; note?: string }> = [];
 
@@ -93,7 +94,7 @@ export class AdminAssistantActionService {
       }
 
       case 'catalog.diagnoseVisibility': {
-        const query = String(args.input?.query || args.input?.plu || args.input?.productId || '').trim();
+        const query = String(input.query || input.plu || input.productId || '').trim();
         if (!query) {
           throw Object.assign(new Error('A product name, PLU, barcode or product ID is required.'), {
             code: 'ADMIN_ACTION_INPUT_REQUIRED',
