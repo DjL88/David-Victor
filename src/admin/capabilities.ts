@@ -18,6 +18,11 @@ export type AdminCapability =
   | 'integrations.configure'
   | 'memberships.read'
   | 'memberships.manage'
+  | 'assets.read'
+  | 'assets.write'
+  | 'domains.read'
+  | 'domains.manage'
+  | 'audit.read'
   | 'assistant.use'
   | 'assistant.executeLowRisk'
   | 'assistant.approveHighRisk';
@@ -28,7 +33,8 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
     'branding.read', 'branding.write', 'content.read', 'content.write',
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
-    'memberships.read', 'memberships.manage', 'assistant.use',
+    'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
+    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   tenantAdmin: new Set<AdminCapability>([
@@ -36,13 +42,15 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
     'branding.read', 'branding.write', 'content.read', 'content.write',
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
-    'memberships.read', 'memberships.manage', 'assistant.use',
+    'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
+    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   marketingEditor: new Set<AdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'branding.write',
     'content.read', 'content.write', 'rules.read', 'rules.write',
-    'fees.read', 'integrations.read', 'assistant.use', 'assistant.executeLowRisk',
+    'fees.read', 'integrations.read', 'assets.read', 'assets.write', 'domains.read',
+    'audit.read', 'assets.read', 'domains.read', 'audit.read', 'assistant.use', 'assistant.executeLowRisk',
   ]),
   operationsEditor: new Set<AdminCapability>([
     'catalog.read', 'catalog.diagnostics', 'stores.read', 'stores.write',
@@ -52,7 +60,7 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
   ]),
   viewer: new Set<AdminCapability>([
     'catalog.read', 'stores.read', 'branding.read', 'content.read',
-    'rules.read', 'fees.read', 'integrations.read', 'assistant.use',
+    'rules.read', 'fees.read', 'integrations.read', 'assets.read', 'domains.read', 'audit.read', 'assistant.use',
   ]),
 };
 
