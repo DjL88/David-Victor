@@ -3686,6 +3686,31 @@ v1Router.post('/admin/tenants/:id/rules', requireAdminAuth('marketingEditor'), v
   }
 });
 
+v1Router.put('/admin/tenants/:id/rules/:ruleId', requireAdminAuth('marketingEditor'), validateBody(SaveVisualRuleSchema), async (req: Request, res: Response) => {
+  try {
+    if (req.body.id !== req.params.ruleId) {
+      return res.status(400).json({ error: 'Rule ID in the payload must match the rule being edited.' });
+    }
+    const existingRules = await FirestorePlatformService.getTenantRules(req.params.id);
+    if (!existingRules.some((rule: any) => rule?.id === req.params.ruleId)) {
+      return res.status(404).json({ error: 'Rule not found.' });
+    }
+    const rule = await FirestorePlatformService.saveTenantRule(req.params.id, req.body);
+    await FirestorePlatformService.addAuditLog(req.params.id, {
+      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
+      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
+      userRole: (req as AuthenticatedRequest).adminUser?.role || 'marketingEditor',
+      tenantId: req.params.id,
+      category: 'Compliance',
+      action: 'UPDATE_RULE',
+      details: `Updated merchandising/visual rule: ${rule.id}`,
+    });
+    res.json(rule);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 v1Router.delete('/admin/tenants/:id/rules/:ruleId', requireAdminAuth('marketingEditor'), async (req: Request, res: Response) => {
   try {
     const success = await FirestorePlatformService.deleteTenantRule(req.params.id, req.params.ruleId);

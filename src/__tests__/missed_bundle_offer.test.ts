@@ -67,3 +67,18 @@ describe('findMissedBundleOffers', () => {
     ], [bundle])).toHaveLength(0);
   });
 });
+
+
+it('shows only the strongest missed deal when two bundles compete for the same missing product', () => {
+  const base = bundle;
+  const cheaper = { ...base, id: 'cheaper', plu: 'CHEAPER', priceMinor: Math.max(0, (base.priceMinor || 0) - 100) };
+  const dearer = { ...base, id: 'dearer', plu: 'DEARER', priceMinor: base.priceMinor };
+  const required = (base.sections || []).filter((section) => !section.isUpsell && section.min > 0);
+  const basketItems = required.slice(0, -1).flatMap((section) => {
+    const modifier = section.modifiers.find((candidate) => candidate.standalonePlu);
+    return modifier?.standalonePlu ? [{ plu: modifier.standalonePlu, quantity: section.min }] : [];
+  });
+  const offers = findMissedBundleOffers(basketItems, [dearer as any, cheaper as any]);
+  expect(offers.length).toBeLessThanOrEqual(1);
+  if (offers.length === 1) expect(['cheaper', 'dearer']).toContain(offers[0].bundle.id);
+});

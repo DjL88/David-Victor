@@ -534,7 +534,41 @@ export function findMissedBundleOffers(
     }
   }
 
-  return offers.sort((a, b) => b.matchRatio - a.matchRatio);
+  // A basket can qualify for several catalogue bundles with the same missing
+  // physical product. Showing all of them produces duplicate "Add & save"
+  // cards and races two claims for the same free units. Keep the strongest
+  // saving/closest offer per missing PLU; the customer can still choose other
+  // deals from the catalogue deliberately.
+  const bestByMissingPlu = new Map<string, MissedBundleOffer>();
+  for (const offer of offers) {
+    const key = offer.missingComponents.map((component) => component.plu).sort().join('|');
+    const current = bestByMissingPlu.get(key);
+    const offerSaving = Math.max(
+      0,
+      offer.matchedSelections.reduce(
+        (sum, selection) => sum + (selection.standalonePriceMinor || 0) * selection.quantity,
+        0
+      ) + offer.missingComponents.reduce((sum, component) => {
+        const modifier = (offer.bundle.sections || offer.bundle.modifierGroups || [])
+          .flatMap((section) => section.modifiers)
+          .find((candidate) => candidate.id === component.modifierId);
+        return sum + (modifier?.standalonePriceMinor || 0) * component.quantityNeeded;
+      }, 0) - Math.max(0, Math.round(offer.bundle.priceMinor ?? offer.bundle.price ?? 0))
+    );
+    const currentSaving = current
+      ? Math.max(
+          0,
+          current.matchedSelections.reduce(
+            (sum, selection) => sum + (selection.standalonePriceMinor || 0) * selection.quantity,
+            0
+          ) - Math.max(0, Math.round(current.bundle.priceMinor ?? current.bundle.price ?? 0))
+        )
+      : -1;
+    if (!current || offer.matchRatio > current.matchRatio || (offer.matchRatio === current.matchRatio && offerSaving > currentSaving)) {
+      bestByMissingPlu.set(key, offer);
+    }
+  }
+  return Array.from(bestByMissingPlu.values()).sort((a, b) => b.matchRatio - a.matchRatio);
 }
 
 /**

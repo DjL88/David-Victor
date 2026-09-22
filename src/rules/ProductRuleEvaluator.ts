@@ -251,13 +251,20 @@ export function evaluateProductRules(
     const group = rule.actions.maxQuantityAcrossRuleGroup;
     if (!group) continue;
 
-    // Calculate how many items already in the basket belong to this group
-    // Exclude the current product's quantity so we measure other items in the group
+    // Calculate membership from the SAME rule conditions that created the
+    // group limit. Basket items do not carry groupId in appliedRules (that
+    // field contains rule IDs), so the previous implementation silently
+    // treated every other matching product as quantity zero.
     let otherGroupQuantityInBasket = 0;
     for (const item of basketItems) {
-      if (item.plu !== product.plu && item.appliedRules?.includes(group.groupId)) {
-        otherGroupQuantityInBasket += item.quantity;
-      }
+      if (item.plu === product.plu) continue;
+      const basketProduct = (item as BasketItem & { product?: Product }).product;
+      // Server/basket projections may include the product, while older basket
+      // lines expose the matching rule IDs. Support both representations.
+      const belongsToRule =
+        (basketProduct && matchesCondition(basketProduct, rule.conditions, context)) ||
+        item.appliedRules?.includes(rule.id);
+      if (belongsToRule) otherGroupQuantityInBasket += item.quantity;
     }
 
     const currentItemQty = currentBasketQuantity;

@@ -829,8 +829,15 @@ export class HttpAdminClient implements AdminClient {
 
   async saveProductRule(tenantId: string, rule: VisualRule, _user?: AdminUser): Promise<VisualRule[]> {
     const headers = await this.getHeadersAsync();
-    const res = await fetch(`${this.baseUrl}/admin/tenants/${tenantId}/rules`, {
-      method: 'POST',
+    // PUT to the stable rule resource gives edits explicit update semantics.
+    // The server remains backward compatible with POST for rule creation.
+    const existing = await this.getProductRules(tenantId);
+    const isUpdate = existing.some((candidate) => candidate.id === rule.id);
+    const url = isUpdate
+      ? `${this.baseUrl}/admin/tenants/${tenantId}/rules/${encodeURIComponent(rule.id)}`
+      : `${this.baseUrl}/admin/tenants/${tenantId}/rules`;
+    const res = await fetch(url, {
+      method: isUpdate ? 'PUT' : 'POST',
       headers,
       body: JSON.stringify(rule),
     });
