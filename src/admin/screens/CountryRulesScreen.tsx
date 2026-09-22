@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { AdminUser } from '../../commerce/models';
-import { Globe, Shield, Check, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Globe, Shield, AlertTriangle } from 'lucide-react';
 
 interface CountryRulesScreenProps {
   tenantId: string;
-  currentUser: AdminUser;
+  currentUser: unknown;
 }
 
 export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
-  tenantId,
-  currentUser,
+  tenantId: _tenantId,
+  currentUser: _currentUser,
 }) => {
   const [country, setCountry] = useState<string>('GB');
 
@@ -33,10 +32,10 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Globe className="w-5 h-5 text-indigo-600" />
-            <span>Country Statutory & Regulatory Rules</span>
+            <span>Country Rules</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Configure jurisdiction-level regulatory obligations evaluated by the Rule Engine.
+            Review the regulatory controls planned for each jurisdiction. Editing stays disabled until these rules have a durable backend and enforcement path.
           </p>
         </div>
 
@@ -62,7 +61,8 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
         </span>
       </div>
 
-      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+      <fieldset disabled className="space-y-6 opacity-75">
+        <legend className="sr-only">Country rules preview</legend>
         {/* Challenge 25 & Age Verification */}
         <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
           <div className="flex items-center gap-2">
@@ -161,17 +161,11 @@ export const CountryRulesScreen: React.FC<CountryRulesScreenProps> = ({
         </div>
 
         <div className="pt-2 flex items-center justify-end gap-3">
-          <button
-            type="submit"
-            disabled
-            title="Not connected: no backend endpoint persists Country Rules yet."
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs opacity-50 cursor-not-allowed flex items-center gap-1.5"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>Publish Country Regulations</span>
-          </button>
+          <span className="text-xs font-semibold text-gray-500">
+            Backend + rule-engine enforcement required before editing is enabled.
+          </span>
         </div>
-      </form>
+      </fieldset>
     </div>
   );
 };
