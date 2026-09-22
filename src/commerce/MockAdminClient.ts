@@ -25,14 +25,14 @@ import { SchedulingPolicy, TenantSubstitutionPolicy } from './postCheckoutModels
 const sharedTenants = new Map<string, any>();
 const sharedStories = new Map<string, Story[]>();
 const sharedFeePolicies = new Map<string, TenantFeePolicy>();
-const sharedProductRules = new Map<string, VisualRule[]>();
+export const sharedProductRules = new Map<string, VisualRule[]>();
 const sharedCountryRules = new Map<string, Map<string, any[]>>();
 const sharedAuditLogs = new Map<string, AuditLogEntry[]>();
 const sharedAdminUsers = new Map<string, AdminUser[]>();
 const sharedSchedulingPolicies = new Map<string, SchedulingPolicy>();
 const sharedSubstitutionPolicies = new Map<string, TenantSubstitutionPolicy>();
 
-function initSharedData() {
+export function initSharedData() {
   if (sharedTenants.size > 0) return;
   Object.entries(MOCK_TENANTS).forEach(([id, t]) => {
     sharedTenants.set(id, { ...t, id: t.tenantId });

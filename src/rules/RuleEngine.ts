@@ -18,6 +18,7 @@ import { evaluateBasketRules } from './BasketRuleEvaluator';
  */
 export class RuleEngine {
   private rules: RetailRule[] = [];
+  private defaultContext: RuleEvaluationContext = {};
 
   constructor(initialRules: RetailRule[] = []) {
     this.rules = [...initialRules];
@@ -28,6 +29,22 @@ export class RuleEngine {
    */
   public setRules(rules: RetailRule[]): void {
     this.rules = [...rules];
+  }
+
+  /**
+   * Sets the ambient context (selected store's country, storeId,
+   * fulfillmentType) merged into every evaluation call that doesn't supply
+   * its own explicit value for a given field. Every real call site
+   * (ProductCard, HomeScreen, checkout quantity limits, etc.) evaluates with
+   * an empty {} context, so without this, country/store-scoped rules could
+   * never match regardless of how they're configured.
+   */
+  public setDefaultContext(context: RuleEvaluationContext): void {
+    this.defaultContext = { ...context };
+  }
+
+  private withDefaultContext(context: RuleEvaluationContext): RuleEvaluationContext {
+    return { ...this.defaultContext, ...context };
   }
 
   /**
@@ -56,7 +73,7 @@ export class RuleEngine {
     return evaluateProductRules(
       product,
       this.rules,
-      context,
+      this.withDefaultContext(context),
       basketItems,
       currentBasketQuantity
     );
@@ -75,7 +92,7 @@ export class RuleEngine {
         ? products
         : new Map(products.map((p) => [p.plu, p]));
 
-    return evaluateBasketRules(basket, productsMap, this.rules, context);
+    return evaluateBasketRules(basket, productsMap, this.rules, this.withDefaultContext(context));
   }
 
   /**
@@ -116,6 +133,7 @@ export class RuleEngine {
     targetProduct?: Product,
     linkedProducts?: Product[]
   ): boolean {
+    context = this.withDefaultContext(context);
     const now = new Date();
 
     // 1. Time-based scheduling

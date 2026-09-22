@@ -2,7 +2,8 @@ import { DeliverectAdapter } from './DeliverectAdapter';
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
 import { IntegrationContext } from './IntegrationContext';
-import { CommerceDiscoveryService } from './CommerceDiscoveryService';
+import { CommerceDiscoveryService, asyncPool } from './CommerceDiscoveryService';
+import { resolveStoreGeography } from '../geographyService';
 import { circuitBreakers } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
@@ -481,7 +482,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       throw error;
     }
 
-    return scopedStores.map((s) => {
+    const stores: Store[] = scopedStores.map((s) => {
       const loc = s.physicalLocationId ? locMap.get(s.physicalLocationId) : undefined;
       // Do NOT fabricate central London coordinates. Retain exact store/location coordinates or keep undefined.
       let storeCoords: Coordinates | undefined = s.coordinates
@@ -555,6 +556,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
         scheduling: storeScheduling,
       };
     });
+
+    // Nation/Region/County derived once per store and cached in Firestore
+    // (see geographyService.ts) — bounded concurrency so a large store list
+    // doesn't fire dozens of simultaneous postcodes.io/Firestore lookups.
+    await asyncPool(4, stores, async (store) => {
+      try {
+        store.geography = await resolveStoreGeography(store.id, store.address);
+      } catch (err) {
+        console.warn(`[DeliverectApiClient] Could not resolve geography for store ${store.id}:`, err);
+      }
+    });
+
+    return stores;
   }
 
   async getStore(storeId: string): Promise<Store | null> {
@@ -947,7 +961,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
               mRef.originalPlu ||
               ''
             ).trim();
-            const deDecoratedPlu = modPlu.replace(/#+$/g, '');
+            // Real Deliverect combo sub-item PLUs are `{basePlu}###{SUFFIX}` (e.g.
+            // "374263###PRNT"), not bare trailing hashes — a trailing-hash-only
+            // regex (/#+$/) never matches once letters follow the "###", so it
+            // silently failed to de-decorate every real combo PLU and left
+            // standalonePlu unresolved whenever Deliverect also omitted referenceId.
+            const deDecoratedPlu = modPlu.split('###')[0].trim();
             const standaloneCandidate =
               (referencedStandalonePlu
                 ? rawStandaloneProductsByPlu.get(referencedStandalonePlu)
@@ -2812,12 +2831,35 @@ export class DeliverectApiClient implements DeliverectAdapter {
               ? Math.round(item.price)
               : 0;
       const preference = item.substitutionPreference || 'BEST_MATCH';
-      const itemUnavailableActions =
+      const echoedActions =
         Array.isArray(item.itemUnavailableActions) && item.itemUnavailableActions.length > 0
           ? item.itemUnavailableActions
           : Array.isArray(item.deliverectUnavailableActions) && item.deliverectUnavailableActions.length > 0
             ? item.deliverectUnavailableActions
-            : buildQuestItemUnavailableActions(preference);
+            : undefined;
+      const computedActions = buildQuestItemUnavailableActions(preference);
+      const itemUnavailableActions = echoedActions || computedActions;
+
+      // Deliverect's own echoed value (from a prior basket GET/reconcile)
+      // takes precedence over what we compute from substitutionPreference.
+      // That's deliberate, but it was previously silent: if Deliverect
+      // narrows a line (e.g. no substitute group configured for that PLU in
+      // the Retail catalog), the customer's preference is overridden with
+      // no visibility anywhere. Surface the mismatch so a "substitution
+      // never offered in Quest for this PLU" report is diagnosable instead
+      // of looking identical to a real customer choice.
+      if (echoedActions) {
+        const echoedSet = new Set(echoedActions.map((a: string) => String(a).toUpperCase()));
+        const computedSet = new Set(computedActions.map((a) => a.toUpperCase()));
+        const isNarrower =
+          computedSet.size > echoedSet.size ||
+          [...computedSet].some((a) => !echoedSet.has(a));
+        if (isNarrower) {
+          console.warn(
+            `[DeliverectApiClient] itemUnavailableActions for PLU ${item.plu} was narrowed by Deliverect's echoed basket value: computed ${JSON.stringify(computedActions)} from preference "${preference}", but Deliverect returned ${JSON.stringify(echoedActions)}. Likely cause: no substitute/linked-alternative configured for this PLU in the Deliverect Retail catalog.`
+          );
+        }
+      }
       const preferredPlu = String(item.preferredSubstitutePlu || '').trim();
       const preferredName = String(item.preferredSubstituteName || preferredPlu).trim();
       const preferredPrice = item.preferredSubstitutePrice;
@@ -2896,7 +2938,17 @@ export class DeliverectApiClient implements DeliverectAdapter {
       };
     }
 
-    const url = `${this.baseUrl}/${encodeURIComponent(channelName)}/order/${encodeURIComponent(channelLinkId)}`;
+    // Real Deliverect traffic observed for another Retail integration (Snappy
+    // Shopper) submits orders to api.deliverect.io, not api.deliverect.com —
+    // distinct from the general Channel/webhook API, which does use .com.
+    // Defaults to the .io equivalent of whichever environment (staging/
+    // production) this.baseUrl is already pointed at; DELIVERECT_RETAIL_ORDER_BASE_URL
+    // still overrides explicitly (e.g. to roll back to .com) if this turns out wrong.
+    const retailOrderBaseUrl = (
+      process.env.DELIVERECT_RETAIL_ORDER_BASE_URL || this.baseUrl.replace(/\.com(\/|$)/, '.io$1')
+    ).replace(/\/+$/, '');
+    const url = `${retailOrderBaseUrl}/${encodeURIComponent(channelName)}/order/${encodeURIComponent(channelLinkId)}`;
+    console.log(`[DeliverectApiClient] Submitting retail order to: ${url}`);
     const send = async () => {
       const authorization = await this.tokenManager.getAuthorizationHeader();
       return fetch(url, {

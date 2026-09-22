@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { defaultRuleEngine } from '../rules/RuleEngine';
+import { visualRulesToRetailRules } from '../rules/visualRuleAdapter';
 import { useTenant } from '../tenant/TenantContext';
 import { useLocationAndStores } from '../hooks/useLocationAndStores';
 import { useStories } from '../hooks/useStories';
@@ -192,6 +194,47 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     resetCache,
     client,
   } = useCatalog(selectedStore?.id);
+
+  // Loads the tenant's admin-configured merchandising/visual rules into the
+  // live RuleEngine singleton. Previously nothing ever called setRules(), so
+  // every rule created in admin (hide product, age gates, quantity limits,
+  // badges) had zero effect on the storefront regardless of configuration.
+  useEffect(() => {
+    let cancelled = false;
+    client
+      .getActiveRules?.()
+      .then((rules) => {
+        if (!cancelled) defaultRuleEngine.setRules(visualRulesToRetailRules(rules || []));
+      })
+      .catch((err: unknown) => console.warn('[AppLayout] Could not load active rules:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [client, tenant?.tenantId]);
+
+  // Keeps the RuleEngine's ambient context (country/store/fulfillment) in
+  // sync with the selected store, so country-scoped rules and per-store
+  // evaluation actually have something real to match against — every real
+  // call site (ProductCard, HomeScreen, checkout limits) evaluates with an
+  // empty context otherwise.
+  useEffect(() => {
+    defaultRuleEngine.setDefaultContext({
+      country: selectedStore?.geography?.country || selectedStore?.address?.country,
+      nation: selectedStore?.geography?.nation,
+      region: selectedStore?.geography?.region,
+      county: selectedStore?.geography?.county,
+      storeId: selectedStore?.id,
+      fulfillmentType,
+    });
+  }, [
+    selectedStore?.geography?.country,
+    selectedStore?.geography?.nation,
+    selectedStore?.geography?.region,
+    selectedStore?.geography?.county,
+    selectedStore?.address?.country,
+    selectedStore?.id,
+    fulfillmentType,
+  ]);
 
   // Basket hook (authoritative BFF basket, quantity adjustments, store-switch diff)
   const {

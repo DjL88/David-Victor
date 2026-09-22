@@ -297,7 +297,10 @@ export const SaveVisualRuleSchema = z.object({
   id: z.string().trim().min(1).max(160),
   name: z.string().trim().min(1).max(200),
   enabled: z.boolean(),
-  countries: z.array(z.string().trim().length(2).transform((v) => v.toUpperCase())).max(50),
+  // Was hard-coded to exactly 2 characters (ISO country codes only). Rules can
+  // now also scope by UK nation/region/county (e.g. "England", "Essex"),
+  // derived from real store geography — see geographyService.ts.
+  countries: z.array(z.string().trim().min(2).max(60).transform((v) => v.toUpperCase())).max(50),
   priority: z.number().int().min(-100000).max(100000),
   matchConditions: z.array(VisualRuleMatchConditionSchema).min(1).max(25),
   actions: z.array(VisualRuleActionSchema).min(1).max(25),

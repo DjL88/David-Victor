@@ -332,6 +332,16 @@ export interface Store {
   /** @deprecated Use orderingChannels instead */
   channelLinks?: Array<'DIRECT' | 'DELIVEROO' | 'UBER_EATS' | 'JUST_EAT'>;
   locationGroup?: string;
+  /** Real geography derived from the store's address (postcodes.io for GB), cached once per store. */
+  geography?: {
+    country: string;
+    nation?: string;
+    region?: string;
+    county?: string;
+    town?: string;
+    resolvedAt: string;
+    source: 'postcodes.io' | 'address';
+  };
   phone?: string;
   email?: string;
   openingHours?: Record<string, { open: string; close: string }> | Array<{ dayOfWeek: number; startTime: string; endTime: string }>;

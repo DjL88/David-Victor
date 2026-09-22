@@ -27,6 +27,7 @@ import {
   PickingEvent,
   DemoScenario,
   Money,
+  VisualRule,
 } from './models';
 
 export interface LocationResolutionResult {
@@ -469,6 +470,13 @@ export interface CommerceClient {
    * Retrieves order history for the current user.
    */
   getOrderHistory?(): Promise<Order[]>;
+
+  /**
+   * Retrieves the tenant's active (enabled) merchandising/visual rules —
+   * hide product, age gates, quantity limits, badges, etc. — so the
+   * storefront's RuleEngine can actually enforce what's configured in admin.
+   */
+  getActiveRules?(): Promise<VisualRule[]>;
 
   /**
    * Authorizes estimated amount and customer-approved authorization maximum.

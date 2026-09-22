@@ -92,12 +92,22 @@ export function matchesCondition(
     if (abv < condition.minAbv) return false;
   }
 
-  // 9. Country match
-  if (condition.country && context.country) {
-    const targetCountries = (
+  // 9. Geographic match — country, or (UK) nation/region/county. A rule can
+  // be scoped by whichever granularity the retailer picked (e.g. "England"
+  // as well as "GB"); it matches if ANY resolved geography level for the
+  // current store is in the rule's configured list. Skipped entirely (not
+  // filtered out) when the context has no geography at all, e.g. before a
+  // store is resolved.
+  if (condition.country) {
+    const targetTokens = (
       Array.isArray(condition.country) ? condition.country : [condition.country]
     ).map((c) => c.toUpperCase());
-    if (!targetCountries.includes(context.country.toUpperCase())) return false;
+    const contextTokens = [context.country, context.nation, context.region, context.county]
+      .filter((v): v is string => Boolean(v))
+      .map((v) => v.toUpperCase());
+    if (contextTokens.length > 0 && !contextTokens.some((token) => targetTokens.includes(token))) {
+      return false;
+    }
   }
 
   // 10. Fulfillment type match

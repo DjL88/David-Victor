@@ -41,6 +41,7 @@ import {
   FulfillmentSchedulingType,
   DemoScenario,
   DispatchAvailability,
+  VisualRule,
 } from './models';
 import { BundleProduct, SelectedBundleModifier } from './bundleModels';
 import { getCurrentIdToken } from '../firebase';
@@ -668,6 +669,10 @@ export class HttpCommerceClient implements CommerceClient {
 
   async getOrderHistory(): Promise<Order[]> {
     return this.getUserOrders();
+  }
+
+  async getActiveRules(): Promise<VisualRule[]> {
+    return this.request<VisualRule[]>('/rules');
   }
 
   async advanceOrderStatus(orderId: string): Promise<Order> {

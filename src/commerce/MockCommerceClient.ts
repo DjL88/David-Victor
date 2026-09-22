@@ -44,6 +44,7 @@ import {
   moneyFromMajor,
   moneyToMajor,
   formatMoney,
+  VisualRule,
 } from './models';
 import {
   calculateSubstitutionPrice,
@@ -80,7 +81,7 @@ import {
   BundleCatalog,
 } from './bundleModels';
 import { defaultRuleEngine } from '../rules/RuleEngine';
-import { defaultAdminClient } from './MockAdminClient';
+import { defaultAdminClient, sharedProductRules, initSharedData } from './MockAdminClient';
 import { applySearchMerchandising, DEFAULT_SEARCH_CONFIG, getActiveSearchConfig } from './searchMerchEngine';
 import { catalogStore, normalizeStoreId } from './catalogStore';
 import { getCategoryAndAllDescendantIds } from './categoryHierarchy';
@@ -1746,6 +1747,13 @@ export class MockCommerceClient implements CommerceClient {
 
   async getOrderHistory(): Promise<Order[]> {
     return this.getUserOrders();
+  }
+
+  async getActiveRules(): Promise<VisualRule[]> {
+    initSharedData();
+    await this.simulateLatency(80);
+    return JSON.parse(JSON.stringify(sharedProductRules.get(this.currentTenantId) || []))
+      .filter((r: VisualRule) => r.enabled !== false);
   }
 
   async authorizePayment(

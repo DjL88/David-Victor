@@ -757,6 +757,25 @@ v1Router.post('/search', validateBody(SearchCatalogSchema), async (req: Request,
   }
 });
 
+/**
+ * Storefront-facing merchandising/visual rules (hide product, age gates,
+ * quantity limits, badges, warnings, etc.). Previously only exposed via the
+ * admin-authenticated /admin/tenants/:id/rules route, so the storefront had
+ * no way to read them at all — the client-side RuleEngine that actually
+ * enforces these was permanently empty regardless of what was configured in
+ * admin. Public like catalog/store data: these rules govern what every
+ * customer sees, not sensitive per-user data.
+ */
+v1Router.get('/rules', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const rules = await FirestorePlatformService.getTenantRules(tenantId);
+    res.json((rules || []).filter((r: any) => r?.enabled !== false));
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve active rules');
+  }
+});
+
 v1Router.get('/products/:plu', async (req: Request, res: Response) => {
   try {
     const { plu } = req.params;

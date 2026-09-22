@@ -125,6 +125,10 @@ export interface RetailRule {
  */
 export interface RuleEvaluationContext {
   country?: string;
+  /** UK-specific: England / Scotland / Wales / Northern Ireland, derived from the store's postcode. */
+  nation?: string;
+  region?: string;
+  county?: string;
   fulfillmentType?: 'delivery' | 'pickup';
   storeId?: string;
   sessionAgeAcknowledged?: Record<number, boolean>; // e.g. { 18: true, 16: true }

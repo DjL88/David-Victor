@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product } from '../../commerce/models';
+import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
@@ -27,6 +27,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [tenantStores, setTenantStores] = useState<Store[]>([]);
 
   useEffect(() => {
     loadRules();
@@ -50,6 +51,29 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     });
     return Array.from(tagSet).sort();
   }, [catalogProducts]);
+
+  // Live store geography for the "Applies in" picker, so staff choose real
+  // Country/Nation/Region/County values derived from actual store addresses
+  // instead of typing country codes from memory.
+  useEffect(() => {
+    defaultAdminClient
+      .getStores(tenantId)
+      .then((stores) => setTenantStores(stores || []))
+      .catch((err) => console.warn('[ProductRulesScreen] Could not load stores for geography picker:', err));
+  }, [tenantId]);
+
+  const availableGeographyTokens = useMemo(() => {
+    const tokenSet = new Set<string>();
+    tenantStores.forEach((s) => {
+      const geo = s.geography;
+      if (geo?.country) tokenSet.add(geo.country);
+      if (geo?.nation) tokenSet.add(geo.nation);
+      if (geo?.region) tokenSet.add(geo.region);
+      if (geo?.county) tokenSet.add(geo.county);
+      if (!geo && s.address?.country) tokenSet.add(s.address.country);
+    });
+    return Array.from(tokenSet).sort();
+  }, [tenantStores]);
 
   const loadRules = async () => {
     setLoading(true);
@@ -767,8 +791,18 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Applies in</label>
-                  <input type="text" value={editingRule.countries.join(', ')} onChange={(e)=>setEditingRule({...editingRule,countries:e.target.value.split(',').map(v=>v.trim().toUpperCase()).filter(Boolean)})} className="w-full px-3 py-2 border border-gray-200 rounded-xl uppercase" placeholder="GB, IE" />
-                  <p className="text-[10px] text-gray-400 mt-1">Country codes, separated by commas</p>
+                  <input
+                    type="text"
+                    value={editingRule.countries.join(', ')}
+                    onChange={(e)=>setEditingRule({...editingRule,countries:e.target.value.split(',').map(v=>v.trim()).filter(Boolean)})}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl"
+                    placeholder="GB, England, Essex…"
+                    list="rule-geography-options"
+                  />
+                  <datalist id="rule-geography-options">
+                    {availableGeographyTokens.map((token) => <option key={token} value={token} />)}
+                  </datalist>
+                  <p className="text-[10px] text-gray-400 mt-1">Country, nation (UK), region or county — derived from your stores' real addresses. Matches if the customer's store is in any of these, separated by commas.</p>
                 </div>
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Priority (higher runs first)</label>
