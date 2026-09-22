@@ -908,39 +908,3 @@ export interface RegionalFailoverEvent {
   status: 'ACTIVE' | 'REPATRIATION_PENDING' | 'REPATRIATED' | 'FAILED';
   affectedResourceIds?: string[];
 }
-
-// ==========================================
-// DISPATCH & COURIER ORCHESTRATION RULES
-// ==========================================
-
-export type DispatchAssignmentEvent = 'START_PICKING' | 'CHECKOUT_PAID' | 'ORDER_FINALISED';
-export type CourierSelectionPolicy = 'CUSTOMER_CHOICE' | 'CHEAPEST' | 'FASTEST' | 'TENANT_PRIORITY';
-
-export interface TenantDispatchRules {
-  assignmentEvent: DispatchAssignmentEvent;
-  dynamicTiming: boolean;
-  itemsPickedPerMinute: number; // default 3
-  readyBufferMinutes: number; // default 1
-  retryIntervalSeconds: number; // default 60
-  maxRetryAttempts: number; // default 3
-  unacceptedTimeoutMinutes: number; // default 15
-  selectionPolicy: CourierSelectionPolicy;
-  allowedProviders?: string[];
-  tenantPriorityOrder?: string[];
-  courierTransitMinutes?: number;
-  minimumPickupLeadMinutes?: number;
-  defaultLeadTimeMinutes?: number;
-}
-
-export const DEFAULT_DISPATCH_RULES: TenantDispatchRules = {
-  assignmentEvent: 'START_PICKING',
-  dynamicTiming: true,
-  itemsPickedPerMinute: 3,
-  readyBufferMinutes: 1,
-  retryIntervalSeconds: 60,
-  maxRetryAttempts: 3,
-  unacceptedTimeoutMinutes: 15,
-  selectionPolicy: 'CUSTOMER_CHOICE',
-  allowedProviders: ['deliverect-dispatch', 'just-eat', 'stuart', 'uber'],
-  tenantPriorityOrder: ['deliverect-dispatch', 'just-eat', 'stuart', 'uber'],
-};
