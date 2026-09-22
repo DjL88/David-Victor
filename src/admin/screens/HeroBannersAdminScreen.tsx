@@ -182,13 +182,13 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
     await savePromoBanner(currentEditingBanner, tenantId);
     setIsEditorOpen(false);
-    showToast(isEditingExisting ? 'Hero banner updated!' : 'New hero banner created!');
+    showToast(isEditingExisting ? 'Banner updated.' : 'Banner created.');
   };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this hero banner?')) {
       await deletePromoBanner(id, tenantId);
-      showToast('Hero banner deleted.');
+      showToast('Banner deleted.');
     }
   };
 
@@ -202,7 +202,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   };
 
   const handleResetDefaults = async () => {
-    if (window.confirm('Reset all hero promotional banners to original defaults?')) {
+    if (window.confirm('Reset all banners to their default configuration?')) {
       await resetPromoBanners(tenantId);
       showToast('Banners reset to defaults.');
     }
@@ -223,7 +223,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
         }));
       }
     } catch (err: any) {
-      alert(`Hero image upload failed: ${err.message || err}`);
+      showToast(`Hero image upload failed: ${err.message || err}`);
     } finally {
       setUploadingImage(false);
     }
@@ -265,7 +265,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
             <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
               <Sparkles className="w-4 h-4" />
             </div>
-            <h1 className="text-xl font-black text-gray-900">Hero Banners & Content</h1>
+            <h1 className="text-xl font-black text-gray-900">Banners</h1>
             <span className="bg-purple-100 text-purple-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
               {banners.length} Active Banners
             </span>
@@ -308,7 +308,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
         ) : banners.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-3xl border border-gray-200/80 space-y-3">
             <ImageIcon className="w-10 h-10 text-gray-300 mx-auto" />
-            <h3 className="text-sm font-extrabold text-gray-800">No Hero Banners Configured</h3>
+            <h3 className="text-sm font-extrabold text-gray-800">No banners yet</h3>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
               Add your first promotional hero banner to showcase seasonal products, bundles, or express delivery.
             </p>
