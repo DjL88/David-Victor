@@ -57,6 +57,15 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
   const handleConfirm = async () => {
     if (previewAddress && previewCoords) {
       await onSelectAddress({ address: previewAddress, coordinates: previewCoords });
+    } else if (previewAddress) {
+      const query =
+        previewAddress.postalCode ||
+        previewAddress.postcode ||
+        previewAddress.formattedAddress ||
+        [previewAddress.line1 || previewAddress.street, previewAddress.city].filter(Boolean).join(', ');
+      if (query) {
+        await onSelectAddress(query);
+      }
     }
     handleClose();
   };
@@ -209,7 +218,10 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
               </span>
               {savedAddresses.map((addr, idx) => {
                 const isCurrent = previewAddress && (previewAddress.postalCode === addr.postalCode || previewAddress.line1 === addr.line1);
-                const targetCoords = addr.latitude && addr.longitude ? { latitude: addr.latitude, longitude: addr.longitude } : (stores[0]?.coordinates || { latitude: 51.5074, longitude: -0.1278 });
+                const targetCoords =
+                  Number.isFinite(addr.latitude) && Number.isFinite(addr.longitude)
+                    ? { latitude: addr.latitude as number, longitude: addr.longitude as number }
+                    : null;
                 const activeBorderColor = tenant?.primaryColour || '#0d9488';
                 const activeBgColor = `${tenant?.primaryColour || '#0d9488'}10`;
 
