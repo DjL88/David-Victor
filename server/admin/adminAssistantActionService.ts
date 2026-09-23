@@ -192,11 +192,15 @@ export class AdminAssistantActionService {
                   normalise(product?.plu) === normalise(firstMatch.plu) ||
                   normalise(product?.id) === normalise(firstMatch.id)
               );
+              const storeSummary = storeSearch?.summaries?.[firstMatch.plu];
+              const inStock = storeSummary
+                ? Number(storeSummary.availableStoreCount || 0) > 0
+                : Boolean(storeProduct && isStoreProductInStock(storeProduct));
               return {
                 id: store.id,
                 name: store.name,
                 ranged: Boolean(storeProduct),
-                inStock: Boolean(storeProduct && isStoreProductInStock(storeProduct)),
+                inStock,
                 active: storeProduct?.active,
                 stockStatus: storeProduct?.stockStatus,
                 stockQuantity: storeProduct?.stockQuantity,
