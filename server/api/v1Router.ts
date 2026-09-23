@@ -353,13 +353,31 @@ function sendConditionalJson(
   return res.type('application/json').send(jsonString);
 }
 
+function resolveAdminRequestedTenant(req: AuthenticatedRequest): string | undefined {
+  // Route-bound tenant IDs are authoritative. Never let a caller-selected
+  // x-tenant-id header override a different tenant encoded in the URL.
+  if (req.params?.tenantId) return String(req.params.tenantId);
+
+  if (req.path?.startsWith('/admin/tenants/') && req.params?.id) {
+    return String(req.params.id);
+  }
+
+  const headerTenant = req.headers['x-tenant-id'];
+  if (typeof headerTenant === 'string' && headerTenant.trim()) {
+    return headerTenant.trim();
+  }
+
+  const resolved = (req as any).resolvedTenantId;
+  return typeof resolved === 'string' && resolved.trim() ? resolved.trim() : undefined;
+}
+
 /**
  * RBAC Middleware to protect Admin endpoints
  */
 function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 'marketingEditor' | 'operationsEditor') {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
-    const requestedTenant = (req.headers['x-tenant-id'] as string) || req.params.tenantId || req.params.id || (req as any).resolvedTenantId;
+    const requestedTenant = resolveAdminRequestedTenant(req);
     let tenantId = requestedTenant;
     if (!tenantId) {
       try {
@@ -3659,7 +3677,11 @@ v1Router.delete('/admin/tenants/:id', requireAdminAuth('platformSuperAdmin'), as
 // 9.4b List all configured domain mappings
 v1Router.get('/admin/domains', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
-    const domains = await FirestorePlatformService.listAllDomains();
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const domains =
+      authAdmin.isSuperAdmin || authAdmin.role === 'platformSuperAdmin'
+        ? await FirestorePlatformService.listAllDomains()
+        : await FirestorePlatformService.getDomainsForTenant(authAdmin.tenantId);
     res.json(domains);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -3669,25 +3691,57 @@ v1Router.get('/admin/domains', requireAdminAuth(), async (req: Request, res: Res
 // 9.4c Add or update a domain mapping
 v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
-    const { hostname, tenantId, isPrimary } = req.body;
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const { hostname, tenantId: requestedTenantId, isPrimary } = req.body || {};
+    const tenantId =
+      authAdmin.isSuperAdmin || authAdmin.role === 'platformSuperAdmin'
+        ? String(requestedTenantId || authAdmin.tenantId || '').trim()
+        : String(authAdmin.tenantId || '').trim();
+
     if (!hostname || !tenantId) {
       return res.status(400).json({ error: 'hostname and tenantId are required' });
     }
+
+    if (
+      !authAdmin.isSuperAdmin &&
+      authAdmin.role !== 'platformSuperAdmin' &&
+      requestedTenantId &&
+      String(requestedTenantId).trim() !== tenantId
+    ) {
+      return res.status(403).json({
+        error: 'Tenant administrators may only manage domains for their own tenant.',
+        code: 'TENANT_ISOLATION_ERROR',
+      });
+    }
+
+    const cleanHost = String(hostname).toLowerCase().trim().split(':')[0];
+    const existing = (await FirestorePlatformService.listAllDomains())
+      .find((domain) => domain.hostname === cleanHost);
+
+    if (existing && existing.tenantId !== tenantId) {
+      return res.status(409).json({
+        error: 'This hostname is already claimed by another tenant.',
+        code: 'DOMAIN_ALREADY_CLAIMED',
+      });
+    }
+
+    // Custom domains never become live on creation. DNS ownership and TLS must
+    // be verified by the domain lifecycle before the resolver can serve them.
     const created = await FirestorePlatformService.addOrUpdateDomain({
-      hostname,
+      hostname: cleanHost,
       tenantId,
       isPrimary: Boolean(isPrimary),
-      status: 'active',
+      status: 'pending',
     });
 
     await FirestorePlatformService.addAuditLog(tenantId, {
-      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
-      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
-      userRole: (req as AuthenticatedRequest).adminUser?.role || 'tenantAdmin',
+      userId: authAdmin.uid || 'admin',
+      userName: authAdmin.name || 'Admin',
+      userRole: authAdmin.role || 'tenantAdmin',
       tenantId,
       category: 'Tenant',
-      action: 'MAP_DOMAIN',
-      details: `Mapped domain "${hostname}" to tenant "${tenantId}"`,
+      action: 'MAP_DOMAIN_PENDING',
+      details: `Claimed domain "${cleanHost}" for tenant "${tenantId}" pending ownership verification`,
     });
 
     res.status(201).json(created);
@@ -3699,20 +3753,39 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
 // 9.4d Delete a domain mapping
 v1Router.delete('/admin/domains/:domainId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const domainId = req.params.domainId;
+    const existing = (await FirestorePlatformService.listAllDomains())
+      .find((domain) => domain.domainId === domainId || domain.hostname === String(domainId).toLowerCase());
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Domain mapping not found.', code: 'DOMAIN_NOT_FOUND' });
+    }
+
+    if (
+      !authAdmin.isSuperAdmin &&
+      authAdmin.role !== 'platformSuperAdmin' &&
+      existing.tenantId !== authAdmin.tenantId
+    ) {
+      return res.status(403).json({
+        error: 'Tenant administrators may only delete domains owned by their own tenant.',
+        code: 'TENANT_ISOLATION_ERROR',
+      });
+    }
+
     await FirestorePlatformService.deleteDomain(domainId);
 
-    await FirestorePlatformService.addAuditLog('platform', {
-      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
-      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
-      userRole: (req as AuthenticatedRequest).adminUser?.role || 'tenantAdmin',
-      tenantId: 'platform',
+    await FirestorePlatformService.addAuditLog(existing.tenantId, {
+      userId: authAdmin.uid || 'admin',
+      userName: authAdmin.name || 'Admin',
+      userRole: authAdmin.role || 'tenantAdmin',
+      tenantId: existing.tenantId,
       category: 'Tenant',
       action: 'UNMAP_DOMAIN',
-      details: `Deleted domain mapping "${domainId}"`,
+      details: `Deleted domain mapping "${existing.hostname}"`,
     });
 
-    res.json({ success: true, message: `Domain ${domainId} deleted.` });
+    res.json({ success: true, message: `Domain ${existing.hostname} deleted.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
