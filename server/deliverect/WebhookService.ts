@@ -293,6 +293,49 @@ export class WebhookService {
   }
 
   /**
+   * Deliverect staging may sign Channel callbacks with the channelLinkId.
+   * Never derive an HMAC secret from arbitrary webhook payload fields: the
+   * candidate channelLinkId must already be mapped to the resolved tenant
+   * through its allowlist or discovered store projection.
+   */
+  static async getMappedStagingChannelLinkSecrets(
+    tenantId: string,
+    payload: any
+  ): Promise<string[]> {
+    const candidate = String(
+      payload?.channelLinkId ||
+      payload?.channelLink?._id ||
+      payload?.channelLink?.id ||
+      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
+      ''
+    ).trim();
+    if (!candidate) return [];
+
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const isProductionWebhook =
+      integration?.environment === 'production' ||
+      process.env.DELIVERECT_ENV === 'production';
+    if (isProductionWebhook) return [];
+
+    const allowed = new Set(
+      (integration?.allowedChannelLinkIds || [])
+        .map((value: unknown) => String(value || '').trim())
+        .filter(Boolean)
+    );
+    if (allowed.has(candidate)) {
+      return [candidate];
+    }
+
+    const stores = await FirestorePlatformService.getTenantStores(tenantId);
+    const mapped = stores.some((store: any) =>
+      String(store?.channelLinkId || store?.id || '').trim() === candidate &&
+      store?.lifecycleStatus !== 'ORPHANED'
+    );
+
+    return mapped ? [candidate] : [];
+  }
+
+  /**
    * Section 24 & Item 16:
    * Resolves the webhook tenant authoritatively. Never trusts blind query or header parameters.
    * Tests HMAC verification across configured tenant secrets.
@@ -413,23 +456,14 @@ export class WebhookService {
       (headers['x-deliverect-hmac-sha256'] as string);
 
     // 1. Authoritatively resolve tenant & verify HMAC signature
-    const stagingChannelLinkSecret = String(
-      payload?.channelLinkId ||
-      payload?.channelLink?._id ||
-      payload?.channelLink?.id ||
-      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
-      ''
-    ).trim();
+    const stagingTemporarySecrets =
+      await this.getMappedStagingChannelLinkSecrets(tenantId, payload);
 
     const { tenantId: resolvedTenantId } = await this.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       tenantId,
-      {
-        stagingTemporarySecrets: stagingChannelLinkSecret
-          ? [stagingChannelLinkSecret]
-          : [],
-      }
+      { stagingTemporarySecrets }
     );
     tenantId = resolvedTenantId;
 
