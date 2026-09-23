@@ -37,7 +37,9 @@ Optional:
 
 - `GEMINI_MODEL`
 
-Default: `gemini-2.5-flash`.
+Default: `gemini-3.8-flash`, with `gemini-2.5-flash` as a compatibility fallback.
+
+If both a Google AI API key and a Google Cloud project are available, the server can try both provider paths. Transient failures are retried once. If every live provider/model attempt is unavailable, the drawer falls back to a clearly labelled deterministic **Guided mode** rather than stranding the user behind a generic error. Guided mode never claims live data or write access.
 
 ## What v1 conversation can do
 
