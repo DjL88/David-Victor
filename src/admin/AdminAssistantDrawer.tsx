@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAdminWorkspace } from './AdminWorkspaceContext';
+import type { AdminTab } from './AdminLayout';
 import { defaultAdminClient } from '../commerce/HttpAdminClient';
 
 const SECTION_LABELS: Record<string, string> = {
@@ -122,6 +123,11 @@ type ChatMessage = {
   attachments?: AssistantAttachment[];
   suggestions?: string[];
   degraded?: boolean;
+  navigation?: {
+    section: string;
+    target?: string;
+    label: string;
+  } | null;
 };
 
 type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content' | 'attachments'>;
@@ -291,6 +297,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             ? response.suggestions.filter((item) => typeof item === 'string').slice(0, 3)
             : [],
           degraded: response.degraded === true,
+          navigation: response.navigation || null,
         },
       ]);
     } catch (err: any) {
@@ -526,6 +533,23 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                 {message.role === 'assistant' && message.degraded && (
                   <div className="mt-1.5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold text-amber-800">
                     Guided mode · live AI reconnecting
+                  </div>
+                )}
+
+                {message.role === 'assistant' && message.navigation && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const section = message.navigation?.section as AdminTab | undefined;
+                        if (!section) return;
+                        workspace.navigateTo(section, message.navigation?.target);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[10px] font-extrabold text-indigo-800 shadow-xs hover:bg-indigo-100"
+                    >
+                      <span>{message.navigation.label}</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
 
