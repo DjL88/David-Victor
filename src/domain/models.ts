@@ -233,6 +233,8 @@ export interface CheckoutResult {
   fulfillmentType: 'delivery' | 'pickup';
   total: Money;
   paymentId?: string;
+  /** Verified Firebase customer UID when checkout was created signed-in. */
+  customerUid?: string;
   /** Terminal Deliverect order creation path used for this customer order. */
   orderRoute?: 'retail_quest' | 'commerce_checkout';
   idempotencyKey?: string;
