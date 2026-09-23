@@ -212,6 +212,18 @@ export interface LocaleTranslations {
   'product.total': string;
   'product.chooseStore': string;
   'product.addToBasket': string;
+  'product.specialOffer': string;
+  'product.priceUnavailable': string;
+  'product.outOfStockNearby': string;
+  'product.availableAllStores': string;
+  'product.availableSomeStores': string;
+  'product.compareStores': string;
+  'product.description': string;
+  'product.allergenInformation': string;
+  'product.ingredients': string;
+  'product.nutritionalValues': string;
+  'product.dietaryLifestyle': string;
+  'product.outOfStock': string;
 
   // Orders list
   'orders.title': string;
@@ -475,6 +487,18 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'product.total': 'Total',
     'product.chooseStore': 'Choose Store to Order',
     'product.addToBasket': 'Add to Basket',
+    'product.specialOffer': 'Special Offer',
+    'product.priceUnavailable': 'Price unavailable',
+    'product.outOfStockNearby': 'Currently out of stock nearby. View store availability.',
+    'product.availableAllStores': 'Available at all {count} shops. View prices per store.',
+    'product.availableSomeStores': 'Available in {available} of {total} shops. View prices per store.',
+    'product.compareStores': 'Compare Stores',
+    'product.description': 'Description',
+    'product.allergenInformation': 'Allergen Information',
+    'product.ingredients': 'Ingredients',
+    'product.nutritionalValues': 'Nutritional Values',
+    'product.dietaryLifestyle': 'Dietary & Lifestyle',
+    'product.outOfStock': 'Out of Stock',
     'orders.title': 'Your Orders & Deliveries',
     'orders.refresh': 'Refresh',
     'orders.recentActivity': 'Recent Activity',
@@ -731,6 +755,18 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'product.total': 'Total',
     'product.chooseStore': 'Elegir tienda para pedir',
     'product.addToBasket': 'Añadir a la cesta',
+    'product.specialOffer': 'Oferta especial',
+    'product.priceUnavailable': 'Precio no disponible',
+    'product.outOfStockNearby': 'Actualmente agotado cerca. Consulta la disponibilidad por tienda.',
+    'product.availableAllStores': 'Disponible en las {count} tiendas. Consulta los precios por tienda.',
+    'product.availableSomeStores': 'Disponible en {available} de {total} tiendas. Consulta los precios por tienda.',
+    'product.compareStores': 'Comparar tiendas',
+    'product.description': 'Descripción',
+    'product.allergenInformation': 'Información sobre alérgenos',
+    'product.ingredients': 'Ingredientes',
+    'product.nutritionalValues': 'Valores nutricionales',
+    'product.dietaryLifestyle': 'Dieta y estilo de vida',
+    'product.outOfStock': 'Agotado',
     'orders.title': 'Tus pedidos y entregas',
     'orders.refresh': 'Actualizar',
     'orders.recentActivity': 'Actividad reciente',
@@ -987,6 +1023,18 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'product.total': 'Total',
     'product.chooseStore': 'Choisir un magasin pour commander',
     'product.addToBasket': 'Ajouter au panier',
+    'product.specialOffer': 'Offre spéciale',
+    'product.priceUnavailable': 'Prix indisponible',
+    'product.outOfStockNearby': 'Actuellement indisponible à proximité. Consultez la disponibilité par magasin.',
+    'product.availableAllStores': 'Disponible dans les {count} magasins. Consultez les prix par magasin.',
+    'product.availableSomeStores': 'Disponible dans {available} magasins sur {total}. Consultez les prix par magasin.',
+    'product.compareStores': 'Comparer les magasins',
+    'product.description': 'Description',
+    'product.allergenInformation': 'Informations allergènes',
+    'product.ingredients': 'Ingrédients',
+    'product.nutritionalValues': 'Valeurs nutritionnelles',
+    'product.dietaryLifestyle': 'Alimentation & mode de vie',
+    'product.outOfStock': 'Rupture de stock',
     'orders.title': 'Vos commandes et livraisons',
     'orders.refresh': 'Actualiser',
     'orders.recentActivity': 'Activité récente',
@@ -1243,6 +1291,18 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'product.total': 'Gesamt',
     'product.chooseStore': 'Filiale zum Bestellen wählen',
     'product.addToBasket': 'In den Warenkorb',
+    'product.specialOffer': 'Sonderangebot',
+    'product.priceUnavailable': 'Preis nicht verfügbar',
+    'product.outOfStockNearby': 'In der Nähe derzeit ausverkauft. Filialverfügbarkeit ansehen.',
+    'product.availableAllStores': 'In allen {count} Filialen verfügbar. Preise je Filiale ansehen.',
+    'product.availableSomeStores': 'In {available} von {total} Filialen verfügbar. Preise je Filiale ansehen.',
+    'product.compareStores': 'Filialen vergleichen',
+    'product.description': 'Beschreibung',
+    'product.allergenInformation': 'Allergeninformationen',
+    'product.ingredients': 'Zutaten',
+    'product.nutritionalValues': 'Nährwerte',
+    'product.dietaryLifestyle': 'Ernährung & Lebensstil',
+    'product.outOfStock': 'Ausverkauft',
     'orders.title': 'Deine Bestellungen & Lieferungen',
     'orders.refresh': 'Aktualisieren',
     'orders.recentActivity': 'Letzte Aktivitäten',
