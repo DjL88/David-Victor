@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import crypto from 'crypto';
 import { WebhookService, ORDER_STATE_RANKING, normalizeDeliverectOrderStatus } from '../../server/deliverect/WebhookService';
 import { FirestorePlatformService } from '../../server/firestoreService';
@@ -367,6 +367,69 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
         statusCode: 401,
         code: 'WEBHOOK_SIGNATURE_INVALID',
       });
+    });
+
+    it('accepts Deliverect documented channelLink HMAC in staging once the tenant is account-routed', async () => {
+      const rawPayload = JSON.stringify({
+        accountId: 'account-staging-1',
+        channelLinkId: 'channel-link-staging-1',
+        menuId: 'menu-1',
+      });
+      const signature = WebhookService.computeHmacSignature(
+        rawPayload,
+        'channel-link-staging-1'
+      );
+
+      const configSpy = vi
+        .spyOn(FirestorePlatformService, 'getIntegrationConfig')
+        .mockResolvedValue({
+          tenantId: testTenant,
+          environment: 'staging',
+          status: 'COMMERCE_VERIFIED',
+        } as any);
+
+      const resolved = await WebhookService.resolveTenantForWebhook(
+        rawPayload,
+        signature,
+        testTenant,
+        { stagingTemporarySecrets: ['channel-link-staging-1'] }
+      );
+
+      expect(resolved.tenantId).toBe(testTenant);
+      expect(resolved.secret).toBe('channel-link-staging-1');
+      configSpy.mockRestore();
+    });
+
+    it('never accepts the temporary channelLink HMAC for a production integration', async () => {
+      const rawPayload = JSON.stringify({
+        accountId: 'account-production-1',
+        channelLinkId: 'channel-link-production-1',
+      });
+      const signature = WebhookService.computeHmacSignature(
+        rawPayload,
+        'channel-link-production-1'
+      );
+
+      const configSpy = vi
+        .spyOn(FirestorePlatformService, 'getIntegrationConfig')
+        .mockResolvedValue({
+          tenantId: testTenant,
+          environment: 'production',
+          status: 'COMMERCE_VERIFIED',
+        } as any);
+
+      await expect(
+        WebhookService.resolveTenantForWebhook(
+          rawPayload,
+          signature,
+          testTenant,
+          { stagingTemporarySecrets: ['channel-link-production-1'] }
+        )
+      ).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'WEBHOOK_SIGNATURE_INVALID',
+      });
+      configSpy.mockRestore();
     });
   });
 
