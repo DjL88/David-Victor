@@ -76,11 +76,14 @@ export function replaceStorefrontUrl(path: string): void {
   window.history.replaceState({ storefront: true }, '', path);
 }
 
-export function pushStorefrontUrl(path: string): void {
+export function pushStorefrontUrl(
+  path: string,
+  state: Record<string, unknown> = {}
+): void {
   if (typeof window === 'undefined') return;
   const current = window.location.pathname + window.location.search;
   if (current === path) return;
-  window.history.pushState({ storefront: true }, '', path);
+  window.history.pushState({ storefront: true, ...state }, '', path);
 }
 
 export function flattenCategories(categories: Category[]): Category[] {
