@@ -2839,7 +2839,7 @@ async function handleDeliverectChannelProvisioning(
       // Deliverect's Channel registration contract expects the callback URLs in
       // the response. Later register/active/inactive lifecycle events can reuse
       // this same response safely.
-      return res.status(result.quarantined ? 202 : 200).json({
+      return res.status(200).json({
         statusUpdateURL: base,
         menuUpdateURL: `${base}/channel/menu_update`,
         snoozeUnsnoozeURL: `${base}/channel/snooze`,
