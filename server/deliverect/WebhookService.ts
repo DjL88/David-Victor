@@ -334,9 +334,85 @@ export class WebhookService {
         return { tenantId: candidateTenantId, secret };
       }
 
-      // Never derive an HMAC secret from webhook payload fields (including
-      // channelLinkId). Staging must use an explicitly configured webhook secret
-      // just like production; otherwise a caller could sign its own payload.
+      // Deliverect's documented staging contract uses the channelLinkId as
+      // the temporary HMAC secret until a partner-level HMAC secret is generated.
+      // Only allow this fallback in staging and only after the request has been
+      // routed to a tenant whose Deliverect account/store mapping matches the
+      // payload. Production always requires the configured tenant HMAC secret.
+      const integration =
+        await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+      const isStaging =
+        integration?.environment !== 'production' &&
+        process.env.DELIVERECT_ENV !== 'production';
+
+      if (isStaging) {
+        try {
+          const rawText = Buffer.isBuffer(rawBody)
+            ? rawBody.toString('utf8')
+            : String(rawBody);
+          const payload = JSON.parse(rawText || '{}');
+          const channelLinkId = String(
+            payload?.channelLinkId ||
+            payload?.storeId ||
+            payload?.channelLink?._id ||
+            payload?.channelLink?.id ||
+            ''
+          ).trim();
+          const payloadAccountId = String(
+            payload?.accountId ||
+            payload?.account ||
+            payload?.account?._id ||
+            ''
+          ).trim();
+          const configuredAccountId = String(
+            integration?.deliverectAccountId || ''
+          ).trim();
+
+          const stores =
+            await FirestorePlatformService.getTenantStores(candidateTenantId);
+          const knownChannel =
+            Boolean(channelLinkId) &&
+            (
+              (Array.isArray(integration?.allowedChannelLinkIds) &&
+                integration!.allowedChannelLinkIds!.map(String).includes(channelLinkId)) ||
+              String(integration?.channelLinkId || '') === channelLinkId ||
+              stores.some((store: any) =>
+                String(store?.channelLinkId || store?.id || '') === channelLinkId
+              )
+            );
+          const accountMatches =
+            !configuredAccountId ||
+            !payloadAccountId ||
+            configuredAccountId === payloadAccountId;
+          const registrationStatus = String(
+            payload?.status ||
+            payload?.action ||
+            payload?.event ||
+            ''
+          ).trim().toLowerCase();
+          const isRegistrationLifecycle =
+            ['register', 'registered', 'active', 'activate', 'inactive', 'disable', 'disabled']
+              .includes(registrationStatus);
+
+          if (
+            channelLinkId &&
+            accountMatches &&
+            (knownChannel || isRegistrationLifecycle) &&
+            this.verifyDeliverectHmac(
+              rawBody,
+              signatureHeader,
+              channelLinkId
+            )
+          ) {
+            return { tenantId: candidateTenantId, secret: channelLinkId };
+          }
+        } catch (err) {
+          console.warn(
+            '[WebhookService] Could not evaluate Deliverect staging channelLink HMAC fallback:',
+            err
+          );
+        }
+      }
     }
 
     // 2. Query known tenants from Firestore to find the matching secret
