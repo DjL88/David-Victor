@@ -32,10 +32,10 @@ const tenant: TenantConfig = {
     enableRootCatalogBrowse: true,
     enableCollection: true,
     allowStoreSwitchingWithBasket: true,
-    enableDelivery: true,
-    enablePayments: true,
-    enableDispatch: true,
-    enableStoreFinder: true,
+    enableNutritionalInfo: true,
+    enableDeposits: true,
+    enableAgeVerification: true,
+    enableSearchSuggestions: true,
   },
 };
 
