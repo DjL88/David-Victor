@@ -14,6 +14,9 @@ import { HomeScreen } from '../features/home/HomeScreen';
 import { SearchScreen } from '../features/search/SearchScreen';
 import { OrdersScreen } from '../features/orders/OrdersScreen';
 import { AccountScreen } from '../features/account/AccountScreen';
+import { CmsPageView } from '../features/cms/CmsPageView';
+import type { CmsPage } from '../commerce/cmsModels';
+import { resolvePublishedCmsPage } from '../commerce/cmsRouting';
 import { StoryViewerModal } from '../features/stories/StoryViewerModal';
 import { ProductDetailModal } from '../features/product/ProductDetailModal';
 import { LocationPickerModal } from '../features/location/LocationPickerModal';
@@ -66,6 +69,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
   const [activeRoute, setActiveRoute] = useState<StorefrontRoute>(initialRoute);
   const [activeTab, setActiveTab] = useState<MobileTab>(initialTab);
+  const [cmsPages, setCmsPages] = useState<CmsPage[]>([]);
+  const [cmsLoading, setCmsLoading] = useState(false);
+  const [cmsError, setCmsError] = useState<string | null>(null);
 
   const navigateToTab = useCallback((tab: MobileTab) => {
     const nextPath = pathForTab(tab);
@@ -151,7 +157,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     storePickerTargetProduct !== null ||
     entryStage === 'LOCATION' ||
     entryStage === 'FULFILMENT' ||
-    entryStage === 'STORE_SELECTION';
+    entryStage === 'STORE_SELECTION' ||
+    activeRoute.kind === 'cms';
 
   // Stories hook (filters stories based on selected store or nearby eligible stores)
   const {
@@ -242,6 +249,41 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     resetCache,
     client,
   } = useCatalog(selectedStore?.id);
+
+  useEffect(() => {
+    if (!tenant?.tenantId || !client.getCmsPages) {
+      setCmsPages([]);
+      return;
+    }
+
+    let cancelled = false;
+    setCmsLoading(true);
+    setCmsError(null);
+
+    void client
+      .getCmsPages()
+      .then((pages) => {
+        if (!cancelled) setCmsPages(Array.isArray(pages) ? pages : []);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn('[AppLayout] Could not load published CMS pages:', err);
+        setCmsPages([]);
+        setCmsError('This page could not be loaded right now.');
+      })
+      .finally(() => {
+        if (!cancelled) setCmsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, tenant?.tenantId]);
+
+  const activeCmsPage =
+    activeRoute.kind === 'cms'
+      ? resolvePublishedCmsPage(cmsPages, activeRoute.slug, tenant?.locale || 'en-GB')
+      : null;
 
   // Loads the tenant's admin-configured merchandising/visual rules into the
   // live RuleEngine singleton. Previously nothing ever called setRules(), so
@@ -680,7 +722,44 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
         {/* Tab Views */}
         <main className="w-full max-w-full">
-          {activeTab === 'home' && (
+          {activeRoute.kind === 'cms' ? (
+            cmsLoading ? (
+              <div className="min-h-[50vh] flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : activeCmsPage ? (
+              <CmsPageView
+                page={activeCmsPage}
+                products={renderableProducts}
+                categories={flattenCategories(catalog?.categories || [])}
+                stories={stories}
+                onSelectProduct={routeToProduct}
+                onSelectCategory={routeToCategory}
+                onAddToCart={(product) => {
+                  if (!selectedStore) {
+                    setStorePickerTargetProduct(product);
+                    setIsStorePickerOpen(true);
+                    return;
+                  }
+                  void updateQuantity(product, 1);
+                }}
+              />
+            ) : (
+              <div className="max-w-xl mx-auto px-4 py-16 text-center">
+                <h1 className="text-xl font-extrabold text-gray-900">Page not found</h1>
+                <p className="mt-2 text-sm text-gray-500">
+                  {cmsError || 'This page is not published or is no longer available.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('home')}
+                  className="mt-5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white"
+                >
+                  Return to shop
+                </button>
+              </div>
+            )
+          ) : activeTab === 'home' && (
             <HomeScreen
               stories={stories}
               storiesLoading={storiesLoading}
