@@ -29,8 +29,10 @@ import { MealDealDialog } from '../components/deals/MealDealDialog';
 import { BundleSelectionDialog } from '../components/deals/BundleSelectionDialog';
 import { DeliverectDeal, getDealForStory } from '../commerce/dealModels';
 import { BundleProduct } from '../commerce/bundleModels';
-import { Product, StoryAction } from '../commerce/models';
+import { Product, StoryAction, Address } from '../commerce/models';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../analytics';
+import { auth, onAuthStateChanged } from '../firebase';
+import { getSavedAddresses } from '../features/account/customerAccountClient';
 import { Loader2, BadgePercent, X, Store as StoreIcon, AlertTriangle } from 'lucide-react';
 import {
   findCategoryByRouteSlug,
@@ -51,6 +53,37 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const { tenant, loading: tenantLoading, error: tenantError, appMode } = useTenant();
+
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+
+  useEffect(() => {
+    if (!tenant?.tenantId) {
+      setSavedAddresses([]);
+      return;
+    }
+
+    let cancelled = false;
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        if (!cancelled) setSavedAddresses([]);
+        return;
+      }
+
+      void getSavedAddresses(tenant.tenantId)
+        .then((addresses) => {
+          if (!cancelled) setSavedAddresses(addresses);
+        })
+        .catch((err) => {
+          console.warn('Could not load saved delivery addresses:', err);
+          if (!cancelled) setSavedAddresses([]);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [tenant?.tenantId]);
 
   // Branded initial splash screen state
   const [showSplash, setShowSplash] = useState<boolean>(true);
@@ -745,7 +778,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
           {activeTab === 'orders' && <OrdersScreen />}
 
-          {activeTab === 'account' && <AccountScreen onOpenAdmin={onOpenAdmin} />}
+          {activeTab === 'account' && (
+            <AccountScreen
+              onOpenAdmin={onOpenAdmin}
+              currentAddress={currentAddress}
+              savedAddresses={savedAddresses}
+              onSavedAddressesChange={setSavedAddresses}
+            />
+          )}
         </main>
       </div>
 
@@ -898,6 +938,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           await resolveAndSetLocation(q);
         }}
         loading={storesLoading}
+        savedAddresses={savedAddresses}
       />
 
       {/* Fulfilment Choice Modal */}
