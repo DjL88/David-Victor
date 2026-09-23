@@ -785,8 +785,11 @@ export class HttpCommerceClient implements CommerceClient {
       dispatchValidationExpiresAt?: string;
     }
   ): Promise<CheckoutResult> {
+    const token = await getCurrentIdToken().catch(() => null);
+
     return this.request<CheckoutResult>('/checkouts', {
       method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       body: JSON.stringify({
         basketId,
         options,
