@@ -102,6 +102,8 @@ export interface CommerceStore {
   services?: Array<{ id: string; name: string; channel?: string | number; url?: string; source: 'DELIVERECT' | 'MANUAL' }>;
   currency?: string;
   status?: string;
+  /** Deliverect BUSY-mode preparation delay in minutes. */
+  preparationTimeDelay?: number;
   lastSeenAt: string;
 }
 
