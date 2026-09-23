@@ -2932,6 +2932,9 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
     if (proj && proj.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
     }
+    if (!proj && !isDemoMode() && process.env.NODE_ENV !== 'test') {
+      return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    }
 
     // Customer Access Control: signed-in orders require the owning Firebase
     // identity. Guest orders require the unguessable credential issued at
