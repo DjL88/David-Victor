@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { buildDeliverectChannelEndpoints, DELIVERECT_CHANNEL_SETUP_STEPS } from '../commerce/deliverectChannelSetup';
 import { ChannelProvisioningService } from '../../server/deliverect/ChannelProvisioningService';
 import { FirestorePlatformService } from '../../server/firestoreService';
+import { setServerRuntimeMode } from '../../server/runtimeMode';
 
 describe('Deliverect Channel setup', () => {
+  beforeEach(() => {
+    setServerRuntimeMode('demo');
+  });
   it('generates tenant-scoped provisioning URLs in Deliverect setup order', () => {
     const endpoints = buildDeliverectChannelEndpoints('https://example.test/', 'brand alpha');
     const byKey = Object.fromEntries(endpoints.map((endpoint) => [endpoint.key, endpoint]));
