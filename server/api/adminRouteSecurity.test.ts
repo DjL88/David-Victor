@@ -33,9 +33,14 @@ describe('admin route security policy', () => {
   });
 
   it('never activates a newly claimed custom domain before verification', () => {
-    const domainRoute = source.match(/v1Router\.post\('\/admin\/domains'[\s\S]{0,2400}/)?.[0] || '';
+    const start = source.indexOf("v1Router.post('/admin/domains'");
+    const end = source.indexOf("// 9.4d Verify DNS ownership", start);
+    const domainRoute = start >= 0 ? source.slice(start, end > start ? end : start + 6000) : '';
+
     expect(domainRoute).toContain("status: 'pending'");
     expect(domainRoute).toContain('DOMAIN_ALREADY_CLAIMED');
+    expect(domainRoute).toContain('createDomainVerificationToken');
+    expect(domainRoute).not.toContain("status: 'active',");
   });
 
   it('protects the direct binary upload fallback', () => {
