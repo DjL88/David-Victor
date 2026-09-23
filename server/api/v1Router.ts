@@ -2714,23 +2714,17 @@ async function handleDeliverectOperationalWebhook(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const stagingChannelLinkSecret = String(
-      req.body?.channelLinkId ||
-      req.body?.channelLink?._id ||
-      req.body?.channelLink?.id ||
-      (typeof req.body?.channelLink === 'string' ? req.body.channelLink : '') ||
-      ''
-    ).trim();
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets: stagingChannelLinkSecret
-          ? [stagingChannelLinkSecret]
-          : [],
-      }
+      { stagingTemporarySecrets }
     );
 
     const result = await DeliverectOperationalWebhookService.process(
@@ -2825,23 +2819,17 @@ async function handleDeliverectChannelProvisioning(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const stagingChannelLinkSecret = String(
-      req.body?.channelLinkId ||
-      req.body?.channelLink?._id ||
-      req.body?.channelLink?.id ||
-      (typeof req.body?.channelLink === 'string' ? req.body.channelLink : '') ||
-      ''
-    ).trim();
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets: stagingChannelLinkSecret
-          ? [stagingChannelLinkSecret]
-          : [],
-      }
+      { stagingTemporarySecrets }
     );
 
     const result = await ChannelProvisioningService.process(
