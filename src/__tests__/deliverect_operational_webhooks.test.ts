@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+import { DeliverectOperationalWebhookService } from '../../server/deliverect/DeliverectOperationalWebhookService';
+import { FirestorePlatformService } from '../../server/firestoreService';
+
+describe('Deliverect operational webhooks', () => {
+  it('persists BUSY state and preparation delay per channelLinkId', async () => {
+    const tenantId = `tenant-busy-${Date.now()}`;
+    const channelLinkId = 'channel-busy-1';
+    const payload = {
+      accountId: 'account-1',
+      locationId: 'location-1',
+      channelLinkId,
+      status: 'BUSY',
+      delay: 30,
+    };
+
+    const result = await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'busy_mode',
+      payload,
+      JSON.stringify(payload)
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      type: 'busy_mode',
+      channelLinkId,
+      status: 'BUSY',
+    });
+
+    const states = await FirestorePlatformService.getStoreOperationalStates(tenantId);
+    expect(states[channelLinkId]).toMatchObject({
+      status: 'BUSY',
+      preparationTimeDelay: 30,
+      locationId: 'location-1',
+      accountId: 'account-1',
+    });
+  });
+
+  it('keeps a per-store snooze snapshot and removes an item on unsnooze', async () => {
+    const tenantId = `tenant-snooze-${Date.now()}`;
+    const channelLinkId = 'channel-snooze-1';
+
+    const snoozePayload = {
+      channelLinkId,
+      operations: [
+        {
+          action: 'snooze',
+          data: {
+            items: [
+              {
+                plu: 'BANANA-1',
+                snoozeStart: '2026-09-23T10:00:00Z',
+                snoozeEnd: '2026-09-23T14:00:00Z',
+              },
+            ],
+            allSnoozedItems: [
+              {
+                plu: 'BANANA-1',
+                snoozeStart: '2026-09-23T10:00:00Z',
+                snoozeEnd: '2026-09-23T14:00:00Z',
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const snoozed = await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'snooze',
+      snoozePayload,
+      JSON.stringify(snoozePayload)
+    );
+    expect(snoozed.snoozedCount).toBe(1);
+
+    const active = await FirestorePlatformService.getStoreProductSnoozes(
+      tenantId,
+      channelLinkId
+    );
+    expect(active['BANANA-1']?.snoozed).toBe(true);
+
+    const unsnoozePayload = {
+      channelLinkId,
+      operations: [
+        {
+          action: 'unsnooze',
+          data: {
+            items: [{ plu: 'BANANA-1' }],
+          },
+        },
+      ],
+    };
+
+    const unsnoozed = await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'snooze',
+      unsnoozePayload,
+      JSON.stringify(unsnoozePayload)
+    );
+    expect(unsnoozed.snoozedCount).toBe(0);
+
+    const cleared = await FirestorePlatformService.getStoreProductSnoozes(
+      tenantId,
+      channelLinkId
+    );
+    expect(cleared['BANANA-1']).toBeUndefined();
+  });
+
+  it('captures menu publish metadata and its current snoozed product snapshot', async () => {
+    const tenantId = `tenant-menu-${Date.now()}`;
+    const channelLinkId = 'channel-menu-1';
+    const payload = {
+      channelLinkId,
+      menuId: 'menu-123',
+      snoozedProducts: {
+        snoozeA: {
+          plu: 'MILK-1',
+          snoozeStart: '2026-09-23T10:00:00Z',
+          snoozeEnd: '2026-09-23T12:00:00Z',
+        },
+      },
+    };
+
+    const result = await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'menu_update',
+      payload,
+      JSON.stringify(payload)
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      type: 'menu_update',
+      channelLinkId,
+      menuId: 'menu-123',
+      snoozedCount: 1,
+    });
+
+    const states = await FirestorePlatformService.getStoreOperationalStates(tenantId);
+    expect(states[channelLinkId]?.lastMenuId).toBe('menu-123');
+
+    const snoozes = await FirestorePlatformService.getStoreProductSnoozes(
+      tenantId,
+      channelLinkId
+    );
+    expect(snoozes['MILK-1']?.snoozed).toBe(true);
+  });
+});

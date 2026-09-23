@@ -479,6 +479,9 @@ export class DeliverectApiClient implements DeliverectAdapter {
         };
 
     const accountId = await this.resolveAccountId();
+    const operationalStates = await FirestorePlatformService
+      .getStoreOperationalStates(this.tenantId || 'brand-alpha')
+      .catch(() => ({}));
     const accountLinkIds = new Set(sync.accounts.filter(account => account.deliverectAccountId === accountId).map(account => account.accountLinkId));
     const scopedStores = sync.stores
       .filter(store => accountLinkIds.has(store.accountLinkId))
@@ -503,8 +506,27 @@ export class DeliverectApiClient implements DeliverectAdapter {
       const supportsPickup = Boolean(s.fulfillmentCapabilitiesProjection?.pickup ?? false);
 
       const override = getStoreOverride(s.commerceStoreId) || (s.channelLinkId ? getStoreOverride(s.channelLinkId) : undefined);
-      const isOpen = override?.isOpen !== undefined ? override.isOpen : (s.stateProjection === 'paused' ? false : true);
-      const status = override?.status || (isOpen ? 'open' : 'closed');
+      const operational = s.channelLinkId ? operationalStates[s.channelLinkId] : undefined;
+      const operationalStatus = String(operational?.status || '').toUpperCase();
+      const isPausedOperationally = operationalStatus === 'PAUSED' || operationalStatus === 'CLOSED';
+      const isBusyOperationally = operationalStatus === 'BUSY';
+      const isExplicitlyOnline = operationalStatus === 'ONLINE' || operationalStatus === 'OPEN';
+      const isOpen =
+        operationalStatus
+          ? !isPausedOperationally
+          : override?.isOpen !== undefined
+            ? override.isOpen
+            : s.stateProjection === 'paused'
+              ? false
+              : true;
+      const status: StoreStatus =
+        isPausedOperationally
+          ? 'paused'
+          : isBusyOperationally
+            ? 'busy'
+            : isExplicitlyOnline
+              ? 'open'
+              : override?.status || (isOpen ? 'open' : 'closed');
       const deliveryRadiusKm = override?.deliveryRadiusKm ?? s.deliveryRadiusKm ?? 5.0;
       const deliveryEta = override?.deliveryEta || s.deliveryEta || '15-25 mins';
 
@@ -547,6 +569,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
         coordinates: storeCoords,
         distanceMeters: 0,
         status,
+        stateProjection: operationalStatus
+          ? operationalStatus.toLowerCase()
+          : s.stateProjection,
+        preparationTimeDelay:
+          operational?.preparationTimeDelay ?? s.preparationTimeDelay,
         supportsDelivery,
         supportsPickup,
         isOpen,
@@ -1385,7 +1412,24 @@ export class DeliverectApiClient implements DeliverectAdapter {
         : [];
 
       const tagDefinitions = await this.getProductTagDefinitions();
-      const { categories, products, bundleCatalog } = this.parseDeliverectMenu(selectedMenu, true, tagDefinitions);
+      const parsed = this.parseDeliverectMenu(selectedMenu, true, tagDefinitions);
+      const categories = parsed.categories;
+      const bundleCatalog = parsed.bundleCatalog;
+      const operationalSnoozes = await FirestorePlatformService
+        .getStoreProductSnoozes(this.tenantId || 'brand-alpha', channelLinkId)
+        .catch(() => ({}));
+      const products = parsed.products.map((product) => {
+        const snooze = operationalSnoozes[product.plu];
+        if (!snooze?.snoozed) return product;
+        return {
+          ...product,
+          snoozed: true,
+          isSnoozed: true,
+          snoozedUntil: snooze.snoozeEnd,
+          snoozeEndTime: snooze.snoozeEnd,
+          stockStatus: 'OUT_OF_STOCK' as const,
+        };
+      });
 
       // Directive 1: Compute structured staging diagnostics
       const rawProductCount = rawProductsList.length;
