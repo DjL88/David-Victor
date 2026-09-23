@@ -2736,10 +2736,24 @@ async function handleDeliverectOperationalWebhook(
       }
     );
 
+    const mappedChannelLinkId =
+      await WebhookService.resolveMappedOperationalChannelLinkId(
+        tenantId,
+        req.body
+      );
+
+    const operationalPayload =
+      mappedChannelLinkId &&
+      !req.body?.channelLinkId &&
+      !req.body?.storeId &&
+      !req.body?.channelLink
+        ? { ...req.body, channelLinkId: mappedChannelLinkId }
+        : req.body;
+
     const result = await DeliverectOperationalWebhookService.process(
       tenantId,
       type,
-      req.body,
+      operationalPayload,
       rawBody
     );
 
