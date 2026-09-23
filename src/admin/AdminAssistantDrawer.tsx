@@ -5,6 +5,8 @@ import {
   LockKeyhole,
   SendHorizontal,
   Wrench,
+  Paperclip,
+  FileText,
   X,
 } from 'lucide-react';
 import { useAdminWorkspace } from './AdminWorkspaceContext';
@@ -105,18 +107,28 @@ const STARTERS: Record<string, string[]> = {
   ],
 };
 
+type AssistantAttachment = {
+  name: string;
+  contentType?: string;
+  content: string;
+  byteSize?: number;
+  truncated?: boolean;
+};
+
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: AssistantAttachment[];
   suggestions?: string[];
   degraded?: boolean;
 };
 
-type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content'>;
+type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content' | 'attachments'>;
 
 type FailedRequest = {
   message: string;
   history: ChatHistoryMessage[];
+  attachments?: AssistantAttachment[];
 };
 
 interface AdminAssistantDrawerProps {
@@ -127,7 +139,10 @@ interface AdminAssistantDrawerProps {
 export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open, onClose }) => {
   const workspace = useAdminWorkspace();
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState('');
+  const [attachments, setAttachments] = useState<AssistantAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState('');
   const [running, setRunning] = useState(false);
   const [diagnosticRunning, setDiagnosticRunning] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -178,23 +193,79 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
   if (!open) return null;
 
+  const addFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setAttachmentError('');
+
+    const allowedExtensions = ['csv', 'tsv', 'txt', 'json', 'md', 'markdown'];
+    const remainingSlots = Math.max(0, 3 - attachments.length);
+    const selected = Array.from(files).slice(0, remainingSlots);
+
+    if (remainingSlots === 0) {
+      setAttachmentError('You can attach up to 3 files at a time.');
+      return;
+    }
+
+    const next: AssistantAttachment[] = [];
+    for (const file of selected) {
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      const isTextLike =
+        file.type.startsWith('text/') ||
+        file.type === 'application/json' ||
+        allowedExtensions.includes(extension);
+
+      if (!isTextLike) {
+        setAttachmentError('For now, Admin AI accepts CSV, TSV, JSON, Markdown and text files.');
+        continue;
+      }
+
+      const previewBlob = file.slice(0, 64 * 1024);
+      const raw = await previewBlob.text();
+      next.push({
+        name: file.name,
+        contentType: file.type || (extension === 'csv' ? 'text/csv' : 'text/plain'),
+        content: raw.slice(0, 24000),
+        byteSize: file.size,
+        truncated: file.size > 64 * 1024 || raw.length > 24000,
+      });
+    }
+
+    if (next.length > 0) {
+      setAttachments((current) => [...current, ...next].slice(0, 3));
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const sendMessage = async (
     overrideText?: string,
     retryHistory?: ChatHistoryMessage[],
-    appendUserMessage: boolean = true
+    appendUserMessage: boolean = true,
+    retryAttachments?: AssistantAttachment[]
   ) => {
     const text = (overrideText ?? draft).trim();
-    if (!text || running) return;
+    const filesForTurn = retryAttachments ?? attachments;
+    if ((!text && filesForTurn.length === 0) || running) return;
 
-    const history = retryHistory || messages.slice(-10).map(({ role, content }) => ({ role, content }));
+    const history = retryHistory || messages.slice(-10).map(({ role, content, attachments: messageAttachments }) => ({
+      role,
+      content,
+      attachments: messageAttachments,
+    }));
 
+    const userText = text || 'Please review the attached file.';
     setDraft('');
+    setAttachments([]);
+    setAttachmentError('');
     setError('');
     setFailedRequest(null);
     setDiagnosticResult(null);
 
     if (appendUserMessage) {
-      setMessages((current) => [...current, { role: 'user', content: text }]);
+      setMessages((current) => [...current, {
+        role: 'user',
+        content: userText,
+        attachments: filesForTurn,
+      }]);
     }
 
     try {
@@ -204,8 +275,9 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
       }
 
       const response = await defaultAdminClient.chatWithAssistant(workspace.tenantId, {
-        message: text,
+        message: userText,
         history,
+        attachments: filesForTurn,
         context,
       });
 
@@ -221,7 +293,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         },
       ]);
     } catch (err: any) {
-      setFailedRequest({ message: text, history });
+      setFailedRequest({ message: userText, history, attachments: filesForTurn });
       setError(err?.message || 'Admin AI could not answer right now.');
     } finally {
       setRunning(false);
@@ -230,7 +302,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
   const retryLastMessage = async () => {
     if (!failedRequest || running) return;
-    await sendMessage(failedRequest.message, failedRequest.history, false);
+    await sendMessage(failedRequest.message, failedRequest.history, false, failedRequest.attachments);
   };
 
   const runPageDiagnostic = async () => {
@@ -349,6 +421,20 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                   }
                 >
                   {message.content}
+                  {message.role === 'user' && message.attachments && message.attachments.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {message.attachments.map((attachment) => (
+                        <div
+                          key={attachment.name}
+                          className="flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-1 text-[10px] font-semibold"
+                        >
+                          <FileText className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{attachment.name}</span>
+                          {attachment.truncated && <span className="opacity-70">preview</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {message.role === 'assistant' && message.degraded && (
@@ -440,6 +526,39 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
       <div className="border-t border-gray-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white shrink-0">
         <div className="rounded-2xl border border-gray-300 bg-gray-50 p-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.tsv,.txt,.json,.md,.markdown,text/csv,text/tab-separated-values,text/plain,application/json"
+            multiple
+            className="hidden"
+            onChange={(event) => void addFiles(event.target.files)}
+          />
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-1 pb-2">
+              {attachments.map((attachment, index) => (
+                <div
+                  key={`${attachment.name}-${index}`}
+                  className="inline-flex max-w-full items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold text-gray-700"
+                >
+                  <FileText className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[190px] truncate">{attachment.name}</span>
+                  {attachment.truncated && <span className="text-amber-600">preview</span>}
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    className="ml-0.5 text-gray-400 hover:text-gray-700"
+                    aria-label={`Remove ${attachment.name}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {attachmentError && (
+            <p className="px-2 pb-1 text-[10px] font-semibold text-rose-700">{attachmentError}</p>
+          )}
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -454,11 +573,23 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <span className="text-[10px] text-gray-400 hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
-            <span className="text-[10px] text-gray-400 sm:hidden">Enter to send</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={running || attachments.length >= 3}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-800 disabled:opacity-40"
+                aria-label="Attach CSV or text file"
+                title="Attach CSV, JSON or text"
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[10px] text-gray-400 hidden sm:inline">CSV/JSON/text · Enter to send</span>
+              <span className="text-[10px] text-gray-400 sm:hidden">Attach file</span>
+            </div>
             <button
               type="button"
-              disabled={running || !draft.trim()}
+              disabled={running || (!draft.trim() && attachments.length === 0)}
               onClick={() => void sendMessage()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-gray-800 disabled:opacity-50"
             >
