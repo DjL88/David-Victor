@@ -400,6 +400,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'audit' && <AuditHistoryScreen tenantId={currentTenantId} />}
           </div>
         </main>
+
+      {!isAssistantOpen && (
+        <button
+          type="button"
+          onClick={() => setIsAssistantOpen(true)}
+          className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-gray-950 px-4 py-3 text-xs font-extrabold text-white shadow-2xl hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"
+          aria-label="Ask Admin Assistant"
+          title="Ask Admin Assistant about this page"
+        >
+          <Sparkles className="w-4 h-4 text-indigo-300" />
+          <span className="hidden sm:inline">Ask Admin AI</span>
+        </button>
+      )}
+
       <AdminAssistantDrawer open={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
     </div>
     </AdminWorkspaceProvider>
