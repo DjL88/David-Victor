@@ -396,15 +396,24 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           <div className="text-xs text-gray-400 bg-gray-50 rounded-xl p-3 border border-gray-100 mb-6 font-mono break-all">
             Domain: {window.location.hostname}
           </div>
-          {onOpenAdmin && (
+          <div className="space-y-2">
             <button
               type="button"
-              onClick={onOpenAdmin}
-              className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-colors cursor-pointer"
+              onClick={() => window.location.reload()}
+              className="w-full py-3 border border-gray-200 bg-white text-gray-800 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors cursor-pointer"
             >
-              Open Platform Admin
+              Retry Storefront
             </button>
-          )}
+            {onOpenAdmin && (
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Open Platform Admin
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
