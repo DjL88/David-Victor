@@ -14,6 +14,7 @@ import { HomeScreen } from '../features/home/HomeScreen';
 import { SearchScreen } from '../features/search/SearchScreen';
 import { OrdersScreen } from '../features/orders/OrdersScreen';
 import { AccountScreen } from '../features/account/AccountScreen';
+import { CmsPageScreen } from '../features/cms/CmsPageScreen';
 import { StoryViewerModal } from '../features/stories/StoryViewerModal';
 import { ProductDetailModal } from '../features/product/ProductDetailModal';
 import { LocationPickerModal } from '../features/location/LocationPickerModal';
@@ -683,7 +684,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
         {/* Tab Views */}
         <main className="w-full max-w-full">
-          {activeTab === 'home' && (
+          {activeTab === 'home' && activeRoute.kind !== 'cms' && (
             <HomeScreen
               stories={stories}
               storiesLoading={storiesLoading}
@@ -726,6 +727,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               onCatalogFilterStateChange={setCatalogFilterState}
             />
           )}
+
+          {activeRoute.kind === 'cms' && <CmsPageScreen slug={activeRoute.slug} />}
 
           {activeTab === 'search' && (
             <SearchScreen
