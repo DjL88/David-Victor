@@ -320,6 +320,21 @@ function selectStoreMenu(
   };
 }
 
+export function productIdentityKey(product: Pick<Product, 'gtin' | 'plu'>): string {
+  const rawGtins = Array.isArray(product.gtin) ? product.gtin : [product.gtin];
+  const gtin = rawGtins
+    .map((value) => String(value ?? '').trim().replace(/\s+/g, ''))
+    .find(Boolean);
+  return gtin ? `gtin:${gtin}` : `plu:${String(product.plu || '').trim()}`;
+}
+
+export function productsShareIdentity(
+  left: Pick<Product, 'gtin' | 'plu'>,
+  right: Pick<Product, 'gtin' | 'plu'>
+): boolean {
+  return productIdentityKey(left) === productIdentityKey(right);
+}
+
 export interface StoreConfigOverride {
   isOpen?: boolean;
   status?: StoreStatus;
@@ -1578,7 +1593,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     for (const product of products) {
       const records = storeCatalogs.flatMap(({ store, catalog }) =>
         (catalog.products || [])
-          .filter((candidate) => candidate.plu === product.plu && this.isAvailableProduct(candidate) && candidate.price != null)
+          .filter((candidate) => productsShareIdentity(candidate, product) && this.isAvailableProduct(candidate) && candidate.price != null)
           .map((candidate) => ({ store, product: candidate }))
       );
       const prices = records.map(({ product: candidate }) => candidate.price!).filter(Boolean);
