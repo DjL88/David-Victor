@@ -433,6 +433,16 @@ export class FirestoreService {
         return inMemoryTenants[tenantId];
       }
 
+      // Unit tests and explicit Demo mode intentionally have no live Admin SDK
+      // connection; an absent local fixture therefore still means "tenant not found".
+      if (useLocalRuntimeData && !isFirestorePermissionDenied()) {
+        throw new BFFError(
+          'TENANT_NOT_FOUND',
+          `Tenant not found: "${tenantId}" is not provisioned on this platform.`,
+          404
+        );
+      }
+
       const permission = getFirestorePermissionStatus();
       if (permission.denied) {
         throw new BFFError(
