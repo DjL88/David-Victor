@@ -228,6 +228,43 @@ export interface LocaleTranslations {
   'aisles.category': string;
   'aisles.productsSearchPlaceholder': string;
 
+  // Product details
+  'product.closeDetails': string;
+  'product.noImage': string;
+  'product.specialOffer': string;
+  'product.priceUnavailable': string;
+  'product.includesDeposit': string;
+  'product.outOfStockNearby': string;
+  'product.availableAllStores': string;
+  'product.availableStores': string;
+  'product.compareStores': string;
+  'product.description': string;
+  'product.allergenInfo': string;
+  'product.ingredients': string;
+  'product.nutritionPer': string;
+  'product.energy': string;
+  'product.fat': string;
+  'product.carbs': string;
+  'product.protein': string;
+  'product.sugars': string;
+  'product.salt': string;
+  'product.netQuantity': string;
+  'product.storageInstructions': string;
+  'product.manufacturerOrigin': string;
+  'product.manufacturer': string;
+  'product.countryOrigin': string;
+  'product.alcoholDetails': string;
+  'product.abv': string;
+  'product.legalNotice': string;
+  'product.ageNotice': string;
+  'product.drs': string;
+  'product.drsNotice': string;
+  'product.dietaryLifestyle': string;
+  'product.total': string;
+  'product.outOfStock': string;
+  'product.chooseStore': string;
+  'product.addBasket': string;
+
   // Favourites & Buy Again
   'fav.emptyTitle': string;
   'fav.emptySubtitle': string;
@@ -427,6 +464,41 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Reorder All Available',
     'fav.revalidating': 'Revalidating store stock & prices...',
     'fav.addedToBasket': 'Added to basket',
+    'product.closeDetails': 'Close product details',
+    'product.noImage': 'No image available',
+    'product.specialOffer': 'Special Offer',
+    'product.priceUnavailable': 'Price unavailable',
+    'product.includesDeposit': 'Includes {amount} DRS returnable deposit',
+    'product.outOfStockNearby': 'Currently out of stock nearby. View store availability.',
+    'product.availableAllStores': 'Available at all {count} shops. View prices per store.',
+    'product.availableStores': 'Available in {available} of {total} shops. View prices per store.',
+    'product.compareStores': 'Compare Stores',
+    'product.description': 'Description',
+    'product.allergenInfo': 'Allergen Information',
+    'product.ingredients': 'Ingredients',
+    'product.nutritionPer': 'Nutritional Values (per {portion})',
+    'product.energy': 'Calories / Energy',
+    'product.fat': 'Fat',
+    'product.carbs': 'Carbs',
+    'product.protein': 'Protein',
+    'product.sugars': 'Sugars',
+    'product.salt': 'Salt',
+    'product.netQuantity': 'Net Quantity',
+    'product.storageInstructions': 'Storage Instructions',
+    'product.manufacturerOrigin': 'Manufacturer & Origin Information',
+    'product.manufacturer': 'FBO / Manufacturer',
+    'product.countryOrigin': 'Country of Origin',
+    'product.alcoholDetails': 'Alcohol & Licensing Details',
+    'product.abv': 'ABV',
+    'product.legalNotice': 'Legal Notice',
+    'product.ageNotice': 'Age 18+ only. Courier ID verification (Challenge 25) required upon delivery.',
+    'product.drs': 'Deposit Return Scheme (DRS)',
+    'product.drsNotice': 'Price includes a refundable {amount} container deposit. Return this bottle or can to a participating return point for a voucher or cash refund.',
+    'product.dietaryLifestyle': 'Dietary & Lifestyle',
+    'product.total': 'Total',
+    'product.outOfStock': 'Out of Stock',
+    'product.chooseStore': 'Choose Store to Order',
+    'product.addBasket': 'Add to Basket',
     'search.placeholder': 'Search groceries, brands, barcode or tags…',
     'search.trending': 'Trending Searches',
     'search.searching': 'Searching catalogue…',
@@ -647,6 +719,41 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Pedir todos los disponibles',
     'fav.revalidating': 'Revalidando disponibilidad...',
     'fav.addedToBasket': 'Añadido a la cesta',
+    'product.closeDetails': 'Cerrar detalles del producto',
+    'product.noImage': 'Imagen no disponible',
+    'product.specialOffer': 'Oferta especial',
+    'product.priceUnavailable': 'Precio no disponible',
+    'product.includesDeposit': 'Incluye depósito DRS reembolsable de {amount}',
+    'product.outOfStockNearby': 'Sin stock cerca en este momento. Consulta la disponibilidad por tienda.',
+    'product.availableAllStores': 'Disponible en las {count} tiendas. Consulta los precios por tienda.',
+    'product.availableStores': 'Disponible en {available} de {total} tiendas. Consulta los precios por tienda.',
+    'product.compareStores': 'Comparar tiendas',
+    'product.description': 'Descripción',
+    'product.allergenInfo': 'Información sobre alérgenos',
+    'product.ingredients': 'Ingredientes',
+    'product.nutritionPer': 'Valores nutricionales (por {portion})',
+    'product.energy': 'Calorías / Energía',
+    'product.fat': 'Grasas',
+    'product.carbs': 'Carbohidratos',
+    'product.protein': 'Proteínas',
+    'product.sugars': 'Azúcares',
+    'product.salt': 'Sal',
+    'product.netQuantity': 'Cantidad neta',
+    'product.storageInstructions': 'Instrucciones de conservación',
+    'product.manufacturerOrigin': 'Fabricante y origen',
+    'product.manufacturer': 'Operador / Fabricante',
+    'product.countryOrigin': 'País de origen',
+    'product.alcoholDetails': 'Alcohol y licencias',
+    'product.abv': 'Graduación',
+    'product.legalNotice': 'Aviso legal',
+    'product.ageNotice': 'Solo mayores de 18 años. Se requiere verificación de identidad Challenge 25 en la entrega.',
+    'product.drs': 'Sistema de devolución de depósito (DRS)',
+    'product.drsNotice': 'El precio incluye un depósito reembolsable de {amount}. Devuelve el envase en un punto participante para recibir un vale o reembolso.',
+    'product.dietaryLifestyle': 'Dieta y estilo de vida',
+    'product.total': 'Total',
+    'product.outOfStock': 'Agotado',
+    'product.chooseStore': 'Elegir tienda para pedir',
+    'product.addBasket': 'Añadir a la cesta',
     'search.placeholder': 'Buscar productos, marcas, códigos de barras o etiquetas…',
     'search.trending': 'Búsquedas populares',
     'search.searching': 'Buscando en el catálogo…',
@@ -867,6 +974,41 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Commander tous les disponibles',
     'fav.revalidating': 'Vérification de la disponibilité...',
     'fav.addedToBasket': 'Ajouté au panier',
+    'product.closeDetails': 'Fermer les détails du produit',
+    'product.noImage': 'Image indisponible',
+    'product.specialOffer': 'Offre spéciale',
+    'product.priceUnavailable': 'Prix indisponible',
+    'product.includesDeposit': 'Inclut une consigne DRS remboursable de {amount}',
+    'product.outOfStockNearby': 'Actuellement en rupture à proximité. Consultez la disponibilité par magasin.',
+    'product.availableAllStores': 'Disponible dans les {count} magasins. Voir les prix par magasin.',
+    'product.availableStores': 'Disponible dans {available} magasins sur {total}. Voir les prix par magasin.',
+    'product.compareStores': 'Comparer les magasins',
+    'product.description': 'Description',
+    'product.allergenInfo': 'Informations sur les allergènes',
+    'product.ingredients': 'Ingrédients',
+    'product.nutritionPer': 'Valeurs nutritionnelles (pour {portion})',
+    'product.energy': 'Calories / Énergie',
+    'product.fat': 'Matières grasses',
+    'product.carbs': 'Glucides',
+    'product.protein': 'Protéines',
+    'product.sugars': 'Sucres',
+    'product.salt': 'Sel',
+    'product.netQuantity': 'Quantité nette',
+    'product.storageInstructions': 'Conseils de conservation',
+    'product.manufacturerOrigin': 'Fabricant et origine',
+    'product.manufacturer': 'Exploitant / Fabricant',
+    'product.countryOrigin': 'Pays d’origine',
+    'product.alcoholDetails': 'Alcool et licence',
+    'product.abv': 'Taux d’alcool',
+    'product.legalNotice': 'Mention légale',
+    'product.ageNotice': 'Réservé aux 18 ans et plus. Vérification d’identité Challenge 25 requise à la livraison.',
+    'product.drs': 'Système de consigne (DRS)',
+    'product.drsNotice': 'Le prix inclut une consigne remboursable de {amount}. Rapportez l’emballage à un point participant pour obtenir un bon ou un remboursement.',
+    'product.dietaryLifestyle': 'Alimentation & mode de vie',
+    'product.total': 'Total',
+    'product.outOfStock': 'Rupture de stock',
+    'product.chooseStore': 'Choisir un magasin',
+    'product.addBasket': 'Ajouter au panier',
     'search.placeholder': 'Rechercher produits, marques, codes-barres ou tags…',
     'search.trending': 'Recherches populaires',
     'search.searching': 'Recherche dans le catalogue…',
@@ -1087,6 +1229,41 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Alle verfügbaren nachbestellen',
     'fav.revalidating': 'Verfügbarkeit wird geprüft...',
     'fav.addedToBasket': 'In den Warenkorb gelegt',
+    'product.closeDetails': 'Produktdetails schließen',
+    'product.noImage': 'Kein Bild verfügbar',
+    'product.specialOffer': 'Sonderangebot',
+    'product.priceUnavailable': 'Preis nicht verfügbar',
+    'product.includesDeposit': 'Enthält {amount} rückerstattbares DRS-Pfand',
+    'product.outOfStockNearby': 'Derzeit in der Nähe nicht verfügbar. Filialverfügbarkeit ansehen.',
+    'product.availableAllStores': 'In allen {count} Filialen verfügbar. Preise je Filiale ansehen.',
+    'product.availableStores': 'In {available} von {total} Filialen verfügbar. Preise je Filiale ansehen.',
+    'product.compareStores': 'Filialen vergleichen',
+    'product.description': 'Beschreibung',
+    'product.allergenInfo': 'Allergeninformationen',
+    'product.ingredients': 'Zutaten',
+    'product.nutritionPer': 'Nährwerte (pro {portion})',
+    'product.energy': 'Kalorien / Energie',
+    'product.fat': 'Fett',
+    'product.carbs': 'Kohlenhydrate',
+    'product.protein': 'Eiweiß',
+    'product.sugars': 'Zucker',
+    'product.salt': 'Salz',
+    'product.netQuantity': 'Nettofüllmenge',
+    'product.storageInstructions': 'Lagerhinweise',
+    'product.manufacturerOrigin': 'Hersteller & Herkunft',
+    'product.manufacturer': 'Lebensmittelunternehmer / Hersteller',
+    'product.countryOrigin': 'Herkunftsland',
+    'product.alcoholDetails': 'Alkohol & Lizenzangaben',
+    'product.abv': 'Alkoholgehalt',
+    'product.legalNotice': 'Rechtlicher Hinweis',
+    'product.ageNotice': 'Nur ab 18 Jahren. Identitätsprüfung nach Challenge 25 bei Lieferung erforderlich.',
+    'product.drs': 'Pfandrückgabesystem (DRS)',
+    'product.drsNotice': 'Der Preis enthält ein rückerstattbares Pfand von {amount}. Gib die Verpackung an einer teilnehmenden Rückgabestelle gegen Gutschein oder Erstattung zurück.',
+    'product.dietaryLifestyle': 'Ernährung & Lebensstil',
+    'product.total': 'Gesamt',
+    'product.outOfStock': 'Nicht vorrätig',
+    'product.chooseStore': 'Filiale zum Bestellen wählen',
+    'product.addBasket': 'In den Warenkorb',
     'search.placeholder': 'Produkte, Marken, Barcodes oder Tags suchen…',
     'search.trending': 'Beliebte Suchanfragen',
     'search.searching': 'Katalog wird durchsucht…',
