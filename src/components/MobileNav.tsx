@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, LayoutGrid, Search, Clock, User } from 'lucide-react';
 import { useTenant } from '../tenant/TenantContext';
+import { useI18n } from '../i18n/I18nContext';
 
 export type MobileTab = 'home' | 'search' | 'orders' | 'account' | 'aisles';
 
@@ -16,14 +17,15 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenAisles,
 }) => {
   const { tenant } = useTenant();
+  const { t } = useI18n();
   const primaryColour = tenant?.primaryColour || '#0d9488';
 
   const tabs: Array<{ id: MobileTab; label: string; icon: typeof Home; isAction?: boolean }> = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'aisles', label: 'Aisles', icon: LayoutGrid, isAction: true },
-    { id: 'search', label: 'Search', icon: Search },
-    { id: 'orders', label: 'Orders', icon: Clock },
-    { id: 'account', label: 'Account', icon: User },
+    { id: 'home', label: t('nav.home'), icon: Home },
+    { id: 'aisles', label: t('nav.aisles'), icon: LayoutGrid, isAction: true },
+    { id: 'search', label: t('nav.search'), icon: Search },
+    { id: 'orders', label: t('nav.orders'), icon: Clock },
+    { id: 'account', label: t('nav.account'), icon: User },
   ];
 
   const handleTabClick = (tab: { id: MobileTab; isAction?: boolean }) => {
