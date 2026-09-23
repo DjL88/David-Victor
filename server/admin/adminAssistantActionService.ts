@@ -268,6 +268,26 @@ export class AdminAssistantActionService {
         break;
       }
 
+      case 'rules.inspect': {
+        const rules = await FirestorePlatformService.getTenantRules(args.tenantId);
+        evidence.push({ source: 'firestore.searchRules', ok: true });
+        result = {
+          ruleCount: rules.length,
+          activeCount: rules.filter((rule: any) => rule.enabled !== false).length,
+          disabledCount: rules.filter((rule: any) => rule.enabled === false).length,
+          rules: rules.map((rule: any) => ({
+            id: rule.id,
+            name: rule.name,
+            enabled: rule.enabled !== false,
+            priority: rule.priority,
+            countries: rule.countries || [],
+            matchConditions: rule.matchConditions || [],
+            actions: rule.actions || [],
+          })),
+        };
+        break;
+      }
+
       case 'integrations.diagnose': {
         const health = await connectionHealthService.getConnectionHealth(args.tenantId);
         evidence.push({ source: 'connectionHealth', ok: true });
