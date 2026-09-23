@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Product } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -14,6 +14,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { isDemoMode } from '../../domain/runtime';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { auth, onAuthStateChanged, User as FirebaseUser } from '../../firebase';
 
 interface FavouritesAndBuyAgainProps {
   products: Product[];
@@ -35,6 +37,12 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
   const [revalidatingPlu, setRevalidatingPlu] = useState<string | null>(null);
   const [justAddedPlu, setJustAddedPlu] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
+  const [buyAgainPlus, setBuyAgainPlus] = useState<string[]>(() =>
+    isDemoMode()
+      ? ['PLU-SOURDOUGH-01', 'PLU-COLDPRESS-ORANGE', 'PLU-ORGANIC-MILK-2L', 'PLU-ART-001']
+      : []
+  );
 
   // Initial favorites / purchase history (only seeded in demo mode)
   const [favouritePlus, setFavouritePlus] = useState<string[]>(() => {
@@ -53,19 +61,96 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
       : [];
   });
 
-  const recentPurchasesPlus = isDemoMode()
-    ? [
-        'PLU-SOURDOUGH-01',
-        'PLU-COLDPRESS-ORANGE',
-        'PLU-ORGANIC-MILK-2L',
-        'PLU-ART-001',
-      ]
-    : [];
+  useEffect(() => {
+    return onAuthStateChanged(auth, (user) => setCurrentUser(user));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGuestState = () => {
+      try {
+        const saved = localStorage.getItem('dl_guest_favourites');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setFavouritePlus(parsed.filter((value) => typeof value === 'string'));
+        } else if (!isDemoMode()) {
+          setFavouritePlus([]);
+        }
+      } catch {
+        if (!isDemoMode()) setFavouritePlus([]);
+      }
+
+      if (!isDemoMode()) setBuyAgainPlus([]);
+    };
+
+    if (!currentUser) {
+      loadGuestState();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadSignedInState = async () => {
+      setValidationError(null);
+      try {
+        const token = await currentUser.getIdToken();
+        const favouritesResponse = await fetch('/api/v1/account/favourites', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!favouritesResponse.ok) {
+          throw new Error(`Favourites request failed with ${favouritesResponse.status}`);
+        }
+
+        const [{ favouritePlus: savedFavouritePlus = [] }, orders] = await Promise.all([
+          favouritesResponse.json() as Promise<{ favouritePlus?: string[] }>,
+          getCommerceClient(tenant?.tenantId).getOrderHistory(),
+        ]);
+
+        if (cancelled) return;
+
+        setFavouritePlus(
+          Array.isArray(savedFavouritePlus)
+            ? savedFavouritePlus.filter((value): value is string => typeof value === 'string')
+            : []
+        );
+
+        const recentPlus = Array.from(
+          new Set(
+            [...orders]
+              .sort(
+                (a, b) =>
+                  new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              )
+              .flatMap((order) => {
+                if (order.picking?.items?.length) {
+                  return order.picking.items.map((item) => item.plu);
+                }
+                return (order.items || []).map((item) => item.plu);
+              })
+              .filter((plu): plu is string => typeof plu === 'string' && Boolean(plu))
+          )
+        ).slice(0, 50);
+        setBuyAgainPlus(recentPlus);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('Could not load signed-in customer account state:', err);
+          setValidationError('Could not refresh your saved items right now. Try again.');
+        }
+      }
+    };
+
+    void loadSignedInState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, tenant?.tenantId]);
 
   const currentPluList =
     activeSubTab === 'favourites'
       ? favouritePlus
-      : recentPurchasesPlus;
+      : buyAgainPlus;
 
   const displayedProducts = products.filter((p) => currentPluList.includes(p.plu));
 
@@ -76,36 +161,80 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
     setRevalidatingPlu(product.plu);
     setValidationError(null);
 
-    // Simulate authoritative BFF re-validation
-    await new Promise((r) => setTimeout(r, 450));
+    try {
+      // Refresh the product through the Commerce BFF before re-ordering so the
+      // add action uses current store price/availability rather than a timed
+      // simulation or stale account-page product snapshot.
+      const { product: liveProduct } = await getCommerceClient(tenant?.tenantId).getProduct(
+        product.plu,
+        currentStoreId
+      );
 
-    // 1. Validate active status & stock
-    if (product.active === false || product.stockStatus === 'OUT_OF_STOCK') {
-      setValidationError(`${product?.name || 'Product'} is currently out of stock at this store.`);
+      if (liveProduct.active === false || liveProduct.stockStatus === 'OUT_OF_STOCK') {
+        setValidationError(`${liveProduct?.name || 'Product'} is currently out of stock at this store.`);
+        return;
+      }
+
+      onAddToCart(liveProduct, 1);
+      setJustAddedPlu(liveProduct.plu);
+
+      defaultAnalyticsClient.track({
+        type: 'ADD_TO_BASKET',
+        productPlu: liveProduct.plu,
+        storeId: currentStoreId,
+        properties: { source: activeSubTab },
+      });
+
+      setTimeout(() => setJustAddedPlu(null), 2000);
+    } catch (err) {
+      console.warn('Could not revalidate product before re-ordering:', err);
+      setValidationError('Could not refresh this product right now. Try again.');
+    } finally {
       setRevalidatingPlu(null);
+    }
+  };
+
+  const toggleFavourite = async (plu: string) => {
+    const previous = favouritePlus;
+    const next = previous.includes(plu)
+      ? previous.filter((candidate) => candidate !== plu)
+      : [...previous, plu];
+
+    setFavouritePlus(next);
+    setValidationError(null);
+
+    if (!currentUser) {
+      try {
+        localStorage.setItem('dl_guest_favourites', JSON.stringify(next));
+      } catch {
+        // Guest favourites remain in memory if browser storage is unavailable.
+      }
       return;
     }
 
-    // 2. Add to basket authoritatively
-    onAddToCart(product, 1);
-    setJustAddedPlu(product.plu);
-    setRevalidatingPlu(null);
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/v1/account/favourites', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ favouritePlus: next }),
+      });
+      if (!response.ok) {
+        throw new Error(`Favourites save failed with ${response.status}`);
+      }
 
-    // Emit de-identified analytics event
-    defaultAnalyticsClient.track({
-      type: 'ADD_TO_BASKET',
-      productPlu: product.plu,
-      storeId: currentStoreId,
-      properties: { source: activeSubTab },
-    });
-
-    setTimeout(() => setJustAddedPlu(null), 2000);
-  };
-
-  const toggleFavourite = (plu: string) => {
-    setFavouritePlus((prev) =>
-      prev.includes(plu) ? prev.filter((p) => p !== plu) : [...prev, plu]
-    );
+      const saved = (await response.json()) as { favouritePlus?: string[] };
+      if (Array.isArray(saved.favouritePlus)) {
+        setFavouritePlus(saved.favouritePlus);
+      }
+    } catch (err) {
+      console.warn('Could not save favourite:', err);
+      setFavouritePlus(previous);
+      setValidationError('Your favourite was not saved. Try again.');
+    }
   };
 
   return (

@@ -32,6 +32,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
+import { CustomerAccountService } from '../customerAccountService';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
@@ -83,6 +84,7 @@ import {
   AddBasketBundleSchema,
   UpdateBasketItemSubstitutionSchema,
   UpdateBasketCustomerSchema,
+  CustomerFavouritesSchema,
   UpdateBasketFulfillmentSchema,
   UpdateBasketStoreSchema,
   UpdateBasketDiscountsSchema,
@@ -2745,6 +2747,57 @@ function mapOrderProjectionToOrder(proj: OrderProjection, tenant?: { currency?: 
     } : undefined,
   };
 }
+
+/**
+ * Customer account favourites.
+ *
+ * The active storefront host resolves the tenant; the Firebase ID token
+ * resolves the customer. Neither tenant nor customer identity is accepted
+ * from the request body, keeping the persistence boundary tenant-safe.
+ */
+v1Router.get('/account/favourites', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const customerUid = await getCallerUid(req);
+    if (!customerUid) {
+      return res.status(401).json({
+        error: 'Sign in to view your favourites.',
+        code: 'AUTH_REQUIRED',
+      });
+    }
+
+    const profile = await CustomerAccountService.getProfile(tenantId, customerUid);
+    res.json({ favouritePlus: profile.favouritePlus });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve customer favourites');
+  }
+});
+
+v1Router.put(
+  '/account/favourites',
+  validateBody(CustomerFavouritesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const customerUid = await getCallerUid(req);
+      if (!customerUid) {
+        return res.status(401).json({
+          error: 'Sign in to save your favourites.',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+
+      const profile = await CustomerAccountService.saveFavourites(
+        tenantId,
+        customerUid,
+        req.body.favouritePlus
+      );
+      res.json({ favouritePlus: profile.favouritePlus, updatedAt: profile.updatedAt });
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to save customer favourites');
+    }
+  }
+);
 
 /**
  * Customer's own order history — the frontend's OrdersScreen ("Orders"
