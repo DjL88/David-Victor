@@ -45,6 +45,7 @@ import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { validateBody } from './validation';
 import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
+import { AdminAssistantChatService } from '../admin/adminAssistantChatService';
 import { AdminChangeSetService } from '../admin/adminChangeSetService';
 import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
 
@@ -97,6 +98,7 @@ import {
   AssetUploadSchema,
   AssetUploadUrlSchema,
   AssetFinalizeSchema,
+  AdminAssistantChatSchema,
   AdminAssistantPlanSchema,
   AdminAssistantExecuteSchema,
   AdminAssistantChangeSetSchema,
@@ -2834,6 +2836,46 @@ v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
     user: userWithId,
   });
 });
+
+// 9.0.0 Conversational assistant.
+// Conversation has no direct tool, credential, Firestore or arbitrary network access.
+// Operational actions continue to use the separate typed Action Registry / ChangeSet endpoints.
+v1Router.post(
+  '/admin/assistant/chat',
+  requireAdminAuth(),
+  requireAdminCapability('assistant.use'),
+  validateBody(AdminAssistantChatSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
+      const response = await AdminAssistantChatService.chat({
+        tenantId,
+        actorRole: authAdmin.role,
+        actorName: authAdmin.name || authAdmin.email,
+        message: req.body.message,
+        history: req.body.history,
+        context: req.body.context,
+      });
+
+      res.json({
+        ...response,
+        mode: 'CONVERSATION',
+        safety: {
+          tenantBoundByServer: true,
+          directWriteAccess: false,
+          credentialsExposed: false,
+          autonomousExecutionEnabled: false,
+        },
+      });
+    } catch (err: any) {
+      res.status(err?.statusCode || 503).json({
+        error: err?.message || 'Admin AI could not answer right now.',
+        code: err?.code || 'ADMIN_ASSISTANT_CHAT_FAILED',
+      });
+    }
+  }
+);
 
 // 9.0.0 Assistant capability discovery
 // This endpoint intentionally exposes metadata only. It does not execute actions.
