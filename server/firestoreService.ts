@@ -2804,6 +2804,40 @@ export class FirestoreService {
   }
 
   /**
+   * Releases a webhook idempotency claim after processing fails so a provider
+   * retry (or replay tool) can safely attempt the same external event again.
+   * The claim is removed only when it still belongs to this webhookEventId.
+   */
+  static async releaseWebhookIdempotency(
+    provider: string,
+    externalEventKey: string,
+    webhookEventId: string
+  ): Promise<void> {
+    const claimKey = `${provider}_${externalEventKey}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (inMemoryWebhookClaims[claimKey] === webhookEventId) {
+      delete inMemoryWebhookClaims[claimKey];
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return;
+
+    try {
+      const claimRef = db.collection('webhookIdempotency').doc(claimKey);
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(claimRef);
+        if (!doc.exists) return;
+        const data = doc.data();
+        if (data?.webhookEventId === webhookEventId) {
+          tx.delete(claimRef);
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore Admin] Failed to release webhook idempotency claim:', err);
+    }
+  }
+
+  /**
    * Updates processing status of a journaled webhook event.
    */
   static async updateWebhookEventStatus(
