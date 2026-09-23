@@ -2045,7 +2045,12 @@ export class FirestoreService {
   /**
    * Saves a GDPR-safe order projection in Firestore for customer status tracking.
    */
-  static async saveOrderProjection(rawOrderInput: Order | any, tenantId: string = 'brand-alpha', checkoutId?: string): Promise<OrderProjection> {
+  static async saveOrderProjection(
+    rawOrderInput: Order | any,
+    tenantId: string = 'brand-alpha',
+    checkoutId?: string,
+    customerUid?: string
+  ): Promise<OrderProjection> {
     const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
     const checkoutProjection = checkoutId ? await this.getCheckoutProjection(checkoutId) : null;
@@ -2202,6 +2207,7 @@ export class FirestoreService {
     const projection: OrderProjection = {
       orderId: resolvedOrderId,
       tenantId,
+      customerUid: customerUid || (rawOrderInput as any)?.customerUid || undefined,
       status: order.status,
       itemsCount: order.currentOrder?.itemCount || order.originalBasket?.items?.length || (order as any).itemsCount || 0,
       total: order.currentOrder ? order.currentOrder.total.amount : (order.originalBasket?.total?.amount ?? (order as any).total ?? 0),
@@ -2720,6 +2726,46 @@ export class FirestoreService {
       console.warn('[Firestore Admin] Could not query order by orderReference:', err);
     }
     return null;
+  }
+
+  static async attachCustomerUidToOrderProjection(
+    orderId: string,
+    tenantId: string,
+    customerUid: string
+  ): Promise<OrderProjection | null> {
+    const cleanOrderId = String(orderId || '').trim();
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanCustomerUid = String(customerUid || '').trim();
+    if (!cleanOrderId || !cleanTenantId || !cleanCustomerUid) return null;
+
+    const existing = await this.getOrderProjection(cleanOrderId);
+    if (!existing || existing.tenantId !== cleanTenantId) return null;
+
+    if (existing.customerUid && existing.customerUid !== cleanCustomerUid) {
+      throw new BFFError(
+        'ORDER_CUSTOMER_MISMATCH',
+        'This order is already linked to a different customer identity.',
+        409
+      );
+    }
+
+    const updated: OrderProjection = {
+      ...existing,
+      customerUid: cleanCustomerUid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    inMemoryOrderProjections[cleanOrderId] = updated;
+
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection('orderProjections').doc(cleanOrderId).set(
+        { customerUid: cleanCustomerUid, updatedAt: updated.updatedAt },
+        { merge: true }
+      );
+    }
+
+    return updated;
   }
 
   /**
