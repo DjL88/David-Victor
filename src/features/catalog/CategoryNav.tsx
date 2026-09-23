@@ -68,9 +68,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const { t } = useI18n();
   const anchorRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
-  const [dockMode, setDockMode] = useState<'normal' | 'top' | 'bottom'>('normal');
+  const [dockMode, setDockMode] = useState<'normal' | 'top'>('normal');
   const [navHeight, setNavHeight] = useState(0);
-  const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => {
     let frame = 0;
@@ -88,34 +87,19 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
           document.documentElement.style.setProperty('--category-nav-height', `${measuredHeight}px`);
         }
 
-        const mobileNav = document.getElementById('mobile-bottom-nav');
-        const mobileNavHeight = Math.ceil(mobileNav?.getBoundingClientRect().height || 64);
-        document.documentElement.style.setProperty('--mobile-bottom-nav-height', `${mobileNavHeight}px`);
-
         if (window.innerWidth >= 768) {
           setDockMode('normal');
           return;
         }
 
-        if (searchFocused) {
-          setDockMode('top');
-          return;
-        }
-
         const header = document.getElementById('sticky-header-container');
         const headerBottom = header?.getBoundingClientRect().bottom || 0;
-        const viewport = window.visualViewport;
-        const visibleBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight);
-        const bottomThreshold = visibleBottom - mobileNavHeight - 8;
         const rect = anchor.getBoundingClientRect();
 
-        if (rect.top <= headerBottom + 4) {
-          setDockMode('top');
-        } else if (rect.bottom >= bottomThreshold) {
-          setDockMode('bottom');
-        } else {
-          setDockMode('normal');
-        }
+        // Mobile filters now have one simple behaviour:
+        // stay in normal document flow until they naturally reach the header,
+        // then dock beneath it. Scrolling back up releases them immediately.
+        setDockMode(rect.top <= headerBottom + 4 ? 'top' : 'normal');
       });
     };
 
@@ -136,7 +120,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       window.visualViewport?.removeEventListener('resize', updateDocking);
       window.visualViewport?.removeEventListener('scroll', updateDocking);
     };
-  }, [searchFocused]);
+  }, []);
 
   const selectCategoryWithIntent = (categoryId: string | null) => {
     onSelectCategory(categoryId);
@@ -224,16 +208,12 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const dockClass =
     dockMode === 'top'
       ? 'fixed left-0 right-0 z-[35] shadow-md'
-      : dockMode === 'bottom'
-        ? 'fixed left-0 right-0 z-[35] shadow-[0_-4px_16px_rgba(15,23,42,0.10)]'
-        : 'relative md:sticky md:top-[54px] z-30 shadow-xs';
+      : 'relative md:sticky md:top-[54px] z-30 shadow-xs';
 
   const dockStyle: React.CSSProperties | undefined =
     dockMode === 'top'
       ? { top: 'var(--storefront-header-height, 104px)' }
-      : dockMode === 'bottom'
-        ? { bottom: 'var(--mobile-bottom-nav-height, 64px)' }
-        : undefined;
+      : undefined;
 
   return (
     <div
@@ -367,10 +347,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               onFocus={() => {
-                setSearchFocused(true);
                 onProductIntent?.();
               }}
-              onBlur={() => setSearchFocused(false)}
               placeholder={t('aisles.productsSearchPlaceholder')}
               className="w-full pl-8 pr-7 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
             />
