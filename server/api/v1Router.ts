@@ -559,6 +559,8 @@ v1Router.get('/bootstrap', async (req: Request, res: Response) => {
       defaultLocale: tenant.locale || 'en-GB',
     };
 
+    const searchConfig = await FirestorePlatformService.getTenantSearchConfig(tenantId);
+
     return sendConditionalJson(
       req,
       res,
@@ -574,6 +576,7 @@ v1Router.get('/bootstrap', async (req: Request, res: Response) => {
           borderRadius: tenant.borderRadius,
         },
         storeConfig,
+        searchConfig,
       },
       'public, max-age=30, stale-while-revalidate=120'
     );
