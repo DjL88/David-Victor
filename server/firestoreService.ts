@@ -43,6 +43,8 @@ const inMemoryHeroBanners: Record<string, CategoryPromoBanner[]> = {};
 const inMemoryHeroBannersPurged: Record<string, boolean> = {};
 const inMemoryStoreOperationalStates: Record<string, Record<string, StoreOperationalState>> = {};
 const inMemoryStoreSnoozes: Record<string, Record<string, Record<string, StoreProductSnoozeState>>> = {};
+const inMemoryStoreProductOperationalStates: Record<string, Record<string, Record<string, StoreProductOperationalState>>> = {};
+const inMemoryTenantStores: Record<string, Record<string, any>> = {};
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -83,6 +85,26 @@ export interface StoreProductSnoozeState {
   tenantId: string;
   channelLinkId: string;
   plu: string;
+  snoozed: boolean;
+  snoozeStart?: string;
+  snoozeEnd?: string;
+  updatedAt: string;
+  source: 'DELIVERECT_WEBHOOK';
+}
+
+/**
+ * Independent PLU x store operational state.
+ *
+ * This record intentionally does not depend on a catalogue product existing yet.
+ * Deliverect can snooze/unsnooze a PLU before a menu push arrives; when that PLU
+ * later appears in the hosted catalogue, the stored state can be applied without
+ * losing the earlier operational event.
+ */
+export interface StoreProductOperationalState {
+  tenantId: string;
+  channelLinkId: string;
+  plu: string;
+  availability: 'ACTIVE' | 'SNOOZED';
   snoozed: boolean;
   snoozeStart?: string;
   snoozeEnd?: string;
@@ -937,18 +959,32 @@ export class FirestoreService {
    * Generates default domains, integration in UNCONFIGURED state, RBAC membership, fee & scheduling policies, and audit logs.
    */
   static async createTenant(newTenant: Partial<TenantConfig> & { initialAdminEmail?: string; adminEmail?: string; domain?: string }): Promise<TenantConfig> {
-    const tenantId = newTenant.tenantId || `brand-${Date.now().toString(36)}`;
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
+    const tenantId = String(newTenant.tenantId || `brand-${Date.now().toString(36)}`).trim();
+    if (!tenantId) throw BFFError.invalidInput('tenantId is required.');
+
+    const domainName = String(
+      newTenant.domain ||
+      newTenant.defaultDomain ||
+      `${tenantId}.marketlane.app`
+    ).trim().toLowerCase();
+    const isPlatformSubdomain = domainName.endsWith('.marketlane.app');
+    const now = new Date().toISOString();
+
     const fullTenant: TenantConfig = {
       tenantId,
       brandName: newTenant.brandName || (isDemoMode() ? 'New Artisan Brand' : tenantId),
       tagline: newTenant.tagline || (isDemoMode() ? 'Fresh essentials delivered in minutes' : ''),
       logoUrl: newTenant.logoUrl || '',
       iconUrl: newTenant.iconUrl || '',
+      status: isDemoMode() ? 'active' : 'draft',
+      defaultDomain: domainName,
       primaryColour: newTenant.primaryColour || '#059669',
       secondaryColour: newTenant.secondaryColour || '#f59e0b',
       backgroundColour: newTenant.backgroundColour || '#f8fafc',
       textColour: newTenant.textColour || '#0f172a',
       fontFamily: newTenant.fontFamily || "'Plus Jakarta Sans', system-ui, sans-serif",
+      headingFontFamily: newTenant.headingFontFamily,
       borderRadius: newTenant.borderRadius || '16px',
       country: newTenant.country || 'GB',
       currency: newTenant.currency || 'GBP',
@@ -975,26 +1011,33 @@ export class FirestoreService {
       },
     };
 
-    inMemoryTenants[tenantId] = fullTenant;
-    savePersistedTenants(inMemoryTenants);
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) {
+      if (!fallbackAllowed) {
+        const permission = getFirestorePermissionStatus();
+        throw new BFFError(
+          permission.denied ? 'DATABASE_PERMISSION_DENIED' : 'DATABASE_UNAVAILABLE',
+          permission.denied
+            ? 'Brand provisioning cannot continue because Firestore access is denied for this runtime.'
+            : 'Brand provisioning cannot continue because durable Firestore storage is unavailable.',
+          503,
+          true,
+          permission.denied ? { retryInMs: permission.retryInMs } : undefined
+        );
+      }
 
-    const domainName = newTenant.domain || `${tenantId}.marketlane.app`;
-    const isPlatformSubdomain = domainName.endsWith('.marketlane.app');
-    try {
+      if (inMemoryTenants[tenantId]) {
+        throw new BFFError('TENANT_ALREADY_EXISTS', `Tenant "${tenantId}" already exists.`, 409);
+      }
+
+      inMemoryTenants[tenantId] = fullTenant;
+      savePersistedTenants(inMemoryTenants);
       await FirestoreService.addOrUpdateDomain({
         hostname: domainName,
         tenantId,
         isPrimary: true,
         status: isPlatformSubdomain ? 'active' : 'pending',
       });
-    } catch (dErr) {
-      console.warn('[FirestoreService] Could not auto-register domain for new tenant:', dErr);
-    }
-
-    const db = getFirestoreDb();
-    if (!db || isFirestorePermissionDenied()) {
-      console.info(`[Firestore Admin] Running in standalone/fallback mode; created tenant ${tenantId} and registered domain ${domainName}`);
-      savePersistedTenants(inMemoryTenants);
       await FirestorePlatformService.addAuditLog(tenantId, {
         userId: 'system-provisioner',
         userName: 'Platform Super Admin',
@@ -1010,19 +1053,35 @@ export class FirestoreService {
     const domainSlug = domainName.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
 
     try {
-      const now = new Date().toISOString();
+      const tenantRef = db.collection('tenants').doc(tenantId);
+      const existingTenant = await tenantRef.get();
+      if (existingTenant.exists) {
+        throw new BFFError('TENANT_ALREADY_EXISTS', `Tenant "${tenantId}" already exists.`, 409);
+      }
+
+      const topDomainRef = db.collection('domains').doc(domainSlug);
+      const existingDomain = await topDomainRef.get();
+      if (existingDomain.exists) {
+        const owner = String(existingDomain.data()?.tenantId || '');
+        if (owner && owner !== tenantId) {
+          throw new BFFError(
+            'DOMAIN_ALREADY_CLAIMED',
+            `Domain "${domainName}" is already assigned to another tenant.`,
+            409
+          );
+        }
+      }
+
       const batch = db.batch();
 
       // 1. Primary Tenant Branding Document
-      const tenantRef = db.collection('tenants').doc(tenantId);
       batch.set(tenantRef, {
         ...fullTenant,
-        status: isDemoMode() ? 'active' : 'draft',
         createdAt: now,
         updatedAt: now,
       });
 
-      // 2. Integration & Channel Mapping (UNCONFIGURED status per Phase 4 baseline)
+      // 2. Integration & Channel Mapping
       const integrationRef = db.collection('integrations').doc(tenantId);
       batch.set(integrationRef, {
         integrationId: `int_${tenantId}`,
@@ -1030,6 +1089,7 @@ export class FirestoreService {
         credentialMode: 'platform',
         credentialsConfigured: false,
         deliverectAccountId: '',
+        allowedChannelLinkIds: [],
         environment: 'staging',
         status: 'UNCONFIGURED',
         connectionState: 'DISCONNECTED',
@@ -1040,9 +1100,7 @@ export class FirestoreService {
         updatedAt: now,
       });
 
-      // 3. Subdomain and Domain Routing
-      // Top-level domains collection
-      const topDomainRef = db.collection('domains').doc(domainSlug);
+      // 3. Domain Routing
       batch.set(topDomainRef, {
         domainId: domainSlug,
         hostname: domainName,
@@ -1054,10 +1112,10 @@ export class FirestoreService {
         updatedAt: now,
       });
 
-      // Subcollection inside tenant
-      const domainRef = db.collection('tenants').doc(tenantId).collection('domains').doc('default');
+      const domainRef = tenantRef.collection('domains').doc('default');
       batch.set(domainRef, {
         domain: domainName,
+        hostname: domainName,
         tenantId,
         isPrimary: true,
         isVerified: isPlatformSubdomain,
@@ -1082,9 +1140,9 @@ export class FirestoreService {
         });
       }
 
-      // 5. Default Fee Policy (clean unconfigured state, no Brand Alpha mock inheritance)
-      const feePolicyRef = db.collection('tenants').doc(tenantId).collection('feePolicies').doc('default');
-      const defaultFeePolicy = {
+      // 5. Default Fee Policy
+      const feePolicyRef = tenantRef.collection('feePolicies').doc('default');
+      batch.set(feePolicyRef, {
         tenantId,
         status: 'UNCONFIGURED',
         deliveryFeeMode: 'DISPATCH_COST',
@@ -1094,15 +1152,10 @@ export class FirestoreService {
         serviceFeeEnabled: false,
         smallOrderFeeEnabled: false,
         updatedAt: now,
-      };
-      batch.set(feePolicyRef, {
-        ...defaultFeePolicy,
-        tenantId,
-        updatedAt: now,
       });
 
       // 6. Default Scheduling Policy
-      const schedulingPolicyRef = db.collection('tenants').doc(tenantId).collection('schedulingPolicies').doc('default');
+      const schedulingPolicyRef = tenantRef.collection('schedulingPolicies').doc('default');
       batch.set(schedulingPolicyRef, {
         tenantId,
         allowAsap: true,
@@ -1114,7 +1167,7 @@ export class FirestoreService {
         updatedAt: now,
       });
 
-      // 7. Feature Flags (top-level collection)
+      // 7. Feature Flags
       const featureFlagsRef = db.collection('featureFlags').doc(tenantId);
       batch.set(featureFlagsRef, {
         tenantId,
@@ -1122,41 +1175,46 @@ export class FirestoreService {
         updatedAt: now,
       });
 
-      // Commit entire provisioning state atomically
       await batch.commit();
+      this.cacheTenantConfigSnapshot(tenantId, fullTenant);
       console.log(`[Firestore Admin] Successfully provisioned new tenant atomically: ${tenantId}`);
 
-      // Record audit log
-      await FirestorePlatformService.addAuditLog(tenantId, {
-        userId: 'system-provisioner',
-        userName: 'Platform Super Admin',
-        userRole: 'platformSuperAdmin',
-        tenantId,
-        category: 'Tenant',
-        action: 'PROVISION_TENANT',
-        details: `Provisioned new tenant: ${tenantId} (${fullTenant.brandName}) with default domain ${domainName}`,
-      });
+      // Audit failure must never make a successfully committed tenant look failed.
+      try {
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: 'system-provisioner',
+          userName: 'Platform Super Admin',
+          userRole: 'platformSuperAdmin',
+          tenantId,
+          category: 'Tenant',
+          action: 'PROVISION_TENANT',
+          details: `Provisioned new tenant: ${tenantId} (${fullTenant.brandName}) with default domain ${domainName}`,
+        });
+      } catch (auditErr: any) {
+        console.warn(`[Firestore Admin] Tenant ${tenantId} committed but provisioning audit write failed:`, auditErr?.message || auditErr);
+      }
+
+      return fullTenant;
     } catch (err: any) {
+      if (err instanceof BFFError) throw err;
       if (isFirestorePermissionDeniedError(err)) {
         markFirestorePermissionDenied(err);
-      } else {
-        handleFirestoreError(err, OperationType.CREATE, `tenants/${tenantId}`);
+        const permission = getFirestorePermissionStatus();
+        throw new BFFError(
+          'DATABASE_PERMISSION_DENIED',
+          'Brand provisioning failed because Firestore rejected the control-plane write.',
+          503,
+          true,
+          { retryInMs: permission.retryInMs }
+        );
       }
-      console.warn(`[Firestore Admin] Batch commit fallback for ${tenantId} (${err.message})`);
-      savePersistedTenants(inMemoryTenants);
-      await FirestorePlatformService.addAuditLog(tenantId, {
-        userId: 'system-provisioner',
-        userName: 'Platform Super Admin',
-        userRole: 'platformSuperAdmin',
-        tenantId,
-        category: 'Tenant',
-        action: 'PROVISION_TENANT',
-        details: `Provisioned new tenant: ${tenantId} (${fullTenant.brandName}) with default domain ${domainName}`,
-      });
-      return fullTenant;
+      handleFirestoreError(err, OperationType.CREATE, `tenants/${tenantId}`);
+      throw new BFFError(
+        'PROVISIONING_FAILED',
+        `Brand provisioning failed before the tenant was committed: ${err?.message || 'Unknown Firestore error'}`,
+        500
+      );
     }
-
-    return fullTenant;
   }
 
   /**
@@ -3274,6 +3332,91 @@ export class FirestoreService {
     }
   }
 
+  static async upsertStoreProductOperationalState(
+    tenantId: string,
+    channelLinkId: string,
+    update: Omit<StoreProductOperationalState, 'tenantId' | 'channelLinkId' | 'updatedAt' | 'source' | 'snoozed'> & Partial<Pick<StoreProductOperationalState, 'updatedAt' | 'source'>>
+  ): Promise<StoreProductOperationalState> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const plu = String(update?.plu || '').trim();
+    if (!cleanTenantId || !cleanChannelLinkId || !plu) {
+      throw BFFError.invalidInput('tenantId, channelLinkId and plu are required for product operational state.');
+    }
+
+    const state: StoreProductOperationalState = {
+      tenantId: cleanTenantId,
+      channelLinkId: cleanChannelLinkId,
+      plu,
+      availability: update.availability,
+      snoozed: update.availability === 'SNOOZED',
+      snoozeStart: update.snoozeStart,
+      snoozeEnd: update.snoozeEnd,
+      updatedAt: update.updatedAt || new Date().toISOString(),
+      source: 'DELIVERECT_WEBHOOK',
+    };
+
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId] = {};
+    }
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
+    }
+    inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][plu] = state;
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db
+          .collection('tenants')
+          .doc(cleanTenantId)
+          .collection('operationalStores')
+          .doc(cleanChannelLinkId)
+          .collection('productState')
+          .doc(plu.replace(/\//g, '_'))
+          .set(cleanUndefined(state), { merge: true });
+      } catch (err: any) {
+        if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+        throw err;
+      }
+    }
+
+    return state;
+  }
+
+  static async getStoreProductOperationalStates(
+    tenantId: string,
+    channelLinkId: string
+  ): Promise<Record<string, StoreProductOperationalState>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const fallback = {
+      ...(inMemoryStoreProductOperationalStates[cleanTenantId]?.[cleanChannelLinkId] || {}),
+    };
+
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) return fallback;
+
+    try {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('operationalStores')
+        .doc(cleanChannelLinkId)
+        .collection('productState')
+        .get();
+      const result: Record<string, StoreProductOperationalState> = { ...fallback };
+      snap.forEach((doc: any) => {
+        const data = doc.data() as StoreProductOperationalState;
+        if (data?.plu) result[data.plu] = data;
+      });
+      return result;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      return fallback;
+    }
+  }
+
   static async replaceStoreProductSnoozes(
     tenantId: string,
     channelLinkId: string,
@@ -3301,6 +3444,31 @@ export class FirestoreService {
       };
     }
     inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
+
+    // Maintain an independent PLU x status ledger even when the PLU is not
+    // present in the current catalogue. This lets out-of-order snooze events
+    // survive until a later menu push introduces the product.
+    const previousOperational = await this.getStoreProductOperationalStates(
+      cleanTenantId,
+      cleanChannelLinkId
+    );
+    for (const state of Object.values(next)) {
+      await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
+        plu: state.plu,
+        availability: 'SNOOZED',
+        snoozeStart: state.snoozeStart,
+        snoozeEnd: state.snoozeEnd,
+        updatedAt: state.updatedAt,
+      });
+    }
+    for (const [plu, state] of Object.entries(previousOperational)) {
+      if (state.availability === 'SNOOZED' && !next[plu]) {
+        await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
+          plu,
+          availability: 'ACTIVE',
+        });
+      }
+    }
 
     const db = getFirestoreDb();
     if (!db) return;
@@ -3559,6 +3727,7 @@ export class FirestoreService {
   }
 
   static async getTenantStores(tenantId: string = 'brand-alpha'): Promise<any[]> {
+    const memoryStores = Object.values(inMemoryTenantStores[tenantId] || {});
     const db = getFirestoreDb();
     if (db) {
       try {
@@ -3568,11 +3737,14 @@ export class FirestoreService {
           const stores: any[] = [];
           snap.forEach((doc: any) => {
             const data = doc.data();
-            stores.push({
+            const normalized = {
               ...data,
               id: data.channelLinkId || data.commerceStoreId || doc.id,
               channelLinkId: data.channelLinkId || doc.id,
-            });
+            };
+            stores.push(normalized);
+            if (!inMemoryTenantStores[tenantId]) inMemoryTenantStores[tenantId] = {};
+            inMemoryTenantStores[tenantId][normalized.channelLinkId] = normalized;
           });
           return stores;
         }
@@ -3583,11 +3755,12 @@ export class FirestoreService {
           const stores: any[] = [];
           legacySnap.forEach((doc: any) => {
             const data = doc.data();
-            stores.push({
+            const normalized = {
               ...data,
               id: data.channelLinkId || data.commerceStoreId || doc.id,
               channelLinkId: data.channelLinkId || doc.id,
-            });
+            };
+            stores.push(normalized);
           });
           return stores;
         }
@@ -3595,35 +3768,118 @@ export class FirestoreService {
         console.warn('[Firestore Admin] Failed to query commerceStores from Firestore:', err);
       }
     }
-    // Return empty array for unconfigured/unmapped stores - no mock fallback in live/production
-    return [];
+    return memoryStores;
   }
 
   static async saveTenantStore(tenantId: string, store: any): Promise<any> {
-    const channelLinkId = store.channelLinkId || store.id || store.commerceStoreId;
+    const channelLinkId = String(store.channelLinkId || store.id || store.commerceStoreId || '').trim();
     if (!channelLinkId) {
       throw new Error('Cannot save commerceStore without channelLinkId or store id');
     }
+    const existing = inMemoryTenantStores[tenantId]?.[channelLinkId] || {};
     const item = {
+      ...existing,
       ...store,
+      id: channelLinkId,
       tenantId,
       channelLinkId,
       updatedAt: new Date().toISOString(),
     };
+    if (!inMemoryTenantStores[tenantId]) inMemoryTenantStores[tenantId] = {};
+    inMemoryTenantStores[tenantId][channelLinkId] = item;
+
     const db = getFirestoreDb();
-    if (!db && !isDemoMode()) {
+    if (!db && !isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test') {
       throw new Error('Location changes were not saved: durable storage is unavailable.');
     }
     if (db) {
       try {
         // Unified location: tenants/{tenantId}/commerceStores/{channelLinkId}
-        await db.collection('tenants').doc(tenantId).collection('commerceStores').doc(channelLinkId).set(item, { merge: true });
+        await db.collection('tenants').doc(tenantId).collection('commerceStores').doc(channelLinkId).set(cleanUndefined(item), { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save commerceStore to Firestore:', err);
-        if (!isDemoMode()) throw new Error('Location changes were not saved: Firestore rejected the write. Check runtime storage access.');
+        if (!isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test') {
+          throw new Error('Location changes were not saved: Firestore rejected the write. Check runtime storage access.');
+        }
       }
     }
     return item;
+  }
+
+  static async markTenantStoreOrphaned(
+    tenantId: string,
+    channelLinkId: string,
+    reason: string = 'UPSTREAM_CHANNEL_LINK_MISSING'
+  ): Promise<any> {
+    const cleanId = String(channelLinkId || '').trim();
+    if (!cleanId) throw BFFError.invalidInput('channelLinkId is required to orphan a location.');
+
+    const existing = (await this.getTenantStores(tenantId))
+      .find((store: any) => String(store.channelLinkId || store.id) === cleanId);
+
+    const now = new Date().toISOString();
+    return this.saveTenantStore(tenantId, {
+      ...(existing || {}),
+      id: cleanId,
+      channelLinkId: cleanId,
+      lifecycleStatus: 'ORPHANED',
+      status: 'INACTIVE',
+      stateProjection: 'closed',
+      assigned: false,
+      orphanedAt: existing?.orphanedAt || now,
+      orphanReason: reason,
+      lastSeenAt: existing?.lastSeenAt,
+    });
+  }
+
+  static async deleteTenantStore(tenantId: string, channelLinkId: string): Promise<boolean> {
+    const cleanId = String(channelLinkId || '').trim();
+    if (!cleanId) throw BFFError.invalidInput('channelLinkId is required to delete a location.');
+
+    if (inMemoryTenantStores[tenantId]) {
+      delete inMemoryTenantStores[tenantId][cleanId];
+    }
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test') return true;
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Location was not deleted because durable storage is unavailable.', 503);
+    }
+
+    const storeRef = db.collection('tenants').doc(tenantId).collection('commerceStores').doc(cleanId);
+    const operationalRef = db.collection('tenants').doc(tenantId).collection('operationalStores').doc(cleanId);
+    try {
+      for (const subcollection of ['snoozes', 'productState']) {
+        const snap = await operationalRef.collection(subcollection).get();
+        for (let offset = 0; offset < snap.docs.length; offset += 400) {
+          const batch = db.batch();
+          snap.docs.slice(offset, offset + 400).forEach((doc: any) => batch.delete(doc.ref));
+          await batch.commit();
+        }
+      }
+      const batch = db.batch();
+      batch.delete(storeRef);
+      batch.delete(operationalRef);
+      await batch.commit();
+
+      const integration = await this.getIntegrationConfig(tenantId);
+      if (integration && Array.isArray(integration.allowedChannelLinkIds)) {
+        const nextIds = integration.allowedChannelLinkIds
+          .map(String)
+          .filter((id) => id !== cleanId);
+        if (nextIds.length !== integration.allowedChannelLinkIds.length) {
+          await this.updateIntegrationConfig(tenantId, {
+            allowedChannelLinkIds: nextIds,
+            status: nextIds.length ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED',
+            lastSyncAt: new Date().toISOString(),
+          });
+        }
+      }
+      return true;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      throw err;
+    }
   }
 
   static async getTenantRules(tenantId: string = 'brand-alpha'): Promise<any[]> {

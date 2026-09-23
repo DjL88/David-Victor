@@ -30,6 +30,7 @@ import {
   type DeliverectOperationalWebhookType,
 } from '../deliverect/DeliverectOperationalWebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
+import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2767,6 +2768,74 @@ v1Router.post(
     void handleDeliverectOperationalWebhook(req, res, 'menu_update')
 );
 
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/prep_time',
+    '/webhooks/deliverect/:identifier/channel/prep-time',
+    '/webhooks/deliverect/channel/prep_time',
+    '/webhooks/deliverect/channel/prep-time',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'prep_time')
+);
+
+async function handleDeliverectChannelProvisioning(
+  req: Request,
+  res: Response,
+  type: ChannelProvisioningEventType
+): Promise<void> {
+  try {
+    const candidateTenantId = await resolveDeliverectWebhookTenant(req);
+    const rawBody =
+      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const signatureHeader =
+      (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+      (req.headers['x-deliverect-signature'] as string) ||
+      (req.headers['x-signature'] as string) ||
+      (req.headers['x-deliverect-hmac-sha256'] as string);
+
+    const { tenantId } = await WebhookService.resolveTenantForWebhook(
+      rawBody,
+      signatureHeader,
+      candidateTenantId
+    );
+
+    const result = await ChannelProvisioningService.process(
+      tenantId,
+      type,
+      req.body
+    );
+
+    res.status(result.quarantined ? 202 : 200).json(result);
+  } catch (err: any) {
+    const status = err.status || err.statusCode || 500;
+    const code = err.code || 'CHANNEL_PROVISIONING_ERROR';
+    console.error(
+      `[Deliverect Channel Provisioning Error] (${status} ${code}):`,
+      err.message
+    );
+    res.status(status).json({ error: err.message, code });
+  }
+}
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/provision',
+    '/webhooks/deliverect/channel/provision',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectChannelProvisioning(req, res, 'STORE_PROVISION')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/register',
+    '/webhooks/deliverect/channel/register',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectChannelProvisioning(req, res, 'CHANNEL_REGISTRATION')
+);
+
 /**
  * Deliverect Inbound Webhook Ingestion (WH-01, WH-02, WH-03)
  * Supports integration-specific routes (/webhooks/deliverect/:identifier) and global route with host/query resolution.
@@ -3930,23 +3999,23 @@ v1Router.get('/admin/tenants', requireAdminAuth('platformSuperAdmin'), async (_r
 v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validateBody(CreateTenantSchema), async (req: Request, res: Response) => {
   try {
     const newTenant = req.body;
-    let provisioned = await FirestorePlatformService.createTenant(newTenant);
-    if (newTenant.domain) {
-      provisioned = await FirestorePlatformService.updateTenantConfig(provisioned.tenantId, {
-        defaultDomain: newTenant.domain,
-      });
-    }
+    const provisioned = await FirestorePlatformService.createTenant(newTenant);
 
-    // Audit log
-    await FirestorePlatformService.addAuditLog(provisioned.tenantId, {
-      userId: (req as AuthenticatedRequest).adminUser?.uid || 'superadmin',
-      userName: (req as AuthenticatedRequest).adminUser?.name || 'Platform SuperAdmin',
-      userRole: 'platformSuperAdmin',
-      tenantId: provisioned.tenantId,
-      category: 'Branding',
-      action: 'PROVISION_TENANT',
-      details: `Provisioned new multi-tenant brand: ${provisioned.brandName} (${provisioned.tenantId})`,
-    });
+    // The tenant commit is authoritative. A secondary audit write must never
+    // turn a successfully-created brand into a misleading provisioning error.
+    try {
+      await FirestorePlatformService.addAuditLog(provisioned.tenantId, {
+        userId: (req as AuthenticatedRequest).adminUser?.uid || 'superadmin',
+        userName: (req as AuthenticatedRequest).adminUser?.name || 'Platform SuperAdmin',
+        userRole: 'platformSuperAdmin',
+        tenantId: provisioned.tenantId,
+        category: 'Branding',
+        action: 'PROVISION_TENANT_REQUEST',
+        details: `Provisioned new multi-tenant brand: ${provisioned.brandName} (${provisioned.tenantId})`,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Tenant Provisioning] Tenant committed but request audit failed:', auditErr?.message || auditErr);
+    }
 
     res.status(201).json({
       success: true,
@@ -4806,6 +4875,36 @@ v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), requireAd
     res.json(store || { id: storeId, ...updatedData });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+v1Router.delete('/admin/tenants/:id/stores/:storeId', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const storeId = req.params.storeId;
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+
+    await FirestorePlatformService.deleteTenantStore(tenantId, storeId);
+    IntegrationContext.invalidate(tenantId);
+    CommerceDiscoveryService.getInstance().clearCache();
+
+    await FirestorePlatformService.addAuditLog(tenantId, {
+      userId: authAdmin.uid,
+      userName: authAdmin.name || 'Platform SuperAdmin',
+      userRole: authAdmin.role,
+      tenantId,
+      category: 'Integration',
+      action: 'HARD_DELETE_LOCATION',
+      details: `Hard-deleted local location/channel projection "${storeId}". This does not delete the upstream Deliverect location.`,
+    });
+
+    res.json({ success: true, tenantId, storeId });
+  } catch (err: any) {
+    const status = err.statusCode || err.status || 500;
+    res.status(status).json({
+      error: err.message || 'Failed to hard-delete location.',
+      code: err.code || 'STORE_DELETE_FAILED',
+    });
   }
 });
 
@@ -5720,21 +5819,29 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       ? []
       : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
     
-    // Every requested channelLinkId must belong to the selected account
-    const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
-    if (invalidChannelLinkIds.length > 0) {
-      return res.status(400).json({
-        error: 'One or more channel links do not belong to the selected Deliverect account.',
-        code: 'INVALID_CHANNEL_ASSIGNMENT',
-        invalidChannelLinkIds,
-      });
+    // A previously assigned channel may legitimately disappear when it is deleted
+    // in Deliverect. Do not fail the whole account connection. Keep the record for
+    // history, mark it ORPHANED, and remove it from the tenant's active allowlist.
+    const orphanedChannelLinkIds = requestedChannelLinkIds.filter(
+      (id: string) => !availableChannelLinkIds.has(id)
+    );
+    const activeChannelLinkIds = requestedChannelLinkIds.filter(
+      (id: string) => availableChannelLinkIds.has(id)
+    );
+
+    for (const orphanedId of orphanedChannelLinkIds) {
+      await FirestorePlatformService.markTenantStoreOrphaned(
+        tenantId,
+        orphanedId,
+        'CHANNEL_LINK_NOT_RETURNED_FOR_SELECTED_ACCOUNT'
+      );
     }
 
-    const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
+    const newStatus = activeChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
 
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: requestedChannelLinkIds,
+      allowedChannelLinkIds: activeChannelLinkIds,
       status: newStatus as any,
       lastSyncAt: new Date().toISOString(),
     });
@@ -5747,18 +5854,22 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       tenantId,
       category: 'Integration',
       action: 'SELECT_DELIVERECT_ACCOUNT',
-      details: `Selected Deliverect Account "${accountId}" with ${requestedChannelLinkIds.length} channel link(s). Status transitioned to ${newStatus}.`,
+      details: `Selected Deliverect Account "${accountId}" with ${activeChannelLinkIds.length} active channel link(s) and ${orphanedChannelLinkIds.length} orphaned channel link(s). Status transitioned to ${newStatus}.`,
     });
 
     res.json({
       success: true,
       tenantId,
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: requestedChannelLinkIds,
+      allowedChannelLinkIds: activeChannelLinkIds,
+      orphanedChannelLinkIds,
+      warning: orphanedChannelLinkIds.length
+        ? `${orphanedChannelLinkIds.length} channel link(s) were no longer returned by Deliverect and were orphaned instead of blocking the connection.`
+        : undefined,
       status: newStatus,
-      storesCount: requestedChannelLinkIds.length,
+      storesCount: activeChannelLinkIds.length,
       assignedStores: matchingStores
-        .filter(store => requestedChannelLinkIds.includes(String(store.channelLinkId)))
+        .filter(store => activeChannelLinkIds.includes(String(store.channelLinkId)))
         .map(store => ({
           channelLinkId: store.channelLinkId,
           name: store.name,

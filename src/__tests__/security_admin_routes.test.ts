@@ -225,7 +225,7 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
       expect(data.code).toBe('UNKNOWN_DELIVERECT_ACCOUNT');
     });
 
-    it('rejects requested channelLinkIds that do not belong to selected account', async () => {
+    it('orphans requested channelLinkIds that Deliverect no longer returns instead of failing the account connection', async () => {
       setServerRuntimeMode('staging');
       setMockAdminAuthForTest({
         verifyIdToken: vi.fn().mockResolvedValue({
@@ -244,6 +244,9 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
           { channelLinkId: 'chn_store_1', accountLinkId: 'acclink_acc_123', name: 'Store 1' },
         ],
       } as any);
+      const orphanSpy = vi.spyOn(FirestorePlatformService, 'markTenantStoreOrphaned').mockResolvedValue({} as any);
+      vi.spyOn(FirestorePlatformService, 'updateIntegrationConfig').mockResolvedValue({} as any);
+      vi.spyOn(FirestorePlatformService, 'addAuditLog').mockResolvedValue({} as any);
 
       const res = await fetch(`${baseUrl}/admin/tenants/brand-alpha/integration/select-account`, {
         method: 'POST',
@@ -254,14 +257,48 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
         },
         body: JSON.stringify({
           accountId: 'acc_123',
-          channelLinkIds: ['chn_store_1', 'chn_unmapped_99'],
+          channelLinkIds: ['chn_store_1', 'chn_deleted_99'],
         }),
       });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.code).toBe('INVALID_CHANNEL_ASSIGNMENT');
-      expect(data.invalidChannelLinkIds).toEqual(['chn_unmapped_99']);
+      expect(data.allowedChannelLinkIds).toEqual(['chn_store_1']);
+      expect(data.orphanedChannelLinkIds).toEqual(['chn_deleted_99']);
+      expect(data.storesCount).toBe(1);
+      expect(orphanSpy).toHaveBeenCalledWith(
+        'brand-alpha',
+        'chn_deleted_99',
+        'CHANNEL_LINK_NOT_RETURNED_FOR_SELECTED_ACCOUNT'
+      );
+    });
+  });
+
+  describe('3b. Local location hard-delete', () => {
+    it('allows a platformSuperAdmin to hard-delete the local projection without calling Deliverect', async () => {
+      setServerRuntimeMode('staging');
+      setMockAdminAuthForTest({
+        verifyIdToken: vi.fn().mockResolvedValue({
+          uid: 'super-admin-1',
+          email: 'super@bwydi.com',
+          role: 'platformSuperAdmin',
+          platformSuperAdmin: true,
+        }),
+      } as any);
+
+      const deleteSpy = vi.spyOn(FirestorePlatformService, 'deleteTenantStore').mockResolvedValue(true);
+      vi.spyOn(FirestorePlatformService, 'addAuditLog').mockResolvedValue({} as any);
+
+      const res = await fetch(`${baseUrl}/admin/tenants/brand-alpha/stores/chn_old_1`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer real-jwt-token',
+          'X-Tenant-ID': 'brand-alpha',
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(deleteSpy).toHaveBeenCalledWith('brand-alpha', 'chn_old_1');
     });
   });
 

@@ -820,6 +820,20 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async deleteStore(tenantId: string, storeId: string): Promise<boolean> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/stores/${encodeURIComponent(storeId)}`,
+      { method: 'DELETE', headers }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to hard-delete location (HTTP ${res.status})`);
+    }
+    return true;
+  }
+
+
   // ==========================================
   // AUDIT LOGS
   // ==========================================
