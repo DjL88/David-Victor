@@ -152,6 +152,32 @@ function normalizeModelProfile(raw: any, asset: AssetMetadata): {
   return { profile, evidence, warnings };
 }
 
+function extractLabeledHex(text: string, labels: string[]): string | undefined {
+  for (const label of labels) {
+    const pattern = new RegExp(
+      `\\b(?:${label})\\b[^#\\n]{0,60}(#[0-9a-f]{6})\\b`,
+      'i'
+    );
+    const match = text.match(pattern);
+    const value = cleanHex(match?.[1]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function extractLabeledFont(text: string, labels: string[]): string | undefined {
+  for (const label of labels) {
+    const pattern = new RegExp(
+      `\\b(?:${label})\\s*(?:font|typeface|font family)?\\s*[:\\-]\\s*([^\\n,;]{2,80})`,
+      'i'
+    );
+    const match = text.match(pattern);
+    const value = cleanText(match?.[1], 120)?.replace(/["']/g, '').trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
 function deterministicTextProfile(text: string, asset: AssetMetadata): {
   profile: BrandProfile;
   evidence: BrandProfileEvidence[];
@@ -175,15 +201,21 @@ function deterministicTextProfile(text: string, asset: AssetMetadata): {
   const colours = extractColours(text);
   const fonts = extractFonts(text);
 
-  if (!normalized.profile.primaryColour && colours[0]) normalized.profile.primaryColour = colours[0];
-  if (!normalized.profile.secondaryColour && colours[1]) normalized.profile.secondaryColour = colours[1];
-  if (!normalized.profile.backgroundColour && colours[2]) normalized.profile.backgroundColour = colours[2];
+  // Only assign semantic roles when the source labels them. Raw colour/font
+  // occurrence order is evidence, not permission to guess "primary" or "heading".
+  normalized.profile.primaryColour ||= extractLabeledHex(text, ['primary', 'primary colour', 'primary color', 'brand primary']);
+  normalized.profile.secondaryColour ||= extractLabeledHex(text, ['secondary', 'secondary colour', 'secondary color', 'accent', 'accent colour', 'accent color']);
+  normalized.profile.backgroundColour ||= extractLabeledHex(text, ['background', 'background colour', 'background color']);
+  normalized.profile.surfaceColour ||= extractLabeledHex(text, ['surface', 'surface colour', 'surface color']);
+  normalized.profile.textColour ||= extractLabeledHex(text, ['text colour', 'text color', 'body text']);
 
-  if (!normalized.profile.headingFontFamily && fonts[0]) normalized.profile.headingFontFamily = fonts[0];
-  if (!normalized.profile.bodyFontFamily && fonts[1]) normalized.profile.bodyFontFamily = fonts[1];
-  else if (!normalized.profile.bodyFontFamily && fonts[0]) normalized.profile.bodyFontFamily = fonts[0];
+  normalized.profile.headingFontFamily ||= extractLabeledFont(text, ['heading', 'headline', 'heading font', 'headline font']);
+  normalized.profile.bodyFontFamily ||= extractLabeledFont(text, ['body', 'body font']);
+  normalized.profile.carouselTitleFontFamily ||= extractLabeledFont(text, ['carousel title', 'banner title']);
 
-  if (asset.contentType === 'image/svg+xml' && asset.publicUrl) normalized.profile.logoUrl = asset.publicUrl;
+  if (asset.type === 'LOGO' && asset.contentType === 'image/svg+xml' && asset.publicUrl) {
+    normalized.profile.logoUrl = asset.publicUrl;
+  }
 
   if (colours.length) {
     normalized.evidence.push({
@@ -197,7 +229,7 @@ function deterministicTextProfile(text: string, asset: AssetMetadata): {
     normalized.evidence.push({
       field: 'fonts',
       value: fonts.join(', '),
-      source: 'Font-family declarations/names found in the uploaded file',
+      source: 'Explicit font names/declarations found in the uploaded file',
       confidence: 'HIGH',
     });
   }
@@ -219,14 +251,19 @@ async function readAssetBytes(asset: AssetMetadata): Promise<Buffer> {
   throw new Error('Uploaded brand material is not readable by the analysis service.');
 }
 
-async function getCached(tenantId: string, sourceHash: string): Promise<BrandProfileAnalysis | null> {
-  const key = `${tenantId}:${sourceHash}`;
+async function getCached(
+  tenantId: string,
+  sourceHash: string,
+  assetType: AssetMetadata['type']
+): Promise<BrandProfileAnalysis | null> {
+  const cacheId = `${assetType.toLowerCase()}-${sourceHash}`;
+  const key = `${tenantId}:${cacheId}`;
   if (memoryCache.has(key)) return memoryCache.get(key)!;
 
   const db = getFirestoreDb();
   if (!db) return null;
   try {
-    const snap = await db.collection('tenants').doc(tenantId).collection('brandProfiles').doc(sourceHash).get();
+    const snap = await db.collection('tenants').doc(tenantId).collection('brandProfiles').doc(cacheId).get();
     if (!snap.exists) return null;
     const value = snap.data() as BrandProfileAnalysis;
     memoryCache.set(key, value);
@@ -237,8 +274,9 @@ async function getCached(tenantId: string, sourceHash: string): Promise<BrandPro
   }
 }
 
-async function saveCached(analysis: BrandProfileAnalysis): Promise<void> {
-  const key = `${analysis.tenantId}:${analysis.sourceHash}`;
+async function saveCached(analysis: BrandProfileAnalysis, assetType: AssetMetadata['type']): Promise<void> {
+  const cacheId = `${assetType.toLowerCase()}-${analysis.sourceHash}`;
+  const key = `${analysis.tenantId}:${cacheId}`;
   memoryCache.set(key, analysis);
   const db = getFirestoreDb();
   if (!db) return;
@@ -247,7 +285,7 @@ async function saveCached(analysis: BrandProfileAnalysis): Promise<void> {
       .collection('tenants')
       .doc(analysis.tenantId)
       .collection('brandProfiles')
-      .doc(analysis.sourceHash)
+      .doc(cacheId)
       .set(analysis, { merge: true });
   } catch (err) {
     console.warn('[BrandProfile] Cache write failed:', err);
@@ -404,7 +442,7 @@ export class BrandProfileService {
 
     const bytes = await readAssetBytes(asset);
     const sourceHash = crypto.createHash('sha256').update(bytes).digest('hex');
-    const cached = await getCached(tenantId, sourceHash);
+    const cached = await getCached(tenantId, sourceHash, asset.type);
     if (cached) return { ...cached, assetId: asset.id, assetName: asset.fileName };
 
     const isTextLike =
@@ -426,10 +464,14 @@ export class BrandProfileService {
     let model: string | undefined;
     let analysisMode: BrandProfileAnalysis['analysisMode'] = 'DETERMINISTIC';
 
+    const deterministicFieldCount = Object.values(deterministic.profile)
+      .filter((value) => value != null && value !== '' && (!Array.isArray(value) || value.length > 0))
+      .length;
+
     const shouldUseAi =
       asset.contentType === 'application/pdf' ||
       asset.contentType.startsWith('image/') ||
-      deterministic.evidence.length === 0;
+      deterministicFieldCount === 0;
 
     if (shouldUseAi) {
       try {
@@ -466,7 +508,7 @@ export class BrandProfileService {
       createdAt: new Date().toISOString(),
     };
 
-    await saveCached(analysis);
+    await saveCached(analysis, asset.type);
     return analysis;
   }
 }
