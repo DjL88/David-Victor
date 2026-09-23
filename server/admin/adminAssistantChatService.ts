@@ -21,6 +21,12 @@ export interface AdminAssistantChatMessage {
   attachments?: AdminAssistantAttachment[];
 }
 
+export interface AdminAssistantNavigationHint {
+  section: string;
+  target?: string;
+  label: string;
+}
+
 export interface AdminAssistantChatContext {
   section?: string;
   resourceType?: string;
@@ -157,6 +163,71 @@ export function getAdminAssistantSuggestions(section?: string): string[] {
         'What should I check first?',
         'Help me make a safe change',
       ]).slice(0, 3);
+}
+
+
+export function resolveAdminAssistantNavigationHint(
+  message: string,
+  currentSection?: string
+): AdminAssistantNavigationHint | null {
+  const text = String(message || '').trim().toLowerCase();
+  if (!text) return null;
+
+  const choose = (section: string, target: string | undefined, label: string): AdminAssistantNavigationHint => ({
+    section,
+    target,
+    label,
+  });
+
+  if (/(colour|color|colour scheme|color scheme|palette|theme)/i.test(text)) {
+    return choose('branding', 'branding-colours', 'Open Branding · Colours');
+  }
+  if (/(logo|favicon|brand icon|icon asset)/i.test(text)) {
+    return choose('branding', 'branding-logo', 'Open Branding · Logo');
+  }
+  if (/(font|typography|typeface)/i.test(text)) {
+    return choose('branding', 'branding-typography', 'Open Branding · Typography');
+  }
+  if (/(language|locale|dialect|british english|us english)/i.test(text)) {
+    return choose('languages', 'languages-default', 'Open Languages');
+  }
+  if (/(wording|terminology|basket|cart|collect|pickup|aisles|departments)/i.test(text)) {
+    return choose('languages', 'languages-terminology', 'Open Languages · Wording');
+  }
+  if (/(product rule|new rule|create a rule|add a rule|where.*action|rule conflict|rules? currently active)/i.test(text)) {
+    const createIntent = /(new|create|add|build|draft)/i.test(text);
+    return choose(
+      'product_rules',
+      createIntent ? 'product-rules-new' : 'product-rules-list',
+      createIntent ? 'Open Product rules · New rule' : 'Open Product rules'
+    );
+  }
+  if (/(banner|hero banner|category banner|sponsor.*category|sponsor.*aisle)/i.test(text)) {
+    return choose('hero_banners', 'hero-banners-add', 'Open Banners');
+  }
+  if (/(product|plu|sku|barcode|gtin|stock|snooz|catalogue|catalog)/i.test(text)) {
+    return choose('catalog', 'catalog-search', 'Open Products & Stock');
+  }
+  if (/(location|store|opening hours|delivery radius|collection)/i.test(text)) {
+    return choose('stores', 'stores-list', 'Open Locations');
+  }
+  if (/(feature switch|feature flag|features?)/i.test(text)) {
+    return choose('features', undefined, 'Open Feature switches');
+  }
+  if (/(fee|delivery fee|service fee)/i.test(text)) {
+    return choose('fees', undefined, 'Open Fees');
+  }
+  if (/(media health|missing image|broken image|image health)/i.test(text)) {
+    return choose('media_health', undefined, 'Open Media Health');
+  }
+
+  // If the user explicitly asks to be shown the current area, still provide a
+  // navigation affordance even when no more specific field is known.
+  if (/(show me|take me|take me there|open (?:the )?page|where is)/i.test(text) && currentSection) {
+    return choose(currentSection, undefined, 'Show this page');
+  }
+
+  return null;
 }
 
 export function normaliseAssistantReply(raw: unknown): string {
@@ -563,10 +634,12 @@ export class AdminAssistantChatService {
     model: string;
     degraded?: boolean;
     readAction?: string;
+    navigation?: AdminAssistantNavigationHint | null;
   }> {
     const history = normaliseChatHistory(args.history);
     const attachments = normaliseAttachments(args.attachments);
     const readContext = await resolveReadContext(args);
+    const navigation = resolveAdminAssistantNavigationHint(args.message, args.context?.section);
 
     const contents = [
       ...history.map((message) => ({
@@ -622,6 +695,7 @@ export class AdminAssistantChatService {
               provider: client.provider,
               model,
               readAction: readContext?.actionName,
+              navigation,
             };
           } catch (err: any) {
             lastError = err;
@@ -650,6 +724,7 @@ export class AdminAssistantChatService {
       model: 'guided-admin-fallback',
       degraded: true,
       readAction: readContext?.actionName,
+      navigation,
     };
   }
 }
