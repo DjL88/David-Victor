@@ -19,7 +19,7 @@ describe('customer notification isolation regressions', () => {
   it('derives signed-in notification identity from the verified Firebase token', () => {
     expect(routerSource).toContain('const callerUid = await getCallerUid(req)');
     expect(routerSource).toContain('claimedCustomerUid && claimedCustomerUid !== callerUid');
-    expect(routerSource).toContain('customerUid: customerUid ? undefined : sessionId');
+    expect(routerSource).toContain('sessionId: customerUid ? undefined : sessionId');
     expect(clientSource).toContain("import { getCurrentIdToken } from '../firebase'");
     expect(clientSource).toContain('Authorization: `Bearer ${token}`');
   });
