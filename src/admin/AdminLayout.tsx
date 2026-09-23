@@ -35,14 +35,14 @@ import {
   Search,
   Image as ImageIcon,
   FileText,
-  Package,
   Link2,
   Menu,
   X,
   ChevronRight,
   Building2,
-  Sparkles,
   Activity,
+  Flag,
+  BotMessageSquare,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -63,6 +63,24 @@ export type AdminTab =
   | 'product_rules'
   | 'stores'
   | 'audit';
+
+const CanIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <ellipse cx="12" cy="5" rx="6" ry="2" />
+    <path d="M6 5v14c0 1.1 2.7 2 6 2s6-.9 6-2V5" />
+    <path d="M6 10h12" />
+    <path d="M6 18h12" />
+  </svg>
+);
 
 interface AdminLayoutProps {
   onExitAdmin: () => void;
@@ -166,7 +184,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Shop',
       items: [
         { id: 'stores', label: 'Locations', icon: Store },
-        { id: 'catalog', label: 'Products & Stock', icon: Package },
+        { id: 'catalog', label: 'Products & Stock', icon: CanIcon },
         { id: 'fees', label: 'Fees', icon: Coins },
       ],
     },
@@ -180,7 +198,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Marketing',
       items: [
         { id: 'branding', label: 'Branding', icon: Palette },
-        { id: 'hero_banners', label: 'Banners', icon: Sparkles },
+        { id: 'hero_banners', label: 'Banners', icon: Flag },
         { id: 'stories', label: 'Stories', icon: Film },
         { id: 'search_merch', label: 'Search & Recommendations', icon: Search },
         { id: 'pages', label: 'Pages', icon: FileText },
@@ -311,7 +329,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               aria-label="Open Admin Assistant"
             >
               <span className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4" />
+                <BotMessageSquare className="w-4 h-4" />
               </span>
               <span className="min-w-0">
                 <span className="block">Ask Admin Assistant</span>
@@ -409,7 +427,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           aria-label="Ask Admin Assistant"
           title="Ask Admin Assistant about this page"
         >
-          <Sparkles className="w-4 h-4 text-indigo-300" />
+          <BotMessageSquare className="w-4 h-4 text-indigo-300" />
           <span className="hidden sm:inline">Ask Admin AI</span>
         </button>
       )}
