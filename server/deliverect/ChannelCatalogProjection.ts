@@ -7,6 +7,7 @@
  */
 export interface ChannelCatalogItem {
   plu: string;
+  gtin?: string | string[];
   name?: string;
   imageUrl?: string;
   price?: number;
@@ -28,6 +29,8 @@ export interface LocationInventoryOverride {
   locationId: string;
   channelLinkId: string;
   plu: string;
+  gtin?: string;
+  identityKey: string;
   catalogId: string;
   name?: string;
   imageUrl?: string;
@@ -56,15 +59,41 @@ export interface ChannelCatalogProjection {
 
 const cleanPlu = (value: unknown) => String(value ?? '').trim();
 
+export function normalizeGtin(value: unknown): string | undefined {
+  const candidates = Array.isArray(value) ? value : [value];
+  for (const candidate of candidates) {
+    const cleaned = String(candidate ?? '').trim().replace(/\s+/g, '');
+    if (cleaned) return cleaned;
+  }
+  return undefined;
+}
+
+/**
+ * Tenant-wide product identity: prefer GTIN because it is stable across
+ * Deliverect accounts/locations, then fall back to PLU when no GTIN exists.
+ */
+export function channelProductIdentity(item: Pick<ChannelCatalogItem, 'gtin' | 'plu'>): string | undefined {
+  const gtin = normalizeGtin(item.gtin);
+  if (gtin) return `gtin:${gtin}`;
+  const plu = cleanPlu(item.plu);
+  return plu ? `plu:${plu}` : undefined;
+}
+
 function overrideFrom(
   push: LocationCatalogPush,
   item: ChannelCatalogItem
 ): LocationInventoryOverride {
+  const plu = cleanPlu(item.plu);
+  const gtin = normalizeGtin(item.gtin);
+  const identityKey = channelProductIdentity({ plu, gtin });
+  if (!identityKey) throw new Error('Inventory override requires GTIN or PLU.');
   return {
     locationId: push.locationId,
     channelLinkId: push.channelLinkId,
     catalogId: push.catalogId,
-    plu: cleanPlu(item.plu),
+    plu,
+    ...(gtin ? { gtin } : {}),
+    identityKey,
     ...(item.name !== undefined ? { name: item.name } : {}),
     ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
     ...(item.price !== undefined ? { price: item.price } : {}),
@@ -78,9 +107,10 @@ function overrideFrom(
  * Projects multiple location pushes into one tenant catalogue.
  *
  * - master location owns structure and master catalogId
- * - PLU is the canonical product identity
- * - master-location duplicate PLUs are de-duplicated deterministically (last value wins)
- * - other locations may add previously unseen PLUs to the canonical product set
+ * - GTIN is the canonical identity when present; PLU is the fallback
+ * - this deliberately lets the same GTIN merge across multiple Deliverect accounts
+ * - duplicate identities are de-duplicated deterministically (master wins across locations)
+ * - other locations may add previously unseen identities to the canonical product set
  * - all location-specific mutable fields are emitted as inventory overrides
  * - non-master catalog IDs are diagnosed but their structure is ignored
  */
@@ -97,9 +127,11 @@ export function projectChannelCatalogs(
 
   for (const item of master.items || []) {
     const plu = cleanPlu(item?.plu);
-    if (!plu) continue;
-    products[plu] = { ...item, plu };
-    inventoryOverrides.push(overrideFrom(master, { ...item, plu }));
+    const gtin = normalizeGtin(item?.gtin);
+    const identityKey = channelProductIdentity({ plu, gtin });
+    if (!identityKey) continue;
+    products[identityKey] = { ...item, plu, ...(gtin ? { gtin } : {}) };
+    inventoryOverrides.push(overrideFrom(master, { ...item, plu, ...(gtin ? { gtin } : {}) }));
   }
 
   for (const push of pushes) {
@@ -117,9 +149,13 @@ export function projectChannelCatalogs(
 
     for (const item of push.items || []) {
       const plu = cleanPlu(item?.plu);
-      if (!plu) continue;
-      if (!products[plu]) products[plu] = { ...item, plu };
-      inventoryOverrides.push(overrideFrom(push, { ...item, plu }));
+      const gtin = normalizeGtin(item?.gtin);
+      const identityKey = channelProductIdentity({ plu, gtin });
+      if (!identityKey) continue;
+      if (!products[identityKey]) {
+        products[identityKey] = { ...item, plu, ...(gtin ? { gtin } : {}) };
+      }
+      inventoryOverrides.push(overrideFrom(push, { ...item, plu, ...(gtin ? { gtin } : {}) }));
     }
   }
 
