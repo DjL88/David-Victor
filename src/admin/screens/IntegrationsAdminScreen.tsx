@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { DeliverectChannelSetupGuide } from '../components/DeliverectChannelSetupGuide';
 import { DEFAULT_TENANT_ID } from '../../tenant/constants';
 import {
   Link2,
@@ -687,6 +688,8 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
           <span>{error}</span>
         </div>
       )}
+
+      <DeliverectChannelSetupGuide tenantId={tenantId} />
 
       {/* Main integration panels */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
