@@ -225,31 +225,15 @@ export function applySearchMerchandising(
 }
 
 export const DEFAULT_SEARCH_CONFIG: SearchOptimisationConfig = {
-  tenantId: 'brand-alpha',
+  tenantId: '',
   locale: 'en-GB',
-  typoAliases: [
-    { id: 'typo-1', typo: 'choclit', resolvesTo: 'chocolate', isActive: true },
-    { id: 'typo-2', typo: 'sourdow', resolvesTo: 'sourdough', isActive: true },
-    { id: 'typo-3', typo: 'chese', resolvesTo: 'cheese', isActive: true },
-  ],
-  synonyms: [
-    { id: 'syn-1', term: 'soda', synonyms: ['pop', 'cola', 'fizzy drink'], isActive: true },
-    { id: 'syn-2', term: 'milk', synonyms: ['dairy', 'oat milk', 'almond milk'], isActive: true },
-    { id: 'syn-3', term: 'bread', synonyms: ['loaf', 'sourdough', 'baguette', 'bakery'], isActive: true },
-  ],
-  queryRewrites: [
-    { id: 'qr-1', incomingQuery: 'breakfast essentials', rewrittenQuery: 'bread eggs milk butter', isActive: true },
-    { id: 'qr-2', incomingQuery: 'evening snack', rewrittenQuery: 'chips crisps chocolate dip', isActive: true },
-  ],
-  pinnedProducts: [
-    { id: 'pin-1', query: 'chocolate', productPlu: 'PLU-ART-001', position: 1, isActive: true },
-  ],
-  boostRules: [
-    { id: 'boost-1', type: 'category', targetId: 'Bakery', targetName: 'Bakery', boostMultiplier: 1.4, isActive: true },
-    { id: 'boost-2', type: 'product', targetId: 'PLU-SOURDOUGH-01', targetName: 'Slow Fermented Sourdough', boostMultiplier: 1.5, isActive: true },
-  ],
+  typoAliases: [],
+  synonyms: [],
+  queryRewrites: [],
+  pinnedProducts: [],
+  boostRules: [],
   excludedProductPlus: [],
-  updatedAt: new Date().toISOString(),
+  updatedAt: '',
 };
 
 let currentSearchConfig: SearchOptimisationConfig = { ...DEFAULT_SEARCH_CONFIG };
