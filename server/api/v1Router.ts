@@ -9,7 +9,17 @@ import { connectionHealthService } from '../deliverect/ConnectionHealthService';
 import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
-import { getFirestoreDb, getFirebaseStorage, getFirebaseAuth, getFirebaseAdminAuth, verifyAdminSession, verifyAdminSessionWithStatus, AuthenticatedAdmin } from '../firebase';
+import {
+  getFirestoreDb,
+  getFirebaseStorage,
+  getFirebaseAuth,
+  getFirebaseAdminAuth,
+  getFirebaseConfig,
+  getFirestorePermissionStatus,
+  verifyAdminSession,
+  verifyAdminSessionWithStatus,
+  AuthenticatedAdmin,
+} from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
 import { BrandProfileService } from '../brandProfileService';
 import { MediaHealthService } from '../mediaHealthService';
@@ -506,12 +516,21 @@ function requirePlatformSuperAdmin() {
 // ==========================================
 v1Router.get('/platform/mode', (_req: Request, res: Response) => {
   const mode = getServerRuntimeMode();
+  const firestorePermission = getFirestorePermissionStatus();
+  const firebaseConfig = getFirebaseConfig();
+
   res.json({
     appMode: mode,
     isDemo: mode === 'demo',
     isStaging: mode === 'staging',
     isProduction: mode === 'production',
     allowMockFallback: mode === 'demo',
+    firestore: {
+      access: firestorePermission.denied ? 'permission_denied' : 'unknown_or_available',
+      retryInMs: firestorePermission.retryInMs,
+      projectId: firebaseConfig?.projectId || process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || null,
+      databaseId: firebaseConfig?.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)',
+    },
     timestamp: new Date().toISOString(),
   });
 });
