@@ -19,7 +19,7 @@ export const FeaturesScreen: React.FC<FeaturesScreenProps> = ({
         <div>
           <span className="font-bold block text-indigo-950 mb-0.5">Feature Switches Location Update</span>
           <span>
-            Tenant Feature Switches are now also accessible inside <strong>Admin &gt; Brands</strong> (via brand actions) and <strong>Admin &gt; Branding</strong> directly adjacent to branding configuration.
+            Feature switches are managed here as a dedicated brand settings page so Branding can stay focused on visual presentation.
           </span>
         </div>
       </div>
