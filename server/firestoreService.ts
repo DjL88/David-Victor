@@ -1,6 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied, isFirestorePermissionDeniedError } from './firebase';
+import {
+  getFirestoreDb,
+  markFirestorePermissionDenied,
+  isFirestorePermissionDenied,
+  isFirestorePermissionDeniedError,
+  getFirestorePermissionStatus,
+} from './firebase';
 import { FirestoreRestService } from './firestoreRest';
 import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Money, SubstitutionPreferenceType } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
@@ -242,11 +248,12 @@ function savePersistedIntegrations(integrations: Record<string, IntegrationConfi
   }
 }
 
-// In-memory tenant registry with disk persistence fallback
+const useLocalRuntimeData = isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode();
+
+// In staging/production Firestore is authoritative. Local files are only for
+// explicit demo/test workflows so one container cannot silently drift from the platform database.
 const inMemoryTenants: Record<string, TenantConfig> =
-  isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()
-    ? { ...MOCK_TENANTS, ...loadPersistedTenants() }
-    : {};
+  useLocalRuntimeData ? { ...MOCK_TENANTS, ...loadPersistedTenants() } : {};
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
@@ -294,8 +301,9 @@ function savePersistedDomains(domains: Record<string, DomainRecord>): void {
   }
 }
 
-// In-memory domain registry with disk persistence fallback
-const inMemoryDomains: Record<string, DomainRecord> = {
+// Local domain fixtures exist only in demo/test. Staging and production must
+// resolve domains from Firestore so the Admin list cannot show stale repo data.
+const DEMO_DOMAIN_FIXTURES: Record<string, DomainRecord> = {
   '1bwydi.ai.studio': {
     domainId: 'dom_1bwydi',
     hostname: '1bwydi.ai.studio',
@@ -359,8 +367,10 @@ const inMemoryDomains: Record<string, DomainRecord> = {
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
-  ...loadPersistedDomains(),
 };
+
+const inMemoryDomains: Record<string, DomainRecord> =
+  useLocalRuntimeData ? { ...DEMO_DOMAIN_FIXTURES, ...loadPersistedDomains() } : {};
 
 export class FirestoreService {
   /**
@@ -421,7 +431,24 @@ export class FirestoreService {
       if (inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
+
+      const permission = getFirestorePermissionStatus();
+      if (permission.denied) {
+        throw new BFFError(
+          'DATABASE_PERMISSION_DENIED',
+          'Platform database access is temporarily denied for this runtime. Check Firestore IAM for the preview/service identity and retry shortly.',
+          503,
+          true,
+          { retryInMs: permission.retryInMs }
+        );
+      }
+
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Platform database is unavailable for this runtime.',
+        503,
+        true
+      );
     }
 
     try {
@@ -448,7 +475,22 @@ export class FirestoreService {
       if (inMemoryTenants[tenantId]) {
         return inMemoryTenants[tenantId];
       }
-      throw new BFFError('TENANT_NOT_FOUND', `Tenant not found: "${tenantId}" is not provisioned on this platform.`, 404);
+      if (isFirestorePermissionDeniedError(err) || isFirestorePermissionDenied()) {
+        const permission = getFirestorePermissionStatus();
+        throw new BFFError(
+          'DATABASE_PERMISSION_DENIED',
+          'Platform database access is temporarily denied for this runtime. Check Firestore IAM for the preview/service identity and retry shortly.',
+          503,
+          true,
+          { retryInMs: permission.retryInMs }
+        );
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Platform database could not be read for this runtime.',
+        503,
+        true
+      );
     }
   }
 
