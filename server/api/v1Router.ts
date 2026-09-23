@@ -2384,32 +2384,46 @@ v1Router.post('/checkouts/:checkoutId/confirm-demo', requireAdminAuth('tenantAdm
 async function resolveDeliverectWebhookTenant(
   req: Request
 ): Promise<string> {
-  const identifier = req.params.identifier;
+  const identifier = String(req.params.identifier || '').trim();
   let tenantId: string | undefined;
 
+  // Deliverect may call a tenant-specific URL using our integration identifier,
+  // its accountId, or a channelLinkId. All are durable identifiers already
+  // stored on the tenant integration.
   if (identifier) {
     const resolved =
       await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
     if (resolved) {
       tenantId = resolved;
     } else {
-      // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
-      // rather than the opaque integrationId. This is safe because routing only
-      // selects the candidate tenant; the callback must still pass HMAC
-      // verification before any order state is mutated.
+      // Provisioning UI may expose the tenant id directly (e.g. brand-alpha).
+      // Routing only selects a candidate tenant; HMAC verification still occurs
+      // before any webhook data is accepted.
       const directIntegration =
         await FirestorePlatformService.getIntegrationConfig(identifier);
       if (directIntegration?.tenantId === identifier) {
         tenantId = identifier;
       } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
         tenantId = identifier;
-      } else {
-        throw new BFFError(
-          'INTEGRATION_NOT_CONFIGURED',
-          `No registered integration found for identifier "${identifier}".`,
-          404
-        );
       }
+    }
+  }
+
+  // Registration URLs should be standardised. When there is no path identifier,
+  // route from the authoritative Deliverect account/channel identifier in the
+  // request body before falling back to hostname resolution.
+  if (!tenantId) {
+    const bodyIdentifier = String(
+      req.body?.accountId ||
+      req.body?.account ||
+      req.body?.channelLinkId ||
+      req.body?.storeId ||
+      ''
+    ).trim();
+    if (bodyIdentifier) {
+      const resolved =
+        await FirestorePlatformService.resolveTenantByIntegrationId(bodyIdentifier);
+      if (resolved) tenantId = resolved;
     }
   }
 
@@ -2418,6 +2432,7 @@ async function resolveDeliverectWebhookTenant(
       return (
         (req.query.tenantId as string) ||
         (req.headers['x-tenant-id'] as string) ||
+        identifier ||
         'brand-alpha'
       );
     }
@@ -2434,9 +2449,11 @@ async function resolveDeliverectWebhookTenant(
     if (resolvedFromDb) return resolvedFromDb;
 
     throw new BFFError(
-      'INVALID_INPUT',
-      'Inbound webhook cannot be routed: integrationId or registered domain required.',
-      400
+      'INTEGRATION_NOT_CONFIGURED',
+      identifier
+        ? `No registered tenant mapping found for Deliverect identifier "${identifier}".`
+        : 'Inbound Deliverect webhook cannot be routed from accountId/channelLinkId or registered domain.',
+      404
     );
   }
 
