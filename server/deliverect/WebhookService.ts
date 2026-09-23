@@ -413,10 +413,23 @@ export class WebhookService {
       (headers['x-deliverect-hmac-sha256'] as string);
 
     // 1. Authoritatively resolve tenant & verify HMAC signature
+    const stagingChannelLinkSecret = String(
+      payload?.channelLinkId ||
+      payload?.channelLink?._id ||
+      payload?.channelLink?.id ||
+      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
+      ''
+    ).trim();
+
     const { tenantId: resolvedTenantId } = await this.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
-      tenantId
+      tenantId,
+      {
+        stagingTemporarySecrets: stagingChannelLinkSecret
+          ? [stagingChannelLinkSecret]
+          : [],
+      }
     );
     tenantId = resolvedTenantId;
 
