@@ -7,6 +7,13 @@
  */
 
 import { Store, Address } from '../commerce/models';
+import {
+  addDaysToDateString,
+  getZonedDateParts,
+  resolveStoreTimeZone,
+  weekdayIndexForDateString,
+  zonedLocalDateTimeToUtc,
+} from '../utils/zonedTime';
 
 export type DayOfWeek =
   | 'monday'
@@ -170,7 +177,9 @@ export function evaluateStoreOpenNow(
     };
   }
 
-  const dayOfWeek = DAY_NAMES[targetDate.getDay()];
+  const timeZone = resolveStoreTimeZone(store);
+  const zonedNow = getZonedDateParts(targetDate, timeZone);
+  const dayOfWeek = DAY_NAMES[zonedNow.weekdayIndex];
   const normalizedMap = normalizeOpeningHours(store.openingHours);
   const todayHours = normalizedMap[dayOfWeek];
 
@@ -182,10 +191,7 @@ export function evaluateStoreOpenNow(
     };
   }
 
-  const currentHoursMinutes =
-    targetDate.getHours().toString().padStart(2, '0') +
-    ':' +
-    targetDate.getMinutes().toString().padStart(2, '0');
+  const currentHoursMinutes = zonedNow.timeString;
 
   const { open, close } = todayHours;
 
@@ -233,26 +239,26 @@ export function computeNextOpeningTime(
   if (!store) return null;
 
   const normalizedMap = normalizeOpeningHours(store.openingHours);
-  const currentHoursMinutes =
-    fromDate.getHours().toString().padStart(2, '0') + ':' + fromDate.getMinutes().toString().padStart(2, '0');
+  const timeZone = resolveStoreTimeZone(store);
+  const current = getZonedDateParts(fromDate, timeZone);
 
   for (let offset = 0; offset <= 7; offset++) {
-    const candidateDate = new Date(fromDate);
-    candidateDate.setDate(candidateDate.getDate() + offset);
-    const dayOfWeek = DAY_NAMES[candidateDate.getDay()];
+    const candidateDateString = addDaysToDateString(current.dateString, offset);
+    const dayOfWeek = DAY_NAMES[weekdayIndexForDateString(candidateDateString)];
     const hours = normalizedMap[dayOfWeek];
     if (!hours) continue;
 
-    // On the current day, only a still-upcoming opening counts; an opening earlier
-    // today (whether the store is now open or has already closed again) does not.
-    if (offset === 0 && currentHoursMinutes >= hours.open) continue;
+    // On the current store-local day, only a still-upcoming opening counts.
+    if (offset === 0 && current.timeString >= hours.open) continue;
 
-    const [openHour, openMinute] = hours.open.split(':').map((n) => parseInt(n, 10));
-    if (Number.isNaN(openHour) || Number.isNaN(openMinute)) continue;
-
-    const opening = new Date(candidateDate);
-    opening.setHours(openHour, openMinute, 0, 0);
-    return opening;
+    const opening = zonedLocalDateTimeToUtc(
+      candidateDateString,
+      hours.open,
+      timeZone
+    );
+    if (opening && opening.getTime() > fromDate.getTime()) {
+      return opening;
+    }
   }
 
   return null;
