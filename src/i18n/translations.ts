@@ -198,6 +198,35 @@ export interface LocaleTranslations {
   'error.paymentDeclined': string;
   'error.mediaFailed': string;
 
+  // Search & Aisles
+  'search.placeholder': string;
+  'search.trending': string;
+  'search.searching': string;
+  'search.foundItem': string;
+  'search.foundItems': string;
+  'search.forQuery': string;
+  'search.multiStore': string;
+  'search.noResults': string;
+  'search.noResultsHint': string;
+  'aisles.all': string;
+  'aisles.browsingStore': string;
+  'aisles.selectShelf': string;
+  'aisles.searchPlaceholder': string;
+  'aisles.back': string;
+  'aisles.viewAllIn': string;
+  'aisles.browseEntire': string;
+  'aisles.selected': string;
+  'aisles.noMatching': string;
+  'aisles.trySearchHint': string;
+  'aisles.clearSearch': string;
+  'aisles.item': string;
+  'aisles.items': string;
+  'aisles.searchAisles': string;
+  'aisles.parentAisle': string;
+  'aisles.more': string;
+  'aisles.category': string;
+  'aisles.productsSearchPlaceholder': string;
+
   // Favourites & Buy Again
   'fav.emptyTitle': string;
   'fav.emptySubtitle': string;
@@ -397,6 +426,33 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Reorder All Available',
     'fav.revalidating': 'Revalidating store stock & prices...',
     'fav.addedToBasket': 'Added to basket',
+    'search.placeholder': 'Search groceries, brands, barcode or tags…',
+    'search.trending': 'Trending Searches',
+    'search.searching': 'Searching catalogue…',
+    'search.foundItem': 'item',
+    'search.foundItems': 'items',
+    'search.forQuery': 'for',
+    'search.multiStore': 'Showing multi-store availability',
+    'search.noResults': 'No matching products found',
+    'search.noResultsHint': 'Try searching for another product, brand or category.',
+    'aisles.all': 'All Aisles',
+    'aisles.browsingStore': 'Browsing',
+    'aisles.selectShelf': 'Select an aisle or product shelf',
+    'aisles.searchPlaceholder': 'Search aisles, dairy, bakery, produce…',
+    'aisles.back': 'Back',
+    'aisles.viewAllIn': 'View all in',
+    'aisles.browseEntire': 'Browse the entire catalogue without category filters',
+    'aisles.selected': 'Selected',
+    'aisles.noMatching': 'No aisles matching',
+    'aisles.trySearchHint': 'Try another category or product type.',
+    'aisles.clearSearch': 'Clear Search',
+    'aisles.item': 'item',
+    'aisles.items': 'items',
+    'aisles.searchAisles': 'Search Aisles',
+    'aisles.parentAisle': 'Parent Aisle',
+    'aisles.more': 'More',
+    'aisles.category': 'Category',
+    'aisles.productsSearchPlaceholder': 'Search products & aisles…',
   },
 
   'es-ES': {
@@ -589,6 +645,33 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Pedir todos los disponibles',
     'fav.revalidating': 'Revalidando disponibilidad...',
     'fav.addedToBasket': 'Añadido a la cesta',
+    'search.placeholder': 'Buscar productos, marcas, códigos de barras o etiquetas…',
+    'search.trending': 'Búsquedas populares',
+    'search.searching': 'Buscando en el catálogo…',
+    'search.foundItem': 'artículo',
+    'search.foundItems': 'artículos',
+    'search.forQuery': 'para',
+    'search.multiStore': 'Mostrando disponibilidad en varias tiendas',
+    'search.noResults': 'No se encontraron productos',
+    'search.noResultsHint': 'Prueba con otro producto, marca o categoría.',
+    'aisles.all': 'Todos los pasillos',
+    'aisles.browsingStore': 'Explorando',
+    'aisles.selectShelf': 'Selecciona un pasillo o sección',
+    'aisles.searchPlaceholder': 'Buscar pasillos, lácteos, panadería, fruta…',
+    'aisles.back': 'Atrás',
+    'aisles.viewAllIn': 'Ver todo en',
+    'aisles.browseEntire': 'Explora todo el catálogo sin filtros de categoría',
+    'aisles.selected': 'Seleccionado',
+    'aisles.noMatching': 'No hay pasillos que coincidan con',
+    'aisles.trySearchHint': 'Prueba otra categoría o tipo de producto.',
+    'aisles.clearSearch': 'Borrar búsqueda',
+    'aisles.item': 'artículo',
+    'aisles.items': 'artículos',
+    'aisles.searchAisles': 'Buscar pasillos',
+    'aisles.parentAisle': 'Pasillo superior',
+    'aisles.more': 'Más',
+    'aisles.category': 'Categoría',
+    'aisles.productsSearchPlaceholder': 'Buscar productos y pasillos…',
   },
 
   'fr-FR': {
@@ -781,6 +864,33 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Commander tous les disponibles',
     'fav.revalidating': 'Vérification de la disponibilité...',
     'fav.addedToBasket': 'Ajouté au panier',
+    'search.placeholder': 'Rechercher produits, marques, codes-barres ou tags…',
+    'search.trending': 'Recherches populaires',
+    'search.searching': 'Recherche dans le catalogue…',
+    'search.foundItem': 'article',
+    'search.foundItems': 'articles',
+    'search.forQuery': 'pour',
+    'search.multiStore': 'Disponibilité multi-magasins affichée',
+    'search.noResults': 'Aucun produit correspondant',
+    'search.noResultsHint': 'Essayez un autre produit, une marque ou une catégorie.',
+    'aisles.all': 'Tous les rayons',
+    'aisles.browsingStore': 'Navigation dans',
+    'aisles.selectShelf': 'Sélectionnez un rayon ou une catégorie',
+    'aisles.searchPlaceholder': 'Rechercher rayons, lait, boulangerie, fruits…',
+    'aisles.back': 'Retour',
+    'aisles.viewAllIn': 'Tout voir dans',
+    'aisles.browseEntire': 'Parcourir tout le catalogue sans filtre de catégorie',
+    'aisles.selected': 'Sélectionné',
+    'aisles.noMatching': 'Aucun rayon correspondant à',
+    'aisles.trySearchHint': 'Essayez une autre catégorie ou un autre type de produit.',
+    'aisles.clearSearch': 'Effacer la recherche',
+    'aisles.item': 'article',
+    'aisles.items': 'articles',
+    'aisles.searchAisles': 'Rechercher les rayons',
+    'aisles.parentAisle': 'Rayon parent',
+    'aisles.more': 'Plus',
+    'aisles.category': 'Catégorie',
+    'aisles.productsSearchPlaceholder': 'Rechercher produits et rayons…',
   },
 
   'de-DE': {
@@ -973,5 +1083,32 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'fav.reorderAll': 'Alle verfügbaren nachbestellen',
     'fav.revalidating': 'Verfügbarkeit wird geprüft...',
     'fav.addedToBasket': 'In den Warenkorb gelegt',
+    'search.placeholder': 'Produkte, Marken, Barcodes oder Tags suchen…',
+    'search.trending': 'Beliebte Suchanfragen',
+    'search.searching': 'Katalog wird durchsucht…',
+    'search.foundItem': 'Artikel',
+    'search.foundItems': 'Artikel',
+    'search.forQuery': 'für',
+    'search.multiStore': 'Verfügbarkeit in mehreren Filialen',
+    'search.noResults': 'Keine passenden Produkte gefunden',
+    'search.noResultsHint': 'Suche nach einem anderen Produkt, einer Marke oder Kategorie.',
+    'aisles.all': 'Alle Abteilungen',
+    'aisles.browsingStore': 'Durchsuchen',
+    'aisles.selectShelf': 'Abteilung oder Produktbereich auswählen',
+    'aisles.searchPlaceholder': 'Abteilungen, Milch, Backwaren, Obst suchen…',
+    'aisles.back': 'Zurück',
+    'aisles.viewAllIn': 'Alles anzeigen in',
+    'aisles.browseEntire': 'Gesamten Katalog ohne Kategoriefilter durchsuchen',
+    'aisles.selected': 'Ausgewählt',
+    'aisles.noMatching': 'Keine passenden Abteilungen für',
+    'aisles.trySearchHint': 'Versuche eine andere Kategorie oder Produktart.',
+    'aisles.clearSearch': 'Suche löschen',
+    'aisles.item': 'Artikel',
+    'aisles.items': 'Artikel',
+    'aisles.searchAisles': 'Abteilungen suchen',
+    'aisles.parentAisle': 'Übergeordnete Abteilung',
+    'aisles.more': 'Mehr',
+    'aisles.category': 'Kategorie',
+    'aisles.productsSearchPlaceholder': 'Produkte & Abteilungen suchen…',
   },
 };
