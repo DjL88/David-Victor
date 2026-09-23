@@ -124,9 +124,19 @@ export interface LocaleTranslations {
   'checkout.hostedCheckout': string;
   'checkout.confirmingOrder': string;
   'checkout.secureCheckout': string;
+  'checkout.itemAvailabilityNotice': string;
+  'checkout.swapAllAvailable': string;
+  'checkout.availabilityExplanation': string;
+  'checkout.temporarilySnoozed': string;
+  'checkout.outOfStock': string;
+  'checkout.remove': string;
+  'checkout.chosenReplacement': string;
+  'checkout.substituteAlsoUnavailable': string;
+  'checkout.noSubstituteConfigured': string;
+  'checkout.chooseSubstitute': string;
   'checkout.deliveryAddress': string;
   'checkout.noDeliveryAddress': string;
-  'checkout.fulfillmentMethod': string;
+  'checkout.fulfilmentMethod': string;
   'checkout.inStoreCollection': string;
   'checkout.selectedStore': string;
   'checkout.fulfillingStore': string;
@@ -134,44 +144,92 @@ export interface LocaleTranslations {
   'checkout.preOrderSlot': string;
   'checkout.asapCollection': string;
   'checkout.asapDelivery': string;
+  'checkout.eta': string;
   'checkout.scheduledSlot': string;
   'checkout.selectDateTime': string;
   'checkout.selectReservationWindow': string;
-  'checkout.bestMatchGuarantee': string;
-  'checkout.chooseOutOfStock': string;
+  'checkout.subPriceGuarantee': string;
+  'checkout.subInstructions': string;
   'checkout.contactDetails': string;
   'checkout.contactDetailsHelp': string;
   'checkout.name': string;
   'checkout.email': string;
   'checkout.phone': string;
   'checkout.namePlaceholder': string;
-  'checkout.tipCourier': string;
-  'checkout.none': string;
-  'checkout.promoCode': string;
-  'checkout.promoPlaceholder': string;
-  'checkout.apply': string;
-  'checkout.applying': string;
+  'checkout.itemsSubtotal': string;
+  'checkout.refundableDeposit': string;
   'checkout.payableTotal': string;
   'checkout.collectionOrder': string;
-  'checkout.collectionNotice': string;
+  'checkout.collectionOrderNotice': string;
   'checkout.paymentModel': string;
-  'checkout.placingCollection': string;
-  'checkout.resolveStock': string;
-  'checkout.collectionIssue': string;
-  'checkout.dispatchUnavailable': string;
-  'checkout.placeCollection': string;
   'checkout.hostedPayAlternative': string;
-  'checkout.collectionNoPayment': string;
-  'checkout.secureCardNotice': string;
-  'checkout.hostedSession': string;
-  'checkout.processingOrder': string;
-  'checkout.orderConfirmed': string;
-  'checkout.loadingTracking': string;
-  'checkout.closeConfirmed': string;
+  'checkout.hostedPayTitle': string;
+  'checkout.hostedPayDescription': string;
+  'checkout.session': string;
+  'checkout.brand': string;
   'checkout.amountDue': string;
   'checkout.supportedWallets': string;
-  'checkout.completePayment': string;
-  'checkout.cancelReturn': string;
+  'checkout.completeHostedPayment': string;
+  'checkout.cancelReturnBasket': string;
+  'checkout.processingOrder': string;
+  'checkout.orderConfirmed': string;
+  'checkout.orderConfirmedSync': string;
+  'checkout.loadingTracking': string;
+  'checkout.closeConfirmed': string;
+  'checkout.orderUnsuccessful': string;
+  'checkout.paymentUnsuccessful': string;
+  'checkout.noPaymentTaken': string;
+  'checkout.noChargesCaptured': string;
+  'checkout.tryOrderAgain': string;
+  'checkout.tryPaymentAgain': string;
+  'checkout.closeKeepBasket': string;
+  'checkout.paymentNoticeStart': string;
+  'checkout.paymentNoticeEstimated': string;
+  'checkout.paymentNoticeBuffer': string;
+  'checkout.paymentNoticeEnd': string;
+  'checkout.collectionNoPayment': string;
+  'checkout.resolveOutOfStock': string;
+  'checkout.collectionIssueRetry': string;
+  'checkout.dispatchUnavailableRetry': string;
+  'checkout.placeCollectionOrder': string;
+  'checkout.authorizeUpTo': string;
+  'checkout.recoveringOrder': string;
+  'checkout.retryCollectionOrder': string;
+  'checkout.checkingAvailability': string;
+  'checkout.retryAvailabilityCheck': string;
+  'checkout.switchToPickup': string;
+  'checkout.availableStoresCouriers': string;
+  'checkout.initializingPayment': string;
+  'checkout.preparingPayment': string;
+  'checkout.paymentGateway': string;
+  'checkout.paymentAuthorised': string;
+  'checkout.placingOrder': string;
+  'checkout.stepPlacingCollection': string;
+  'checkout.stepPreparingPayment': string;
+  'checkout.stepPaymentAuthorised': string;
+  'checkout.stepPlacingOrder': string;
+  'checkout.stepOrderConfirmed': string;
+  'checkout.chooseOptions': string;
+  'checkout.preChosen': string;
+  'checkout.removeRefundItem': string;
+  'checkout.cancelEntireOrder': string;
+  'checkout.bestMatchGuarantee': string;
+  'checkout.dispatchQuoteGuaranteed': string;
+  'checkout.dispatchQuoteExpired': string;
+  'checkout.dispatchConfirmation': string;
+  'checkout.checking': string;
+  'checkout.recheck': string;
+  'checkout.collectionIssue': string;
+  'checkout.dispatchUnavailable': string;
+  'checkout.partnerStore': string;
+  'checkout.switchAndOrder': string;
+  'checkout.tipCourier': string;
+  'checkout.none': string;
+  'checkout.promoGiftCode': string;
+  'checkout.applying': string;
+  'checkout.apply': string;
+  'checkout.placingCollectionOrder': string;
+  'checkout.authorizingSubmitting': string;
 
   // Order & Picking States
   'order.statusAccepted': string;
@@ -316,13 +374,24 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.authorizeAndSubmit': 'Authorize & Place Order',
     'checkout.authorizing': 'Authorizing & Securing Dispatch...',
     'checkout.noRawCardExposure': 'PCI Tokenized • Zero Raw Card Storage',
+
     'checkout.orderTracking': 'Order Tracking',
     'checkout.hostedCheckout': 'Deliverect Pay Hosted Checkout',
     'checkout.confirmingOrder': 'Confirming Order',
     'checkout.secureCheckout': 'Secure Checkout',
+    'checkout.itemAvailabilityNotice': 'Item Availability & Substitution Notice',
+    'checkout.swapAllAvailable': 'Swap All to In-Stock Substitutes',
+    'checkout.availabilityExplanation': 'We checked real-time store availability and found item(s) that cannot be fulfilled. If you selected an alternative product, you can swap it now with one click:',
+    'checkout.temporarilySnoozed': 'Temporarily snoozed by store',
+    'checkout.outOfStock': 'Out of stock at this store',
+    'checkout.remove': 'Remove',
+    'checkout.chosenReplacement': 'Chosen replacement',
+    'checkout.substituteAlsoUnavailable': 'Your chosen substitute is also currently unavailable.',
+    'checkout.noSubstituteConfigured': 'No substitute preference was configured.',
+    'checkout.chooseSubstitute': 'Choose Substitute',
     'checkout.deliveryAddress': 'Delivery Address',
     'checkout.noDeliveryAddress': 'No delivery address provided',
-    'checkout.fulfillmentMethod': 'Fulfilment Method',
+    'checkout.fulfilmentMethod': 'Fulfilment Method',
     'checkout.inStoreCollection': 'In-Store Collection',
     'checkout.selectedStore': 'Selected Store',
     'checkout.fulfillingStore': 'Fulfilling Store',
@@ -330,44 +399,92 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.preOrderSlot': 'Pre-Order Slot',
     'checkout.asapCollection': 'ASAP Collection',
     'checkout.asapDelivery': 'ASAP Delivery',
+    'checkout.eta': 'ETA',
     'checkout.scheduledSlot': 'Scheduled Slot',
     'checkout.selectDateTime': 'Select date/time',
-    'checkout.selectReservationWindow': 'Select reservation window',
-    'checkout.bestMatchGuarantee': 'Best-Match Price Guarantee: you always pay the lower price!',
-    'checkout.chooseOutOfStock': 'Choose what our in-store shopper should do if an item is out of stock.',
+    'checkout.selectReservationWindow': 'Select Reservation Window',
+    'checkout.subPriceGuarantee': 'Best-Match Price Guarantee: you always pay the lower price!',
+    'checkout.subInstructions': 'Choose what our in-store shopper should do if any item is out of stock:',
     'checkout.contactDetails': 'Contact details',
     'checkout.contactDetailsHelp': 'Used by the store for this order. Enter a name plus an email address or phone number.',
     'checkout.name': 'Name',
     'checkout.email': 'Email',
     'checkout.phone': 'Phone',
     'checkout.namePlaceholder': 'Name for collection',
-    'checkout.tipCourier': 'Tip your courier (100% goes to driver)',
-    'checkout.none': 'None',
-    'checkout.promoCode': 'Promo or Gift Code',
-    'checkout.promoPlaceholder': 'e.g. SAVE5 or FREEDELIV',
-    'checkout.apply': 'Apply',
-    'checkout.applying': 'Applying…',
-    'checkout.payableTotal': 'Payable Total',
+    'checkout.itemsSubtotal': 'Items Subtotal',
+    'checkout.refundableDeposit': 'Refundable DRS Bottle Deposit',
+    'checkout.payableTotal': 'Authoritative Payable Total',
     'checkout.collectionOrder': 'Collection Order',
-    'checkout.collectionNotice': 'This collection order is submitted directly to the store. No card pre-authorisation, payment capture or courier dispatch is created on this order path.',
+    'checkout.collectionOrderNotice': 'This Collection checkout is submitted directly to the store. No card pre-authorisation, payment capture, or courier dispatch is created on this order path.',
     'checkout.paymentModel': 'Retail Grocery Payment Model',
-    'checkout.placingCollection': 'Placing Collection Order…',
-    'checkout.resolveStock': 'Resolve out-of-stock items above',
-    'checkout.collectionIssue': 'Collection order issue — retry above',
-    'checkout.dispatchUnavailable': 'Courier dispatch unavailable — retry above',
-    'checkout.placeCollection': 'Place Collection Order',
     'checkout.hostedPayAlternative': 'Or use Deliverect Pay Hosted Session',
-    'checkout.collectionNoPayment': 'No payment authorisation or courier dispatch for collection',
-    'checkout.secureCardNotice': 'Zero raw card exposure • PCI tokenized pre-authorisation',
-    'checkout.hostedSession': 'Deliverect Pay Hosted Session',
-    'checkout.processingOrder': 'Processing Order',
-    'checkout.orderConfirmed': 'Order confirmed',
-    'checkout.loadingTracking': 'Loading order tracking…',
-    'checkout.closeConfirmed': 'Close — order will remain confirmed',
+    'checkout.hostedPayTitle': 'Deliverect Pay Hosted Session',
+    'checkout.hostedPayDescription': 'A secure hosted payment session has been created by our Backend-for-Frontend.',
+    'checkout.session': 'Session',
+    'checkout.brand': 'Brand',
     'checkout.amountDue': 'Amount Due',
     'checkout.supportedWallets': 'Supported Wallets',
-    'checkout.completePayment': 'Complete Payment on Deliverect Pay',
-    'checkout.cancelReturn': 'Cancel & Return to Basket',
+    'checkout.completeHostedPayment': 'Complete Payment on Deliverect Pay',
+    'checkout.cancelReturnBasket': 'Cancel & Return to Basket',
+    'checkout.processingOrder': 'Processing Order',
+    'checkout.orderConfirmed': 'Order confirmed',
+    'checkout.orderConfirmedSync': 'The store has received your order. We’re syncing the live order details now.',
+    'checkout.loadingTracking': 'Loading order tracking…',
+    'checkout.closeConfirmed': 'Close — order will remain confirmed',
+    'checkout.orderUnsuccessful': 'Order Unsuccessful',
+    'checkout.paymentUnsuccessful': 'Payment Unsuccessful',
+    'checkout.noPaymentTaken': 'No payment was taken. Your basket items have been preserved.',
+    'checkout.noChargesCaptured': 'No charges were captured on your account. Your basket items have been preserved.',
+    'checkout.tryOrderAgain': 'Try Placing Order Again',
+    'checkout.tryPaymentAgain': 'Try Payment Again',
+    'checkout.closeKeepBasket': 'Close & Keep Basket',
+    'checkout.paymentNoticeStart': 'You are not charged immediately. We pre-authorize up to',
+    'checkout.paymentNoticeEstimated': 'estimated total',
+    'checkout.paymentNoticeBuffer': 'pre-chosen alternative buffer',
+    'checkout.paymentNoticeEnd': 'The final amount will only be captured when store picking completes.',
+    'checkout.collectionNoPayment': 'No payment authorisation or courier dispatch for Collection',
+    'checkout.resolveOutOfStock': 'Resolve Out of Stock Items Above',
+    'checkout.collectionIssueRetry': 'Collection Order Issue - Retry Above',
+    'checkout.dispatchUnavailableRetry': 'Courier Dispatch Unavailable - Retry Above',
+    'checkout.placeCollectionOrder': 'Place Collection Order',
+    'checkout.authorizeUpTo': 'Authorize & Place Order (up to',
+    'checkout.recoveringOrder': 'Recovering Order...',
+    'checkout.retryCollectionOrder': 'Retry Collection Order',
+    'checkout.checkingAvailability': 'Checking Availability...',
+    'checkout.retryAvailabilityCheck': 'Retry Availability Check',
+    'checkout.switchToPickup': 'Switch to Pickup',
+    'checkout.availableStoresCouriers': 'Available stores with couriers',
+    'checkout.initializingPayment': 'Initializing payment session...',
+    'checkout.preparingPayment': 'Preparing payment...',
+    'checkout.paymentGateway': 'Communicating with payment gateway...',
+    'checkout.paymentAuthorised': 'Payment authorised by bank. Securing dispatch slot...',
+    'checkout.placingOrder': 'Placing order with store & dispatching courier...',
+    'checkout.stepPlacingCollection': 'Placing collection order with store',
+    'checkout.stepPreparingPayment': 'Preparing payment',
+    'checkout.stepPaymentAuthorised': 'Payment authorised',
+    'checkout.stepPlacingOrder': 'Placing order with store',
+    'checkout.stepOrderConfirmed': 'Order confirmed',
+    'checkout.chooseOptions': 'Choose options',
+    'checkout.preChosen': 'Pre-chosen',
+    'checkout.removeRefundItem': 'Remove & refund item',
+    'checkout.cancelEntireOrder': 'Cancel entire order',
+    'checkout.bestMatchGuarantee': 'Best match (Same or lower price guarantee)',
+    'checkout.dispatchQuoteGuaranteed': 'Dispatch quote guaranteed',
+    'checkout.dispatchQuoteExpired': 'Dispatch quote expired',
+    'checkout.dispatchConfirmation': 'Authoritative Deliverect Dispatch slot confirmation',
+    'checkout.checking': 'Checking...',
+    'checkout.recheck': 'Recheck',
+    'checkout.collectionIssue': 'Collection Order Issue',
+    'checkout.dispatchUnavailable': 'Dispatch Unavailable',
+    'checkout.partnerStore': 'Partner Store',
+    'checkout.switchAndOrder': 'Switch & Order',
+    'checkout.tipCourier': 'Tip your courier (100% goes to driver)',
+    'checkout.none': 'None',
+    'checkout.promoGiftCode': 'Promo or Gift Code',
+    'checkout.applying': 'Applying...',
+    'checkout.apply': 'Apply',
+    'checkout.placingCollectionOrder': 'Placing Collection Order...',
+    'checkout.authorizingSubmitting': 'Authorizing & Submitting...',
 
     'order.statusAccepted': 'Order Accepted by Store',
     'order.statusPicking': 'Quest Picking in Progress',
@@ -508,58 +625,117 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.authorizeAndSubmit': 'Autorizar y Realizar Pedido',
     'checkout.authorizing': 'Autorizando y asegurando envío...',
     'checkout.noRawCardExposure': 'Tokenizado PCI • Sin datos sensibles en cliente',
+
     'checkout.orderTracking': 'Seguimiento del pedido',
     'checkout.hostedCheckout': 'Pago alojado de Deliverect Pay',
     'checkout.confirmingOrder': 'Confirmando pedido',
     'checkout.secureCheckout': 'Pago seguro',
+    'checkout.itemAvailabilityNotice': 'Disponibilidad y sustituciones',
+    'checkout.swapAllAvailable': 'Cambiar todos por sustitutos disponibles',
+    'checkout.availabilityExplanation': 'Hemos comprobado la disponibilidad de la tienda en tiempo real y algunos artículos no pueden prepararse. Si elegiste una alternativa, puedes cambiarla ahora:',
+    'checkout.temporarilySnoozed': 'Pausado temporalmente por la tienda',
+    'checkout.outOfStock': 'Agotado en esta tienda',
+    'checkout.remove': 'Eliminar',
+    'checkout.chosenReplacement': 'Sustituto elegido',
+    'checkout.substituteAlsoUnavailable': 'El sustituto elegido tampoco está disponible.',
+    'checkout.noSubstituteConfigured': 'No se configuró ninguna preferencia de sustitución.',
+    'checkout.chooseSubstitute': 'Elegir sustituto',
     'checkout.deliveryAddress': 'Dirección de entrega',
-    'checkout.noDeliveryAddress': 'No se ha indicado dirección de entrega',
-    'checkout.fulfillmentMethod': 'Método de entrega',
+    'checkout.noDeliveryAddress': 'No se ha indicado una dirección de entrega',
+    'checkout.fulfilmentMethod': 'Método de entrega',
     'checkout.inStoreCollection': 'Recogida en tienda',
     'checkout.selectedStore': 'Tienda seleccionada',
     'checkout.fulfillingStore': 'Tienda que prepara el pedido',
     'checkout.immediatePriority': 'Prioridad inmediata',
-    'checkout.preOrderSlot': 'Franja de reserva',
+    'checkout.preOrderSlot': 'Franja programada',
     'checkout.asapCollection': 'Recogida lo antes posible',
     'checkout.asapDelivery': 'Entrega lo antes posible',
+    'checkout.eta': 'Hora estimada',
     'checkout.scheduledSlot': 'Franja programada',
     'checkout.selectDateTime': 'Selecciona fecha/hora',
     'checkout.selectReservationWindow': 'Selecciona una franja',
-    'checkout.bestMatchGuarantee': 'Garantía de mejor coincidencia: siempre pagas el precio más bajo.',
-    'checkout.chooseOutOfStock': 'Elige qué debe hacer la tienda si un artículo no está disponible.',
+    'checkout.subPriceGuarantee': 'Garantía de mejor precio: siempre pagas el precio más bajo.',
+    'checkout.subInstructions': 'Elige qué debe hacer la tienda si un artículo está agotado:',
     'checkout.contactDetails': 'Datos de contacto',
-    'checkout.contactDetailsHelp': 'La tienda los usará para este pedido. Indica un nombre y un correo electrónico o teléfono.',
+    'checkout.contactDetailsHelp': 'La tienda usará estos datos para el pedido. Introduce un nombre y un correo electrónico o teléfono.',
     'checkout.name': 'Nombre',
     'checkout.email': 'Correo electrónico',
     'checkout.phone': 'Teléfono',
     'checkout.namePlaceholder': 'Nombre para la recogida',
-    'checkout.tipCourier': 'Propina para el repartidor (100% para el conductor)',
-    'checkout.none': 'Ninguna',
-    'checkout.promoCode': 'Código promocional o regalo',
-    'checkout.promoPlaceholder': 'p. ej. SAVE5 o FREEDELIV',
-    'checkout.apply': 'Aplicar',
-    'checkout.applying': 'Aplicando…',
+    'checkout.itemsSubtotal': 'Subtotal de artículos',
+    'checkout.refundableDeposit': 'Depósito DRS reembolsable',
     'checkout.payableTotal': 'Total a pagar',
-    'checkout.collectionOrder': 'Pedido para recoger',
-    'checkout.collectionNotice': 'Este pedido de recogida se envía directamente a la tienda. No se crea preautorización, cobro ni envío por mensajero.',
+    'checkout.collectionOrder': 'Pedido para recogida',
+    'checkout.collectionOrderNotice': 'Este pedido de recogida se envía directamente a la tienda. No se crea preautorización de tarjeta, cobro ni envío con repartidor.',
     'checkout.paymentModel': 'Modelo de pago para alimentación',
-    'checkout.placingCollection': 'Enviando pedido de recogida…',
-    'checkout.resolveStock': 'Resuelve los artículos sin stock de arriba',
-    'checkout.collectionIssue': 'Problema con la recogida — reintenta arriba',
-    'checkout.dispatchUnavailable': 'Reparto no disponible — reintenta arriba',
-    'checkout.placeCollection': 'Realizar pedido para recoger',
-    'checkout.hostedPayAlternative': 'O usa la sesión alojada de Deliverect Pay',
-    'checkout.collectionNoPayment': 'Sin autorización de pago ni reparto para recogida',
-    'checkout.secureCardNotice': 'Sin exposición de tarjeta • Preautorización tokenizada PCI',
-    'checkout.hostedSession': 'Sesión alojada de Deliverect Pay',
+    'checkout.hostedPayAlternative': 'O usar la sesión alojada de Deliverect Pay',
+    'checkout.hostedPayTitle': 'Sesión alojada de Deliverect Pay',
+    'checkout.hostedPayDescription': 'Nuestro backend ha creado una sesión de pago alojada y segura.',
+    'checkout.session': 'Sesión',
+    'checkout.brand': 'Marca',
+    'checkout.amountDue': 'Importe a pagar',
+    'checkout.supportedWallets': 'Métodos compatibles',
+    'checkout.completeHostedPayment': 'Completar pago en Deliverect Pay',
+    'checkout.cancelReturnBasket': 'Cancelar y volver a la cesta',
     'checkout.processingOrder': 'Procesando pedido',
     'checkout.orderConfirmed': 'Pedido confirmado',
-    'checkout.loadingTracking': 'Cargando seguimiento…',
+    'checkout.orderConfirmedSync': 'La tienda ha recibido tu pedido. Estamos sincronizando los detalles en tiempo real.',
+    'checkout.loadingTracking': 'Cargando seguimiento del pedido…',
     'checkout.closeConfirmed': 'Cerrar — el pedido seguirá confirmado',
-    'checkout.amountDue': 'Importe a pagar',
-    'checkout.supportedWallets': 'Carteras compatibles',
-    'checkout.completePayment': 'Completar pago en Deliverect Pay',
-    'checkout.cancelReturn': 'Cancelar y volver a la cesta',
+    'checkout.orderUnsuccessful': 'No se pudo realizar el pedido',
+    'checkout.paymentUnsuccessful': 'No se pudo realizar el pago',
+    'checkout.noPaymentTaken': 'No se realizó ningún cobro. Los artículos siguen en tu cesta.',
+    'checkout.noChargesCaptured': 'No se realizó ningún cargo. Los artículos siguen en tu cesta.',
+    'checkout.tryOrderAgain': 'Intentar realizar el pedido de nuevo',
+    'checkout.tryPaymentAgain': 'Intentar el pago de nuevo',
+    'checkout.closeKeepBasket': 'Cerrar y conservar la cesta',
+    'checkout.paymentNoticeStart': 'No se te cobra inmediatamente. Preautorizamos hasta',
+    'checkout.paymentNoticeEstimated': 'total estimado',
+    'checkout.paymentNoticeBuffer': 'margen para la alternativa elegida',
+    'checkout.paymentNoticeEnd': 'El importe final solo se cobrará cuando la tienda termine de preparar el pedido.',
+    'checkout.collectionNoPayment': 'Sin autorización de pago ni envío con repartidor para la recogida',
+    'checkout.resolveOutOfStock': 'Resuelve los artículos agotados de arriba',
+    'checkout.collectionIssueRetry': 'Problema con el pedido de recogida: vuelve a intentarlo arriba',
+    'checkout.dispatchUnavailableRetry': 'Reparto no disponible: vuelve a intentarlo arriba',
+    'checkout.placeCollectionOrder': 'Realizar pedido para recogida',
+    'checkout.authorizeUpTo': 'Autorizar y realizar pedido (hasta',
+    'checkout.recoveringOrder': 'Recuperando pedido...',
+    'checkout.retryCollectionOrder': 'Reintentar pedido de recogida',
+    'checkout.checkingAvailability': 'Comprobando disponibilidad...',
+    'checkout.retryAvailabilityCheck': 'Volver a comprobar disponibilidad',
+    'checkout.switchToPickup': 'Cambiar a recogida',
+    'checkout.availableStoresCouriers': 'Tiendas disponibles con repartidores',
+    'checkout.initializingPayment': 'Iniciando sesión de pago...',
+    'checkout.preparingPayment': 'Preparando pago...',
+    'checkout.paymentGateway': 'Conectando con la pasarela de pago...',
+    'checkout.paymentAuthorised': 'Pago autorizado por el banco. Reservando reparto...',
+    'checkout.placingOrder': 'Enviando pedido a la tienda y asignando repartidor...',
+    'checkout.stepPlacingCollection': 'Enviando pedido de recogida a la tienda',
+    'checkout.stepPreparingPayment': 'Preparando pago',
+    'checkout.stepPaymentAuthorised': 'Pago autorizado',
+    'checkout.stepPlacingOrder': 'Enviando pedido a la tienda',
+    'checkout.stepOrderConfirmed': 'Pedido confirmado',
+    'checkout.chooseOptions': 'Elegir opciones',
+    'checkout.preChosen': 'Elegido previamente',
+    'checkout.removeRefundItem': 'Eliminar y reembolsar artículo',
+    'checkout.cancelEntireOrder': 'Cancelar todo el pedido',
+    'checkout.bestMatchGuarantee': 'Mejor opción (garantía de mismo o menor precio)',
+    'checkout.dispatchQuoteGuaranteed': 'Cotización de reparto garantizada',
+    'checkout.dispatchQuoteExpired': 'La cotización de reparto ha caducado',
+    'checkout.dispatchConfirmation': 'Confirmación autorizada de franja de Deliverect Dispatch',
+    'checkout.checking': 'Comprobando...',
+    'checkout.recheck': 'Volver a comprobar',
+    'checkout.collectionIssue': 'Problema con el pedido de recogida',
+    'checkout.dispatchUnavailable': 'Reparto no disponible',
+    'checkout.partnerStore': 'Tienda asociada',
+    'checkout.switchAndOrder': 'Cambiar y pedir',
+    'checkout.tipCourier': 'Propina al repartidor (100% para el conductor)',
+    'checkout.none': 'Ninguna',
+    'checkout.promoGiftCode': 'Código promocional o regalo',
+    'checkout.applying': 'Aplicando...',
+    'checkout.apply': 'Aplicar',
+    'checkout.placingCollectionOrder': 'Enviando pedido de recogida...',
+    'checkout.authorizingSubmitting': 'Autorizando y enviando...',
 
     'order.statusAccepted': 'Pedido Aceptado por la tienda',
     'order.statusPicking': 'Preparación en curso',
@@ -700,58 +876,117 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.authorizeAndSubmit': 'Autoriser et Valider',
     'checkout.authorizing': 'Autorisation en cours...',
     'checkout.noRawCardExposure': 'Tokenisé PCI • Données bancaires sécurisées',
+
     'checkout.orderTracking': 'Suivi de commande',
     'checkout.hostedCheckout': 'Paiement hébergé Deliverect Pay',
     'checkout.confirmingOrder': 'Confirmation de la commande',
     'checkout.secureCheckout': 'Paiement sécurisé',
+    'checkout.itemAvailabilityNotice': 'Disponibilité et substitutions',
+    'checkout.swapAllAvailable': 'Remplacer par tous les substituts disponibles',
+    'checkout.availabilityExplanation': 'Nous avons vérifié le stock du magasin en temps réel et certains articles ne peuvent pas être préparés. Si vous avez choisi une alternative, vous pouvez la remplacer maintenant :',
+    'checkout.temporarilySnoozed': 'Temporairement suspendu par le magasin',
+    'checkout.outOfStock': 'Rupture de stock dans ce magasin',
+    'checkout.remove': 'Supprimer',
+    'checkout.chosenReplacement': 'Substitut choisi',
+    'checkout.substituteAlsoUnavailable': 'Le substitut choisi est également indisponible.',
+    'checkout.noSubstituteConfigured': 'Aucune préférence de substitution n’a été configurée.',
+    'checkout.chooseSubstitute': 'Choisir un substitut',
     'checkout.deliveryAddress': 'Adresse de livraison',
-    'checkout.noDeliveryAddress': 'Aucune adresse de livraison fournie',
-    'checkout.fulfillmentMethod': 'Mode de retrait/livraison',
+    'checkout.noDeliveryAddress': 'Aucune adresse de livraison indiquée',
+    'checkout.fulfilmentMethod': 'Mode de retrait/livraison',
     'checkout.inStoreCollection': 'Retrait en magasin',
     'checkout.selectedStore': 'Magasin sélectionné',
     'checkout.fulfillingStore': 'Magasin préparateur',
     'checkout.immediatePriority': 'Priorité immédiate',
     'checkout.preOrderSlot': 'Créneau de précommande',
-    'checkout.asapCollection': 'Retrait dès que possible',
-    'checkout.asapDelivery': 'Livraison dès que possible',
+    'checkout.asapCollection': 'Retrait au plus vite',
+    'checkout.asapDelivery': 'Livraison au plus vite',
+    'checkout.eta': 'Heure estimée',
     'checkout.scheduledSlot': 'Créneau programmé',
     'checkout.selectDateTime': 'Sélectionner date/heure',
     'checkout.selectReservationWindow': 'Sélectionner un créneau',
-    'checkout.bestMatchGuarantee': 'Garantie meilleur choix : vous payez toujours le prix le plus bas.',
-    'checkout.chooseOutOfStock': 'Choisissez quoi faire si un article est indisponible en magasin.',
+    'checkout.subPriceGuarantee': 'Garantie du meilleur prix : vous payez toujours le prix le plus bas.',
+    'checkout.subInstructions': 'Choisissez ce que le magasin doit faire si un article est indisponible :',
     'checkout.contactDetails': 'Coordonnées',
-    'checkout.contactDetailsHelp': 'Le magasin les utilise pour cette commande. Indiquez un nom et un e-mail ou téléphone.',
+    'checkout.contactDetailsHelp': 'Le magasin utilise ces informations pour cette commande. Saisissez un nom et un e-mail ou un numéro de téléphone.',
     'checkout.name': 'Nom',
     'checkout.email': 'E-mail',
     'checkout.phone': 'Téléphone',
     'checkout.namePlaceholder': 'Nom pour le retrait',
-    'checkout.tipCourier': 'Pourboire au livreur (100% pour le chauffeur)',
-    'checkout.none': 'Aucun',
-    'checkout.promoCode': 'Code promo ou cadeau',
-    'checkout.promoPlaceholder': 'ex. SAVE5 ou FREEDELIV',
-    'checkout.apply': 'Appliquer',
-    'checkout.applying': 'Application…',
+    'checkout.itemsSubtotal': 'Sous-total des articles',
+    'checkout.refundableDeposit': 'Consigne DRS remboursable',
     'checkout.payableTotal': 'Total à payer',
     'checkout.collectionOrder': 'Commande à retirer',
-    'checkout.collectionNotice': 'Cette commande de retrait est envoyée directement au magasin. Aucune préautorisation, capture de paiement ou livraison par coursier n’est créée.',
+    'checkout.collectionOrderNotice': 'Cette commande de retrait est envoyée directement au magasin. Aucune préautorisation de carte, capture de paiement ou livraison par coursier n’est créée.',
     'checkout.paymentModel': 'Modèle de paiement courses',
-    'checkout.placingCollection': 'Envoi de la commande de retrait…',
-    'checkout.resolveStock': 'Résolvez les articles en rupture ci-dessus',
-    'checkout.collectionIssue': 'Problème de retrait — réessayez ci-dessus',
-    'checkout.dispatchUnavailable': 'Livraison indisponible — réessayez ci-dessus',
-    'checkout.placeCollection': 'Passer la commande à retirer',
     'checkout.hostedPayAlternative': 'Ou utiliser la session hébergée Deliverect Pay',
-    'checkout.collectionNoPayment': 'Aucune autorisation de paiement ni coursier pour le retrait',
-    'checkout.secureCardNotice': 'Aucune donnée carte exposée • Préautorisation PCI tokenisée',
-    'checkout.hostedSession': 'Session hébergée Deliverect Pay',
+    'checkout.hostedPayTitle': 'Session hébergée Deliverect Pay',
+    'checkout.hostedPayDescription': 'Une session de paiement hébergée et sécurisée a été créée par notre backend.',
+    'checkout.session': 'Session',
+    'checkout.brand': 'Marque',
+    'checkout.amountDue': 'Montant dû',
+    'checkout.supportedWallets': 'Moyens compatibles',
+    'checkout.completeHostedPayment': 'Finaliser le paiement avec Deliverect Pay',
+    'checkout.cancelReturnBasket': 'Annuler et revenir au panier',
     'checkout.processingOrder': 'Traitement de la commande',
     'checkout.orderConfirmed': 'Commande confirmée',
+    'checkout.orderConfirmedSync': 'Le magasin a reçu votre commande. Nous synchronisons les détails en temps réel.',
     'checkout.loadingTracking': 'Chargement du suivi…',
-    'checkout.closeConfirmed': 'Fermer — la commande restera confirmée',
-    'checkout.amountDue': 'Montant dû',
-    'checkout.supportedWallets': 'Portefeuilles compatibles',
-    'checkout.completePayment': 'Finaliser le paiement avec Deliverect Pay',
-    'checkout.cancelReturn': 'Annuler et revenir au panier',
+    'checkout.closeConfirmed': 'Fermer — la commande reste confirmée',
+    'checkout.orderUnsuccessful': 'Commande non aboutie',
+    'checkout.paymentUnsuccessful': 'Paiement non abouti',
+    'checkout.noPaymentTaken': 'Aucun paiement n’a été effectué. Les articles restent dans votre panier.',
+    'checkout.noChargesCaptured': 'Aucun montant n’a été débité. Les articles restent dans votre panier.',
+    'checkout.tryOrderAgain': 'Réessayer la commande',
+    'checkout.tryPaymentAgain': 'Réessayer le paiement',
+    'checkout.closeKeepBasket': 'Fermer et conserver le panier',
+    'checkout.paymentNoticeStart': 'Vous n’êtes pas débité immédiatement. Nous préautorisons jusqu’à',
+    'checkout.paymentNoticeEstimated': 'total estimé',
+    'checkout.paymentNoticeBuffer': 'marge pour l’alternative choisie',
+    'checkout.paymentNoticeEnd': 'Le montant final ne sera débité qu’une fois la préparation terminée en magasin.',
+    'checkout.collectionNoPayment': 'Aucune autorisation de paiement ni livraison par coursier pour le retrait',
+    'checkout.resolveOutOfStock': 'Résolvez les articles indisponibles ci-dessus',
+    'checkout.collectionIssueRetry': 'Problème avec la commande à retirer — réessayez ci-dessus',
+    'checkout.dispatchUnavailableRetry': 'Livraison indisponible — réessayez ci-dessus',
+    'checkout.placeCollectionOrder': 'Passer la commande à retirer',
+    'checkout.authorizeUpTo': 'Autoriser et commander (jusqu’à',
+    'checkout.recoveringOrder': 'Récupération de la commande...',
+    'checkout.retryCollectionOrder': 'Réessayer la commande à retirer',
+    'checkout.checkingAvailability': 'Vérification de la disponibilité...',
+    'checkout.retryAvailabilityCheck': 'Revérifier la disponibilité',
+    'checkout.switchToPickup': 'Passer au retrait',
+    'checkout.availableStoresCouriers': 'Magasins disponibles avec coursiers',
+    'checkout.initializingPayment': 'Initialisation de la session de paiement...',
+    'checkout.preparingPayment': 'Préparation du paiement...',
+    'checkout.paymentGateway': 'Connexion à la passerelle de paiement...',
+    'checkout.paymentAuthorised': 'Paiement autorisé par la banque. Réservation de la livraison...',
+    'checkout.placingOrder': 'Envoi de la commande au magasin et affectation du coursier...',
+    'checkout.stepPlacingCollection': 'Envoi de la commande de retrait au magasin',
+    'checkout.stepPreparingPayment': 'Préparation du paiement',
+    'checkout.stepPaymentAuthorised': 'Paiement autorisé',
+    'checkout.stepPlacingOrder': 'Envoi de la commande au magasin',
+    'checkout.stepOrderConfirmed': 'Commande confirmée',
+    'checkout.chooseOptions': 'Choisir les options',
+    'checkout.preChosen': 'Choisi à l’avance',
+    'checkout.removeRefundItem': 'Supprimer et rembourser l’article',
+    'checkout.cancelEntireOrder': 'Annuler toute la commande',
+    'checkout.bestMatchGuarantee': 'Meilleure correspondance (prix identique ou inférieur garanti)',
+    'checkout.dispatchQuoteGuaranteed': 'Devis de livraison garanti',
+    'checkout.dispatchQuoteExpired': 'Le devis de livraison a expiré',
+    'checkout.dispatchConfirmation': 'Confirmation officielle du créneau Deliverect Dispatch',
+    'checkout.checking': 'Vérification...',
+    'checkout.recheck': 'Revérifier',
+    'checkout.collectionIssue': 'Problème avec la commande à retirer',
+    'checkout.dispatchUnavailable': 'Livraison indisponible',
+    'checkout.partnerStore': 'Magasin partenaire',
+    'checkout.switchAndOrder': 'Changer et commander',
+    'checkout.tipCourier': 'Pourboire au coursier (100 % pour le livreur)',
+    'checkout.none': 'Aucun',
+    'checkout.promoGiftCode': 'Code promo ou cadeau',
+    'checkout.applying': 'Application...',
+    'checkout.apply': 'Appliquer',
+    'checkout.placingCollectionOrder': 'Envoi de la commande à retirer...',
+    'checkout.authorizingSubmitting': 'Autorisation et envoi...',
 
     'order.statusAccepted': 'Commande acceptée',
     'order.statusPicking': 'Préparation en cours',
@@ -892,13 +1127,24 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.authorizeAndSubmit': 'Autorisieren & Bestellen',
     'checkout.authorizing': 'Autorisierung läuft...',
     'checkout.noRawCardExposure': 'PCI-Tokenisierung • Keine Kartendaten auf dem Client',
-    'checkout.orderTracking': 'Bestellverfolgung',
-    'checkout.hostedCheckout': 'Deliverect Pay Bezahlseite',
+
+    'checkout.orderTracking': 'Bestellung verfolgen',
+    'checkout.hostedCheckout': 'Deliverect Pay Checkout',
     'checkout.confirmingOrder': 'Bestellung wird bestätigt',
     'checkout.secureCheckout': 'Sicherer Checkout',
+    'checkout.itemAvailabilityNotice': 'Verfügbarkeit & Ersatzartikel',
+    'checkout.swapAllAvailable': 'Alle durch verfügbare Ersatzartikel ersetzen',
+    'checkout.availabilityExplanation': 'Wir haben den Filialbestand in Echtzeit geprüft. Einige Artikel können nicht erfüllt werden. Wenn du eine Alternative gewählt hast, kannst du sie jetzt ersetzen:',
+    'checkout.temporarilySnoozed': 'Von der Filiale vorübergehend pausiert',
+    'checkout.outOfStock': 'In dieser Filiale ausverkauft',
+    'checkout.remove': 'Entfernen',
+    'checkout.chosenReplacement': 'Gewählter Ersatz',
+    'checkout.substituteAlsoUnavailable': 'Der gewählte Ersatzartikel ist ebenfalls nicht verfügbar.',
+    'checkout.noSubstituteConfigured': 'Keine Ersatzartikel-Präferenz festgelegt.',
+    'checkout.chooseSubstitute': 'Ersatz wählen',
     'checkout.deliveryAddress': 'Lieferadresse',
     'checkout.noDeliveryAddress': 'Keine Lieferadresse angegeben',
-    'checkout.fulfillmentMethod': 'Erfüllungsart',
+    'checkout.fulfilmentMethod': 'Erfüllungsart',
     'checkout.inStoreCollection': 'Abholung in der Filiale',
     'checkout.selectedStore': 'Ausgewählte Filiale',
     'checkout.fulfillingStore': 'Ausführende Filiale',
@@ -906,44 +1152,92 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.preOrderSlot': 'Vorbestell-Zeitfenster',
     'checkout.asapCollection': 'Schnellstmögliche Abholung',
     'checkout.asapDelivery': 'Schnellstmögliche Lieferung',
+    'checkout.eta': 'Voraussichtliche Zeit',
     'checkout.scheduledSlot': 'Geplantes Zeitfenster',
-    'checkout.selectDateTime': 'Datum/Uhrzeit auswählen',
+    'checkout.selectDateTime': 'Datum/Uhrzeit wählen',
     'checkout.selectReservationWindow': 'Zeitfenster auswählen',
-    'checkout.bestMatchGuarantee': 'Best-Match-Preisgarantie: Du zahlst immer den niedrigeren Preis.',
-    'checkout.chooseOutOfStock': 'Lege fest, was die Filiale bei nicht verfügbaren Artikeln tun soll.',
+    'checkout.subPriceGuarantee': 'Bestpreisgarantie: Du zahlst immer den niedrigeren Preis.',
+    'checkout.subInstructions': 'Wähle, was die Filiale tun soll, wenn ein Artikel nicht verfügbar ist:',
     'checkout.contactDetails': 'Kontaktdaten',
-    'checkout.contactDetailsHelp': 'Die Filiale nutzt sie für diese Bestellung. Gib einen Namen sowie E-Mail oder Telefonnummer an.',
+    'checkout.contactDetailsHelp': 'Die Filiale nutzt diese Angaben für die Bestellung. Gib einen Namen und eine E-Mail-Adresse oder Telefonnummer an.',
     'checkout.name': 'Name',
     'checkout.email': 'E-Mail',
     'checkout.phone': 'Telefon',
     'checkout.namePlaceholder': 'Name für die Abholung',
-    'checkout.tipCourier': 'Trinkgeld für den Kurier (100% für den Fahrer)',
-    'checkout.none': 'Keins',
-    'checkout.promoCode': 'Promo- oder Gutscheincode',
-    'checkout.promoPlaceholder': 'z. B. SAVE5 oder FREEDELIV',
-    'checkout.apply': 'Anwenden',
-    'checkout.applying': 'Wird angewendet…',
+    'checkout.itemsSubtotal': 'Artikel-Zwischensumme',
+    'checkout.refundableDeposit': 'Erstattungsfähiges DRS-Pfand',
     'checkout.payableTotal': 'Zu zahlender Gesamtbetrag',
     'checkout.collectionOrder': 'Abholbestellung',
-    'checkout.collectionNotice': 'Diese Abholbestellung wird direkt an die Filiale gesendet. Es werden keine Karten-Vorautorisierung, Zahlungserfassung oder Kurierzustellung erstellt.',
+    'checkout.collectionOrderNotice': 'Diese Abholbestellung wird direkt an die Filiale gesendet. Es werden keine Kartenvorautorisierung, Zahlungserfassung oder Kurierzustellung erstellt.',
     'checkout.paymentModel': 'Zahlungsmodell für Lebensmittel',
-    'checkout.placingCollection': 'Abholbestellung wird aufgegeben…',
-    'checkout.resolveStock': 'Nicht verfügbare Artikel oben klären',
-    'checkout.collectionIssue': 'Problem mit Abholung — oben erneut versuchen',
-    'checkout.dispatchUnavailable': 'Kurier nicht verfügbar — oben erneut versuchen',
-    'checkout.placeCollection': 'Abholbestellung aufgeben',
-    'checkout.hostedPayAlternative': 'Oder Deliverect Pay Bezahlseite verwenden',
-    'checkout.collectionNoPayment': 'Keine Zahlungsautorisierung oder Kurierzustellung bei Abholung',
-    'checkout.secureCardNotice': 'Keine Kartendaten offengelegt • PCI-tokenisierte Vorautorisierung',
-    'checkout.hostedSession': 'Deliverect Pay Bezahlseite',
+    'checkout.hostedPayAlternative': 'Oder Deliverect Pay verwenden',
+    'checkout.hostedPayTitle': 'Deliverect Pay Sitzung',
+    'checkout.hostedPayDescription': 'Unser Backend hat eine sichere gehostete Zahlungssitzung erstellt.',
+    'checkout.session': 'Sitzung',
+    'checkout.brand': 'Marke',
+    'checkout.amountDue': 'Fälliger Betrag',
+    'checkout.supportedWallets': 'Unterstützte Zahlungsarten',
+    'checkout.completeHostedPayment': 'Zahlung mit Deliverect Pay abschließen',
+    'checkout.cancelReturnBasket': 'Abbrechen & zum Warenkorb',
     'checkout.processingOrder': 'Bestellung wird verarbeitet',
     'checkout.orderConfirmed': 'Bestellung bestätigt',
+    'checkout.orderConfirmedSync': 'Die Filiale hat deine Bestellung erhalten. Wir synchronisieren jetzt die Live-Details.',
     'checkout.loadingTracking': 'Bestellverfolgung wird geladen…',
     'checkout.closeConfirmed': 'Schließen — Bestellung bleibt bestätigt',
-    'checkout.amountDue': 'Fälliger Betrag',
-    'checkout.supportedWallets': 'Unterstützte Wallets',
-    'checkout.completePayment': 'Zahlung mit Deliverect Pay abschließen',
-    'checkout.cancelReturn': 'Abbrechen & zum Warenkorb',
+    'checkout.orderUnsuccessful': 'Bestellung nicht erfolgreich',
+    'checkout.paymentUnsuccessful': 'Zahlung nicht erfolgreich',
+    'checkout.noPaymentTaken': 'Es wurde keine Zahlung vorgenommen. Deine Artikel bleiben im Warenkorb.',
+    'checkout.noChargesCaptured': 'Es wurde nichts belastet. Deine Artikel bleiben im Warenkorb.',
+    'checkout.tryOrderAgain': 'Bestellung erneut versuchen',
+    'checkout.tryPaymentAgain': 'Zahlung erneut versuchen',
+    'checkout.closeKeepBasket': 'Schließen & Warenkorb behalten',
+    'checkout.paymentNoticeStart': 'Du wirst nicht sofort belastet. Wir autorisieren vorab bis zu',
+    'checkout.paymentNoticeEstimated': 'geschätzter Gesamtbetrag',
+    'checkout.paymentNoticeBuffer': 'Puffer für die gewählte Alternative',
+    'checkout.paymentNoticeEnd': 'Der endgültige Betrag wird erst nach Abschluss der Kommissionierung abgebucht.',
+    'checkout.collectionNoPayment': 'Keine Zahlungsautorisierung oder Kurierzustellung bei Abholung',
+    'checkout.resolveOutOfStock': 'Nicht verfügbare Artikel oben klären',
+    'checkout.collectionIssueRetry': 'Problem mit Abholbestellung — oben erneut versuchen',
+    'checkout.dispatchUnavailableRetry': 'Kurierzustellung nicht verfügbar — oben erneut versuchen',
+    'checkout.placeCollectionOrder': 'Abholbestellung aufgeben',
+    'checkout.authorizeUpTo': 'Autorisieren & bestellen (bis zu',
+    'checkout.recoveringOrder': 'Bestellung wird wiederhergestellt...',
+    'checkout.retryCollectionOrder': 'Abholbestellung erneut versuchen',
+    'checkout.checkingAvailability': 'Verfügbarkeit wird geprüft...',
+    'checkout.retryAvailabilityCheck': 'Verfügbarkeit erneut prüfen',
+    'checkout.switchToPickup': 'Zur Abholung wechseln',
+    'checkout.availableStoresCouriers': 'Verfügbare Filialen mit Kurieren',
+    'checkout.initializingPayment': 'Zahlungssitzung wird initialisiert...',
+    'checkout.preparingPayment': 'Zahlung wird vorbereitet...',
+    'checkout.paymentGateway': 'Verbindung zum Zahlungsanbieter...',
+    'checkout.paymentAuthorised': 'Zahlung von der Bank autorisiert. Zustellung wird reserviert...',
+    'checkout.placingOrder': 'Bestellung wird an die Filiale gesendet und Kurier disponiert...',
+    'checkout.stepPlacingCollection': 'Abholbestellung wird an die Filiale gesendet',
+    'checkout.stepPreparingPayment': 'Zahlung wird vorbereitet',
+    'checkout.stepPaymentAuthorised': 'Zahlung autorisiert',
+    'checkout.stepPlacingOrder': 'Bestellung wird an die Filiale gesendet',
+    'checkout.stepOrderConfirmed': 'Bestellung bestätigt',
+    'checkout.chooseOptions': 'Optionen wählen',
+    'checkout.preChosen': 'Vorab gewählt',
+    'checkout.removeRefundItem': 'Artikel entfernen & erstatten',
+    'checkout.cancelEntireOrder': 'Gesamte Bestellung stornieren',
+    'checkout.bestMatchGuarantee': 'Beste Übereinstimmung (gleicher oder niedrigerer Preis garantiert)',
+    'checkout.dispatchQuoteGuaranteed': 'Kurierangebot garantiert',
+    'checkout.dispatchQuoteExpired': 'Kurierangebot abgelaufen',
+    'checkout.dispatchConfirmation': 'Verbindliche Bestätigung des Deliverect-Dispatch-Zeitfensters',
+    'checkout.checking': 'Prüfung...',
+    'checkout.recheck': 'Erneut prüfen',
+    'checkout.collectionIssue': 'Problem mit Abholbestellung',
+    'checkout.dispatchUnavailable': 'Kurierzustellung nicht verfügbar',
+    'checkout.partnerStore': 'Partnerfiliale',
+    'checkout.switchAndOrder': 'Wechseln & bestellen',
+    'checkout.tipCourier': 'Trinkgeld für den Kurier (100 % gehen an den Fahrer)',
+    'checkout.none': 'Keins',
+    'checkout.promoGiftCode': 'Promo- oder Geschenrcode',
+    'checkout.applying': 'Wird angewendet...',
+    'checkout.apply': 'Anwenden',
+    'checkout.placingCollectionOrder': 'Abholbestellung wird aufgegeben...',
+    'checkout.authorizingSubmitting': 'Autorisierung & Übermittlung...',
 
     'order.statusAccepted': 'Bestellung angenommen',
     'order.statusPicking': 'Kommissionierung läuft',
