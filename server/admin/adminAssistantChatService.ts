@@ -643,7 +643,7 @@ export function extractCatalogLookupQuery(message: string): string | null {
     /(stock|in stock|out of stock|available|availability|price|visible|appearing|showing|snooz|find|lookup|check|product|item|plu|barcode|gtin|stores?|locations?)/i.test(raw);
 
   if (!hasLookupIntent) {
-    if (words.length <= 4 && !/^(what|why|how|can|could|would|should|where)\b/i.test(raw)) {
+    if (words.length <= 4 && !/^(what|which|why|how|can|could|would|should|where|who|them|those|these)\b/i.test(raw)) {
       return raw.replace(/[?.!,]+$/g, '').trim();
     }
     return null;
