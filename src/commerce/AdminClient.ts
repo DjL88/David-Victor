@@ -403,7 +403,7 @@ export interface AdminClient {
     message: string;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string };
-  }): Promise<{ message: string; suggestions?: string[]; provider?: string; model?: string; mode?: string; safety?: Record<string, unknown> }>;
+  }): Promise<{ message: string; suggestions?: string[]; provider?: string; model?: string; degraded?: boolean; mode?: string; safety?: Record<string, unknown> }>;
 
   /** Lists server-authorized assistant actions, including proposal-only write actions. */
   getAssistantActions?(tenantId?: string): Promise<any>;
