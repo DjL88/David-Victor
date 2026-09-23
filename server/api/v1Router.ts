@@ -85,6 +85,7 @@ import {
   UpdateBasketItemSubstitutionSchema,
   UpdateBasketCustomerSchema,
   CustomerFavouritesSchema,
+  CustomerAddressesSchema,
   UpdateBasketFulfillmentSchema,
   UpdateBasketStoreSchema,
   UpdateBasketDiscountsSchema,
@@ -2795,6 +2796,56 @@ v1Router.put(
       res.json({ favouritePlus: profile.favouritePlus, updatedAt: profile.updatedAt });
     } catch (err: any) {
       handleCommerceError(res, err, 'Failed to save customer favourites');
+    }
+  }
+);
+
+/**
+ * Customer saved delivery addresses.
+ *
+ * Addresses are customer PII, so both tenant and UID are server-resolved.
+ * The browser never reads or writes the Firestore customer profile directly.
+ */
+v1Router.get('/account/addresses', async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const customerUid = await getCallerUid(req);
+    if (!customerUid) {
+      return res.status(401).json({
+        error: 'Sign in to view saved addresses.',
+        code: 'AUTH_REQUIRED',
+      });
+    }
+
+    const profile = await CustomerAccountService.getProfile(tenantId, customerUid);
+    res.json({ savedAddresses: profile.savedAddresses });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve saved addresses');
+  }
+});
+
+v1Router.put(
+  '/account/addresses',
+  validateBody(CustomerAddressesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const customerUid = await getCallerUid(req);
+      if (!customerUid) {
+        return res.status(401).json({
+          error: 'Sign in to save delivery addresses.',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+
+      const profile = await CustomerAccountService.saveAddresses(
+        tenantId,
+        customerUid,
+        req.body.savedAddresses
+      );
+      res.json({ savedAddresses: profile.savedAddresses, updatedAt: profile.updatedAt });
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to save delivery addresses');
     }
   }
 );
