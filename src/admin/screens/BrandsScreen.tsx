@@ -664,8 +664,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       )}
     </div>
   );
-};
-, CAD: 'CA
+};, CAD: 'CA
       });
 
       setProvisionSuccess(newTenant);
@@ -1224,8 +1223,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       )}
     </div>
   );
-};
-, AUD: 'A
+};, AUD: 'A
       });
 
       setProvisionSuccess(newTenant);
@@ -1784,8 +1782,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       )}
     </div>
   );
-};
-, NZD: 'NZ
+};, NZD: 'NZ
       });
 
       setProvisionSuccess(newTenant);
@@ -2344,8 +2341,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       )}
     </div>
   );
-};
- } as Record<string, string>)[currency] || currency,
+}; } as Record<string, string>)[currency] || currency,
         country,
         domain: defaultDomain.trim() || undefined,
         adminEmail,
