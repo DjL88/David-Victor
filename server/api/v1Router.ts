@@ -3664,7 +3664,12 @@ v1Router.get('/admin/tenants', requireAdminAuth('platformSuperAdmin'), async (_r
 v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validateBody(CreateTenantSchema), async (req: Request, res: Response) => {
   try {
     const newTenant = req.body;
-    const provisioned = await FirestorePlatformService.createTenant(newTenant);
+    let provisioned = await FirestorePlatformService.createTenant(newTenant);
+    if (newTenant.domain) {
+      provisioned = await FirestorePlatformService.updateTenantConfig(provisioned.tenantId, {
+        defaultDomain: newTenant.domain,
+      });
+    }
 
     // Audit log
     await FirestorePlatformService.addAuditLog(provisioned.tenantId, {
