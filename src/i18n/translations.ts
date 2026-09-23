@@ -23,6 +23,31 @@ export interface LocaleTranslations {
   'header.closedStoreNotice': string;
   'header.acceptsPreOrders': string;
 
+  // Account
+  'account.languageRegion': string;
+  'account.savedAddresses': string;
+  'account.paymentMethods': string;
+  'account.notifications': string;
+  'account.brandInfoPolicies': string;
+  'account.signIn': string;
+  'account.signOut': string;
+  'account.notSignedIn': string;
+  'account.verifiedAccount': string;
+  'account.guestSession': string;
+  'account.customerSupport': string;
+  'account.supportEmailMissing': string;
+  'account.supportPhoneMissing': string;
+  'account.supportHours': string;
+  'account.supportHoursFallback': string;
+  'account.operationsPortal': string;
+  'account.operationsPortalDescription': string;
+  'account.launchAdmin': string;
+  'account.signInToManage': string;
+  'account.noSavedAddresses': string;
+  'account.paymentProviderNote': string;
+  'account.notificationNote': string;
+  'account.noPolicies': string;
+
   // Basket & Checkout
   'basket.title': string;
   'basket.emptyTitle': string;
@@ -110,6 +135,30 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.closedStoreNotice': 'Currently Closed',
     'header.acceptsPreOrders': 'Pre-ordering open for scheduled delivery',
 
+    'account.languageRegion': 'Language & Region',
+    'account.savedAddresses': 'Saved delivery addresses',
+    'account.paymentMethods': 'Payment methods',
+    'account.notifications': 'Order notifications & delivery alerts',
+    'account.brandInfoPolicies': 'Brand Information & Policies',
+    'account.signIn': 'Sign In',
+    'account.signOut': 'Sign Out',
+    'account.notSignedIn': 'Not signed in',
+    'account.verifiedAccount': 'Verified Account',
+    'account.guestSession': 'Guest Session',
+    'account.customerSupport': 'customer support',
+    'account.supportEmailMissing': 'Support email not configured',
+    'account.supportPhoneMissing': 'Support phone not configured',
+    'account.supportHours': 'Hours',
+    'account.supportHoursFallback': 'See store information for opening hours',
+    'account.operationsPortal': 'Brand Operations Portal',
+    'account.operationsPortalDescription': 'Manage fees, rules, stories, branding & insights',
+    'account.launchAdmin': 'Launch Admin',
+    'account.signInToManage': 'Sign in to manage settings linked to your account.',
+    'account.noSavedAddresses': 'No saved delivery addresses are available for this account yet.',
+    'account.paymentProviderNote': 'Payment methods are securely collected during checkout and are not displayed here unless the payment provider exposes a saved method.',
+    'account.notificationNote': 'Order updates use the contact details and notification channels available for each order.',
+    'account.noPolicies': 'No information or policy pages are published for this language yet.',
+
     'basket.title': 'Your Basket',
     'basket.emptyTitle': 'Your basket is empty',
     'basket.emptySubtitle': 'Add fresh artisan groceries and local essentials to get started.',
@@ -190,6 +239,30 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Tiendas abiertas cercanas',
     'header.closedStoreNotice': 'Actualmente cerrada',
     'header.acceptsPreOrders': 'Reserva abierta para entrega programada',
+
+    'account.languageRegion': 'Idioma y región',
+    'account.savedAddresses': 'Direcciones de entrega guardadas',
+    'account.paymentMethods': 'Métodos de pago',
+    'account.notifications': 'Notificaciones de pedidos y entrega',
+    'account.brandInfoPolicies': 'Información y políticas de la marca',
+    'account.signIn': 'Iniciar sesión',
+    'account.signOut': 'Cerrar sesión',
+    'account.notSignedIn': 'Sesión no iniciada',
+    'account.verifiedAccount': 'Cuenta verificada',
+    'account.guestSession': 'Sesión de invitado',
+    'account.customerSupport': 'atención al cliente',
+    'account.supportEmailMissing': 'Correo de soporte no configurado',
+    'account.supportPhoneMissing': 'Teléfono de soporte no configurado',
+    'account.supportHours': 'Horario',
+    'account.supportHoursFallback': 'Consulta la información de la tienda para ver el horario',
+    'account.operationsPortal': 'Portal de operaciones de la marca',
+    'account.operationsPortalDescription': 'Gestiona tarifas, reglas, historias, marca y análisis',
+    'account.launchAdmin': 'Abrir Admin',
+    'account.signInToManage': 'Inicia sesión para gestionar la configuración de tu cuenta.',
+    'account.noSavedAddresses': 'Todavía no hay direcciones de entrega guardadas en esta cuenta.',
+    'account.paymentProviderNote': 'Los métodos de pago se recopilan de forma segura durante el pago y solo se muestran aquí si el proveedor de pagos permite métodos guardados.',
+    'account.notificationNote': 'Las actualizaciones del pedido usan los datos de contacto y canales disponibles para cada pedido.',
+    'account.noPolicies': 'Todavía no hay páginas de información o políticas publicadas en este idioma.',
 
     'basket.title': 'Tu Cesta',
     'basket.emptyTitle': 'Tu cesta está vacía',
@@ -272,6 +345,30 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.closedStoreNotice': 'Actuellement fermé',
     'header.acceptsPreOrders': 'Précommande ouverte pour livraison programmée',
 
+    'account.languageRegion': 'Langue et région',
+    'account.savedAddresses': 'Adresses de livraison enregistrées',
+    'account.paymentMethods': 'Moyens de paiement',
+    'account.notifications': 'Notifications de commande et de livraison',
+    'account.brandInfoPolicies': 'Informations et politiques de la marque',
+    'account.signIn': 'Se connecter',
+    'account.signOut': 'Se déconnecter',
+    'account.notSignedIn': 'Non connecté',
+    'account.verifiedAccount': 'Compte vérifié',
+    'account.guestSession': 'Session invité',
+    'account.customerSupport': 'service client',
+    'account.supportEmailMissing': 'E-mail du support non configuré',
+    'account.supportPhoneMissing': 'Téléphone du support non configuré',
+    'account.supportHours': 'Horaires',
+    'account.supportHoursFallback': 'Consultez les informations du magasin pour les horaires',
+    'account.operationsPortal': 'Portail des opérations de la marque',
+    'account.operationsPortalDescription': 'Gérer les frais, règles, stories, marque et analyses',
+    'account.launchAdmin': 'Ouvrir Admin',
+    'account.signInToManage': 'Connectez-vous pour gérer les paramètres liés à votre compte.',
+    'account.noSavedAddresses': 'Aucune adresse de livraison enregistrée pour ce compte.',
+    'account.paymentProviderNote': 'Les moyens de paiement sont collectés de manière sécurisée lors du paiement et ne sont affichés ici que si le prestataire prend en charge les moyens enregistrés.',
+    'account.notificationNote': 'Les mises à jour de commande utilisent les coordonnées et canaux disponibles pour chaque commande.',
+    'account.noPolicies': 'Aucune page d’information ou de politique n’est encore publiée dans cette langue.',
+
     'basket.title': 'Votre Panier',
     'basket.emptyTitle': 'Votre panier est vide',
     'basket.emptySubtitle': 'Ajoutez des produits frais pour commencer.',
@@ -352,6 +449,30 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Geöffnete Filialen in der Nähe',
     'header.closedStoreNotice': 'Derzeit geschlossen',
     'header.acceptsPreOrders': 'Vorbestellungen für geplante Lieferung möglich',
+
+    'account.languageRegion': 'Sprache & Region',
+    'account.savedAddresses': 'Gespeicherte Lieferadressen',
+    'account.paymentMethods': 'Zahlungsmethoden',
+    'account.notifications': 'Bestell- und Lieferbenachrichtigungen',
+    'account.brandInfoPolicies': 'Markeninformationen & Richtlinien',
+    'account.signIn': 'Anmelden',
+    'account.signOut': 'Abmelden',
+    'account.notSignedIn': 'Nicht angemeldet',
+    'account.verifiedAccount': 'Verifiziertes Konto',
+    'account.guestSession': 'Gast-Sitzung',
+    'account.customerSupport': 'Kundensupport',
+    'account.supportEmailMissing': 'Support-E-Mail nicht konfiguriert',
+    'account.supportPhoneMissing': 'Support-Telefon nicht konfiguriert',
+    'account.supportHours': 'Zeiten',
+    'account.supportHoursFallback': 'Öffnungszeiten findest du in den Filialinformationen',
+    'account.operationsPortal': 'Marken-Betriebsportal',
+    'account.operationsPortalDescription': 'Gebühren, Regeln, Stories, Branding & Insights verwalten',
+    'account.launchAdmin': 'Admin öffnen',
+    'account.signInToManage': 'Melde dich an, um Kontoeinstellungen zu verwalten.',
+    'account.noSavedAddresses': 'Für dieses Konto sind noch keine Lieferadressen gespeichert.',
+    'account.paymentProviderNote': 'Zahlungsmethoden werden beim Checkout sicher erfasst und nur angezeigt, wenn der Zahlungsanbieter gespeicherte Methoden unterstützt.',
+    'account.notificationNote': 'Bestellupdates verwenden die für die jeweilige Bestellung verfügbaren Kontaktdaten und Benachrichtigungskanäle.',
+    'account.noPolicies': 'Für diese Sprache sind noch keine Informations- oder Richtlinienseiten veröffentlicht.',
 
     'basket.title': 'Dein Warenkorb',
     'basket.emptyTitle': 'Dein Warenkorb ist leer',

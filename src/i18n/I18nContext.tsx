@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { TRANSLATIONS, LocaleTranslations } from './translations';
 import { useTenant } from '../tenant/TenantContext';
+import { SUPPORTED_LOCALES, resolveEnabledLocales } from './locales';
 
 interface I18nContextValue {
   locale: string;
@@ -10,14 +11,9 @@ interface I18nContextValue {
   t: (key: keyof LocaleTranslations, fallback?: string) => string;
   setLocale: (locale: string) => void;
   translateEntity: (entity: { name: string; translations?: Record<string, { name?: string; description?: string }> }) => string;
+  formatCurrency: (minorUnits: number, currency?: string) => string;
+  formatDateTime: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string;
 }
-
-const AVAILABLE_LOCALES = [
-  { code: 'en-GB', label: 'English (UK)', flag: '🇬🇧' },
-  { code: 'es-ES', label: 'Español', flag: '🇪🇸' },
-  { code: 'fr-FR', label: 'Français', flag: '🇫🇷' },
-  { code: 'de-DE', label: 'Deutsch', flag: '🇩🇪' },
-];
 
 const I18nContext = createContext<I18nContextValue | undefined>(undefined);
 
@@ -26,6 +22,10 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const defaultLocale = tenant?.locale || 'en-GB';
   const fallbackLocale = 'en-GB';
+  const availableLocales = useMemo(
+    () => resolveEnabledLocales(tenant?.enabledLocales, defaultLocale),
+    [tenant?.enabledLocales, defaultLocale]
+  );
 
   const [currentLocale, setCurrentLocale] = useState<string>(() => {
     try {
@@ -36,12 +36,27 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
-    if (tenant?.locale && !localStorage.getItem('__pa_locale')) {
-      setCurrentLocale(tenant.locale);
+    let persistedLocale: string | null = null;
+    try {
+      persistedLocale = localStorage.getItem('__pa_locale');
+    } catch {
+      persistedLocale = null;
     }
-  }, [tenant?.locale]);
+
+    const enabledCodes = new Set(availableLocales.map((item) => item.code));
+    if (persistedLocale && enabledCodes.has(persistedLocale)) {
+      if (persistedLocale !== currentLocale) setCurrentLocale(persistedLocale);
+      return;
+    }
+
+    const nextLocale = enabledCodes.has(defaultLocale)
+      ? defaultLocale
+      : availableLocales[0]?.code || fallbackLocale;
+    if (nextLocale !== currentLocale) setCurrentLocale(nextLocale);
+  }, [availableLocales, currentLocale, defaultLocale, fallbackLocale]);
 
   const setLocale = (newLocale: string) => {
+    if (!availableLocales.some((item) => item.code === newLocale)) return;
     setCurrentLocale(newLocale);
     try {
       localStorage.setItem('__pa_locale', newLocale);
@@ -95,16 +110,34 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return entity?.name || '';
   };
 
+  const formatCurrency = (minorUnits: number, currency: string = tenant?.currency || 'GBP') => {
+    return new Intl.NumberFormat(currentLocale, {
+      style: 'currency',
+      currency,
+    }).format((Number.isFinite(minorUnits) ? minorUnits : 0) / 100);
+  };
+
+  const formatDateTime = (
+    value: string | number | Date,
+    options: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' }
+  ) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(currentLocale, options).format(date);
+  };
+
   return (
     <I18nContext.Provider
       value={{
         locale: currentLocale,
         defaultLocale,
         fallbackLocale,
-        availableLocales: AVAILABLE_LOCALES,
+        availableLocales,
         t,
         setLocale,
         translateEntity,
+        formatCurrency,
+        formatDateTime,
       }}
     >
       {children}
@@ -119,11 +152,17 @@ export function useI18n(): I18nContextValue {
       locale: 'en-GB',
       defaultLocale: 'en-GB',
       fallbackLocale: 'en-GB',
-      availableLocales: AVAILABLE_LOCALES,
+      availableLocales: SUPPORTED_LOCALES,
       t: (key: keyof LocaleTranslations, fallback?: string) =>
         TRANSLATIONS['en-GB']?.[key] || fallback || key,
       setLocale: () => {},
       translateEntity: (entity) => entity?.name || '',
+      formatCurrency: (minorUnits: number, currency = 'GBP') =>
+        new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format((Number.isFinite(minorUnits) ? minorUnits : 0) / 100),
+      formatDateTime: (value, options = { dateStyle: 'medium', timeStyle: 'short' }) => {
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('en-GB', options).format(date);
+      },
     };
   }
   return context;

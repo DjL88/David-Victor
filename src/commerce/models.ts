@@ -181,6 +181,8 @@ export interface TenantConfig {
   currency: string; // e.g. 'GBP'
   currencySymbol: string; // e.g. '£'
   locale: string; // e.g. 'en-GB'
+  /** Storefront languages enabled for this tenant. Defaults to all supported locales when omitted. */
+  enabledLocales?: string[];
   supportDetails: TenantSupportDetails;
   featureFlags: TenantFeatureFlags;
 }

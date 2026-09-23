@@ -146,6 +146,8 @@ export interface CmsPage {
   status: 'draft' | 'published' | 'archived';
   publishDate?: string;
   navigationVisibility: NavigationVisibility;
+  /** Show this page in the storefront Account > Information & Policies area. */
+  showInAccount?: boolean;
   navigationLabel?: string;
   navigationOrder?: number;
   blocks: CmsBlock[];

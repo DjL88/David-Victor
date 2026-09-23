@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
 import { auth } from '../../firebase';
+import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { SUPPORTED_LOCALES, resolveEnabledLocales } from '../../i18n/locales';
 import {
   FileText,
   Plus,
@@ -31,6 +33,13 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [showBlockPicker, setShowBlockPicker] = useState(false);
   const [error, setError] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [tenantLocales, setTenantLocales] = useState(SUPPORTED_LOCALES);
+
+  useEffect(() => {
+    defaultAdminClient.getBranding(tenantId)
+      .then((tenant) => setTenantLocales(resolveEnabledLocales(tenant.enabledLocales, tenant.locale || 'en-GB')))
+      .catch(() => setTenantLocales(SUPPORTED_LOCALES));
+  }, [tenantId]);
 
   useEffect(() => {
     setLoading(true);
@@ -286,6 +295,33 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                 <option value="footer">Footer Nav Only</option>
                 <option value="hidden">Hidden from Nav</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Page language</label>
+                <select
+                  value={selectedPage.locale}
+                  onChange={(e) => setSelectedPage({ ...selectedPage, locale: e.target.value })}
+                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                >
+                  {tenantLocales.map((locale) => (
+                    <option key={locale.code} value={locale.code}>{locale.flag} {locale.label}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold text-gray-700 self-end">
+                <input
+                  type="checkbox"
+                  checked={selectedPage.showInAccount === true}
+                  onChange={(e) => setSelectedPage({ ...selectedPage, showInAccount: e.target.checked })}
+                  className="rounded border-gray-300 text-indigo-600"
+                />
+                Show in Account
+              </label>
+              <p className="sm:col-span-2 text-[10px] leading-relaxed text-gray-500">
+                Use the same URL slug for translated versions. The storefront selects the customer language first, then the brand default language, then English.
+              </p>
             </div>
 
             <div className="pt-2 border-t border-gray-100">
