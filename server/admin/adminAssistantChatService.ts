@@ -65,7 +65,7 @@ interface AssistantReadContext {
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MODEL_FALLBACKS = ['gemini-3.8-flash', 'gemini-2.5-flash'];
 const MAX_HISTORY_MESSAGES = 12;
-const MAX_REPLY_CHARS = 720;
+const MAX_REPLY_CHARS = 1100;
 
 const SECTION_SUGGESTIONS: Record<string, string[]> = {
   catalog: [
@@ -690,7 +690,7 @@ export class AdminAssistantChatService {
                   readContext,
                 }),
                 temperature: 0.2,
-                maxOutputTokens: 320,
+                maxOutputTokens: 480,
               },
             });
 
