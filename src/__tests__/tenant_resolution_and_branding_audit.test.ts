@@ -28,7 +28,7 @@ describe('Strict Tenant Resolution & Branding Audit Tests', () => {
   });
 
   it('rejects arbitrary public query parameters or headers from switching tenants without authorization', async () => {
-    const { resolveTenant } = await import('../../server/api/v1Router');
+    const { resolveTenant, resolveAdminRequestedTenant } = await import('../../server/api/v1Router');
 
     // Case A: Unauthenticated public request with fake domain and malicious override
     const unauthReq: any = {
@@ -82,6 +82,37 @@ describe('Strict Tenant Resolution & Branding Audit Tests', () => {
       },
     };
     expect(resolveTenant(tenantAdminReq)).toBe('brand-beta');
+
+    // Case E: Admin path tenant wins over a conflicting caller-controlled header.
+    // requireAdminAuth must verify the route resource, not the header-selected tenant.
+    const mismatchedAdminReq: any = {
+      path: '/admin/tenants/brand-beta',
+      params: { id: 'brand-beta' },
+      headers: { 'x-tenant-id': 'brand-alpha' },
+    };
+    expect(resolveAdminRequestedTenant(mismatchedAdminReq)).toBe('brand-beta');
+  });
+
+  it('does not serve a custom domain until its mapping is active', async () => {
+    const host = `pending-${Date.now()}.example.test`;
+
+    const pending = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: host,
+      tenantId: 'brand-alpha',
+      isPrimary: false,
+      status: 'pending',
+    });
+    expect(await FirestorePlatformService.resolveTenantByHostname(host)).toBeNull();
+
+    await FirestorePlatformService.addOrUpdateDomain({
+      hostname: host,
+      tenantId: 'brand-alpha',
+      isPrimary: false,
+      status: 'active',
+    });
+    expect(await FirestorePlatformService.resolveTenantByHostname(host)).toBe('brand-alpha');
+
+    await FirestorePlatformService.deleteDomain(pending.domainId);
   });
 
   it('persists branding changes (logo, colours, fonts) to BFF/storage and survives reload', async () => {
