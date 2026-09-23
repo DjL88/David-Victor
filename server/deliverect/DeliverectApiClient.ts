@@ -9,6 +9,7 @@ import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { assertProductAddAllowed } from '../ruleEnforcementService';
 import { FirestorePlatformService, BasketBundleAllocationRecord } from '../firestoreService';
+import { toDisplayOrderReference } from '../orderReferenceService';
 import { randomUUID } from 'node:crypto';
 import { mergeDeliverectTagDefinitions } from './DeliverectTagDefinitions';
 import {
@@ -2999,7 +3000,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const channelOrderReference =
       options?.channelOrderReference ||
       `BWYDI-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-    const channelOrderDisplayId = channelOrderReference.slice(-24);
+    const channelOrderDisplayId = toDisplayOrderReference(channelOrderReference);
     const now = new Date().toISOString();
     const hasOnlineAuthorization = Boolean(options?.paymentId);
 
