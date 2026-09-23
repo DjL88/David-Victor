@@ -5,6 +5,7 @@ import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
 const defaultCommerceClient = getCommerceClient() as any;
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { OrderTrackingView } from './OrderTrackingView';
 import {
@@ -23,11 +24,76 @@ import {
 
 export const OrdersScreen: React.FC = () => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { t } = useI18n();
   const { appMode } = useTenant();
   const isDemo = appMode === 'demo';
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const getOrderStatusLabel = (status: string) => {
+    switch (status) {
+      case 'SUBMITTED':
+        return t('order.statusSubmitted');
+      case 'ACCEPTED':
+      case 'orderAccepted':
+      case 'STORE_ACCEPTED':
+      case 'CONFIRMED':
+      case 'ORDER_CONFIRMED':
+        return t('order.statusAccepted');
+      case 'PICKING':
+      case 'preparing':
+      case 'PICKING_STARTED':
+        return t('order.statusPicking');
+      case 'PICKING_WITH_CHANGES':
+        return t('order.statusPickingWithChanges');
+      case 'PICKED':
+      case 'PICKING_COMPLETE':
+      case 'readyForPickup':
+        return t('order.statusPickedPacked');
+      case 'READY':
+      case 'READY_FOR_PICKUP':
+        return t('order.statusReadyCollection');
+      case 'PAYMENT_FINALISING':
+        return t('order.statusPaymentFinalising');
+      case 'READY_FOR_COURIER':
+        return t('order.statusReadyCourier');
+      case 'COURIER_ASSIGNED':
+      case 'courierAssigned':
+        return t('order.statusCourierAssigned');
+      case 'courierAtStore':
+        return t('order.statusCourierAtStore');
+      case 'OUT_FOR_DELIVERY':
+      case 'outForDelivery':
+      case 'DISPATCHING':
+        return t('order.statusOutForDelivery');
+      case 'DELIVERED':
+      case 'delivered':
+        return t('order.statusDelivered');
+      case 'CANCELLED':
+      case 'ORDER_CANCELLED':
+      case 'ORDER_CANCELLED_UNAVAILABLE_ITEM':
+        return t('order.statusCancelled');
+      default:
+        return String(status);
+    }
+  };
+
+  const getPaymentStatusLabel = (state?: string) => {
+    switch (state) {
+      case 'AUTHORIZED':
+        return t('orders.paymentAuthorized');
+      case 'CAPTURED':
+        return t('orders.paymentCaptured');
+      case 'PAYMENT_ACTION_REQUIRED':
+      case 'REAUTHORIZING':
+        return t('orders.paymentActionRequired');
+      case 'TOKENIZED':
+        return t('orders.paymentTokenized');
+      default:
+        return state || t('orders.pending');
+    }
+  };
 
   const loadOrders = async () => {
     setLoading(true);
@@ -82,7 +148,7 @@ export const OrdersScreen: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-emerald-600" />
-          <h1 className="text-xl font-bold text-gray-900">Your Orders & Deliveries</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t('orders.title')}</h1>
         </div>
         <button
           type="button"
@@ -90,7 +156,7 @@ export const OrdersScreen: React.FC = () => {
           className="text-xs font-semibold text-gray-500 hover:text-gray-900 flex items-center gap-1"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          <span>Refresh</span>
+          <span>{t('orders.refresh')}</span>
         </button>
       </div>
 
@@ -172,15 +238,15 @@ export const OrdersScreen: React.FC = () => {
       {/* Orders List */}
       <div className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
-          Recent Activity ({orders.length})
+          {t('orders.recentActivity')} ({orders.length})
         </h2>
 
         {orders.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 space-y-2">
             <Package className="w-10 h-10 text-gray-300 mx-auto" />
-            <p className="text-xs font-bold text-gray-700">No active orders yet</p>
+            <p className="text-xs font-bold text-gray-700">{t('orders.noActive')}</p>
             <p className="text-xs text-gray-400">
-              {isDemo ? 'Place an order from the shop or launch a scenario above to test the lifecycle.' : 'Your current and previous orders will appear here.'}
+              {isDemo ? 'Place an order from the shop or launch a scenario above to test the lifecycle.' : t('orders.emptyLive')}
             </p>
           </div>
         ) : (
@@ -205,11 +271,11 @@ export const OrdersScreen: React.FC = () => {
                   <div className="flex items-center gap-1.5">
                     {isReauthNeeded && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
-                        Action Required
+                        {t('orders.actionRequired')}
                       </span>
                     )}
                     <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {order.status}
+                      {getOrderStatusLabel(String(order.status))}
                     </span>
                   </div>
                 </div>
@@ -218,8 +284,8 @@ export const OrdersScreen: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-gray-400" />
                     <span>
-                      {order.picking.items.length} items
-                      {order.picking.hasChanges && ' (with substitutions)'}
+                      {order.picking.items.length} {t(order.picking.items.length === 1 ? 'orders.item' : 'orders.items')}
+                      {order.picking.hasChanges && ` (${t('orders.withSubstitutions')})`}
                     </span>
                   </div>
                   <span className="font-extrabold text-gray-900 text-sm">
@@ -229,10 +295,10 @@ export const OrdersScreen: React.FC = () => {
 
                 <div className="pt-2 border-t border-gray-50 flex items-center justify-between text-xs">
                   <span className="text-gray-400 text-[11px]">
-                    Payment: {order.payment?.state || 'Pending'}
+                    {t('orders.payment')}: {getPaymentStatusLabel(order.payment?.state)}
                   </span>
                   <span className="font-bold text-emerald-700 group-hover:text-emerald-800 flex items-center gap-1">
-                    <span>Track Order</span>
+                    <span>{t('orders.trackOrder')}</span>
                     <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </span>
                 </div>

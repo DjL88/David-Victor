@@ -56,6 +56,44 @@ describe('adminActionRegistry', () => {
     expect(() => validateAdminActionInput(definition, { clientSecret: 'do-not-store' })).toThrow('Sensitive credential fields');
   });
 
+  it('accepts reviewable brand terminology and locale proposals', () => {
+    const definition = getAdminActionDefinition('branding.proposeUpdate')!;
+    const input = validateAdminActionInput(definition, {
+      locale: 'en-GB',
+      enabledLocales: ['en-GB', 'en-US'],
+      copyOverrides: {
+        'en-US': {
+          'header.basket': 'Cart',
+          'header.collect': 'Pickup',
+        },
+      },
+    });
+
+    expect(input).toMatchObject({
+      locale: 'en-GB',
+      enabledLocales: ['en-GB', 'en-US'],
+      copyOverrides: {
+        'en-US': {
+          'header.basket': 'Cart',
+          'header.collect': 'Pickup',
+        },
+      },
+    });
+  });
+
+  it('rejects credential-shaped keys nested inside brand wording proposals', () => {
+    const definition = getAdminActionDefinition('branding.proposeUpdate')!;
+    expect(() =>
+      validateAdminActionInput(definition, {
+        copyOverrides: {
+          'en-GB': {
+            apiKey: 'never-store-this',
+          },
+        },
+      })
+    ).toThrow('Sensitive credential fields');
+  });
+
   it('builds read-only plans that are tenant-bound and executable', () => {
     const action = assertAssistantActionAllowed('tenantAdmin', 'catalog.diagnoseVisibility');
     const plan = buildReadOnlyActionPlan({
