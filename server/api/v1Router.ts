@@ -353,7 +353,7 @@ function sendConditionalJson(
   return res.type('application/json').send(jsonString);
 }
 
-function resolveAdminRequestedTenant(req: AuthenticatedRequest): string | undefined {
+export function resolveAdminRequestedTenant(req: AuthenticatedRequest): string | undefined {
   // Route-bound tenant IDs are authoritative. Never let a caller-selected
   // x-tenant-id header override a different tenant encoded in the URL.
   if (req.params?.tenantId) return String(req.params.tenantId);
