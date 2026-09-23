@@ -263,6 +263,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const handleSelectTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setIsMobileNavOpen(false);
+    setAssistantGuide(null);
   };
 
   const showAssistantDestination = useCallback((
