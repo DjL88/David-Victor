@@ -19,6 +19,14 @@ describe('customer correctness regressions', () => {
     path.resolve(process.cwd(), 'server/firestoreService.ts'),
     'utf8'
   );
+  const favouritesSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/features/account/FavouritesAndBuyAgain.tsx'),
+    'utf8'
+  );
+  const customerAccountSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'server/customerAccountService.ts'),
+    'utf8'
+  );
 
   it('uses the supported basket item removal API in checkout', () => {
     expect(checkoutSource).not.toContain('removeFromBasket(basket.id, plu)');
@@ -37,5 +45,22 @@ describe('customer correctness regressions', () => {
     expect(routerSource).toContain('callerUid\n      );');
     expect(firestoreSource).toContain('customerUid: customerUid || (rawOrderInput as any)?.customerUid || undefined');
     expect(firestoreSource).toContain('attachCustomerUidToOrderProjection');
+  });
+
+  it('persists signed-in favourites through the tenant-scoped BFF boundary', () => {
+    expect(routerSource).toContain("v1Router.get('/account/favourites'");
+    expect(routerSource).toContain("'/account/favourites',");
+    expect(routerSource).toContain('CustomerAccountService.saveFavourites');
+    expect(customerAccountSource).toContain(".collection('tenants')");
+    expect(customerAccountSource).toContain(".collection('customerProfiles')");
+    expect(favouritesSource).toContain("fetch('/api/v1/account/favourites'");
+    expect(favouritesSource).toContain('Authorization: `Bearer ${token}`');
+  });
+
+  it('uses real order history and product refresh for Buy Again instead of timed simulation', () => {
+    expect(favouritesSource).toContain('.getOrderHistory()');
+    expect(favouritesSource).toContain('.getProduct(');
+    expect(favouritesSource).not.toContain('Simulate authoritative BFF re-validation');
+    expect(favouritesSource).not.toContain('setTimeout(r, 450)');
   });
 });
