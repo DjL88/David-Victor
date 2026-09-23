@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { CmsPageView } from '../cms/CmsPageView';
@@ -25,7 +25,7 @@ interface AccountScreenProps {
 
 export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => {
   const { tenant, appMode } = useTenant();
-  const { locale, availableLocales, setLocale } = useI18n();
+  const { locale, availableLocales, setLocale, t } = useI18n();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
   useEffect(() => {
@@ -54,8 +54,33 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
       .catch(() => setCmsPages([]));
   }, [tenant?.tenantId]);
 
+  const localizedCmsPages = useMemo(() => {
+    const eligible = cmsPages.filter(
+      (page) =>
+        page.status === 'published' &&
+        (page.showInAccount === true || ['footer', 'both'].includes(page.navigationVisibility))
+    );
+
+    const bySlug = new Map<string, CmsPage[]>();
+    eligible.forEach((page) => {
+      const group = bySlug.get(page.slug) || [];
+      group.push(page);
+      bySlug.set(page.slug, group);
+    });
+
+    return Array.from(bySlug.values())
+      .map((group) =>
+        group.find((page) => page.locale === locale) ||
+        group.find((page) => page.locale === tenant?.locale) ||
+        group.find((page) => page.locale === 'en-GB') ||
+        group[0]
+      )
+      .filter(Boolean)
+      .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999));
+  }, [cmsPages, locale, tenant?.locale]);
+
   const selectedPage = activePageSlug
-    ? cmsPages.find((p) => p.slug === activePageSlug)
+    ? localizedCmsPages.find((p) => p.slug === activePageSlug) || null
     : null;
 
   const displayName = currentUser
@@ -78,9 +103,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
     .toUpperCase() || 'CU';
 
   return (
-    <div id="account-screen" className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+    <div id="account-screen" className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-5">
       {/* Profile Header */}
-      <div className="flex items-center justify-between p-4 rounded-3xl bg-white border border-gray-100 shadow-2xs">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-5 rounded-3xl bg-white border border-gray-100 shadow-2xs">
         <div className="flex items-center gap-3.5">
           <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-800 flex items-center justify-center font-extrabold text-xl shadow-2xs">
             {initials}
@@ -90,10 +115,10 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
             {displayEmail ? (
               <p className="text-xs text-gray-500">{displayEmail}</p>
             ) : (
-              <p className="text-xs text-gray-400">Not signed in</p>
+              <p className="text-xs text-gray-400">{${t('account.notSignedIn')}}</p>
             )}
             <span className="text-[10px] font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">
-              {currentUser ? 'Verified Account' : 'Guest Session'}
+              {currentUser ? ${t('account.verifiedAccount')} : ${t('account.guestSession')}}
             </span>
           </div>
         </div>
@@ -105,7 +130,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
+            <span>{${t('account.signOut')}}</span>
           </button>
         ) : (
           <button
@@ -114,89 +139,102 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-900 text-white text-xs font-bold hover:bg-gray-800 cursor-pointer shadow-2xs"
           >
             <LogIn className="w-3.5 h-3.5" />
-            <span>Sign In</span>
+            <span>{${t('account.signIn')}}</span>
           </button>
         )}
       </div>
 
-      {/* Language & Localisation Preference */}
-      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-2xs">
-        <div className="flex items-center gap-2 mb-3">
-          <Globe className="w-4 h-4 text-indigo-600" />
-          <span className="text-xs font-bold text-gray-900">Language & Region</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div className="space-y-5">
+        {/* Language & Localisation Preference */}
+        <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-2xs">
+          <div className="flex items-center gap-2 mb-3">
+            <Globe className="w-4 h-4 text-indigo-600" />
+            <span className="text-xs font-bold text-gray-900">{${t('account.languageRegion')}}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {availableLocales.map((loc) => {
+              const isSelected = loc.code === locale;
+              return (
+                <button
+                  key={loc.code}
+                  type="button"
+                  onClick={() => setLocale(loc.code)}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
+                    isSelected
+                      ? 'bg-indigo-50 text-indigo-900 border-indigo-300 ring-1 ring-indigo-300 shadow-xs'
+                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="text-base">{loc.flag}</span>
+                  <span className="truncate">{loc.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {availableLocales.map((loc) => {
-            const isSelected = loc.code === locale;
-            return (
+  
+        {/* Account Links */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-2xs divide-y divide-gray-50 overflow-hidden text-xs font-semibold text-gray-800">
+          <button type="button" onClick={() => setAccountPanel('addresses')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+            <span className="flex items-center gap-3"><MapPin className="w-4 h-4 text-gray-400" />{${t('account.savedAddresses')}}</span><ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+          <button type="button" onClick={() => setAccountPanel('payments')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+            <span className="flex items-center gap-3"><CreditCard className="w-4 h-4 text-gray-400" />{${t('account.paymentMethods')}}</span><ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+          <button type="button" onClick={() => setAccountPanel('notifications')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
+            <span className="flex items-center gap-3"><Bell className="w-4 h-4 text-gray-400" />{${t('account.notifications')}}</span><ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+  
+  
+        </div>
+        <div className="space-y-5">
+        {/* Brand CMS Pages (Information & Policies) */}
+        <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-2xs space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="w-4 h-4 text-gray-500" />
+            <span className="text-xs font-bold text-gray-900">{${t('account.brandInfoPolicies')}}</span>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {localizedCmsPages.map((page) => (
               <button
-                key={loc.code}
                 type="button"
-                onClick={() => setLocale(loc.code)}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
-                  isSelected
-                    ? 'bg-indigo-50 text-indigo-900 border-indigo-300 ring-1 ring-indigo-300 shadow-xs'
-                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                }`}
+                key={page.id}
+                onClick={() => setActivePageSlug(page.slug)}
+                className="w-full py-2.5 flex items-center justify-between cursor-pointer hover:text-emerald-700 transition-colors text-xs font-semibold text-gray-700 text-left"
               >
-                <span className="text-base">{loc.flag}</span>
-                <span className="truncate">{loc.label}</span>
+                <span>{page.navigationLabel || page.title}</span>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               </button>
-            );
-          })}
+            ))}
+            {localizedCmsPages.length === 0 && (
+              <p className="py-2 text-xs text-gray-400">{t('account.noPolicies')}</p>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Account Links */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-2xs divide-y divide-gray-50 overflow-hidden text-xs font-semibold text-gray-800">
-        <button type="button" onClick={() => setAccountPanel('addresses')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-          <span className="flex items-center gap-3"><MapPin className="w-4 h-4 text-gray-400" />Saved delivery addresses</span><ChevronRight className="w-4 h-4 text-gray-400" />
-        </button>
-        <button type="button" onClick={() => setAccountPanel('payments')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-          <span className="flex items-center gap-3"><CreditCard className="w-4 h-4 text-gray-400" />Payment methods</span><ChevronRight className="w-4 h-4 text-gray-400" />
-        </button>
-        <button type="button" onClick={() => setAccountPanel('notifications')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-          <span className="flex items-center gap-3"><Bell className="w-4 h-4 text-gray-400" />Order notifications & delivery alerts</span><ChevronRight className="w-4 h-4 text-gray-400" />
-        </button>
-      </div>
-
-      {/* Brand CMS Pages (Information & Policies) */}
-      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-2xs space-y-2">
-        <div className="flex items-center gap-2 mb-2">
-          <FileText className="w-4 h-4 text-gray-500" />
-          <span className="text-xs font-bold text-gray-900">Brand Information & Policies</span>
-        </div>
-        <div className="divide-y divide-gray-50">
-          {cmsPages.filter((p) => p.status === 'published' && ['footer', 'both'].includes(p.navigationVisibility)).sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999)).map((page) => (
-            <div
-              key={page.id}
-              onClick={() => setActivePageSlug(page.slug)}
-              className="py-2.5 flex items-center justify-between cursor-pointer hover:text-emerald-700 transition-colors text-xs font-semibold text-gray-700"
-            >
-              <span>{page.navigationLabel || page.title}</span>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+  
+        {/* White-label Brand Support Details */}
+        <div className="p-4 rounded-3xl bg-gray-50 border border-gray-100 text-xs text-gray-600">
+          <span className="font-bold text-gray-900 block mb-2">
+            {tenant?.brandName ? `${tenant.brandName} ${t('account.customerSupport')}` : t('account.customerSupport')}
+          </span>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5 text-gray-400" />
+              <span>{tenant?.supportDetails?.email || ${t('account.supportEmailMissing')}}</span>
             </div>
-          ))}
+            <div className="flex items-center gap-2">
+              <Phone className="w-3.5 h-3.5 text-gray-400" />
+              <span>{tenant?.supportDetails?.phone || ${t('account.supportPhoneMissing')}}</span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-500 text-[11px] pt-1">
+              <span>Hours: {tenant?.supportDetails?.openingHours || ${t('account.supportHoursFallback')}}</span>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* White-label Brand Support Details */}
-      <div className="p-4 rounded-3xl bg-gray-50 border border-gray-100 text-xs text-gray-600">
-        <span className="font-bold text-gray-900 block mb-2">
-          {tenant?.brandName ? `${tenant.brandName} customer support` : 'Customer support'}
-        </span>
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Mail className="w-3.5 h-3.5 text-gray-400" />
-            <span>{tenant?.supportDetails?.email || 'Support email not configured'}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Phone className="w-3.5 h-3.5 text-gray-400" />
-            <span>{tenant?.supportDetails?.phone || 'Support phone not configured'}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 text-[11px] pt-1">
-            <span>Hours: {tenant?.supportDetails?.openingHours || 'See store information for opening hours'}</span>
-          </div>
+  
+  
         </div>
       </div>
 
@@ -206,9 +244,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           <div className="flex items-center gap-2.5">
             <Settings className="w-4 h-4 text-indigo-600" />
             <div>
-              <span className="font-bold text-gray-900 block">Brand Operations Portal</span>
+              <span className="font-bold text-gray-900 block">{${t('account.operationsPortal')}}</span>
               <span className="text-[11px] text-gray-500 block">
-                Manage fees, rules, stories, branding & insights
+                {t('account.operationsPortalDescription')}
               </span>
             </div>
           </div>
@@ -226,7 +264,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div role="dialog" aria-modal="true" className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
             <button type="button" aria-label="Close" onClick={() => setAccountPanel(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center"><X className="w-4 h-4" /></button>
-            <div className="pr-10"><h3 className="text-lg font-bold text-gray-900">{accountPanel === 'addresses' ? 'Saved delivery addresses' : accountPanel === 'payments' ? 'Payment methods' : 'Order notifications'}</h3><p className="mt-2 text-sm text-gray-600">{!currentUser ? 'Sign in to manage settings linked to your account.' : accountPanel === 'addresses' ? 'No saved delivery addresses are available for this account yet.' : accountPanel === 'payments' ? 'Payment methods are securely collected during checkout and are not displayed here unless the payment provider exposes a saved method.' : 'Order updates use the contact details and notification channels available for each order.'}</p>{!currentUser && <button type="button" onClick={() => signInWithGoogle().catch(() => undefined)} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Sign in</button>}</div>
+            <div className="pr-10"><h3 className="text-lg font-bold text-gray-900">{accountPanel === 'addresses' ? ${t('account.savedAddresses')} : accountPanel === 'payments' ? ${t('account.paymentMethods')} : 'Order notifications'}</h3><p className="mt-2 text-sm text-gray-600">{!currentUser ? ${t('account.signInToManage')} : accountPanel === 'addresses' ? ${t('account.noSavedAddresses')} : accountPanel === 'payments' ? ${t('account.paymentProviderNote')} : ${t('account.notificationNote')}}</p>{!currentUser && <button type="button" onClick={() => signInWithGoogle().catch(() => undefined)} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">{t('account.signIn')}</button>}</div>
           </div>
         </div>
       )}
