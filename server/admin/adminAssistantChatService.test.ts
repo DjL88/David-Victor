@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAdminAssistantSystemInstruction,
   buildDegradedAssistantReply,
+  extractCatalogLookupQuery,
   getAdminAssistantSuggestions,
   normaliseAssistantReply,
   normaliseChatHistory,
@@ -64,9 +65,29 @@ describe('AdminAssistantChatService foundations', () => {
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
   });
 
-  it('keeps guided fallback useful without claiming live catalogue data', () => {
-    expect(buildDegradedAssistantReply('catalog', 'Are bananas in stock?')).toContain(
-      'can’t confirm live stock'
+  it('extracts a product term from live stock questions without treating generic help as a lookup', () => {
+    expect(extractCatalogLookupQuery('Are bananas in stock?')).toBe('bananas');
+    expect(extractCatalogLookupQuery("Why is Dave's Salted Potato Crisps 150g not showing?")).toBe(
+      "Dave's Salted Potato Crisps 150g"
+    );
+    expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
+  });
+
+  it('uses trusted read results in guided mode and remains useful without them', () => {
+    expect(
+      buildDegradedAssistantReply('catalog', 'Are bananas in stock?', {
+        actionName: 'catalog.diagnoseVisibility',
+        result: {
+          query: 'bananas',
+          matches: [{ name: 'Bananas', stockStatus: 'IN_STOCK', stockQuantity: 12 }],
+        },
+        evidence: [{ source: 'deliverect.searchProducts', ok: true }],
+        generatedAt: '2026-09-23T00:00:00.000Z',
+      })
+    ).toContain('Bananas is reported in stock');
+
+    expect(buildDegradedAssistantReply('catalog', 'What can I do here?')).toContain(
+      'safe catalogue read automatically'
     );
     expect(buildDegradedAssistantReply('hero_banners', 'What can I customise?')).toContain(
       'image, headline'

@@ -47,7 +47,8 @@ If both a Google AI API key and a Google Cloud project are available, the server
 - understand the active tenant, Admin page, role and selected location/resource metadata
 - explain how Admin features work
 - explain safe next steps
-- identify when a deterministic diagnostic is needed
+- automatically execute narrowly scoped, allow-listed **read-only** checks for relevant questions (for example product visibility/stock evidence on Products & Stock, or live location configuration on Locations)
+- use those trusted read results in the answer without exposing raw credentials or granting write access
 - explain that supported mutations can be prepared as reviewable proposals
 
 ## What conversation cannot do
@@ -60,7 +61,7 @@ If both a Google AI API key and a Google Cloud project are available, the server
 - alter integrations
 - claim a change happened without an explicit platform action result
 
-The existing deterministic diagnostics remain available separately in the drawer.
+The existing deterministic diagnostics remain available separately in the drawer. Automatic reads use the same Action Registry permissions and audit trail; writes still never execute from conversation.
 
 ## Next orchestration stage
 

@@ -2851,12 +2851,31 @@ v1Router.post(
       const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
       const response = await AdminAssistantChatService.chat({
         tenantId,
+        actorId: authAdmin.uid,
         actorRole: authAdmin.role,
         actorName: authAdmin.name || authAdmin.email,
         message: req.body.message,
         history: req.body.history,
         context: req.body.context,
       });
+
+      if (response.readAction) {
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: authAdmin.uid,
+          userName: authAdmin.name || authAdmin.email || 'Admin',
+          userRole: authAdmin.role,
+          tenantId,
+          category: 'Integration',
+          action: `Assistant automatic read: ${response.readAction}`,
+          details: JSON.stringify({
+            context: req.body.context || null,
+            source: 'assistant.chat',
+          }),
+          actorType: 'assistant',
+          actionRisk: 'READ',
+          reversible: false,
+        });
+      }
 
       res.json({
         ...response,
