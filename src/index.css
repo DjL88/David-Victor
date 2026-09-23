@@ -12,6 +12,7 @@
   --font-heading: var(--font-body);
   --font-carousel-title: var(--font-heading);
   --storefront-header-height: 104px;
+  --category-nav-height: 76px;
 }
 
 body { background: var(--brand-background); color: var(--brand-text); font-family: var(--font-body); }
@@ -81,22 +82,26 @@ body,
   }
 
   /*
-   * Gentle mobile section snapping. "proximity" only settles a section when the
-   * user finishes near its boundary, so normal browsing and long product lists
-   * remain free-scrolling.
+   * Only the aisle/search controls participate in vertical snapping. Product
+   * browsing below them remains completely free-scrolling.
    */
   html:has(#home-screen-container),
   body:has(#home-screen-container) {
     scroll-snap-type: y proximity;
-    scroll-padding-top: calc(var(--storefront-header-height, 104px) + 10px);
+    scroll-padding-top: calc(var(--storefront-header-height, 104px) + 2px);
   }
 
-  #stories-section,
-  #main-promotional-super-carousel,
-  #offers-near-you-section,
-  #main-product-listing {
+  #category-nav-section {
     scroll-snap-align: start;
     scroll-snap-stop: normal;
-    scroll-margin-top: calc(var(--storefront-header-height, 104px) + 10px);
+    scroll-margin-top: var(--storefront-header-height, 104px);
+  }
+
+  #main-product-listing {
+    scroll-margin-top: calc(
+      var(--storefront-header-height, 104px) +
+      var(--category-nav-height, 76px) +
+      8px
+    );
   }
 }
