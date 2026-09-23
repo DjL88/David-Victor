@@ -404,6 +404,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     }
   }, [activeRoute.kind, activeTab, setSearchQuery]);
 
+  const routeToSearch = useCallback((query: string = '') => {
+    setSearchQuery(query);
+    const path = pathForSearch(query);
+    pushStorefrontUrl(path);
+    setActiveRoute({ kind: 'search', query });
+    setActiveTab('search');
+  }, [setSearchQuery]);
+
   useEffect(() => {
     const handlePopState = () => {
       const route = parseStorefrontRoute();
@@ -582,8 +590,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     } else if (action.type === 'CATEGORY' && action.targetCategoryId) {
       routeToCategory(action.targetCategoryId);
     } else if (action.type === 'SEARCH' && action.searchQuery) {
-      setSearchQuery(action.searchQuery);
-      setActiveTab('search');
+      routeToSearch(action.searchQuery);
     } else if (action.type === 'OFFER') {
       if (action.targetPlu) {
         const targetProd = products.find((p) => p.plu === action.targetPlu);
@@ -662,7 +669,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             onSearchChange={(q) => {
               setSearchQuery(q);
               if (activeTab === 'orders' || activeTab === 'account') {
-                setActiveTab('home');
+                navigateToTab('home');
               }
             }}
             cartItemCount={totalItemsCount}
@@ -870,7 +877,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isStoreSelected={selectedStore !== null}
         onPromptSelectStore={() => {
           setStorePickerTargetProduct(selectedProduct);
-          setSelectedProduct(null);
+          closeRoutedOverlay('product');
           setIsStorePickerOpen(true);
         }}
       />
@@ -941,7 +948,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isOpen={isCartOpen}
         basket={basket}
         candidateProducts={products}
-        onClose={() => setIsCartOpen(false)}
+        onClose={() => closeRoutedOverlay('basket')}
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
         onSwapItem={swapBasketItem}
