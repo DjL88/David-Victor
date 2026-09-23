@@ -452,6 +452,17 @@ export interface Order {
   currentOrder: OrderSnapshot;
   finalOrder?: OrderSnapshot;
   payment: OrderPaymentInfo;
+  receipt?: {
+    available: boolean;
+    isVatReceipt: boolean;
+    vatRegistrationNumber?: string;
+    legalName?: string;
+    legalAddress?: string;
+    tax?: Money;
+    items: BasketItem[];
+    discounts: Array<{ id?: string; code: string; title: string; amount: Money }>;
+    charges: Array<{ id: string; title: string; amount: Money; type: string }>;
+  };
   paymentSummary?: {
     method: string;
     totalPaid: number;
