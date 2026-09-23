@@ -1533,7 +1533,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-gray-800 pt-2">
-                <span>Root Menu:</span>
+                <span title="Commerce root menu published from Deliverect's master/primary location. This is a published browse menu, not the tenant product master.">Published Root Menu:</span>
                 <span className={commerceDiagnostics?.rootCatalog ? 'text-purple-400 font-semibold' : 'text-gray-500'}>
                   {commerceDiagnostics?.rootCatalog
                     ? `${commerceDiagnostics.rootCatalog.menusCount || 1} Menu (${commerceDiagnostics.rootCatalog.categoriesCount} cats)`
@@ -1549,7 +1549,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Live Products:</span>
+                <span title="Count from the currently retrieved published Commerce menu/store menu. Hosted Channel menu pushes become the authoritative channel catalogue once received.">Published Products:</span>
                 <span className={commerceDiagnostics?.totalProductsCount ? 'text-emerald-400 font-bold' : 'text-gray-500'}>
                   {commerceDiagnostics?.totalProductsCount
                     ? `${commerceDiagnostics.totalProductsCount} Live Items`
