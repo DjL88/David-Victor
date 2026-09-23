@@ -7,6 +7,7 @@ export interface SupportedLocale {
 
 export const SUPPORTED_LOCALES: SupportedLocale[] = [
   { code: 'en-GB', label: 'English (UK)', flag: '🇬🇧', languageName: 'English' },
+  { code: 'en-US', label: 'English (US)', flag: '🇺🇸', languageName: 'English' },
   { code: 'es-ES', label: 'Español', flag: '🇪🇸', languageName: 'Spanish' },
   { code: 'fr-FR', label: 'Français', flag: '🇫🇷', languageName: 'French' },
   { code: 'de-DE', label: 'Deutsch', flag: '🇩🇪', languageName: 'German' },

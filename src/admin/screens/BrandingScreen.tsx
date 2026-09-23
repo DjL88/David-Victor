@@ -13,6 +13,8 @@ import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
 import { FeatureSwitchesPanel } from '../components/FeatureSwitchesPanel';
 import { SUPPORTED_LOCALES } from '../../i18n/locales';
+import { BRAND_COPY_FIELDS, resolveStorefrontCopy, StorefrontCopyOverrides } from '../../i18n/copy';
+import { TRANSLATIONS } from '../../i18n/translations';
 import {
   Palette,
   Check,
@@ -67,6 +69,8 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [supportOpeningHours, setSupportOpeningHours] = useState<string>('');
   const [defaultLocale, setDefaultLocale] = useState<string>('en-GB');
   const [enabledLocales, setEnabledLocales] = useState<string[]>(SUPPORTED_LOCALES.map((locale) => locale.code));
+  const [copyOverrides, setCopyOverrides] = useState<StorefrontCopyOverrides>({});
+  const [copyLocale, setCopyLocale] = useState<string>('en-GB');
 
   // Custom Font Management states
   const [headingFamily, setHeadingFamily] = useState<string>('Plus Jakarta Sans');
@@ -130,7 +134,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
       setSupportPhone(data.supportDetails?.phone || '');
       setSupportOpeningHours(data.supportDetails?.openingHours || '');
       setDefaultLocale(data.locale || 'en-GB');
-      setEnabledLocales(data.enabledLocales?.length ? data.enabledLocales : SUPPORTED_LOCALES.map((locale) => locale.code));
+      const loadedLocales = data.enabledLocales?.length ? data.enabledLocales : SUPPORTED_LOCALES.map((locale) => locale.code);
+      setEnabledLocales(loadedLocales);
+      setCopyLocale((current) => loadedLocales.includes(current) ? current : (data.locale || loadedLocales[0] || 'en-GB'));
+      setCopyOverrides((data.copyOverrides || {}) as StorefrontCopyOverrides);
 
       // Load tenant-managed font assets
       try {
@@ -226,6 +233,14 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           carouselTitleFontFamily: `'${cleanCarousel}', ${headingFallback}`,
           locale: defaultLocale,
           enabledLocales: Array.from(new Set([defaultLocale, ...enabledLocales])),
+          copyOverrides: Object.fromEntries(
+            Object.entries(copyOverrides)
+              .map(([locale, entries]) => [
+                locale,
+                Object.fromEntries(Object.entries(entries || {}).filter(([, value]) => typeof value === 'string' && value.trim().length > 0)),
+              ])
+              .filter(([, entries]) => Object.keys(entries as Record<string, string>).length > 0)
+          ),
           supportDetails: {
             ...config.supportDetails,
             email: supportEmail,
@@ -635,6 +650,84 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                     })}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold text-gray-900">Storefront wording</h3>
+                  <p className="text-[10px] text-gray-500 mt-1 max-w-2xl">
+                    Tailor retail jargon without changing the storefront layout. English (US) automatically uses common US terminology; anything entered here overrides the system wording for this brand.
+                  </p>
+                </div>
+                <label className="text-[11px] font-bold text-gray-700 min-w-[180px]">
+                  Edit wording for
+                  <select
+                    value={copyLocale}
+                    onChange={(e) => setCopyLocale(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white"
+                  >
+                    {SUPPORTED_LOCALES.filter((locale) => enabledLocales.includes(locale.code) || locale.code === defaultLocale).map((locale) => (
+                      <option key={locale.code} value={locale.code}>{locale.flag} {locale.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {BRAND_COPY_FIELDS.map((field) => {
+                  const systemText = resolveStorefrontCopy({
+                    key: field.key,
+                    currentLocale: copyLocale,
+                    defaultLocale,
+                    fallbackLocale: 'en-GB',
+                    dictionaries: TRANSLATIONS,
+                  });
+                  const value = copyOverrides[copyLocale]?.[field.key] || '';
+                  return (
+                    <label key={field.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <span className="block text-[11px] font-bold text-gray-800">{field.label}</span>
+                      {field.hint && <span className="block text-[10px] text-gray-500 mt-0.5">{field.hint}</span>}
+                      <input
+                        type="text"
+                        value={value}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setCopyOverrides((current) => ({
+                            ...current,
+                            [copyLocale]: {
+                              ...(current[copyLocale] || {}),
+                              [field.key]: nextValue,
+                            },
+                          }));
+                        }}
+                        placeholder={systemText}
+                        className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-xs font-semibold"
+                      />
+                      <span className="block mt-1 text-[9px] text-gray-400">
+                        Default: {systemText}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2">
+                <p className="text-[10px] text-indigo-900">
+                  Leave a field blank to inherit the platform wording for that locale.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCopyOverrides((current) => {
+                    const next = { ...current };
+                    delete next[copyLocale];
+                    return next;
+                  })}
+                  className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 whitespace-nowrap"
+                >
+                  Reset this language
+                </button>
               </div>
             </div>
 

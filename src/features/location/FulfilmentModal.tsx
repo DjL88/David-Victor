@@ -1,6 +1,7 @@
 import React from 'react';
 import { Address, EligibleStore } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import { Truck, ShoppingBag, MapPin, ChevronRight, X, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface FulfilmentModalProps {
@@ -35,6 +36,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
   dismissible = true,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { t } = useI18n();
 
   if (!isOpen) return null;
 
@@ -56,8 +58,8 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">How would you like your order?</h2>
-              <p className="text-xs text-gray-500">Choose delivery to your door or store collection</p>
+              <h2 className="text-lg font-bold text-gray-900">{t('fulfilment.title')}</h2>
+              <p className="text-xs text-gray-500">{t('fulfilment.subtitle')}</p>
             </div>
           </div>
           {dismissible && onClose && (
@@ -76,7 +78,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
           <div className="mb-4 p-3 rounded-2xl bg-gray-50 border border-gray-100 flex items-center gap-2.5">
             <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
             <div className="min-w-0 flex-1">
-              <span className="text-[10px] uppercase font-bold text-gray-400 block">Deliver to</span>
+              <span className="text-[10px] uppercase font-bold text-gray-400 block">{t('fulfilment.deliverTo')}</span>
               <p className="text-xs font-bold text-gray-800 truncate">
                 {currentAddress.line1}, {currentAddress.postalCode}
               </p>
@@ -92,7 +94,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
             id="fulfilment-option-delivery"
             onClick={deliveryEnabled ? () => onSelectFulfillment('delivery') : undefined}
             disabled={!deliveryEnabled}
-            title={deliveryEnabled ? undefined : 'Delivery checkout is coming soon. Please choose Click & Collect for now.'}
+            title={deliveryEnabled ? undefined : t('fulfilment.notAvailableYet')}
             className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all group ${
               !deliveryEnabled
                 ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
@@ -107,29 +109,27 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-gray-900">Doorstep Delivery</span>
+                  <span className="text-sm font-bold text-gray-900">{t('fulfilment.delivery')}</span>
                   {!deliveryEnabled ? (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
-                      Coming Soon
+                      {t('fulfilment.comingSoon')}
                     </span>
                   ) : hasDeliveryCoverage ? (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                      Available
+                      {t('fulfilment.available')}
                     </span>
                   ) : (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                      Limited Zone
+                      {t('fulfilment.limitedZone')}
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {!deliveryEnabled
-                    ? 'Not available yet — please choose Click & Collect'
+                    ? t('fulfilment.notAvailableYet')
                     : hasDeliveryCoverage
-                    ? `${deliveryStoresCount} nearby ${
-                        deliveryStoresCount === 1 ? 'store delivers' : 'stores deliver'
-                      } to your address`
-                    : 'Collection available from nearby locations'}
+                    ? `${deliveryStoresCount} ${t(deliveryStoresCount === 1 ? 'fulfilment.storeDelivers' : 'fulfilment.storesDeliver')}`
+                    : t('fulfilment.collectionAvailable')}
                 </p>
               </div>
             </div>
@@ -149,14 +149,13 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-gray-900">Click & Collect</span>
+                  <span className="text-sm font-bold text-gray-900">{t('fulfilment.collection')}</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                    Free
+                    {t('fulfilment.free')}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Pick up from {collectionStoresCount} local{' '}
-                  {collectionStoresCount === 1 ? 'branch' : 'branches'}
+                  {collectionStoresCount} {t(collectionStoresCount === 1 ? 'fulfilment.localBranch' : 'fulfilment.localBranches')}
                 </p>
               </div>
             </div>

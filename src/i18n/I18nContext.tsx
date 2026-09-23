@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useMemo, useEffect } from '
 import { TRANSLATIONS, LocaleTranslations } from './translations';
 import { useTenant } from '../tenant/TenantContext';
 import { SUPPORTED_LOCALES, resolveEnabledLocales } from './locales';
+import { resolveStorefrontCopy, StorefrontCopyOverrides } from './copy';
 
 interface I18nContextValue {
   locale: string;
@@ -67,28 +68,17 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const t = useMemo(() => {
-    return (key: keyof LocaleTranslations, fallback?: string): string => {
-      // 1. Check current selected locale
-      const activeDict = TRANSLATIONS[currentLocale];
-      if (activeDict && activeDict[key]) {
-        return activeDict[key];
-      }
-
-      // 2. Check tenant default locale
-      const tenantDict = TRANSLATIONS[defaultLocale];
-      if (tenantDict && tenantDict[key]) {
-        return tenantDict[key];
-      }
-
-      // 3. Check system fallback locale (en-GB)
-      const fallbackDict = TRANSLATIONS[fallbackLocale];
-      if (fallbackDict && fallbackDict[key]) {
-        return fallbackDict[key];
-      }
-
-      return fallback || key;
-    };
-  }, [currentLocale, defaultLocale, fallbackLocale]);
+    return (key: keyof LocaleTranslations, fallback?: string): string =>
+      resolveStorefrontCopy({
+        key,
+        currentLocale,
+        defaultLocale,
+        fallbackLocale,
+        tenantOverrides: tenant?.copyOverrides as StorefrontCopyOverrides | undefined,
+        dictionaries: TRANSLATIONS,
+        fallback,
+      });
+  }, [currentLocale, defaultLocale, fallbackLocale, tenant?.copyOverrides]);
 
   /**
    * Translates a Deliverect product or category entity if localized strings

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Address, Coordinates, Store } from '../../commerce/models';
 import { useTenantStyles, useTenant } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatDistanceHuman, calculateHaversineDistanceMeters } from '../../services/mapsDistanceService';
 import { AddressAutocompleteInput } from '../../components/maps/AddressAutocompleteInput';
 import { StoreLocationMap } from '../../components/maps/StoreLocationMap';
@@ -33,6 +34,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
   const { tenant } = useTenant();
+  const { t } = useI18n();
   const [showMap, setShowMap] = useState<boolean>(true);
   const [isLocating, setIsLocating] = useState(false);
   
@@ -118,8 +120,8 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
               <MapPin className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Delivery Address</h2>
-              <p className="text-xs text-gray-500">Live distance and routing</p>
+              <h2 className="text-lg font-bold text-gray-900">{t('location.deliveryAddress')}</h2>
+              <p className="text-xs text-gray-500">{t('location.liveRouting')}</p>
             </div>
           </div>
           {dismissible && (
@@ -144,7 +146,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
                 </div>
                 <div className="min-w-0">
                   <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-                    Selected Location
+                    {t('location.selectedLocation')}
                   </span>
                   <p className="text-xs font-bold text-gray-900 truncate">
                     {previewAddress.formattedAddress || `${previewAddress.line1 || previewAddress.street}, ${previewAddress.city}`}
@@ -157,7 +159,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
                 className="px-2.5 py-1 rounded-xl text-xs font-bold bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors shrink-0 ml-2 cursor-pointer"
               >
                 {showMap ? <List className="w-3.5 h-3.5" /> : <MapIcon className="w-3.5 h-3.5" />}
-                <span>{showMap ? 'Hide Map' : 'Show Map'}</span>
+                <span>{showMap ? t('location.hideMap') : t('location.showMap')}</span>
               </button>
             </div>
           )}
@@ -169,7 +171,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
             className="w-full py-2.5 px-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-sm font-bold text-gray-700 flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
           >
             <Navigation className="w-4 h-4 text-emerald-600" />
-            {isLocating ? 'Locating...' : 'Use Current Location'}
+            {isLocating ? t('location.locating') : t('location.useCurrentLocation')}
           </button>
 
           {/* Autocomplete Input */}
@@ -199,11 +201,11 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
             </div>
           )}
 
-          {/* Saved Addresses */}
+          {/* {t('location.savedAddresses')} */}
           {savedAddresses && savedAddresses.length > 0 && (
             <div className="space-y-1.5">
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-                Saved Addresses
+                {t('location.savedAddresses')}
               </span>
               {savedAddresses.map((addr, idx) => {
                 const isCurrent = previewAddress && (previewAddress.postalCode === addr.postalCode || previewAddress.line1 === addr.line1);
@@ -251,7 +253,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
             disabled={!previewAddress}
             className="w-full py-3.5 rounded-2xl font-bold text-white shadow-md hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Confirm & Continue
+            {t('location.confirmContinue')}
           </button>
         </div>
 

@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Address, Store } from '../commerce/models';
 import { CmsPage } from '../commerce/cmsModels';
 import { useTenant } from '../tenant/TenantContext';
 import { useTenantStyles } from '../tenant/useTenant';
+import { useI18n } from '../i18n/I18nContext';
 import { auth, onAuthStateChanged, User as FirebaseUser } from '../firebase';
 import {
   MapPin,
@@ -49,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { tenant, appMode } = useTenant();
   const { primaryBtnStyle } = useTenantStyles();
+  const { locale, t } = useI18n();
   // Delivery checkout is not yet wired to the real Deliverect basket path outside demo
   // mode (see docs/NORTH_STAR.md §11); gate the toggle so customers can't select a
   // fulfilment type that will fail at add-to-basket/checkout time.
@@ -57,19 +59,38 @@ export const Header: React.FC<HeaderProps> = ({
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [headerPages, setHeaderPages] = useState<CmsPage[]>([]);
+  const [allHeaderPages, setAllHeaderPages] = useState<CmsPage[]>([]);
 
   useEffect(() => {
     fetch('/api/v1/cms/pages')
       .then((res) => res.ok ? res.json() : { pages: [] })
       .then((data) => {
         const pages = (data.pages || []) as CmsPage[];
-        setHeaderPages(pages
-          .filter((page) => ['header', 'both'].includes(page.navigationVisibility))
-          .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999)));
+        setAllHeaderPages(pages);
       })
-      .catch(() => setHeaderPages([]));
+      .catch(() => setAllHeaderPages([]));
   }, [tenant?.tenantId]);
+
+  const headerPages = useMemo(() => {
+    const eligible = allHeaderPages.filter(
+      (page) => page.status === 'published' && ['header', 'both'].includes(page.navigationVisibility)
+    );
+    const bySlug = new Map<string, CmsPage[]>();
+    eligible.forEach((page) => {
+      const group = bySlug.get(page.slug) || [];
+      group.push(page);
+      bySlug.set(page.slug, group);
+    });
+    return Array.from(bySlug.values())
+      .map((group) =>
+        group.find((page) => page.locale === locale) ||
+        group.find((page) => page.locale === tenant?.locale) ||
+        group.find((page) => page.locale === 'en-GB') ||
+        group[0]
+      )
+      .filter((page): page is CmsPage => Boolean(page))
+      .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999));
+  }, [allHeaderPages, locale, tenant?.locale]);
 
   const openCmsPage = (page: CmsPage) => {
     sessionStorage.setItem('__cms_page_slug', page.slug);
@@ -143,7 +164,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <MapPin className="w-3.5 h-3.5 text-gray-700 shrink-0" />
             <span className="max-w-[120px] lg:max-w-[150px] truncate">
-              {currentAddress?.line1 || 'Set Location'}
+              {currentAddress?.line1 || t('header.setLocation')}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
           </button>
@@ -161,7 +182,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <StoreIcon className="w-3.5 h-3.5 shrink-0" />
             <span className="max-w-[130px] lg:max-w-[160px] truncate">
-              {selectedStore?.name || 'All Stores'}
+              {selectedStore?.name || t('header.allStores')}
             </span>
             <ChevronDown className="w-3.5 h-3.5 opacity-60" />
           </button>
@@ -183,7 +204,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <Truck className="w-3 h-3" />
-                <span>Delivery</span>
+                <span>{t('header.delivery')}</span>
               </button>
               <button
                 type="button"
@@ -195,13 +216,13 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <ShoppingBag className="w-3 h-3" />
-                <span>Collect</span>
+                <span>{t('header.collect')}</span>
               </button>
             </div>
           ) : (
             <div className="flex items-center bg-gray-100 px-2.5 py-1 rounded-xl text-xs font-bold text-gray-700">
               <Truck className="w-3 h-3 mr-1 text-gray-600" />
-              <span>Delivery Only</span>
+              <span>{t('header.deliveryOnly')}</span>
             </div>
           )}
         </div>
@@ -215,10 +236,10 @@ export const Header: React.FC<HeaderProps> = ({
               id="header-account-btn"
               onClick={() => setIsAccountMenuOpen((prev) => !prev)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200/80 text-xs font-bold text-gray-700 hover:text-gray-900 transition-colors cursor-pointer"
-              title="Customer Account"
+              title={t('nav.account')}
             >
               <User className="w-4 h-4 text-gray-600" />
-              <span>Account</span>
+              <span>{t('nav.account')}</span>
               <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
             </button>
 
@@ -234,7 +255,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {currentUser?.email ? (
                     <p className="text-[11px] text-gray-500 truncate">{currentUser.email}</p>
                   ) : (
-                    <p className="text-[11px] text-gray-400">Not signed in</p>
+                    <p className="text-[11px] text-gray-400">{t('account.notSignedIn')}</p>
                   )}
                 </div>
 
@@ -248,7 +269,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-3.5 py-2 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer font-medium"
                   >
                     <User className="w-4 h-4 text-gray-600" />
-                    <span>Profile & Preferences</span>
+                    <span>{t('header.profilePreferences')}</span>
                   </button>
 
                   <button
@@ -260,7 +281,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-3.5 py-2 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer font-medium"
                   >
                     <Clock className="w-4 h-4 text-gray-600" />
-                    <span>Orders & Tracking</span>
+                    <span>{t('header.ordersTracking')}</span>
                   </button>
 
                   <button
@@ -272,7 +293,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-3.5 py-2 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer font-medium"
                   >
                     <Heart className="w-4 h-4 text-gray-600" />
-                    <span>Favourites</span>
+                    <span>{t('nav.favourites')}</span>
                   </button>
 
                   <button
@@ -284,7 +305,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-3.5 py-2 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer font-medium"
                   >
                     <RotateCcw className="w-4 h-4 text-gray-600" />
-                    <span>Buy Again</span>
+                    <span>{t('nav.buyAgain')}</span>
                   </button>
 
                   <button
@@ -296,7 +317,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-3.5 py-2 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer font-medium"
                   >
                     <MapPin className="w-4 h-4 text-gray-600" />
-                    <span>Saved Addresses</span>
+                    <span>{t('account.savedAddresses')}</span>
                   </button>
                 </div>
 
@@ -312,7 +333,7 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full text-left px-3.5 py-2 hover:bg-amber-50 text-amber-900 flex items-center gap-2.5 cursor-pointer font-semibold"
                     >
                       <ShieldCheck className="w-4 h-4 text-amber-600" />
-                      <span>Admin Portal</span>
+                      <span>{t('nav.admin')}</span>
                     </button>
                   </div>
                 )}
@@ -333,7 +354,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
           >
             <ShoppingBag className="w-4 h-4" />
-            <span className="hidden sm:inline">Basket</span>
+            <span className="hidden sm:inline">{t('header.basket')}</span>
             {cartItemCount > 0 && (
               <motion.span
                 key={`cart-badge-${cartItemCount}`}
@@ -363,7 +384,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex-1 flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl bg-gray-50 border border-gray-200/70 text-gray-800 font-bold truncate text-left cursor-pointer"
         >
           <MapPin className="w-3 h-3 text-gray-700 shrink-0" />
-          <span className="truncate">{currentAddress?.line1 || 'Set Location'}</span>
+          <span className="truncate">{currentAddress?.line1 || t('header.setLocation')}</span>
           <ChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
         </button>
 
@@ -379,7 +400,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <StoreIcon className="w-3 h-3 shrink-0" />
           <span className="truncate">
-            {selectedStore?.name || 'All Stores'}
+            {selectedStore?.name || t('header.allStores')}
           </span>
           <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
         </button>
