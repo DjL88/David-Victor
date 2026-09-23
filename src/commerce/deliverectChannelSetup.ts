@@ -24,7 +24,13 @@ export function buildDeliverectChannelEndpoints(origin: string, tenantId: string
     { key: 'prepTime', label: 'Update prep time URL', url: join(origin, `${base}/channel/prep-time`), readiness: 'READY' },
     { key: 'pickingStatus', label: 'Order picking status webhook URL', url: join(origin, `${base}/picking/status`), readiness: 'READY' },
     { key: 'amendments', label: 'Order amendments webhook URL', url: join(origin, `${base}/picking/amendments`), readiness: 'READY' },
-    { key: 'substitutions', label: 'Order substitutions endpoint URL', url: join(origin, `/api/v1/integrations/deliverect/orders/{channelOrderId}/substitute/{plu}`), readiness: 'READY' },
+    {
+      key: 'substitutions',
+      label: 'Order substitutions endpoint URL',
+      url: join(origin, `${base}/picking/substitutions`),
+      readiness: 'READY',
+      note: 'Use this literal URL in Deliverect. Do not paste {channelOrderId} or {plu} placeholders into the Deliverect form; the callback handler accepts Deliverect-supplied order/PLU identifiers separately.',
+    },
     { key: 'courierUpdate', label: 'Courier update webhook URL', url: join(origin, `${base}/channel/courier-update`), readiness: 'PENDING_CONTRACT', note: 'Reserved until the Channel courier callback contract is confirmed.' },
     { key: 'paymentUpdate', label: 'Payment update webhook URL', url: join(origin, `${base}/channel/payment-update`), readiness: 'PENDING_CONTRACT', note: 'Reserved until the Channel payment callback contract is confirmed.' },
   ];

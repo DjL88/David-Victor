@@ -3139,13 +3139,35 @@ v1Router.get('/orders/:orderId/settlement', requireAdminAuth('operationsEditor')
  */
 const handleSubstituteCallback = async (req: Request, res: Response) => {
   try {
-    const { orderId, plu } = req.params;
+    const orderId = String(
+      req.params.orderId ||
+      req.query.channelOrderId ||
+      req.query.orderId ||
+      ''
+    ).trim();
+    const plu = String(
+      req.params.plu ||
+      req.query.plu ||
+      ''
+    ).trim();
+
+    if (!orderId || !plu) {
+      return res.status(400).json({
+        error: 'Substitution callback requires channelOrderId/orderId and plu.',
+        code: 'SUBSTITUTION_IDENTIFIERS_REQUIRED',
+      });
+    }
+
     let tenantId: string | undefined;
 
-    // Resolve tenant authoritatively through stored order projection
+    // Prefer the stored order projection because it is the authoritative tenant
+    // binding. Tenant-scoped Deliverect webhook URLs are also accepted so a
+    // just-created order can still be resolved while its projection catches up.
     const orderProj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
     if (orderProj?.tenantId) {
       tenantId = orderProj.tenantId;
+    } else if (req.params.identifier) {
+      tenantId = String(req.params.identifier).trim();
     } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
       tenantId = (req.query.tenantId as string) || (req.headers['x-tenant-id'] as string) || 'brand-alpha';
     } else {
@@ -3197,8 +3219,14 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
   }
 };
 
+// Backward-compatible dynamic routes plus a literal tenant-scoped URL suitable
+// for Deliverect's URL validator. The static URL accepts identifiers as query
+// parameters; dynamic aliases are also supported if Deliverect appends them.
 v1Router.get('/orders/:orderId/substitute/:plu', handleSubstituteCallback);
 v1Router.get('/integrations/deliverect/orders/:orderId/substitute/:plu', handleSubstituteCallback);
+v1Router.get('/webhooks/deliverect/:identifier/picking/substitutions', handleSubstituteCallback);
+v1Router.get('/webhooks/deliverect/:identifier/picking/substitutions/:orderId/:plu', handleSubstituteCallback);
+v1Router.get('/webhooks/deliverect/:identifier/channel/orders/:orderId/substitute/:plu', handleSubstituteCallback);
 
 v1Router.post('/orders/:orderId/simulate-picking', async (req: Request, res: Response) => {
   try {

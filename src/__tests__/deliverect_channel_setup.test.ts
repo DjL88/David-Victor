@@ -18,6 +18,11 @@ describe('Deliverect Channel setup', () => {
     expect(byKey.channelRegistration.url).toContain('/brand%20alpha/channel/register');
     expect(byKey.snooze.readiness).toBe('READY');
     expect(byKey.busyMode.readiness).toBe('READY');
+    expect(byKey.substitutions.url).toBe(
+      'https://example.test/api/v1/webhooks/deliverect/brand%20alpha/picking/substitutions'
+    );
+    expect(byKey.substitutions.url).not.toMatch(/[{}]/);
+    expect(() => new URL(byKey.substitutions.url)).not.toThrow();
     expect(byKey.promotions.readiness).toBe('PENDING_CONTRACT');
     expect(DELIVERECT_CHANNEL_SETUP_STEPS.at(-1)).toMatch(/Register, then Activate/);
   });
