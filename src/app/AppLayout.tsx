@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { defaultRuleEngine } from '../rules/RuleEngine';
 import { visualRulesToRetailRules } from '../rules/visualRuleAdapter';
 import { useTenant } from '../tenant/TenantContext';
@@ -32,6 +32,18 @@ import { BundleProduct } from '../commerce/bundleModels';
 import { Product, StoryAction } from '../commerce/models';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../analytics';
 import { Loader2, BadgePercent, X, Store as StoreIcon, AlertTriangle } from 'lucide-react';
+import {
+  findCategoryByRouteSlug,
+  flattenCategories,
+  parseStorefrontRoute,
+  pathForCategory,
+  pathForProduct,
+  pathForSearch,
+  pathForTab,
+  pushStorefrontUrl,
+  replaceStorefrontUrl,
+  type StorefrontRoute,
+} from '../navigation/storefrontRouter';
 
 interface AppLayoutProps {
   onOpenAdmin?: () => void;
@@ -43,10 +55,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   // Branded initial splash screen state
   const [showSplash, setShowSplash] = useState<boolean>(true);
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<MobileTab>('home');
+  // URL-backed storefront navigation. Route state is intentionally dependency-free
+  // so branded web, Capacitor and notification deep links share the same URL contract.
+  const initialRoute = parseStorefrontRoute();
+  const initialTab: MobileTab =
+    initialRoute.kind === 'search' ? 'search' :
+    initialRoute.kind === 'orders' ? 'orders' :
+    initialRoute.kind === 'account' ? 'account' :
+    'home';
+
+  const [activeRoute, setActiveRoute] = useState<StorefrontRoute>(initialRoute);
+  const [activeTab, setActiveTab] = useState<MobileTab>(initialTab);
 
   const navigateToTab = useCallback((tab: MobileTab) => {
+    const nextPath = pathForTab(tab);
+    pushStorefrontUrl(nextPath);
+    setActiveRoute(parseStorefrontRoute(new URL(nextPath, window.location.origin).pathname));
     if (tab === activeTab) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -304,6 +328,202 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     loading: searchLoading,
   } = useProductSearch(selectedStore?.id);
 
+  const resolvingRouteRef = useRef<string | null>(null);
+
+  const routeToProduct = useCallback((product: Product) => {
+    const returnPath = window.location.pathname + window.location.search;
+    setSelectedProduct(product);
+    const path = pathForProduct(product);
+    pushStorefrontUrl(path, { returnPath });
+    setActiveRoute({ kind: 'product', plu: product.plu });
+  }, []);
+
+  const routeToCategory = useCallback((categoryId: string | null) => {
+    navigateToCategory(categoryId);
+    setActiveTab('home');
+
+    if (!categoryId) {
+      pushStorefrontUrl('/');
+      setActiveRoute({ kind: 'home' });
+      return;
+    }
+
+    const category = flattenCategories(catalog?.categories || []).find((item) => item.id === categoryId);
+    if (category) {
+      const path = pathForCategory(category);
+      pushStorefrontUrl(path);
+      setActiveRoute({ kind: 'aisle', slug: path.split('/').filter(Boolean)[1] || categoryId });
+    }
+  }, [catalog?.categories, navigateToCategory]);
+
+  const routeToBasket = useCallback(() => {
+    const returnPath = window.location.pathname + window.location.search;
+    pushStorefrontUrl('/basket', { returnPath });
+    setActiveRoute({ kind: 'basket' });
+    setIsCartOpen(true);
+  }, [setIsCartOpen]);
+
+  const routeToCheckout = useCallback(() => {
+    const returnPath = window.location.pathname + window.location.search;
+    pushStorefrontUrl('/checkout', { returnPath });
+    setActiveRoute({ kind: 'checkout' });
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
+  }, [setIsCartOpen]);
+
+  const closeRoutedOverlay = useCallback((kind: 'product' | 'basket' | 'checkout') => {
+    if (activeRoute.kind !== kind) return;
+    const returnPath =
+      typeof window.history.state?.returnPath === 'string'
+        ? window.history.state.returnPath
+        : '/';
+
+    setSelectedProduct(null);
+    setIsCartOpen(false);
+    setIsCheckoutOpen(false);
+    replaceStorefrontUrl(returnPath);
+    const returnRoute = parseStorefrontRoute(
+      new URL(returnPath, window.location.origin).pathname,
+      new URL(returnPath, window.location.origin).search
+    );
+    setActiveRoute(returnRoute);
+    setActiveTab(
+      returnRoute.kind === 'search' ? 'search' :
+      returnRoute.kind === 'orders' ? 'orders' :
+      returnRoute.kind === 'account' ? 'account' :
+      'home'
+    );
+  }, [activeRoute.kind, setIsCartOpen]);
+
+  const updateSearchQueryRoute = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (activeRoute.kind === 'search' || activeTab === 'search') {
+      const path = pathForSearch(query);
+      replaceStorefrontUrl(path);
+      setActiveRoute({ kind: 'search', query });
+    }
+  }, [activeRoute.kind, activeTab, setSearchQuery]);
+
+  const routeToSearch = useCallback((query: string = '') => {
+    setSearchQuery(query);
+    const path = pathForSearch(query);
+    pushStorefrontUrl(path);
+    setActiveRoute({ kind: 'search', query });
+    setActiveTab('search');
+  }, [setSearchQuery]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = parseStorefrontRoute();
+      setActiveRoute(route);
+
+      if (route.kind === 'search') {
+        setActiveTab('search');
+        setSearchQuery(route.query);
+      } else if (route.kind === 'orders') {
+        setActiveTab('orders');
+      } else if (route.kind === 'account') {
+        setActiveTab('account');
+      } else {
+        setActiveTab('home');
+      }
+
+      setIsCartOpen(route.kind === 'basket');
+      setIsCheckoutOpen(route.kind === 'checkout');
+      if (route.kind !== 'product') setSelectedProduct(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [setIsCartOpen, setSearchQuery]);
+
+  useEffect(() => {
+    if (activeRoute.kind === 'search') {
+      setActiveTab('search');
+      if (searchQuery !== activeRoute.query) setSearchQuery(activeRoute.query);
+      return;
+    }
+
+    if (activeRoute.kind === 'orders') {
+      setActiveTab('orders');
+      return;
+    }
+
+    if (activeRoute.kind === 'account') {
+      setActiveTab('account');
+      return;
+    }
+
+    if (activeRoute.kind === 'basket') {
+      setActiveTab('home');
+      setIsCartOpen(true);
+      return;
+    }
+
+    if (activeRoute.kind === 'checkout') {
+      setActiveTab('home');
+      setIsCartOpen(false);
+      setIsCheckoutOpen(true);
+      return;
+    }
+
+    if (activeRoute.kind === 'aisle') {
+      setActiveTab('home');
+      const category = findCategoryByRouteSlug(catalog?.categories || [], activeRoute.slug);
+      if (category && selectedCategoryId !== category.id) {
+        navigateToCategory(category.id);
+      }
+      return;
+    }
+
+    if (activeRoute.kind === 'product') {
+      setActiveTab('home');
+      if (selectedProduct?.plu === activeRoute.plu) return;
+
+      const localMatch = [...products, ...searchResults, ...(catalog?.products || [])]
+        .find((product) => product.plu === activeRoute.plu || product.canonicalPlu === activeRoute.plu);
+      if (localMatch) {
+        setSelectedProduct(localMatch);
+        return;
+      }
+
+      if (resolvingRouteRef.current === activeRoute.plu) return;
+      resolvingRouteRef.current = activeRoute.plu;
+
+      void client
+        .searchProducts(activeRoute.plu, selectedStore?.id, { limit: 20 })
+        .then((result) => {
+          const match = result.products.find(
+            (product) => product.plu === activeRoute.plu || product.canonicalPlu === activeRoute.plu
+          );
+          if (match) setSelectedProduct(match);
+        })
+        .catch((err) => console.warn('[StorefrontRouter] Could not resolve product route:', err))
+        .finally(() => {
+          if (resolvingRouteRef.current === activeRoute.plu) resolvingRouteRef.current = null;
+        });
+      return;
+    }
+
+    if (activeRoute.kind === 'home') {
+      setActiveTab('home');
+    }
+  }, [
+    activeRoute,
+    catalog?.categories,
+    catalog?.products,
+    client,
+    navigateToCategory,
+    products,
+    searchQuery,
+    searchResults,
+    selectedCategoryId,
+    selectedProduct?.plu,
+    selectedStore?.id,
+    setIsCartOpen,
+    setSearchQuery,
+  ]);
+
   // Handle adding all items for an 'AND' deal or meal deal
   const handleAddAllToBasket = async (plus: string[], dealTitle?: string) => {
     if (!plus || plus.length === 0) return;
@@ -365,18 +585,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     if (action.type === 'PRODUCT' && action.targetPlu) {
       const targetProd = products.find((p) => p.plu === action.targetPlu);
       if (targetProd) {
-        setSelectedProduct(targetProd);
+        routeToProduct(targetProd);
       }
     } else if (action.type === 'CATEGORY' && action.targetCategoryId) {
-      navigateToCategory(action.targetCategoryId);
-      setActiveTab('home');
+      routeToCategory(action.targetCategoryId);
     } else if (action.type === 'SEARCH' && action.searchQuery) {
-      setSearchQuery(action.searchQuery);
-      setActiveTab('search');
+      routeToSearch(action.searchQuery);
     } else if (action.type === 'OFFER') {
       if (action.targetPlu) {
         const targetProd = products.find((p) => p.plu === action.targetPlu);
-        if (targetProd) setSelectedProduct(targetProd);
+        if (targetProd) routeToProduct(targetProd);
       }
     }
   };
@@ -445,13 +663,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             onFulfillmentChange={setFulfillmentType}
             onOpenLocationPicker={() => setIsLocationModalOpen(true)}
             onOpenStorePicker={() => setIsStorePickerOpen(true)}
-            onOpenCart={() => setIsCartOpen(true)}
+            onOpenCart={routeToBasket}
             onOpenSearch={() => navigateToTab('search')}
             searchQuery={searchQuery}
             onSearchChange={(q) => {
               setSearchQuery(q);
               if (activeTab === 'orders' || activeTab === 'account') {
-                setActiveTab('home');
+                navigateToTab('home');
               }
             }}
             cartItemCount={totalItemsCount}
@@ -480,13 +698,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               categories={currentSubcategories}
               breadcrumbs={breadcrumbs}
               selectedCategoryId={selectedCategoryId}
-              onSelectCategory={navigateToCategory}
-              onSelectProduct={(p) => setSelectedProduct(p)}
+              onSelectCategory={routeToCategory}
+              onSelectProduct={routeToProduct}
               onUpdateQuantity={updateQuantity}
               getBasketQuantity={getItemQuantity}
               basketItems={basket?.items || []}
               searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
+              onSearchChange={updateSearchQueryRoute}
               totalCatalogResults={searchResults}
               totalCatalogSummaries={searchSummaries}
               searchLoading={searchLoading}
@@ -509,11 +727,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           {activeTab === 'search' && (
             <SearchScreen
               query={searchQuery}
-              onQueryChange={setSearchQuery}
+              onQueryChange={updateSearchQueryRoute}
               results={searchResults}
               summaries={searchSummaries}
               loading={searchLoading}
-              onSelectProduct={(p) => setSelectedProduct(p)}
+              onSelectProduct={routeToProduct}
               onUpdateQuantity={updateQuantity}
               isStoreSelected={selectedStore !== null}
               onPromptSelectStore={(product?: Product) => {
@@ -537,7 +755,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         allBaskets={allBaskets}
         isMultiLocation={isMultiLocation}
         itemCount={totalItemsCount}
-        onOpenCart={() => setIsCartOpen(true)}
+        onOpenCart={routeToBasket}
       />
 
       {/* Mobile Bottom Navigation Bar */}
@@ -557,7 +775,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         onStoryAction={handleStoryAction}
         products={products}
         selectedStoreName={selectedStore?.name}
-        onSelectProduct={(p) => setSelectedProduct(p)}
+        onSelectProduct={routeToProduct}
         onOpenDealDialog={(story) => {
           closeStory();
           const deal = getDealForStory(story, products);
@@ -587,7 +805,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         }}
         onSelectProduct={(p) => {
           setActiveDealForModal(null);
-          setSelectedProduct(p);
+          routeToProduct(p);
         }}
       />
 
@@ -654,12 +872,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         basketItems={basket?.items || []}
         sessionAgeAcknowledged={sessionAgeAcknowledged}
         onAcknowledgeAge={handleAcknowledgeAge}
-        onClose={() => setSelectedProduct(null)}
+        onClose={() => closeRoutedOverlay('product')}
         onUpdateQuantity={updateQuantity}
         isStoreSelected={selectedStore !== null}
         onPromptSelectStore={() => {
           setStorePickerTargetProduct(selectedProduct);
-          setSelectedProduct(null);
+          closeRoutedOverlay('product');
           setIsStorePickerOpen(true);
         }}
       />
@@ -730,17 +948,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         isOpen={isCartOpen}
         basket={basket}
         candidateProducts={products}
-        onClose={() => setIsCartOpen(false)}
+        onClose={() => closeRoutedOverlay('basket')}
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
         onSwapItem={swapBasketItem}
         onSwapAllSubstitutes={autoSwapSubstitutes}
         snoozeAudit={snoozeAudit}
         onUpdateSubstitution={updateItemSubstitution}
-        onProceedToCheckout={() => {
-          setIsCartOpen(false);
-          setIsCheckoutOpen(true);
-        }}
+        onProceedToCheckout={routeToCheckout}
         onOpenDealPopup={(deal) => {
           setActiveDealForModal(deal);
         }}
@@ -791,8 +1006,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         products={catalog?.products || products}
         selectedCategoryId={selectedCategoryId}
         onSelectCategory={(catId) => {
-          navigateToCategory(catId);
-          setActiveTab('home');
+          routeToCategory(catId);
           setIsAislesModalOpen(false);
         }}
         storeName={selectedStore?.name}
@@ -806,7 +1020,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           basket={basket}
           store={selectedStore}
           deliveryAddress={currentAddress}
-          onClose={() => setIsCheckoutOpen(false)}
+          onClose={() => closeRoutedOverlay('checkout')}
           onStoreSwitched={selectStore}
           onBasketUpdated={setBasket}
           onOpenDealPopup={(deal) => {
@@ -814,7 +1028,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           }}
           onOrderSuccess={() => {
             clearAllBaskets();
-            setIsCheckoutOpen(false);
+            closeRoutedOverlay('checkout');
           }}
         />
       )}
