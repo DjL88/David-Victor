@@ -297,7 +297,12 @@ export interface DomainRecord {
   hostname: string;
   tenantId: string;
   isPrimary?: boolean;
-  status?: 'active' | 'pending';
+  status?: 'active' | 'verified' | 'pending';
+  verificationToken?: string;
+  verificationRecordName?: string;
+  verificationRecordValue?: string;
+  ownershipVerifiedAt?: string;
+  tlsStatus?: 'pending' | 'ready' | 'failed';
   createdAt?: string;
   updatedAt?: string;
 }
@@ -565,6 +570,11 @@ export class FirestoreService {
               tenantId: data.tenantId,
               isPrimary: data.isPrimary ?? false,
               status: data.status || 'pending',
+              verificationToken: data.verificationToken,
+              verificationRecordName: data.verificationRecordName,
+              verificationRecordValue: data.verificationRecordValue,
+              ownershipVerifiedAt: data.ownershipVerifiedAt,
+              tlsStatus: data.tlsStatus,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
             });
@@ -622,7 +632,12 @@ export class FirestoreService {
     hostname: string;
     tenantId: string;
     isPrimary?: boolean;
-    status?: 'active' | 'pending';
+    status?: 'active' | 'verified' | 'pending';
+    verificationToken?: string;
+    verificationRecordName?: string;
+    verificationRecordValue?: string;
+    ownershipVerifiedAt?: string;
+    tlsStatus?: 'pending' | 'ready' | 'failed';
   }): Promise<DomainRecord> {
     const cleanHost = (params.hostname || '').toLowerCase().trim().split(':')[0];
     if (!cleanHost) {
@@ -639,6 +654,11 @@ export class FirestoreService {
       tenantId,
       isPrimary: params.isPrimary ?? false,
       status: params.status || 'active',
+      verificationToken: params.verificationToken ?? inMemoryDomains[cleanHost]?.verificationToken,
+      verificationRecordName: params.verificationRecordName ?? inMemoryDomains[cleanHost]?.verificationRecordName,
+      verificationRecordValue: params.verificationRecordValue ?? inMemoryDomains[cleanHost]?.verificationRecordValue,
+      ownershipVerifiedAt: params.ownershipVerifiedAt ?? inMemoryDomains[cleanHost]?.ownershipVerifiedAt,
+      tlsStatus: params.tlsStatus ?? inMemoryDomains[cleanHost]?.tlsStatus,
       createdAt: inMemoryDomains[cleanHost]?.createdAt || now,
       updatedAt: now,
     };
@@ -667,6 +687,11 @@ export class FirestoreService {
             tenantId,
             isPrimary: record.isPrimary,
             status: record.status,
+            verificationToken: record.verificationToken,
+            verificationRecordName: record.verificationRecordName,
+            verificationRecordValue: record.verificationRecordValue,
+            ownershipVerifiedAt: record.ownershipVerifiedAt,
+            tlsStatus: record.tlsStatus,
             createdAt: record.createdAt,
             updatedAt: now,
           },
@@ -681,6 +706,11 @@ export class FirestoreService {
             tenantId,
             isPrimary: record.isPrimary,
             status: record.status,
+            verificationToken: record.verificationToken,
+            verificationRecordName: record.verificationRecordName,
+            verificationRecordValue: record.verificationRecordValue,
+            ownershipVerifiedAt: record.ownershipVerifiedAt,
+            tlsStatus: record.tlsStatus,
             createdAt: record.createdAt,
             updatedAt: now,
           },

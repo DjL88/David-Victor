@@ -63,6 +63,12 @@ import { AdminAssistantActionService } from '../admin/adminAssistantActionServic
 import { AdminAssistantChatService } from '../admin/adminAssistantChatService';
 import { AdminChangeSetService } from '../admin/adminChangeSetService';
 import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
+import {
+  createDomainVerificationToken,
+  domainVerificationRecordName,
+  domainVerificationRecordValue,
+  verifyDomainOwnershipTxt,
+} from '../domainVerificationService';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -3888,14 +3894,37 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
       });
     }
 
-    // Custom domains never become live on creation. DNS ownership and TLS must
-    // be verified by the domain lifecycle before the resolver can serve them.
-    const created = await FirestorePlatformService.addOrUpdateDomain({
-      hostname: cleanHost,
-      tenantId,
-      isPrimary: Boolean(isPrimary),
-      status: 'pending',
-    });
+    // Custom domains never become live on creation. Generate a tenant-bound TXT
+    // challenge so ownership can be proven without a support/admin console step.
+    const verificationToken =
+      existing?.tenantId === tenantId && existing.verificationToken
+        ? existing.verificationToken
+        : createDomainVerificationToken();
+    const verificationRecordName = domainVerificationRecordName(cleanHost);
+    const verificationRecordValue = domainVerificationRecordValue(verificationToken);
+
+    const created = existing
+      ? await FirestorePlatformService.addOrUpdateDomain({
+          hostname: cleanHost,
+          tenantId,
+          isPrimary: Boolean(isPrimary),
+          status: existing.status || 'pending',
+          verificationToken,
+          verificationRecordName,
+          verificationRecordValue,
+          tlsStatus: existing.tlsStatus || 'pending',
+          ownershipVerifiedAt: existing.ownershipVerifiedAt,
+        })
+      : await FirestorePlatformService.addOrUpdateDomain({
+          hostname: cleanHost,
+          tenantId,
+          isPrimary: Boolean(isPrimary),
+          status: 'pending',
+          verificationToken,
+          verificationRecordName,
+          verificationRecordValue,
+          tlsStatus: 'pending',
+        });
 
     await FirestorePlatformService.addAuditLog(tenantId, {
       userId: authAdmin.uid || 'admin',
@@ -3913,7 +3942,88 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
   }
 });
 
-// 9.4d Delete a domain mapping
+// 9.4d Verify DNS ownership for a pending custom domain
+v1Router.post('/admin/domains/:domainId/verify', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const domainId = String(req.params.domainId || '').trim();
+    const existing = (await FirestorePlatformService.listAllDomains())
+      .find((domain) => domain.domainId === domainId || domain.hostname === domainId.toLowerCase());
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Domain mapping not found.', code: 'DOMAIN_NOT_FOUND' });
+    }
+
+    if (
+      !authAdmin.isSuperAdmin &&
+      authAdmin.role !== 'platformSuperAdmin' &&
+      existing.tenantId !== authAdmin.tenantId
+    ) {
+      return res.status(403).json({
+        error: 'Tenant administrators may only verify domains owned by their own tenant.',
+        code: 'TENANT_ISOLATION_ERROR',
+      });
+    }
+
+    if (!existing.verificationToken) {
+      return res.status(409).json({
+        error: 'This domain claim has no verification challenge. Re-save the domain to generate one.',
+        code: 'DOMAIN_VERIFICATION_CHALLENGE_MISSING',
+      });
+    }
+
+    const check = await verifyDomainOwnershipTxt(existing.hostname, existing.verificationToken);
+
+    if (!check.verified) {
+      return res.status(409).json({
+        error: 'DNS ownership has not been verified yet. Add the required TXT record and try again after DNS propagation.',
+        code: 'DOMAIN_OWNERSHIP_NOT_VERIFIED',
+        verification: check,
+      });
+    }
+
+    const verifiedAt = new Date().toISOString();
+    const updated = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: existing.hostname,
+      tenantId: existing.tenantId,
+      isPrimary: existing.isPrimary,
+      status: existing.status === 'active' ? 'active' : 'verified',
+      verificationToken: existing.verificationToken,
+      verificationRecordName: existing.verificationRecordName || check.recordName,
+      verificationRecordValue: existing.verificationRecordValue || check.expectedValue,
+      ownershipVerifiedAt: existing.ownershipVerifiedAt || verifiedAt,
+      tlsStatus: existing.tlsStatus || 'pending',
+    });
+
+    await FirestorePlatformService.addAuditLog(existing.tenantId, {
+      userId: authAdmin.uid || 'admin',
+      userName: authAdmin.name || 'Admin',
+      userRole: authAdmin.role || 'tenantAdmin',
+      tenantId: existing.tenantId,
+      category: 'Tenant',
+      action: 'VERIFY_DOMAIN_OWNERSHIP',
+      details: `Verified DNS ownership of "${existing.hostname}" via TXT challenge`,
+    });
+
+    return res.json({
+      success: true,
+      domain: updated,
+      verification: check,
+      nextStep:
+        updated.status === 'active'
+          ? 'Domain is already active.'
+          : 'Ownership verified. TLS/serving activation is still pending.',
+    });
+  } catch (err: any) {
+    const status = err.statusCode || err.status || 500;
+    res.status(status).json({
+      error: err.message || 'Domain verification failed.',
+      code: err.code || 'DOMAIN_VERIFICATION_FAILED',
+    });
+  }
+});
+
+// 9.4e Delete a domain mapping
 v1Router.delete('/admin/domains/:domainId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;

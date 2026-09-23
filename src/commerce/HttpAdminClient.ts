@@ -1141,6 +1141,24 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async verifyDomainOwnership(domainId: string): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/domains/${encodeURIComponent(domainId)}/verify`,
+      { method: 'POST', headers }
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const error: any = new Error(err.error || `Domain verification failed: ${res.statusText}`);
+      error.code = err.code;
+      error.verification = err.verification;
+      throw error;
+    }
+
+    return res.json();
+  }
+
   async deleteDomain(domainId: string): Promise<any> {
     const headers = await this.getHeadersAsync();
     const res = await fetch(`${this.baseUrl}/admin/domains/${encodeURIComponent(domainId)}`, {
