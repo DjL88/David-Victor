@@ -2494,7 +2494,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
       time = parsed.toISOString();
     }
 
-    const raw = await api.updateFulfillment(basketId, { type: 'pickup', time });
+    // ASAP collection must be represented by an untimed pickup. Sending a
+    // locally-derived "now" timestamp makes Deliverect treat ASAP as a scheduled
+    // collection and it can then reject reconcile with HTTP 422 when that timestamp
+    // is earlier than Deliverect's authoritative preparation time.
+    //
+    // Only send a time when the customer explicitly selected a scheduled slot.
+    const raw = await api.updateFulfillment(
+      basketId,
+      time ? { type: 'pickup', time } : { type: 'pickup' }
+    );
     return this.mapLiveCommerceBasket(raw);
   }
 
