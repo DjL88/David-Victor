@@ -309,6 +309,7 @@ export class ChannelMenuIngestionService {
     tenantId: string;
     payload: any;
     rawBody: Buffer | string;
+    resolvedChannelLinkId?: string;
   }): Promise<ChannelMenuIngressReceipt> {
     const raw = Buffer.isBuffer(params.rawBody)
       ? params.rawBody
@@ -319,7 +320,10 @@ export class ChannelMenuIngestionService {
     const menus = menuArray(params.payload);
     const menuIds = Array.from(new Set(menus.map(menuIdOf).filter(Boolean)));
     const channelLinkIds = Array.from(
-      new Set(menus.map(channelLinkIdOf).filter(Boolean))
+      new Set([
+        ...menus.map(channelLinkIdOf).filter(Boolean),
+        String(params.resolvedChannelLinkId || '').trim(),
+      ].filter(Boolean))
     );
 
     const existing = await this.getIngressRecord(params.tenantId, eventId);
@@ -425,9 +429,12 @@ export class ChannelMenuIngestionService {
       const menus = menuArray(payload);
       const db = liveEnvironment() ? getFirestoreDb() : null;
 
+      const fallbackChannelLinkId =
+        existing?.channelLinkIds?.length === 1 ? existing.channelLinkIds[0] : '';
+
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
-        const channelLinkId = channelLinkIdOf(menu);
+        const channelLinkId = channelLinkIdOf(menu) || fallbackChannelLinkId;
         if (!menuId || !channelLinkId) {
           throw new BFFError(
             'VALIDATION_ERROR',
@@ -493,11 +500,14 @@ export class ChannelMenuIngestionService {
 
         // Preserve existing operational menu metadata + snooze semantics after
         // durable storage, not on the request thread.
+        const operationalMenu = channelLinkIdOf(menu)
+          ? menu
+          : { ...menu, channelLinkId };
         await DeliverectOperationalWebhookService.process(
           job.tenantId,
           'menu_update',
-          menu,
-          JSON.stringify(menu)
+          operationalMenu,
+          JSON.stringify(operationalMenu)
         );
       }
 
