@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Product, ProductAvailabilitySummary, Story, Category, Store, BasketItem, moneyToMajor } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { BundleProduct } from '../../commerce/bundleModels';
@@ -133,6 +133,49 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onCatalogFilterStateChange?.(resolved);
   };
   const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
+  const filterModalInitialSignatureRef = useRef('');
+
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        onlyFavourites: Boolean(filterState.onlyFavourites),
+        onlyBuyAgain: Boolean(filterState.onlyBuyAgain),
+        selectedDietaryTags: [...(filterState.selectedDietaryTags || [])].sort(),
+        excludedAllergens: [...(filterState.excludedAllergens || [])].sort(),
+      }),
+    [filterState]
+  );
+
+  const bringProductsIntoView = useCallback(() => {
+    const run = () => {
+      const productSection = document.getElementById('main-product-listing');
+      const categoryNav = document.getElementById('category-nav-section');
+      const stickyHeader = document.getElementById('sticky-header-container');
+      if (!productSection || !categoryNav) return;
+
+      const headerHeight = stickyHeader?.getBoundingClientRect().height || 0;
+      const navHeight = categoryNav.getBoundingClientRect().height || 0;
+      const desiredTop = headerHeight + navHeight + 10;
+      const rect = productSection.getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+
+      // Avoid a needless jump when products are already positioned naturally below
+      // the header/filter dock. Otherwise, bring the first results into a useful view.
+      const alreadyWellPositioned =
+        rect.top >= desiredTop - 18 &&
+        rect.top <= Math.min(desiredTop + 90, viewportHeight * 0.45);
+      if (alreadyWellPositioned) return;
+
+      const targetTop = Math.max(0, window.scrollY + rect.top - desiredTop);
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({
+        top: targetTop,
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
+    };
+
+    window.requestAnimationFrame(() => window.requestAnimationFrame(run));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -359,21 +402,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onSelectStore={onSelectStore}
         onOpenStorePicker={onOpenStorePicker}
         filterState={filterState}
-        onOpenFiltersModal={() => setIsFilterModalOpen(true)}
+        onOpenFiltersModal={() => {
+          filterModalInitialSignatureRef.current = filterSignature;
+          setIsFilterModalOpen(true);
+        }}
         onOpenAislesModal={onOpenAislesModal}
-        onToggleFavouritesFilter={() =>
-          setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }))
-        }
-        onToggleBuyAgainFilter={() =>
-          setFilterState((prev) => ({ ...prev, onlyBuyAgain: !prev.onlyBuyAgain }))
-        }
-        onClearAllergenFilters={() =>
+        onToggleFavouritesFilter={() => {
+          setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }));
+          bringProductsIntoView();
+        }}
+        onToggleBuyAgainFilter={() => {
+          setFilterState((prev) => ({ ...prev, onlyBuyAgain: !prev.onlyBuyAgain }));
+          bringProductsIntoView();
+        }}
+        onClearAllergenFilters={() => {
           setFilterState((prev) => ({
             ...prev,
             excludedAllergens: [],
             selectedDietaryTags: [],
-          }))
-        }
+          }));
+          bringProductsIntoView();
+        }}
+        onProductIntent={bringProductsIntoView}
       />
 
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}
@@ -757,7 +807,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* Dietary & Allergen Preferences Modal */}
       <DietaryPreferencesModal
         isOpen={isFilterModalOpen}
-        onClose={() => setIsFilterModalOpen(false)}
+        onClose={() => {
+          setIsFilterModalOpen(false);
+          if (filterModalInitialSignatureRef.current !== filterSignature) {
+            bringProductsIntoView();
+          }
+        }}
         products={products}
         filterState={filterState}
         onChangeFilterState={setFilterState}
