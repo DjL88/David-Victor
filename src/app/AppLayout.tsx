@@ -785,6 +785,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           navigateToCategory(catId);
           setActiveTab('home');
           setIsAislesModalOpen(false);
+          window.setTimeout(() => {
+            document.getElementById('category-nav-section')?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start',
+            });
+          }, 80);
         }}
         storeName={selectedStore?.name}
         filterState={catalogFilterState}
