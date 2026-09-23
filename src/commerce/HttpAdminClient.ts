@@ -322,6 +322,22 @@ export class HttpAdminClient implements AdminClient {
   async uploadAssetFile(file: File, type: string, tenantId?: string): Promise<any> {
     const tId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const inferredContentType =
+      extension === 'pdf' ? 'application/pdf' :
+      extension === 'json' ? 'application/json' :
+      extension === 'md' || extension === 'markdown' ? 'text/markdown' :
+      extension === 'txt' ? 'text/plain' :
+      extension === 'svg' ? 'image/svg+xml' :
+      extension === 'png' ? 'image/png' :
+      extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' :
+      extension === 'webp' ? 'image/webp' :
+      extension === 'woff2' ? 'font/woff2' :
+      extension === 'woff' ? 'font/woff' :
+      extension === 'ttf' ? 'font/ttf' :
+      extension === 'otf' ? 'font/otf' :
+      'application/octet-stream';
+    const contentType = file.type || inferredContentType;
 
     // 1. Request short-lived signed upload URL from BFF (Section 31: Storage/Assets Architecture)
     try {
@@ -332,7 +348,7 @@ export class HttpAdminClient implements AdminClient {
           tenantId: tId,
           type,
           fileName: file.name,
-          contentType: file.type || 'application/octet-stream',
+          contentType: contentType,
           byteSize: file.size,
         }),
       });
@@ -345,7 +361,7 @@ export class HttpAdminClient implements AdminClient {
 
         // 2. Direct upload to Cloud Storage via signed URL
         const uploadHeaders: Record<string, string> = {
-          'Content-Type': file.type || 'application/octet-stream',
+          'Content-Type': contentType,
         };
         // The relative URL is the authenticated BFF fallback used when signed URL
         // generation is unavailable. Never forward Firebase auth to an external
@@ -407,7 +423,7 @@ export class HttpAdminClient implements AdminClient {
             type,
             fileName: file.name,
             fileData,
-            contentType: file.type || 'application/octet-stream',
+            contentType: contentType,
             byteSize: file.size,
           });
           resolve(asset);
