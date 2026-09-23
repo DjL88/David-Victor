@@ -224,9 +224,7 @@ export class AssetService {
           publicUrl = '';
           console.log(`[AssetService] Stored private brand material in Cloud Storage: ${storagePath}`);
         } else {
-          publicUrl = params.type === 'BRAND_GUIDELINES'
-          ? ''
-          : `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+          publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
           console.log(`[AssetService] Stored binary in Cloud Storage with public token: ${storagePath}`);
         }
       } catch (storageErr: any) {
