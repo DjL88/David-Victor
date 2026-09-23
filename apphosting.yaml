@@ -11,6 +11,14 @@ env:
       - RUNTIME
       - BUILD
 
+  # This deployment currently serves the provisioned brand-alpha tenant on the
+  # Firebase-managed *.hosted.app origin. Custom domains still resolve from the
+  # verified domain registry; this value is only the managed-host default.
+  - variable: PREVIEW_TENANT_ID
+    value: brand-alpha
+    availability:
+      - RUNTIME
+
   - variable: DELIVERECT_ENV
     value: staging
     availability:
