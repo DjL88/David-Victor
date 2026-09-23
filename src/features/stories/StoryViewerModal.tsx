@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Story, StoryAction, Product, formatMoney } from '../../commerce/models';
+import { Story, StoryAction, Product } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 import { resolveStoryMediaUrl } from '../../utils/storyMediaUtils';
 import { parseStoryMedia, isGenericPlaceholder } from '../../utils/storyMediaUtils';
 import { getDealForStory } from '../../commerce/dealModels';
@@ -457,7 +458,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                           {prodName}
                         </p>
                         <p className="text-[10px] text-emerald-400 font-mono font-bold">
-                          {formatMoney(p.price)}
+                          {formatStorefrontCurrency(p.price, tenant)}
                         </p>
                       </div>
                     </button>
