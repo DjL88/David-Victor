@@ -25,7 +25,11 @@ const SECTION_LABELS: Record<string, string> = {
   media_health: 'Media Health',
   stories: 'Stories',
   fees: 'Fees',
-  product_rules: 'Rules & Fulfilment',
+  product_rules: 'Product rules',
+  courier_settings: 'Courier settings',
+  order_scheduling: 'Order scheduling',
+  languages: 'Languages & wording',
+  features: 'Feature switches',
   stores: 'Locations',
   audit: 'Audit History',
 };
@@ -45,6 +49,26 @@ const STARTERS: Record<string, string[]> = {
     'Explain how Where → Action rules work.',
     'What kinds of rule conflicts should I watch for?',
     'Help me think through a safer rule.',
+  ],
+  courier_settings: [
+    'Explain courier assignment timing.',
+    'How does courier selection work?',
+    'What should I check before changing this?',
+  ],
+  order_scheduling: [
+    'Explain ASAP vs scheduled orders.',
+    'What does this scheduling policy affect?',
+    'Help me review these settings.',
+  ],
+  languages: [
+    'How do dialects and wording overrides work?',
+    'Help me customise British vs US English.',
+    'What wording can this brand override?',
+  ],
+  features: [
+    'Explain these feature switches.',
+    'Which switches affect the storefront?',
+    'What should I check before disabling a feature?',
   ],
   connection_health: [
     'Explain what this connection status page is checking.',

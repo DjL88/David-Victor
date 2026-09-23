@@ -111,6 +111,18 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
   const commerceClient = useMemo(() => getCommerceClient(tenantId) as any, [tenantId]);
 
+  const flattenedCategories = useMemo(() => {
+    const rows: Array<{ id: string; name: string; depth: number }> = [];
+    const walk = (items: Category[], depth = 0) => {
+      for (const category of items || []) {
+        rows.push({ id: category.id, name: category.name, depth });
+        if (category.subcategories?.length) walk(category.subcategories, depth + 1);
+      }
+    };
+    walk(categories);
+    return rows;
+  }, [categories]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -631,7 +643,10 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-extrabold text-gray-800">Category Display Context</label>
+                  <label className="font-extrabold text-gray-800">Banner placement</label>
+                  <p className="text-[10px] text-gray-500 mb-1">
+                    Choose Home, or sponsor a category/subcategory. A sponsored aisle banner replaces the generated category spotlight while that aisle is selected.
+                  </p>
                   <select
                     value={currentEditingBanner.categoryId || (currentEditingBanner.categorySlugMatch === 'all' ? 'all' : '')}
                     onChange={(e) => {
@@ -643,7 +658,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                           categorySlugMatch: 'all',
                         }));
                       } else {
-                        const cat = categories.find((c) => c.id === val);
+                        const cat = flattenedCategories.find((c) => c.id === val);
                         setCurrentEditingBanner((prev) => ({
                           ...prev,
                           categoryId: val,
@@ -654,10 +669,10 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                     }}
                     className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-900"
                   >
-                    <option value="all">🏠 All Categories (Home Carousel)</option>
-                    {categories.map((c) => (
+                    <option value="all">🏠 Home carousel</option>
+                    {flattenedCategories.map((c) => (
                       <option key={c.id} value={c.id}>
-                        📂 {c.name}
+                        {c.depth > 0 ? `${'— '.repeat(c.depth)}↳ ` : '📂 '}{c.name}
                       </option>
                     ))}
                   </select>
