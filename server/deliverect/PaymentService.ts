@@ -254,6 +254,7 @@ export class PaymentService {
         ? { amount: response.residualHoldAmount, currency: response.currency }
         : undefined,
       orderReference: response.orderReference,
+      basketId: request.basketId,
       createdAt: response.createdAt,
       updatedAt: response.updatedAt || response.createdAt,
     };
