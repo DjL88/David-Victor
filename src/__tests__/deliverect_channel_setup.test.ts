@@ -15,7 +15,9 @@ describe('Deliverect Channel setup', () => {
     expect(byKey.storeProvisioning.url).toBe(
       'https://example.test/api/v1/webhooks/deliverect/brand%20alpha/channel/provision'
     );
-    expect(byKey.channelRegistration.url).toContain('/brand%20alpha/channel/register');
+    expect(byKey.channelRegistration.url).toBe(
+      'https://example.test/api/v1/webhooks/deliverect/channel/register'
+    );
     expect(byKey.snooze.readiness).toBe('READY');
     expect(byKey.busyMode.readiness).toBe('READY');
     expect(byKey.substitutions.url).toBe(
@@ -69,4 +71,50 @@ describe('Deliverect Channel setup', () => {
     expect(result.warnings).toContain('CHANNEL_LINK_ID_MISSING');
     expect(result.warnings).toContain('LOCATION_ID_MISSING');
   });
+  it('tracks register/active/inactive lifecycle from Deliverect channel callbacks', async () => {
+    const tenantId = `tenant-channel-lifecycle-${Date.now()}`;
+
+    const registered = await ChannelProvisioningService.process(
+      tenantId,
+      'CHANNEL_REGISTRATION',
+      {
+        accountId: 'account-1',
+        channelLinkId: 'channel-lifecycle-1',
+        locationId: 'location-1',
+        channelLocationId: 'external-1',
+        status: 'register',
+      }
+    );
+    expect(registered.status).toBe('register');
+
+    const activeStore = (await FirestorePlatformService.getTenantStores(tenantId))
+      .find((item) => item.channelLinkId === 'channel-lifecycle-1');
+    expect(activeStore).toMatchObject({
+      lifecycleStatus: 'ACTIVE',
+      provisioningState: 'REGISTERED',
+      externalLocationId: 'external-1',
+      accountId: 'account-1',
+    });
+
+    await ChannelProvisioningService.process(
+      tenantId,
+      'CHANNEL_REGISTRATION',
+      {
+        accountId: 'account-1',
+        channelLinkId: 'channel-lifecycle-1',
+        locationId: 'location-1',
+        channelLocationId: 'external-1',
+        status: 'inactive',
+      }
+    );
+
+    const inactiveStore = (await FirestorePlatformService.getTenantStores(tenantId))
+      .find((item) => item.channelLinkId === 'channel-lifecycle-1');
+    expect(inactiveStore).toMatchObject({
+      lifecycleStatus: 'INACTIVE',
+      provisioningState: 'DISABLED',
+      assigned: false,
+    });
+  });
+
 });
