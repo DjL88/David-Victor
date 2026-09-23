@@ -2728,6 +2728,46 @@ export class FirestoreService {
     return null;
   }
 
+  static async attachCustomerUidToOrderProjection(
+    orderId: string,
+    tenantId: string,
+    customerUid: string
+  ): Promise<OrderProjection | null> {
+    const cleanOrderId = String(orderId || '').trim();
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanCustomerUid = String(customerUid || '').trim();
+    if (!cleanOrderId || !cleanTenantId || !cleanCustomerUid) return null;
+
+    const existing = await this.getOrderProjection(cleanOrderId);
+    if (!existing || existing.tenantId !== cleanTenantId) return null;
+
+    if (existing.customerUid && existing.customerUid !== cleanCustomerUid) {
+      throw new BFFError(
+        'ORDER_CUSTOMER_MISMATCH',
+        'This order is already linked to a different customer identity.',
+        409
+      );
+    }
+
+    const updated: OrderProjection = {
+      ...existing,
+      customerUid: cleanCustomerUid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    inMemoryOrderProjections[cleanOrderId] = updated;
+
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection('orderProjections').doc(cleanOrderId).set(
+        { customerUid: cleanCustomerUid, updatedAt: updated.updatedAt },
+        { merge: true }
+      );
+    }
+
+    return updated;
+  }
+
   /**
    * Lists order projections, optionally filtered by tenantId.
    */
