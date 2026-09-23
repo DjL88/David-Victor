@@ -9,6 +9,8 @@ import { StoriesAdminScreen } from './screens/StoriesAdminScreen';
 import { HeroBannersAdminScreen } from './screens/HeroBannersAdminScreen';
 import { FeesAdminScreen } from './screens/FeesAdminScreen';
 import { ProductRulesScreen } from './screens/ProductRulesScreen';
+import { FeaturesScreen } from './screens/FeaturesScreen';
+import { LanguageTerminologyScreen } from './screens/LanguageTerminologyScreen';
 import { StoreConfigScreen } from './screens/StoreConfigScreen';
 import { AuditHistoryScreen } from './screens/AuditHistoryScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
@@ -28,6 +30,10 @@ import {
   Coins,
   Globe,
   ShieldCheck,
+  Languages,
+  SlidersHorizontal,
+  CalendarClock,
+  Truck,
   Store,
   History,
   Users,
@@ -62,6 +68,10 @@ export type AdminTab =
   | 'stories'
   | 'fees'
   | 'product_rules'
+  | 'courier_settings'
+  | 'order_scheduling'
+  | 'languages'
+  | 'features'
   | 'stores'
   | 'audit';
 
@@ -209,13 +219,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     {
       title: 'Rules',
       items: [
-        { id: 'product_rules', label: 'Rules & Fulfilment', icon: ShieldCheck },
+        { id: 'product_rules', label: 'Product rules', icon: ShieldCheck },
+        { id: 'courier_settings', label: 'Courier settings', icon: Truck },
+        { id: 'order_scheduling', label: 'Order scheduling', icon: CalendarClock },
       ],
     },
     {
       title: 'Marketing',
       items: [
         { id: 'branding', label: 'Branding', icon: Palette },
+        { id: 'languages', label: 'Languages & wording', icon: Languages },
+        { id: 'features', label: 'Feature switches', icon: SlidersHorizontal },
         { id: 'hero_banners', label: 'Banners', icon: Flag },
         { id: 'stories', label: 'Stories', icon: Film },
         { id: 'search_merch', label: 'Search & Recommendations', icon: Search },
@@ -428,7 +442,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               <FeesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'product_rules' && (
-              <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} />
+              <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} view="product" />
+            )}
+            {activeTab === 'courier_settings' && (
+              <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} view="dispatch" />
+            )}
+            {activeTab === 'order_scheduling' && (
+              <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} view="scheduling" />
+            )}
+            {activeTab === 'languages' && (
+              <LanguageTerminologyScreen tenantId={currentTenantId} currentUser={currentUser} />
+            )}
+            {activeTab === 'features' && (
+              <FeaturesScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'stores' && (
               <StoreConfigScreen tenantId={currentTenantId} currentUser={currentUser} />
