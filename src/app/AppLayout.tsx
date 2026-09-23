@@ -735,7 +735,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               categories={catalog?.categories || []}
               onSelectProduct={routeToProduct}
               onSelectCategory={routeToCategory}
-              onAddToCart={(product) => void updateQuantity(product, getItemQuantity(product) + 1)}
+              onAddToCart={(product) => void updateQuantity(product, getItemQuantity(product.plu) + 1)}
             />
           )}
 
