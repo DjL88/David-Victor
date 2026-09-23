@@ -577,18 +577,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     if (action.type === 'PRODUCT' && action.targetPlu) {
       const targetProd = products.find((p) => p.plu === action.targetPlu);
       if (targetProd) {
-        setSelectedProduct(targetProd);
+        routeToProduct(targetProd);
       }
     } else if (action.type === 'CATEGORY' && action.targetCategoryId) {
-      navigateToCategory(action.targetCategoryId);
-      setActiveTab('home');
+      routeToCategory(action.targetCategoryId);
     } else if (action.type === 'SEARCH' && action.searchQuery) {
       setSearchQuery(action.searchQuery);
       setActiveTab('search');
     } else if (action.type === 'OFFER') {
       if (action.targetPlu) {
         const targetProd = products.find((p) => p.plu === action.targetPlu);
-        if (targetProd) setSelectedProduct(targetProd);
+        if (targetProd) routeToProduct(targetProd);
       }
     }
   };
@@ -657,7 +656,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             onFulfillmentChange={setFulfillmentType}
             onOpenLocationPicker={() => setIsLocationModalOpen(true)}
             onOpenStorePicker={() => setIsStorePickerOpen(true)}
-            onOpenCart={() => setIsCartOpen(true)}
+            onOpenCart={routeToBasket}
             onOpenSearch={() => navigateToTab('search')}
             searchQuery={searchQuery}
             onSearchChange={(q) => {
@@ -692,13 +691,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               categories={currentSubcategories}
               breadcrumbs={breadcrumbs}
               selectedCategoryId={selectedCategoryId}
-              onSelectCategory={navigateToCategory}
-              onSelectProduct={(p) => setSelectedProduct(p)}
+              onSelectCategory={routeToCategory}
+              onSelectProduct={routeToProduct}
               onUpdateQuantity={updateQuantity}
               getBasketQuantity={getItemQuantity}
               basketItems={basket?.items || []}
               searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
+              onSearchChange={updateSearchQueryRoute}
               totalCatalogResults={searchResults}
               totalCatalogSummaries={searchSummaries}
               searchLoading={searchLoading}
@@ -721,11 +720,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           {activeTab === 'search' && (
             <SearchScreen
               query={searchQuery}
-              onQueryChange={setSearchQuery}
+              onQueryChange={updateSearchQueryRoute}
               results={searchResults}
               summaries={searchSummaries}
               loading={searchLoading}
-              onSelectProduct={(p) => setSelectedProduct(p)}
+              onSelectProduct={routeToProduct}
               onUpdateQuantity={updateQuantity}
               isStoreSelected={selectedStore !== null}
               onPromptSelectStore={(product?: Product) => {
@@ -749,7 +748,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         allBaskets={allBaskets}
         isMultiLocation={isMultiLocation}
         itemCount={totalItemsCount}
-        onOpenCart={() => setIsCartOpen(true)}
+        onOpenCart={routeToBasket}
       />
 
       {/* Mobile Bottom Navigation Bar */}
@@ -769,7 +768,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         onStoryAction={handleStoryAction}
         products={products}
         selectedStoreName={selectedStore?.name}
-        onSelectProduct={(p) => setSelectedProduct(p)}
+        onSelectProduct={routeToProduct}
         onOpenDealDialog={(story) => {
           closeStory();
           const deal = getDealForStory(story, products);
@@ -799,7 +798,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         }}
         onSelectProduct={(p) => {
           setActiveDealForModal(null);
-          setSelectedProduct(p);
+          routeToProduct(p);
         }}
       />
 
@@ -866,7 +865,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         basketItems={basket?.items || []}
         sessionAgeAcknowledged={sessionAgeAcknowledged}
         onAcknowledgeAge={handleAcknowledgeAge}
-        onClose={() => setSelectedProduct(null)}
+        onClose={() => closeRoutedOverlay('product')}
         onUpdateQuantity={updateQuantity}
         isStoreSelected={selectedStore !== null}
         onPromptSelectStore={() => {
@@ -949,10 +948,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         onSwapAllSubstitutes={autoSwapSubstitutes}
         snoozeAudit={snoozeAudit}
         onUpdateSubstitution={updateItemSubstitution}
-        onProceedToCheckout={() => {
-          setIsCartOpen(false);
-          setIsCheckoutOpen(true);
-        }}
+        onProceedToCheckout={routeToCheckout}
         onOpenDealPopup={(deal) => {
           setActiveDealForModal(deal);
         }}
@@ -1003,8 +999,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         products={catalog?.products || products}
         selectedCategoryId={selectedCategoryId}
         onSelectCategory={(catId) => {
-          navigateToCategory(catId);
-          setActiveTab('home');
+          routeToCategory(catId);
           setIsAislesModalOpen(false);
         }}
         storeName={selectedStore?.name}
@@ -1018,7 +1013,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           basket={basket}
           store={selectedStore}
           deliveryAddress={currentAddress}
-          onClose={() => setIsCheckoutOpen(false)}
+          onClose={() => closeRoutedOverlay('checkout')}
           onStoreSwitched={selectStore}
           onBasketUpdated={setBasket}
           onOpenDealPopup={(deal) => {
@@ -1026,7 +1021,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           }}
           onOrderSuccess={() => {
             clearAllBaskets();
-            setIsCheckoutOpen(false);
+            closeRoutedOverlay('checkout');
           }}
         />
       )}
