@@ -15,6 +15,7 @@ import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } f
 import { BFFError } from './errors';
 import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
 import type { ProtectedBundleAllocation } from '../src/commerce/bundleAllocation';
+import { FirebaseAuthDomainService } from './firebaseAuthDomainService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -676,6 +677,19 @@ export class FirestoreService {
     // Local state is a cache after authoritative persistence, and a primary store only in demo/test.
     inMemoryDomains[cleanHost] = record;
     if (useLocalRuntimeData) savePersistedDomains(inMemoryDomains);
+
+    // Firebase Auth authorization follows activation, never initial domain claiming.
+    // The upcoming DNS/TLS verification lifecycle will transition pending -> active,
+    // which makes Auth configuration automatic with no console step.
+    if (!useLocalRuntimeData && record.status === 'active') {
+      try {
+        await FirebaseAuthDomainService.ensureAuthorizedDomain(cleanHost);
+      } catch (err: any) {
+        console.warn(
+          `[Domain Lifecycle] Firebase Auth domain sync failed for ${cleanHost}: ${err?.message || err}`
+        );
+      }
+    }
 
     return record;
   }
