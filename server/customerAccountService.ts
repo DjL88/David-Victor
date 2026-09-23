@@ -4,12 +4,14 @@ import {
   markFirestorePermissionDenied,
 } from './firebase';
 import { BFFError } from './errors';
+import type { Address } from '../src/commerce/models';
 import { isDemoMode, isTestMode } from './runtimeMode';
 
 export interface CustomerAccountProfile {
   tenantId: string;
   customerUid: string;
   favouritePlus: string[];
+  savedAddresses: Address[];
   createdAt: string;
   updatedAt: string;
 }
@@ -38,12 +40,73 @@ export function normalizeFavouritePlus(values: unknown): string[] {
   );
 }
 
+function optionalText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+export function normalizeSavedAddresses(values: unknown): Address[] {
+  if (!Array.isArray(values)) return [];
+
+  const normalized: Address[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of values.slice(0, 10)) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const raw = candidate as Record<string, unknown>;
+
+    const city = optionalText(raw.city);
+    const country = optionalText(raw.country);
+    const line1 = optionalText(raw.line1) || optionalText(raw.street);
+    const line2 = optionalText(raw.line2);
+    const formattedAddress = optionalText(raw.formattedAddress);
+    const postalCode = optionalText(raw.postalCode) || optionalText(raw.postcode);
+
+    if (!city || !country || (!line1 && !formattedAddress && !postalCode)) continue;
+
+    const address: Address = {
+      city,
+      country,
+      ...(line1 ? { line1, street: line1 } : {}),
+      ...(line2 ? { line2 } : {}),
+      ...(postalCode ? { postalCode, postcode: postalCode } : {}),
+      ...(formattedAddress ? { formattedAddress } : {}),
+    };
+
+    const latitude = typeof raw.latitude === 'number' ? raw.latitude : Number(raw.latitude);
+    const longitude = typeof raw.longitude === 'number' ? raw.longitude : Number(raw.longitude);
+    if (Number.isFinite(latitude) && latitude >= -90 && latitude <= 90) {
+      address.latitude = latitude;
+    }
+    if (Number.isFinite(longitude) && longitude >= -180 && longitude <= 180) {
+      address.longitude = longitude;
+    }
+
+    const dedupeKey = [
+      address.formattedAddress || address.line1 || '',
+      address.city,
+      address.postalCode || '',
+      address.country,
+    ]
+      .join('|')
+      .toLowerCase();
+
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalized.push(address);
+  }
+
+  return normalized;
+}
+
 function emptyProfile(tenantId: string, customerUid: string): CustomerAccountProfile {
   const now = new Date().toISOString();
   return {
     tenantId,
     customerUid,
     favouritePlus: [],
+    savedAddresses: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -96,6 +159,7 @@ export class CustomerAccountService {
         tenantId: cleanTenantId,
         customerUid: cleanCustomerUid,
         favouritePlus: normalizeFavouritePlus(raw.favouritePlus),
+        savedAddresses: normalizeSavedAddresses(raw.savedAddresses),
         createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
         updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
       };
@@ -160,6 +224,61 @@ export class CustomerAccountService {
       }
       if (!fallbackAllowed()) {
         throw durableStorageError('Favourites could not be saved to durable storage.');
+      }
+      inMemoryProfiles.set(memoryKey, next);
+      return next;
+    }
+  }
+
+  static async saveAddresses(
+    tenantId: string,
+    customerUid: string,
+    savedAddresses: unknown
+  ): Promise<CustomerAccountProfile> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanCustomerUid = String(customerUid || '').trim();
+    if (!cleanTenantId || !cleanCustomerUid) {
+      throw new BFFError('VALIDATION_ERROR', 'Tenant and customer identity are required.', 400);
+    }
+
+    const normalized = normalizeSavedAddresses(savedAddresses);
+    const existing = await this.getProfile(cleanTenantId, cleanCustomerUid);
+    const now = new Date().toISOString();
+    const next: CustomerAccountProfile = {
+      ...existing,
+      tenantId: cleanTenantId,
+      customerUid: cleanCustomerUid,
+      savedAddresses: normalized,
+      updatedAt: now,
+      createdAt: existing.createdAt || now,
+    };
+
+    const db = getFirestoreDb();
+    const memoryKey = keyFor(cleanTenantId, cleanCustomerUid);
+
+    if (!db) {
+      if (!fallbackAllowed()) {
+        throw durableStorageError('Saved addresses were not updated because durable storage is unavailable.');
+      }
+      inMemoryProfiles.set(memoryKey, next);
+      return next;
+    }
+
+    try {
+      await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('customerProfiles')
+        .doc(cleanCustomerUid)
+        .set(next, { merge: true });
+      return next;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) {
+        markFirestorePermissionDenied(err);
+        throw permissionError('Saved addresses were not updated because database access was denied.');
+      }
+      if (!fallbackAllowed()) {
+        throw durableStorageError('Saved addresses could not be written to durable storage.');
       }
       inMemoryProfiles.set(memoryKey, next);
       return next;
