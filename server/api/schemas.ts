@@ -427,25 +427,37 @@ export const DeliverectWebhookPayloadSchema = z
   })
   .passthrough();
 
+const optionalTrimmedText = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().trim().optional()
+);
+
+const optionalEmail = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().trim().email('Enter a valid administrator email address').optional()
+);
+
 export const CreateTenantSchema = z.object({
-  brandName: z.string().min(1, 'brandName is required'),
-  tenantId: z.string().optional(),
-  domain: z.string().optional(),
-  initialAdminEmail: z.string().email().optional(),
-  adminEmail: z.string().email().optional(),
-  tagline: z.string().optional(),
-  logoUrl: z.string().optional(),
-  iconUrl: z.string().optional(),
-  primaryColour: z.string().optional(),
-  secondaryColour: z.string().optional(),
-  backgroundColour: z.string().optional(),
-  textColour: z.string().optional(),
-  fontFamily: z.string().optional(),
-  borderRadius: z.string().optional(),
-  country: z.string().optional(),
-  currency: z.string().optional(),
-  currencySymbol: z.string().optional(),
-  locale: z.string().optional(),
+  brandName: z.string().trim().min(1, 'brandName is required'),
+  tenantId: z.string().trim().min(1, 'tenantId is required').optional(),
+  domain: optionalTrimmedText,
+  initialAdminEmail: optionalEmail,
+  adminEmail: optionalEmail,
+  adminName: optionalTrimmedText,
+  tagline: optionalTrimmedText,
+  logoUrl: optionalTrimmedText,
+  iconUrl: optionalTrimmedText,
+  primaryColour: optionalTrimmedText,
+  secondaryColour: optionalTrimmedText,
+  backgroundColour: optionalTrimmedText,
+  textColour: optionalTrimmedText,
+  fontFamily: optionalTrimmedText,
+  headingFontFamily: optionalTrimmedText,
+  borderRadius: optionalTrimmedText,
+  country: optionalTrimmedText,
+  currency: optionalTrimmedText,
+  currencySymbol: optionalTrimmedText,
+  locale: optionalTrimmedText,
   supportDetails: z.record(z.string(), z.any()).optional(),
   featureFlags: z.record(z.string(), z.any()).optional(),
 });
