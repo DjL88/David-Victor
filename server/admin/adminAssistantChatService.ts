@@ -301,7 +301,7 @@ export function extractCatalogLookupQuery(message: string): string | null {
       /\b(are|is|was|were|do|does|did|can|could|would|will|please|check|tell|me|whether|if|the|a|an|product|item|stock|available|availability|price|visible|appearing|showing|snoozed|snooze|why|not|on|this|storefront|catalogue|catalog|have|has|we|you|how|many|stores?|locations?|branches?|about|across|at|in)\b/gi,
       ' '
     )
-    .replace(/[?.,!]+/g, ' ')
+    .replace(/[?.,!()[\]{}]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
