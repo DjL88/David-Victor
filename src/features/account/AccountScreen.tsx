@@ -255,7 +255,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
             onClick={onOpenAdmin}
             className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-xs"
           >
-            Launch Admin
+            {t('account.launchAdmin')}
           </button>
         </div>
       )}
