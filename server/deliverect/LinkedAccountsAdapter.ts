@@ -10,10 +10,8 @@ import { circuitBreakers } from '../circuitBreaker';
 
 function getLocalMappingPath(tenantId: string): string {
   if (!isDemoMode()) {
-    throw new BFFError(
-      'LOCAL_PERSISTENCE_FORBIDDEN',
-      'Local tenant mapping files are only permitted in explicit DEMO mode.',
-      500
+    throw BFFError.internal(
+      'Local tenant mapping files are only permitted in explicit DEMO mode.'
     );
   }
 
