@@ -125,6 +125,14 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
     });
   });
 
+  describe('Deliverect numeric status coverage', () => {
+    it('normalizes duplicate, in-delivery and system failure codes', () => {
+      expect(normalizeDeliverectOrderStatus(30)).toBe('DUPLICATE');
+      expect(normalizeDeliverectOrderStatus('80')).toBe('OUT_FOR_DELIVERY');
+      expect(normalizeDeliverectOrderStatus(121)).toBe('ORDER_FAILED');
+      expect(normalizeDeliverectOrderStatus('124')).toBe('ORDER_FAILED');
+    });
+  });
   // ========================================================
   // CHECK-03: Webhook Recovery via Get Checkout
   // ========================================================
