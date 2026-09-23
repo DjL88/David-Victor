@@ -233,6 +233,12 @@ const mappingRefreshAt = new Map<string, number>();
 const mappingRefreshes = new Map<string, Promise<void>>();
 
 export class LinkedAccountsAdapter {
+  static invalidateTenantMappings(tenantId: string): void {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return;
+    mappingRefreshAt.set(cleanTenantId, 0);
+  }
+
   private tokenManager: OAuthTokenManager;
   private environment: DeliverectEnvironmentName;
 
