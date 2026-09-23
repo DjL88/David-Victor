@@ -3,6 +3,8 @@ import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { CmsPageView } from '../cms/CmsPageView';
 import { CmsPage } from '../../commerce/cmsModels';
+import type { Address } from '../../commerce/models';
+import { saveSavedAddresses } from './customerAccountClient';
 import { auth, onAuthStateChanged, User as FirebaseUser, signInWithGoogle, signOutUser } from '../../firebase';
 import {
   MapPin,
@@ -17,13 +19,44 @@ import {
   X,
   LogIn,
   LogOut,
+  Trash2,
+  BookmarkPlus,
+  Loader2,
 } from 'lucide-react';
 
 interface AccountScreenProps {
   onOpenAdmin?: () => void;
+  currentAddress?: Address | null;
+  savedAddresses?: Address[];
+  onSavedAddressesChange?: (addresses: Address[]) => void;
 }
 
-export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => {
+function addressKey(address: Address): string {
+  return [
+    address.formattedAddress || address.line1 || address.street || '',
+    address.city || '',
+    address.postalCode || address.postcode || '',
+    address.country || '',
+  ]
+    .join('|')
+    .toLowerCase();
+}
+
+function addressLabel(address: Address): string {
+  return (
+    address.formattedAddress ||
+    [address.line1 || address.street, address.line2, address.city, address.postalCode || address.postcode]
+      .filter(Boolean)
+      .join(', ')
+  );
+}
+
+export const AccountScreen: React.FC<AccountScreenProps> = ({
+  onOpenAdmin,
+  currentAddress = null,
+  savedAddresses = [],
+  onSavedAddressesChange,
+}) => {
   const { tenant, appMode } = useTenant();
   const { locale, availableLocales, setLocale, t } = useI18n();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -38,6 +71,40 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
   const [activePageSlug, setActivePageSlug] = useState<string | null>(null);
   const [cmsPages, setCmsPages] = useState<CmsPage[]>([]);
   const [accountPanel, setAccountPanel] = useState<'addresses' | 'payments' | 'notifications' | null>(null);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+
+  const persistAddresses = async (next: Address[]) => {
+    if (!currentUser) return;
+    setAddressSaving(true);
+    setAddressError(null);
+    try {
+      const saved = await saveSavedAddresses(next, tenant?.tenantId);
+      onSavedAddressesChange?.(saved);
+    } catch (err) {
+      console.warn('Could not update saved addresses:', err);
+      setAddressError(t('account.addressSaveFailed'));
+    } finally {
+      setAddressSaving(false);
+    }
+  };
+
+  const currentAddressAlreadySaved = Boolean(
+    currentAddress && savedAddresses.some((address) => addressKey(address) === addressKey(currentAddress))
+  );
+
+  const saveCurrentAddress = async () => {
+    if (!currentAddress || currentAddressAlreadySaved) return;
+    if (savedAddresses.length >= 10) {
+      setAddressError(t('account.addressLimit'));
+      return;
+    }
+    await persistAddresses([...savedAddresses, currentAddress]);
+  };
+
+  const removeSavedAddress = async (index: number) => {
+    await persistAddresses(savedAddresses.filter((_, addressIndex) => addressIndex !== index));
+  };
 
   useEffect(() => {
     fetch('/api/v1/cms/pages')
@@ -262,9 +329,99 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
 
       {accountPanel && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div role="dialog" aria-modal="true" className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-            <button type="button" aria-label="Close" onClick={() => setAccountPanel(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center"><X className="w-4 h-4" /></button>
-            <div className="pr-10"><h3 className="text-lg font-bold text-gray-900">{accountPanel === 'addresses' ? t('account.savedAddresses') : accountPanel === 'payments' ? t('account.paymentMethods') : t('account.notifications')}</h3><p className="mt-2 text-sm text-gray-600">{!currentUser ? t('account.signInToManage') : accountPanel === 'addresses' ? t('account.noSavedAddresses') : accountPanel === 'payments' ? t('account.paymentProviderNote') : t('account.notificationNote')}</p>{!currentUser && <button type="button" onClick={() => signInWithGoogle().catch(() => undefined)} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">{t('account.signIn')}</button>}</div>
+          <div role="dialog" aria-modal="true" className="bg-white rounded-3xl max-w-md w-full max-h-[85vh] overflow-y-auto p-6 shadow-2xl relative">
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => {
+                setAccountPanel(null);
+                setAddressError(null);
+              }}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="pr-10">
+              <h3 className="text-lg font-bold text-gray-900">
+                {accountPanel === 'addresses'
+                  ? t('account.savedAddresses')
+                  : accountPanel === 'payments'
+                    ? t('account.paymentMethods')
+                    : t('account.notifications')}
+              </h3>
+
+              {!currentUser ? (
+                <>
+                  <p className="mt-2 text-sm text-gray-600">{t('account.signInToManage')}</p>
+                  <button
+                    type="button"
+                    onClick={() => signInWithGoogle().catch(() => undefined)}
+                    className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold"
+                  >
+                    {t('account.signIn')}
+                  </button>
+                </>
+              ) : accountPanel === 'addresses' ? (
+                <div className="mt-4 space-y-3">
+                  {addressError && (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                      {addressError}
+                    </div>
+                  )}
+
+                  {savedAddresses.length === 0 ? (
+                    <p className="text-sm text-gray-600">{t('account.noSavedAddresses')}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedAddresses.map((address, index) => (
+                        <div
+                          key={`${addressKey(address)}-${index}`}
+                          className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50/70 p-3"
+                        >
+                          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900">{addressLabel(address)}</p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label={t('account.removeAddress')}
+                            title={t('account.removeAddress')}
+                            disabled={addressSaving}
+                            onClick={() => void removeSavedAddress(index)}
+                            className="rounded-xl p-2 text-gray-400 hover:bg-white hover:text-rose-600 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentAddress && !currentAddressAlreadySaved && savedAddresses.length < 10 ? (
+                    <button
+                      type="button"
+                      disabled={addressSaving}
+                      onClick={() => void saveCurrentAddress()}
+                      className="w-full rounded-2xl bg-gray-900 px-4 py-3 text-xs font-bold text-white hover:bg-gray-800 disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {addressSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
+                      {addressSaving ? t('account.saving') : t('account.saveCurrentAddress')}
+                    </button>
+                  ) : !currentAddress ? (
+                    <p className="text-xs text-gray-500">{t('account.noCurrentAddress')}</p>
+                  ) : savedAddresses.length >= 10 && !currentAddressAlreadySaved ? (
+                    <p className="text-xs text-amber-700">{t('account.addressLimit')}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-gray-600">
+                  {accountPanel === 'payments'
+                    ? t('account.paymentProviderNote')
+                    : t('account.notificationNote')}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
