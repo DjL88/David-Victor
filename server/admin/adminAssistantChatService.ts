@@ -279,8 +279,6 @@ export function extractCatalogLookupQuery(message: string): string | null {
     return null;
   }
 
-  // Prefer explicit identifiers before natural-language cleanup. This avoids
-  // turning "DLV1006 how many stores in stock?" into "DLV1006 how many stores".
   const labelledIdentifier = raw.match(
     /\b(?:plu|sku|barcode|gtin|product\s*id)\s*[:#-]?\s*([a-z0-9][a-z0-9._/#-]{2,})\b/i
   );
@@ -298,7 +296,7 @@ export function extractCatalogLookupQuery(message: string): string | null {
   const cleaned = raw
     .replace(/\b(in stock|out of stock)\b/gi, ' ')
     .replace(
-      /\b(are|is|was|were|do|does|did|can|could|would|will|please|check|tell|me|whether|if|the|a|an|product|item|stock|available|availability|price|visible|appearing|showing|snoozed|snooze|why|not|on|this|storefront|catalogue|catalog|have|has|we|you|how|many|stores?|locations?|branches?|about|across|at|in)\b/gi,
+      /\b(are|is|was|were|do|does|did|can|could|would|will|please|check|tell|me|whether|if|the|a|an|product|item|stock|available|availability|price|visible|appearing|showing|snoozed|snooze|unsnoozed|unsnooze|why|not|on|this|storefront|catalogue|catalog|have|has|we|you|how|many|stores?|locations?|branches?|about|across|at|in|of|with|list|all|currently|sell|sells|selling|return|returns|eligible)\b/gi,
       ' '
     )
     .replace(/[?.,!()[\]{}]+/g, ' ')
@@ -317,12 +315,12 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
   );
 
   const analyticsIntent =
-    /(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)/i.test(args.message);
+    /\b(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)\b/i.test(args.message);
   const explicitProductIntent =
-    /(stock|snooz|product|item|plu|sku|barcode|gtin|price|visible|appearing|showing|catalogue|catalog)/i.test(args.message);
+    /\b(stock|snooz|product|item|plu|sku|barcode|gtin|price|visible|appearing|showing|catalogue|catalog)\b/i.test(args.message);
   const locationProductIntent =
-    /(locations?|stores?|branches?).*(with|stock|sell|selling|have|has)/i.test(args.message) ||
-    /(which|what|how many|list all).*(locations?|stores?|branches?)/i.test(args.message);
+    /\b(locations?|stores?|branches?)\b.*\b(with|stock|sell|selling|have|has)\b/i.test(args.message) ||
+    /\b(which|what|how many|list all)\b.*\b(locations?|stores?|branches?)\b/i.test(args.message);
 
   if (
     available.has('catalog.diagnoseVisibility') &&
