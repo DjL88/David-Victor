@@ -893,6 +893,9 @@ export class FirestoreService {
       cleanHost.includes('ai.studio') ||
       cleanHost.includes('aistudio') ||
       cleanHost.includes('run.app') ||
+      cleanHost.endsWith('.hosted.app') ||
+      cleanHost.endsWith('.web.app') ||
+      cleanHost.endsWith('.firebaseapp.com') ||
       cleanHost.includes('localhost') ||
       cleanHost.includes('127.0.0.1') ||
       cleanHost.includes('googleusercontent.com')
