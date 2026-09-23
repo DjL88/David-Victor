@@ -183,6 +183,8 @@ export interface TenantConfig {
   locale: string; // e.g. 'en-GB'
   /** Storefront languages enabled for this tenant. Defaults to all supported locales when omitted. */
   enabledLocales?: string[];
+  /** Per-locale brand wording overrides keyed by typed storefront copy key. */
+  copyOverrides?: Record<string, Record<string, string>>;
   supportDetails: TenantSupportDetails;
   featureFlags: TenantFeatureFlags;
 }
