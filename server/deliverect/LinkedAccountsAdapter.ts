@@ -9,13 +9,30 @@ import { FirestorePlatformService, cleanUndefined } from '../firestoreService';
 import { circuitBreakers } from '../circuitBreaker';
 
 function getLocalMappingPath(tenantId: string): string {
+  if (!isDemoMode()) {
+    throw new BFFError(
+      'LOCAL_PERSISTENCE_FORBIDDEN',
+      'Local tenant mapping files are only permitted in explicit DEMO mode.',
+      500
+    );
+  }
+
+  const safeTenantId = String(tenantId || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 120);
+
+  if (!safeTenantId) {
+    throw BFFError.invalidInput('A valid tenantId is required for local demo persistence.');
+  }
+
   const dir = path.join(process.cwd(), '.data');
   if (!fs.existsSync(dir)) {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch {}
   }
-  return path.join(dir, `tenant_mappings_${tenantId}.json`);
+  return path.join(dir, `tenant_mappings_${safeTenantId}.json`);
 }
 
 export interface RawDeliverectAccount {
