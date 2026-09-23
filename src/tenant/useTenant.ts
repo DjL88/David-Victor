@@ -15,9 +15,22 @@ export function getContrastTextColor(hexColor?: string): '#ffffff' | '#000000' {
   const b = parseInt(hex.substring(4, 6), 16);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return '#ffffff';
 
-  // Perceptual brightness formula (YIQ)
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 165 ? '#000000' : '#ffffff';
+  // WCAG relative luminance. Choose whichever of black/white has the
+  // stronger contrast against the tenant-selected background.
+  const linearize = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  };
+  const luminance =
+    0.2126 * linearize(r) +
+    0.7152 * linearize(g) +
+    0.0722 * linearize(b);
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+
+  return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff';
 }
 
 export function useTenantStyles() {
