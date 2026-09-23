@@ -46,6 +46,10 @@ type BrandingSnapshot = Pick<
   | 'headingFontFamily'
   | 'carouselTitleFontFamily'
   | 'borderRadius'
+  | 'locale'
+  | 'enabledLocales'
+  | 'copyOverrides'
+  | 'supportDetails'
 >;
 
 const BRANDING_KEYS: Array<keyof BrandingSnapshot> = [
@@ -70,6 +74,10 @@ const BRANDING_KEYS: Array<keyof BrandingSnapshot> = [
   'headingFontFamily',
   'carouselTitleFontFamily',
   'borderRadius',
+  'locale',
+  'enabledLocales',
+  'copyOverrides',
+  'supportDetails',
 ];
 
 function brandingSnapshot(config: TenantConfig): BrandingSnapshot {
