@@ -6,6 +6,7 @@ import {
   getAdminAssistantSuggestions,
   normaliseAssistantReply,
   normaliseChatHistory,
+  resolveAdminAssistantNavigationHint,
 } from './adminAssistantChatService';
 
 describe('AdminAssistantChatService foundations', () => {
@@ -63,6 +64,24 @@ describe('AdminAssistantChatService foundations', () => {
       'What details do you need?',
     ]);
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
+  });
+
+  it('maps natural Admin questions to page and field navigation hints', () => {
+    expect(resolveAdminAssistantNavigationHint('Change my colour scheme to match the logo', 'languages')).toEqual({
+      section: 'branding',
+      target: 'branding-colours',
+      label: 'Open Branding · Colours',
+    });
+    expect(resolveAdminAssistantNavigationHint("Create a product rule for chilled beer", 'catalog')).toEqual({
+      section: 'product_rules',
+      target: 'product-rules-new',
+      label: 'Open Product rules · New rule',
+    });
+    expect(resolveAdminAssistantNavigationHint('Where do I change Basket to Cart?', 'branding')).toEqual({
+      section: 'languages',
+      target: 'languages-terminology',
+      label: 'Open Languages · Wording',
+    });
   });
 
   it('extracts a product term or explicit identifier from live stock questions', () => {
