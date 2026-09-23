@@ -82,6 +82,29 @@ export function formatMoney(
 ): string {
   return formatCurrency(amount, currency);
 }
+export interface StorefrontCurrencyConfig {
+  currency?: string;
+  currencySymbol?: string;
+  locale?: string;
+}
+
+/**
+ * Formats storefront money using the tenant/account display currency as the
+ * authoritative source. Upstream product/bundle Money metadata is retained for
+ * provenance but must not override the configured storefront currency.
+ */
+export function formatStorefrontCurrency(
+  amount?: MoneyLike | number | null,
+  config?: StorefrontCurrencyConfig | null,
+  fallbackCurrency: string = 'GBP'
+): string {
+  const displayCurrency =
+    config?.currency ||
+    config?.currencySymbol ||
+    fallbackCurrency;
+  return formatCurrency(amount, displayCurrency, config?.locale || 'en-GB');
+}
+
 
 export function formatPrice(
   price?: MoneyLike | number | null,
