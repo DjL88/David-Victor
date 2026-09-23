@@ -169,6 +169,22 @@ export interface OrderProjection {
   capturedAmount?: number;
   residualHoldReleased?: number;
   settlementDetails?: SettlementResult;
+  /** Durable customer-visible refund lifecycle; append/update by refund id. */
+  refunds?: Array<{
+    id: string;
+    scope: 'ITEM' | 'ORDER' | 'CHARGE';
+    status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+    amount: Money;
+    reason: string;
+    itemPlu?: string;
+    itemName?: string;
+    quantity?: number;
+    paymentId?: string;
+    providerRefundId?: string;
+    customerMessage?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
@@ -2402,6 +2418,7 @@ export class FirestoreService {
       capturedAmount: (order as any).capturedAmount !== undefined ? (order as any).capturedAmount : undefined,
       residualHoldReleased: (order as any).residualHoldReleased !== undefined ? (order as any).residualHoldReleased : undefined,
       settlementDetails: (order as any).settlementDetails || undefined,
+      refunds: (rawOrderInput as any)?.refunds || (order as any).refunds || undefined,
       metadata: cleanUndefined({
         ...((order as any).metadata || {}),
         // Snapshot customer-facing basket lines so historic receipts/order images
