@@ -341,7 +341,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
               <p className="text-xs text-rose-800 mt-1 leading-relaxed">
                 {t('tracking.reauthPrefix')}{' '}
                 <strong className="font-bold">{formatCurrency(finalTotal, currencySymbol)}</strong>, {t('tracking.reauthExceeds')}{' '}
-                <strong className="font-bold">{formatCurrency(authorizedMax, currencySymbol)}</strong> by{' '}
+                <strong className="font-bold">{formatCurrency(authorizedMax, currencySymbol)}</strong> {t('tracking.by')}{' '}
                 <span className="underline font-bold">
                   {formatCurrency(Math.max(0, moneyToMajor(finalTotal) - moneyToMajor(authorizedMax)), currencySymbol)}
                 </span>
@@ -495,30 +495,30 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                       {/* Item details */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-gray-900">{item?.name || item?.plu || 'Item'}</span>
+                          <span className="font-bold text-gray-900">{item?.name || item?.plu || t('orders.item')}</span>
                           {isSubstituted && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                              Substituted
+                              {t('tracking.substituted')}
                             </span>
                           )}
                           {isAmended && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                              Quantity Adjusted
+                              {t('tracking.quantityAdjusted')}
                             </span>
                           )}
                           {isRemoved && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
-                              Out of stock • Refunded
+                              {t('tracking.outOfStockRefunded')}
                             </span>
                           )}
                           {isPicked && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                              Picked
+                              {t('tracking.picked')}
                             </span>
                           )}
                           {isPending && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                              Awaiting Picker
+                              {t('tracking.awaitingPicker')}
                             </span>
                           )}
                         </div>
