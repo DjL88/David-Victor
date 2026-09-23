@@ -66,7 +66,10 @@ async function startServer() {
   // Body parsing middleware with raw body preservation for HMAC webhook verification
   app.use(
     express.json({
-      limit: '10mb',
+      // Large retail Menu Push payloads can contain tens of thousands of items.
+      // Keep this below Cloud Run's request ceiling while avoiding the old 10 MB
+      // application-level rejection before we can durably spool the payload.
+      limit: '32mb',
       verify: (req: any, _res, buf) => {
         req.rawBody = buf;
       },
