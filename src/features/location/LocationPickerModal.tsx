@@ -219,8 +219,11 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
               {savedAddresses.map((addr, idx) => {
                 const isCurrent = previewAddress && (previewAddress.postalCode === addr.postalCode || previewAddress.line1 === addr.line1);
                 const targetCoords =
-                  Number.isFinite(addr.latitude) && Number.isFinite(addr.longitude)
-                    ? { latitude: addr.latitude as number, longitude: addr.longitude as number }
+                  typeof addr.latitude === 'number' &&
+                  Number.isFinite(addr.latitude) &&
+                  typeof addr.longitude === 'number' &&
+                  Number.isFinite(addr.longitude)
+                    ? { latitude: addr.latitude, longitude: addr.longitude }
                     : null;
                 const activeBorderColor = tenant?.primaryColour || '#0d9488';
                 const activeBgColor = `${tenant?.primaryColour || '#0d9488'}10`;
