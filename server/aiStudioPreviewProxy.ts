@@ -44,7 +44,10 @@ function requestHost(req: Request): string {
   return (forwarded || req.get('host') || '').toLowerCase().split(':')[0];
 }
 
-function forwardedHeaders(req: Request): Record<string, string> {
+function forwardedHeaders(
+  req: Request,
+  env: NodeJS.ProcessEnv = process.env
+): Record<string, string> {
   const headers: Record<string, string> = {};
   const allow = [
     'authorization',
@@ -59,6 +62,13 @@ function forwardedHeaders(req: Request): Record<string, string> {
   for (const key of allow) {
     const value = req.headers[key];
     if (typeof value === 'string' && value.length > 0) headers[key] = value;
+  }
+
+  // Bootstrap runs before the browser knows the active tenant, so ensure the
+  // published BFF receives the explicitly configured preview tenant when the
+  // request itself does not yet carry X-Tenant-ID.
+  if (!headers['x-tenant-id'] && env.PREVIEW_TENANT_ID) {
+    headers['x-tenant-id'] = env.PREVIEW_TENANT_ID.trim();
   }
 
   headers['x-bwydi-preview-proxy'] = 'ai-studio';
