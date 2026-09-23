@@ -7,6 +7,7 @@ import { injectGoogleFontLink, GOOGLE_FONTS_CATALOG, extractCleanFontFamily } fr
 
 import { defaultPaymentClient } from '../commerce/PaymentClient';
 import { setRuntimeMode, parseRuntimeMode, isDemoMode } from '../domain/runtime';
+import { DEFAULT_SEARCH_CONFIG, setActiveSearchConfig } from '../commerce/searchMerchEngine';
 
 export type PlatformAppMode = 'unknown' | 'demo' | 'staging' | 'production';
 
@@ -117,6 +118,13 @@ export const TenantProvider: React.FC<{
         const res: BootstrapResponse = await commerceClient.getBootstrap();
         if (isMounted) {
           setTenant(res.tenant);
+          setActiveSearchConfig(
+            res.searchConfig || {
+              ...DEFAULT_SEARCH_CONFIG,
+              tenantId: res.tenant.tenantId,
+              locale: res.tenant.locale || 'en-GB',
+            }
+          );
         }
       } catch (err: unknown) {
         if (isMounted) {
@@ -219,6 +227,13 @@ export const TenantProvider: React.FC<{
       }
       const res = await commerceClient.getBootstrap();
       setTenant(res.tenant);
+      setActiveSearchConfig(
+        res.searchConfig || {
+          ...DEFAULT_SEARCH_CONFIG,
+          tenantId: res.tenant.tenantId,
+          locale: res.tenant.locale || 'en-GB',
+        }
+      );
     } catch (err) {
       console.error('Failed to switch tenant', err);
     } finally {
