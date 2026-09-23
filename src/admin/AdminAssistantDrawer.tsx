@@ -85,6 +85,7 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
   suggestions?: string[];
+  degraded?: boolean;
 };
 
 type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content'>;
@@ -192,6 +193,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           suggestions: Array.isArray(response.suggestions)
             ? response.suggestions.filter((item) => typeof item === 'string').slice(0, 3)
             : [],
+          degraded: response.degraded === true,
         },
       ]);
     } catch (err: any) {
@@ -324,6 +326,12 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                 >
                   {message.content}
                 </div>
+
+                {message.role === 'assistant' && message.degraded && (
+                  <div className="mt-1.5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold text-amber-800">
+                    Guided mode · live AI reconnecting
+                  </div>
+                )}
 
                 {isLatestAssistant && !running && message.suggestions && message.suggestions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Suggested replies">
