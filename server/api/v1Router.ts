@@ -2823,6 +2823,41 @@ async function handleDeliverectChannelProvisioning(
       req.body
     );
 
+    if (type === 'CHANNEL_REGISTRATION') {
+      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+        .split(',')[0]
+        .trim();
+      const protocol = forwardedProto || req.protocol || 'https';
+      const forwardedHost = String(req.headers['x-forwarded-host'] || '')
+        .split(',')[0]
+        .trim();
+      const host = forwardedHost || req.get('host') || req.hostname;
+      const origin = `${protocol}://${host}`.replace(/\/$/, '');
+      const routeId = encodeURIComponent(tenantId);
+      const base = `${origin}/api/v1/webhooks/deliverect/${routeId}`;
+
+      // Deliverect's Channel registration contract expects the callback URLs in
+      // the response. Later register/active/inactive lifecycle events can reuse
+      // this same response safely.
+      return res.status(result.quarantined ? 202 : 200).json({
+        statusUpdateURL: base,
+        menuUpdateURL: `${base}/channel/menu_update`,
+        snoozeUnsnoozeURL: `${base}/channel/snooze`,
+        busyModeURL: `${base}/channel/busy-mode`,
+        updatePrepTimeURL: `${base}/channel/prep-time`,
+        metadata: {
+          accepted: result.accepted,
+          quarantined: result.quarantined,
+          tenantId,
+          channelLinkId: result.channelLinkId,
+          locationId: result.locationId,
+          externalLocationId: result.externalLocationId,
+          status: result.status,
+          warnings: result.warnings,
+        },
+      });
+    }
+
     res.status(result.quarantined ? 202 : 200).json(result);
   } catch (err: any) {
     const status = err.status || err.statusCode || 500;
