@@ -781,7 +781,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           {activeTab === 'account' && (
             <AccountScreen
               onOpenAdmin={onOpenAdmin}
-              currentAddress={currentAddress}
+              currentAddress={
+                currentAddress && coordinates
+                  ? {
+                      ...currentAddress,
+                      latitude: currentAddress.latitude ?? coordinates.latitude,
+                      longitude: currentAddress.longitude ?? coordinates.longitude,
+                    }
+                  : currentAddress
+              }
               savedAddresses={savedAddresses}
               onSavedAddressesChange={setSavedAddresses}
             />
