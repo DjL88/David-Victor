@@ -120,6 +120,18 @@ describe('AdminAssistantChatService foundations', () => {
       target: 'branding-brand-profile',
       label: 'Open Branding · Brand Profile',
     });
+
+    expect(resolveAdminAssistantNavigationHint('How do I change opening hours?', 'fees')).toMatchObject({
+      section: 'stores',
+      target: 'stores-opening-hours',
+      label: 'Open Locations · Opening hours',
+    });
+
+    expect(resolveAdminAssistantNavigationHint('What branding can I customise?', 'fees')).toMatchObject({
+      section: 'branding',
+      target: 'branding-logo',
+      label: 'Open Branding',
+    });
   });
 
   it('does not invent unsupported time-of-day product rule conditions', () => {
@@ -216,5 +228,31 @@ describe('AdminAssistantChatService foundations', () => {
     expect(buildDegradedAssistantReply('hero_banners', 'What can I customise?')).toContain(
       'image, headline'
     );
+
+    expect(
+      buildDegradedAssistantReply('stores', "Why is Dave's Delicatessen shown twice?", {
+        actionName: 'stores.inspect',
+        result: {
+          storeCount: 2,
+          duplicateLocationNames: ["Dave's Delicatessen"],
+          stores: [
+            {
+              id: 'store-a',
+              name: "Dave's Delicatessen",
+              channelLinkId: 'channel-a',
+              physicalLocationId: 'physical-1',
+            },
+            {
+              id: 'store-b',
+              name: "Dave's Delicatessen",
+              channelLinkId: 'channel-b',
+              physicalLocationId: 'physical-1',
+            },
+          ],
+        },
+        evidence: [{ source: 'firestore.stores', ok: true }],
+        generatedAt: '2026-09-23T00:00:00.000Z',
+      })
+    ).toContain('same physical location');
   });
 });
