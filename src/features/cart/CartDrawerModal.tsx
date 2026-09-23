@@ -510,7 +510,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               item.preferredSubstitutePrice != null &&
                               moneyToMajor(item.preferredSubstitutePrice) > moneyToMajor(item.unitPrice || item.price) ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-amber-100 text-amber-950">
-                                  +£{(moneyToMajor(item.preferredSubstitutePrice) - moneyToMajor(item.unitPrice || item.price)).toFixed(2)} ${t('basket.buffer')}
+                                  +{currencySymbol}{(moneyToMajor(item.preferredSubstitutePrice) - moneyToMajor(item.unitPrice || item.price)).toFixed(2)} {t('basket.buffer')}
                                 </span>
                               ) : item.substitutionPreference === 'CANCEL_ORDER_IF_UNAVAILABLE' ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-red-100 text-red-800">
