@@ -497,7 +497,7 @@ export class ChannelMenuIngestionService {
           job.tenantId,
           'menu_update',
           menu,
-          raw
+          JSON.stringify(menu)
         );
       }
 
