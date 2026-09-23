@@ -4,6 +4,7 @@ import {
   StoreProductSnoozeState,
 } from '../firestoreService';
 import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
+import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 
 export type DeliverectOperationalWebhookType =
   | 'busy_mode'
@@ -205,6 +206,7 @@ export class DeliverectOperationalWebhookService {
         }
 
         LinkedAccountsAdapter.invalidateTenantMappings(tenantId);
+        CommerceDiscoveryService.getInstance().clearCache();
         result = {
           success: true,
           type,
@@ -256,6 +258,7 @@ export class DeliverectOperationalWebhookService {
           channelLinkId,
           Array.from(next.values())
         );
+        CommerceDiscoveryService.getInstance().clearCache();
 
         result = {
           success: true,
