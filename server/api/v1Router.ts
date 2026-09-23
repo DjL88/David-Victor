@@ -2769,6 +2769,7 @@ async function handleDeliverectOperationalWebhook(
         tenantId,
         payload: menuPayload,
         rawBody,
+        resolvedChannelLinkId: mappedChannelLinkId || undefined,
       });
       res.status(receipt.status === 'DUPLICATE' ? 200 : 202).json(receipt);
       return;
