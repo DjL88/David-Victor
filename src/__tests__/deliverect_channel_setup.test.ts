@@ -117,4 +117,24 @@ describe('Deliverect Channel setup', () => {
     });
   });
 
+  it('resolves a tenant from Deliverect accountId and channelLinkId mappings', async () => {
+    const tenantId = `tenant-channel-identifiers-${Date.now()}`;
+    const accountId = `account-${Date.now()}`;
+    const channelLinkId = `channel-${Date.now()}`;
+
+    await FirestorePlatformService.updateIntegrationConfig(tenantId, {
+      deliverectAccountId: accountId,
+      allowedChannelLinkIds: [channelLinkId],
+      environment: 'staging',
+      status: 'COMMERCE_VERIFIED',
+    } as any);
+
+    await expect(
+      FirestorePlatformService.resolveTenantByIntegrationId(accountId)
+    ).resolves.toBe(tenantId);
+    await expect(
+      FirestorePlatformService.resolveTenantByIntegrationId(channelLinkId)
+    ).resolves.toBe(tenantId);
+  });
+
 });
