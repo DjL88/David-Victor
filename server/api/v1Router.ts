@@ -5789,21 +5789,29 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       ? []
       : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
     
-    // Every requested channelLinkId must belong to the selected account
-    const invalidChannelLinkIds = requestedChannelLinkIds.filter((id: string) => !availableChannelLinkIds.has(id));
-    if (invalidChannelLinkIds.length > 0) {
-      return res.status(400).json({
-        error: 'One or more channel links do not belong to the selected Deliverect account.',
-        code: 'INVALID_CHANNEL_ASSIGNMENT',
-        invalidChannelLinkIds,
-      });
+    // A previously assigned channel may legitimately disappear when it is deleted
+    // in Deliverect. Do not fail the whole account connection. Keep the record for
+    // history, mark it ORPHANED, and remove it from the tenant's active allowlist.
+    const orphanedChannelLinkIds = requestedChannelLinkIds.filter(
+      (id: string) => !availableChannelLinkIds.has(id)
+    );
+    const activeChannelLinkIds = requestedChannelLinkIds.filter(
+      (id: string) => availableChannelLinkIds.has(id)
+    );
+
+    for (const orphanedId of orphanedChannelLinkIds) {
+      await FirestorePlatformService.markTenantStoreOrphaned(
+        tenantId,
+        orphanedId,
+        'CHANNEL_LINK_NOT_RETURNED_FOR_SELECTED_ACCOUNT'
+      );
     }
 
-    const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
+    const newStatus = activeChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
 
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: requestedChannelLinkIds,
+      allowedChannelLinkIds: activeChannelLinkIds,
       status: newStatus as any,
       lastSyncAt: new Date().toISOString(),
     });
@@ -5816,18 +5824,22 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       tenantId,
       category: 'Integration',
       action: 'SELECT_DELIVERECT_ACCOUNT',
-      details: `Selected Deliverect Account "${accountId}" with ${requestedChannelLinkIds.length} channel link(s). Status transitioned to ${newStatus}.`,
+      details: `Selected Deliverect Account "${accountId}" with ${activeChannelLinkIds.length} active channel link(s) and ${orphanedChannelLinkIds.length} orphaned channel link(s). Status transitioned to ${newStatus}.`,
     });
 
     res.json({
       success: true,
       tenantId,
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: requestedChannelLinkIds,
+      allowedChannelLinkIds: activeChannelLinkIds,
+      orphanedChannelLinkIds,
+      warning: orphanedChannelLinkIds.length
+        ? `${orphanedChannelLinkIds.length} channel link(s) were no longer returned by Deliverect and were orphaned instead of blocking the connection.`
+        : undefined,
       status: newStatus,
-      storesCount: requestedChannelLinkIds.length,
+      storesCount: activeChannelLinkIds.length,
       assignedStores: matchingStores
-        .filter(store => requestedChannelLinkIds.includes(String(store.channelLinkId)))
+        .filter(store => activeChannelLinkIds.includes(String(store.channelLinkId)))
         .map(store => ({
           channelLinkId: store.channelLinkId,
           name: store.name,
