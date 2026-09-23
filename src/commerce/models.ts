@@ -338,6 +338,11 @@ export interface Store {
   /** @deprecated Use orderingChannels instead */
   channelLinks?: Array<'DIRECT' | 'DELIVEROO' | 'UBER_EATS' | 'JUST_EAT'>;
   locationGroup?: string;
+  /** Local lifecycle overlay for Deliverect channel links. */
+  lifecycleStatus?: 'ACTIVE' | 'INACTIVE' | 'ORPHANED' | 'ARCHIVED';
+  assigned?: boolean;
+  orphanedAt?: string | null;
+  orphanReason?: string | null;
   /** Real geography derived from the store's address (postcodes.io for GB), cached once per store. */
   geography?: {
     country: string;
