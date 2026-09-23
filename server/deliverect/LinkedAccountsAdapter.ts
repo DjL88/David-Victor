@@ -218,6 +218,7 @@ export interface CommerceStoresDiscoveryResult {
   persistenceStatus: 'SUCCESS' | 'FAILED' | 'SKIPPED';
   persistenceError?: string;
   persistenceCode?: string;
+  orphanedChannelLinkIds?: string[];
   message?: string;
 }
 
@@ -1117,52 +1118,111 @@ export class LinkedAccountsAdapter {
       fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
     } catch {}
 
-    // Persist discovered stores to Firestore: unified path tenants/{tenantId}/commerceStores/{channelLinkId}
+    // Persist and reconcile discovered stores in Firestore. A successful upstream
+    // response is authoritative for this account: channel links that existed in our
+    // projection but are no longer returned are ORPHANED, never allowed to block
+    // account provisioning, and retained for history until an admin hard-deletes them.
     let firestorePersisted = false;
     let persistenceError: string | undefined = undefined;
     let persistenceCode: string | undefined = undefined;
+    const orphanedChannelLinkIds: string[] = [];
 
-    if (stores.length > 0) {
-      try {
-        const db = getFirestoreDb();
-        if (db) {
+    try {
+      const db = getFirestoreDb();
+      if (db) {
+        const tenantRef = db.collection('tenants').doc(tenantId);
+        const storesRef = tenantRef.collection('commerceStores');
+        const activeIds = new Set(stores.map((store) => String(store.channelLinkId)));
+        const existingSnap = await storesRef.get();
+        const now = new Date().toISOString();
+
+        const operations: Array<{ ref: any; data: any }> = [];
+        for (const st of stores) {
+          operations.push({
+            ref: storesRef.doc(st.channelLinkId),
+            data: cleanUndefined({
+              ...st,
+              tenantId,
+              lifecycleStatus: 'ACTIVE',
+              assigned: true,
+              orphanedAt: null,
+              orphanReason: null,
+              lastSeenAt: st.lastSeenAt || now,
+            }),
+          });
+        }
+
+        existingSnap.forEach((doc: any) => {
+          const data = doc.data() || {};
+          const existingAccount = String(data.accountLinkId || '');
+          const belongsToAccount =
+            existingAccount === accountId ||
+            existingAccount === `acclink_${accountId}`;
+          const channelLinkId = String(data.channelLinkId || doc.id);
+          if (belongsToAccount && channelLinkId && !activeIds.has(channelLinkId)) {
+            orphanedChannelLinkIds.push(channelLinkId);
+            operations.push({
+              ref: doc.ref,
+              data: {
+                lifecycleStatus: 'ORPHANED',
+                status: 'INACTIVE',
+                stateProjection: 'closed',
+                assigned: false,
+                orphanedAt: data.orphanedAt || now,
+                orphanReason: 'UPSTREAM_CHANNEL_LINK_MISSING',
+                updatedAt: now,
+              },
+            });
+          }
+        });
+
+        // Leave headroom under Firestore's 500-operation batch limit so a tenant
+        // can safely reconcile ~1,000 locations or a burst of channel changes.
+        for (let offset = 0; offset < operations.length; offset += 400) {
           const batch = db.batch();
-          const tenantRef = db.collection('tenants').doc(tenantId);
-          for (const st of stores) {
-            batch.set(tenantRef.collection('commerceStores').doc(st.channelLinkId), cleanUndefined(st), { merge: true });
+          for (const operation of operations.slice(offset, offset + 400)) {
+            batch.set(operation.ref, operation.data, { merge: true });
           }
           await batch.commit();
-          firestorePersisted = true;
-        } else {
-          persistenceCode = 'DATABASE_PERMISSION_DENIED';
-          persistenceError = 'Firestore database is not initialized.';
         }
-      } catch (err: any) {
-        const isPerm =
-          err?.message?.includes('PERMISSION_DENIED') ||
-          err?.code === 7 ||
-          err?.message?.includes('Missing or insufficient permissions');
-        if (isPerm) {
-          markFirestorePermissionDenied(err);
-          persistenceCode = 'DATABASE_PERMISSION_DENIED';
-          persistenceError = 'Missing or insufficient permissions (PERMISSION_DENIED). Cloud Run service account requires roles/datastore.user.';
-        } else {
-          persistenceCode = 'DATABASE_ERROR';
-          persistenceError = err.message;
-        }
+        firestorePersisted = true;
+      } else {
+        persistenceCode = 'DATABASE_PERMISSION_DENIED';
+        persistenceError = 'Firestore database is not initialized.';
+      }
+    } catch (err: any) {
+      const isPerm =
+        err?.message?.includes('PERMISSION_DENIED') ||
+        err?.code === 7 ||
+        err?.message?.includes('Missing or insufficient permissions');
+      if (isPerm) {
+        markFirestorePermissionDenied(err);
+        persistenceCode = 'DATABASE_PERMISSION_DENIED';
+        persistenceError = 'Missing or insufficient permissions (PERMISSION_DENIED). Cloud Run service account requires roles/datastore.user.';
+      } else {
+        persistenceCode = 'DATABASE_ERROR';
+        persistenceError = err.message;
       }
     }
     console.info(`[Commerce Stores] FIRESTORE_PERSISTED: ${firestorePersisted}`);
+    if (orphanedChannelLinkIds.length) {
+      console.info(`[Commerce Stores] ORPHANED_CHANNEL_LINKS: ${orphanedChannelLinkIds.join(',')}`);
+    }
 
     return {
       success: true,
       stores,
       count: stores.length,
       status: storesDiscovered ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED',
-      persistenceStatus: stores.length === 0 ? 'SKIPPED' : firestorePersisted ? 'SUCCESS' : 'FAILED',
+      persistenceStatus: firestorePersisted ? 'SUCCESS' : 'FAILED',
       persistenceError,
       persistenceCode,
-      message: storesDiscovered ? undefined : 'No commerce stores were returned by Deliverect for this account.',
+      orphanedChannelLinkIds,
+      message: storesDiscovered
+        ? (orphanedChannelLinkIds.length
+          ? `${orphanedChannelLinkIds.length} previously linked channel(s) were orphaned because Deliverect no longer returns them.`
+          : undefined)
+        : 'No commerce stores were returned by Deliverect for this account.',
     };
   }
 
