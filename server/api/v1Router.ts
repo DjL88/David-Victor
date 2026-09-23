@@ -1681,6 +1681,39 @@ async function persistRefreshedCheckout(
   return merged;
 }
 
+function assertCheckoutRecoveryOwnership(
+  checkout: CheckoutResult,
+  callerUid: string | undefined
+): void {
+  if (isDemoMode() || process.env.NODE_ENV === 'test') return;
+
+  const ownerUid =
+    checkout.customerUid ||
+    (checkout as any).metadata?.customerUid ||
+    (checkout.order as any)?.customerUid;
+
+  if (ownerUid) {
+    if (!callerUid || callerUid !== ownerUid) {
+      throw new BFFError(
+        'ORDER_CUSTOMER_MISMATCH',
+        'This checkout belongs to a different customer.',
+        403
+      );
+    }
+    return;
+  }
+
+  // A guest checkout must stay guest. Merely knowing a basket/checkout ID is
+  // not proof of ownership and must never let a newly signed-in user claim it.
+  if (callerUid) {
+    throw new BFFError(
+      'ORDER_CUSTOMER_MISMATCH',
+      'An existing guest checkout cannot be attached to a signed-in account.',
+      409
+    );
+  }
+}
+
 v1Router.post(
   '/checkouts',
   checkoutAndPaymentRateLimiter.middleware(),
@@ -1700,11 +1733,17 @@ v1Router.post(
         options?.idempotencyKey ||
         `checkout:${resolvedTenant}:${basketId}`,
     };
-    const orderRoute: 'retail_quest' | 'commerce_checkout' =
-      checkoutOptions.orderRoute === 'commerce_checkout' ||
+    // Order routing is integration configuration, not a customer/browser choice.
+    // Demo mode may explicitly exercise either path, but staging/production always
+    // use the tenant's server-side integration setting.
+    const configuredOrderRoute: 'retail_quest' | 'commerce_checkout' =
       integrationContext.orderRoute === 'commerce_checkout'
         ? 'commerce_checkout'
         : 'retail_quest';
+    const orderRoute: 'retail_quest' | 'commerce_checkout' =
+      isDemoMode() && checkoutOptions.orderRoute
+        ? checkoutOptions.orderRoute
+        : configuredOrderRoute;
 
     // Retail/Quest uses one deterministic customer order reference across DPay,
     // Channel API submission, Firestore projections and retry recovery.
@@ -1727,13 +1766,7 @@ v1Router.post(
         resolvedTenant
       );
     if (existingBasketCheckout) {
-      if (callerUid && existingBasketCheckout.orderId) {
-        await FirestorePlatformService.attachCustomerUidToOrderProjection(
-          existingBasketCheckout.orderId,
-          resolvedTenant,
-          callerUid
-        );
-      }
+      assertCheckoutRecoveryOwnership(existingBasketCheckout, callerUid);
       console.log(
         `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
       );
@@ -1899,6 +1932,38 @@ v1Router.post(
             code: 'PAYMENT_NOT_AUTHORISED',
           });
         }
+
+        const authoritativeBasket = await (
+          await getDeliverectAdapterAsync(resolvedTenant)
+        ).getBasket(basketId);
+        if (!authoritativeBasket) {
+          return res.status(404).json({
+            error: `Basket ${basketId} not found while validating payment.`,
+            code: 'BASKET_NOT_FOUND',
+          });
+        }
+
+        const approvedCeiling = PaymentService.calculateApprovedAuthorizationCeiling(
+          authoritativeBasket.total
+        );
+        const authorizedAmount =
+          localPayment
+            ? localPayment.authorizedAmount.amount
+            : payment.authorizedAmount;
+        const authorizedCurrency =
+          localPayment
+            ? localPayment.authorizedAmount.currency
+            : payment.currency;
+
+        if (
+          authorizedCurrency !== approvedCeiling.currency ||
+          authorizedAmount !== approvedCeiling.amount
+        ) {
+          return res.status(409).json({
+            error: 'Payment authorization does not match the current server-authoritative basket total.',
+            code: 'PAYMENT_AMOUNT_MISMATCH',
+          });
+        }
       } catch (paymentErr: any) {
         return handleCommerceError(res, paymentErr, 'Payment validation failed');
       }
@@ -1910,6 +1975,7 @@ v1Router.post(
         checkoutOptions.idempotencyKey
       );
       if (existing) {
+        assertCheckoutRecoveryOwnership(existing, callerUid);
         console.log(
           `[v1Router] Returning existing checkout for idempotencyKey ${checkoutOptions.idempotencyKey}`
         );
@@ -1923,6 +1989,7 @@ v1Router.post(
         checkoutOptions.channelOrderReference
       );
       if (existing) {
+        assertCheckoutRecoveryOwnership(existing, callerUid);
         console.log(
           `[v1Router] Returning existing checkout for channelOrderReference ${checkoutOptions.channelOrderReference}`
         );
@@ -2017,6 +2084,7 @@ v1Router.post(
               resolvedTenant
             );
           if (existing) {
+            assertCheckoutRecoveryOwnership(existing, callerUid);
             console.log(
               `[v1Router] Recovered checkout ${existing.checkoutId} after Deliverect duplicate-session response.`
             );
@@ -2050,6 +2118,7 @@ v1Router.post(
               resolvedTenant,
               existingCheckoutId
             );
+            assertCheckoutRecoveryOwnership(recovered, callerUid);
             console.log(
               `[v1Router] Recovered upstream checkout ${existingCheckoutId} after duplicate-session response.`
             );
@@ -2099,6 +2168,7 @@ v1Router.post(
 
     checkoutResult = {
       ...checkoutResult,
+      customerUid: callerUid || checkoutResult.customerUid,
       orderRoute,
       idempotencyKey:
         checkoutResult.idempotencyKey ||
@@ -2189,18 +2259,10 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
     }
 
-    // Privacy boundary: verify caller identity against checkout owner
-    const checkoutCustomerUid = (checkout as any).customerUid || (checkout as any).metadata?.customerUid;
-    if (checkoutCustomerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
-      const callerUid = await getCallerUid(req);
-      const adminUser = (req as AuthenticatedRequest).adminUser;
-      if (!adminUser && callerUid !== checkoutCustomerUid) {
-        return res.status(403).json({
-          error: 'Access denied: Checkout does not belong to caller.',
-          code: 'FORBIDDEN',
-        });
-      }
-    }
+    // Privacy boundary: signed-in checkouts remain owned by that customer and
+    // guest checkouts cannot be claimed later merely by presenting their ID.
+    const callerUid = await getCallerUid(req);
+    assertCheckoutRecoveryOwnership(checkout, callerUid);
 
     // CHECK-03: Recover confirmation from the linked order projection even when
     // Deliverect's checkout object never exposes a real orderId. Any downstream
@@ -2247,6 +2309,9 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
     if (!checkout) {
       return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
     }
+
+    const callerUid = await getCallerUid(req);
+    assertCheckoutRecoveryOwnership(checkout, callerUid);
 
     // CHECK-03: Same recovery path as the full checkout endpoint. This also
     // catches Quest picking states that arrive before the checkout webhook.
@@ -2386,11 +2451,15 @@ function normalizeQuestPickingStatusPayload(payload: any): any {
     status = 'PICKING_COMPLETE';
   } else if (['ACCEPTED', 'ORDER_ACCEPTED'].includes(value) || value === '20') {
     status = 'ORDER_ACCEPTED';
+  } else if (value === '30' || value === 'DUPLICATE') {
+    status = 'DUPLICATE';
+  } else if (value === '80' || value === 'IN_DELIVERY') {
+    status = 'OUT_FOR_DELIVERY';
   } else if (['CANCELLED', 'CANCELED', 'ORDER_CANCELLED'].includes(value) || value === '110') {
     status = 'ORDER_CANCELLED';
   } else if (['READY', 'PICKUP_READY'].includes(value) || value === '70') {
     status = 'READY';
-  } else if (['FAILED', 'ORDER_FAILED'].includes(value) || value === '120') {
+  } else if (['FAILED', 'ORDER_FAILED'].includes(value) || ['120', '121', '124'].includes(value)) {
     status = 'ORDER_FAILED';
   } else if (!status) {
     // This endpoint itself proves the event belongs to the picking lifecycle.
