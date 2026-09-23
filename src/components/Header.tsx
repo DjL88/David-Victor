@@ -120,11 +120,39 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isAccountMenuOpen]);
 
+  // Keep the real sticky-header height available to scroll-padding / snap rules.
+  // ResizeObserver handles mobile rows, CMS links and tenant branding changing height.
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    const updateHeaderHeight = () => {
+      document.documentElement.style.setProperty(
+        '--storefront-header-height',
+        `${Math.ceil(header.getBoundingClientRect().height)}px`
+      );
+    };
+
+    updateHeaderHeight();
+    window.addEventListener('resize', updateHeaderHeight);
+
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(updateHeaderHeight)
+        : null;
+    observer?.observe(header);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
+
   return (
     <header
       ref={headerRef}
       id="main-storefront-header"
-      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-xs w-full max-w-full"
+      className="relative z-0 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-xs w-full max-w-full"
     >
       {/* Main Brand, Location, Search, Account & Basket Row */}
       <div className="w-full max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-3">

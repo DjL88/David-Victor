@@ -46,6 +46,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<MobileTab>('home');
 
+  const navigateToTab = useCallback((tab: MobileTab) => {
+    if (tab === activeTab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setActiveTab(tab);
+  }, [activeTab]);
+
+  // Never carry a deep scroll position into a different storefront section.
+  // This also prevents the first Stories row being restored underneath the sticky header on mobile.
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab]);
+
   // Selected product detail modal
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [storePickerTargetProduct, setStorePickerTargetProduct] = useState<Product | null>(null);
@@ -410,7 +427,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     >
       <div className="w-full">
         {/* Sticky/Frozen Header Wrapper across Mobile and Desktop */}
-        <div id="sticky-header-container" className="sticky top-0 z-40 w-full max-w-full bg-white/95 backdrop-blur-md">
+        <div id="sticky-header-container" className="sticky top-0 z-40 isolate w-full max-w-full bg-white/95 backdrop-blur-md">
           {/* White-label Header */}
           <Header
             currentAddress={currentAddress}
@@ -420,7 +437,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             onOpenLocationPicker={() => setIsLocationModalOpen(true)}
             onOpenStorePicker={() => setIsStorePickerOpen(true)}
             onOpenCart={() => setIsCartOpen(true)}
-            onOpenSearch={() => setActiveTab('search')}
+            onOpenSearch={() => navigateToTab('search')}
             searchQuery={searchQuery}
             onSearchChange={(q) => {
               setSearchQuery(q);
@@ -430,6 +447,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             }}
             cartItemCount={totalItemsCount}
             onOpenAdmin={onOpenAdmin}
+            onNavigateTab={navigateToTab}
           />
         </div>
 
@@ -516,7 +534,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav
         activeTab={activeTab}
-        onChangeTab={setActiveTab}
+        onChangeTab={navigateToTab}
         onOpenAisles={() => setIsAislesModalOpen(true)}
       />
 

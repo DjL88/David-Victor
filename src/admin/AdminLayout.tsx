@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AdminUser, TenantConfig } from '../commerce/models';
 import { defaultAdminClient } from '../commerce/HttpAdminClient';
 import { ALL_MOCK_ADMIN_USERS } from '../commerce/mockData';
@@ -43,6 +43,7 @@ import {
   Activity,
   Flag,
   BotMessageSquare,
+  ArrowUp,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -112,6 +113,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
   const [tenantLoadError, setTenantLoadError] = useState<string>('');
   const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
+  const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
+  const adminMainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     defaultAdminClient.setActiveAdminUser?.(currentUser);
@@ -124,6 +127,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   useEffect(() => {
     loadAllTenants();
   }, []);
+
+  useEffect(() => {
+    const main = adminMainRef.current;
+    if (!main) return;
+
+    const handleScroll = () => setShowBackToTop(main.scrollTop > 480);
+    handleScroll();
+    main.addEventListener('scroll', handleScroll, { passive: true });
+    return () => main.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    adminMainRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    setShowBackToTop(false);
+  }, [activeTab, currentTenantId]);
 
   const loadAllTenants = async () => {
     try {
@@ -229,12 +247,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   return (
     <AdminWorkspaceProvider tenantId={currentTenantId} section={activeTab} actor={currentUser}>
-    <div className="min-h-screen bg-gray-50 flex text-gray-900 font-sans overflow-hidden">
+    <div className="h-[100dvh] min-h-[100dvh] bg-gray-50 flex text-gray-900 font-sans overflow-hidden">
       {/* MOBILE NAV TRIGGER ONLY — desktop Admin is side-navigation only. */}
       <button
         type="button"
         onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
-        className="fixed left-3 top-3 z-50 lg:hidden p-2.5 rounded-xl bg-gray-900 text-white shadow-lg"
+        className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 lg:hidden p-2.5 rounded-xl bg-gray-900 text-white shadow-lg"
         aria-label="Toggle admin menu"
         aria-expanded={isMobileNavOpen}
       >
@@ -363,7 +381,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         </aside>
 
         {/* ACTIVE SCREEN CONTENT */}
-        <main className="flex-1 overflow-y-auto p-4 pt-16 lg:p-8 min-w-0">
+        <main ref={adminMainRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth p-4 pt-16 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
             {tenantLoadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between gap-3"><span>{tenantLoadError}</span><button type="button" onClick={loadTenant} className="font-bold underline">Retry</button></div>}
             {activeTab === 'brands' && (
@@ -418,6 +436,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'audit' && <AuditHistoryScreen tenantId={currentTenantId} />}
           </div>
         </main>
+
+      {showBackToTop && !isAssistantOpen && (
+        <button
+          type="button"
+          onClick={() => adminMainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 right-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-800 shadow-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"
+          aria-label="Back to top"
+          title="Back to top"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
+      )}
 
       {!isAssistantOpen && (
         <button

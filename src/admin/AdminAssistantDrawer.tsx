@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BotMessageSquare,
   ChevronRight,
@@ -65,6 +65,16 @@ const STARTERS: Record<string, string[]> = {
     'How do language and wording overrides work?',
     'Can I use Cart instead of Basket for US English?',
   ],
+  hero_banners: [
+    'Help me create a new banner.',
+    'Explain stock-linked banners.',
+    'What can I customise on this page?',
+  ],
+  stories: [
+    'Help me create a story.',
+    'How does story visibility work?',
+    'What media works best here?',
+  ],
   pages: [
     'How do translated CMS pages work?',
     'How do I show a page in the Account section?',
@@ -74,6 +84,14 @@ const STARTERS: Record<string, string[]> = {
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
+  suggestions?: string[];
+};
+
+type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content'>;
+
+type FailedRequest = {
+  message: string;
+  history: ChatHistoryMessage[];
 };
 
 interface AdminAssistantDrawerProps {
@@ -83,12 +101,14 @@ interface AdminAssistantDrawerProps {
 
 export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open, onClose }) => {
   const workspace = useAdminWorkspace();
+  const transcriptRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [running, setRunning] = useState(false);
   const [diagnosticRunning, setDiagnosticRunning] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [diagnosticResult, setDiagnosticResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [failedRequest, setFailedRequest] = useState<FailedRequest | null>(null);
 
   const starters = useMemo(
     () => STARTERS[workspace.section] || [
@@ -121,18 +141,36 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
     return null;
   }, [workspace.section]);
 
+  useEffect(() => {
+    if (!open) return;
+    const el = transcriptRef.current;
+    if (!el) return;
+    const frame = window.requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: messages.length > 1 ? 'smooth' : 'auto' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, messages, running, error]);
+
   if (!open) return null;
 
-  const sendMessage = async () => {
-    const text = draft.trim();
+  const sendMessage = async (
+    overrideText?: string,
+    retryHistory?: ChatHistoryMessage[],
+    appendUserMessage: boolean = true
+  ) => {
+    const text = (overrideText ?? draft).trim();
     if (!text || running) return;
+
+    const history = retryHistory || messages.slice(-10).map(({ role, content }) => ({ role, content }));
 
     setDraft('');
     setError('');
+    setFailedRequest(null);
     setDiagnosticResult(null);
 
-    const history = messages.slice(-10);
-    setMessages((current) => [...current, { role: 'user', content: text }]);
+    if (appendUserMessage) {
+      setMessages((current) => [...current, { role: 'user', content: text }]);
+    }
 
     try {
       setRunning(true);
@@ -151,13 +189,22 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         {
           role: 'assistant',
           content: response.message || 'I could not produce a response.',
+          suggestions: Array.isArray(response.suggestions)
+            ? response.suggestions.filter((item) => typeof item === 'string').slice(0, 3)
+            : [],
         },
       ]);
     } catch (err: any) {
+      setFailedRequest({ message: text, history });
       setError(err?.message || 'Admin AI could not answer right now.');
     } finally {
       setRunning(false);
     }
+  };
+
+  const retryLastMessage = async () => {
+    if (!failedRequest || running) return;
+    await sendMessage(failedRequest.message, failedRequest.history, false);
   };
 
   const runPageDiagnostic = async () => {
@@ -182,8 +229,8 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
   };
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-50 w-full sm:w-[410px] bg-white border-l border-gray-200 shadow-2xl flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
+    <aside className="fixed inset-y-0 right-0 z-50 h-[100dvh] max-h-[100dvh] w-full sm:w-[410px] bg-white border-l border-gray-200 shadow-2xl flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-gray-900 text-white flex items-center justify-center shrink-0">
             <BotMessageSquare className="w-4 h-4" />
@@ -205,19 +252,13 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={transcriptRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 space-y-4">
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
           <div className="flex items-start gap-2">
             <LockKeyhole className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-extrabold text-emerald-950">
-                Conversation + safe Admin controls
-              </p>
-              <p className="text-[11px] leading-relaxed text-emerald-800 mt-1">
-                Ask normal questions in plain English. The chat cannot directly change data or access credentials.
-                Supported changes still go through reviewable proposals and human approval.
-              </p>
-            </div>
+            <p className="text-[11px] leading-relaxed text-emerald-900">
+              <span className="font-extrabold">Safe by design.</span> Ask naturally; changes still require a reviewable proposal and approval.
+            </p>
           </div>
         </div>
 
@@ -253,8 +294,9 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                   <button
                     key={starter}
                     type="button"
-                    onClick={() => setDraft(starter)}
-                    className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-700 hover:border-gray-300 hover:bg-gray-50 flex items-center justify-between gap-2"
+                    onClick={() => void sendMessage(starter)}
+                    disabled={running}
+                    className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-700 hover:border-gray-300 hover:bg-gray-50 flex items-center justify-between gap-2 disabled:opacity-50"
                   >
                     <span>{starter}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
@@ -265,22 +307,42 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           </>
         )}
 
-        {messages.map((message, index) => (
-          <div
-            key={`${message.role}-${index}`}
-            className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-          >
+        {messages.map((message, index) => {
+          const isLatestAssistant = message.role === 'assistant' && index === messages.length - 1;
+          return (
             <div
-              className={
-                message.role === 'user'
-                  ? 'max-w-[88%] rounded-2xl rounded-br-md bg-gray-900 px-3.5 py-2.5 text-xs leading-relaxed text-white whitespace-pre-wrap'
-                  : 'max-w-[92%] rounded-2xl rounded-bl-md border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-xs leading-relaxed text-gray-800 whitespace-pre-wrap'
-              }
+              key={`${message.role}-${index}`}
+              className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
             >
-              {message.content}
+              <div className={message.role === 'user' ? 'max-w-[88%]' : 'max-w-[94%]'}>
+                <div
+                  className={
+                    message.role === 'user'
+                      ? 'rounded-2xl rounded-br-md bg-gray-900 px-3.5 py-2.5 text-xs leading-relaxed text-white whitespace-pre-wrap'
+                      : 'rounded-2xl rounded-bl-md border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-xs leading-relaxed text-gray-800 whitespace-pre-line'
+                  }
+                >
+                  {message.content}
+                </div>
+
+                {isLatestAssistant && !running && message.suggestions && message.suggestions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Suggested replies">
+                    {message.suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => void sendMessage(suggestion)}
+                        className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-[10px] font-bold text-gray-700 shadow-xs hover:border-gray-400 hover:bg-gray-50"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {running && (
           <div className="flex justify-start">
@@ -293,9 +355,21 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         {error && (
           <div
             role="alert"
-            className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800"
+            className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900"
           >
-            {error}
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold">{error}</span>
+              {failedRequest && (
+                <button
+                  type="button"
+                  onClick={() => void retryLastMessage()}
+                  disabled={running}
+                  className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 text-[10px] font-extrabold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -305,7 +379,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
               <div>
                 <p className="text-xs font-bold text-gray-900">Read-only page diagnostic</p>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  Runs the existing deterministic Admin diagnostic, separate from the conversation.
+                  Check the live page state without making changes.
                 </p>
               </div>
               <button
@@ -332,7 +406,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         )}
       </div>
 
-      <div className="border-t border-gray-200 p-3 bg-white">
+      <div className="border-t border-gray-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white shrink-0">
         <div className="rounded-2xl border border-gray-300 bg-gray-50 p-2">
           <textarea
             value={draft}
@@ -344,11 +418,12 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
               }
             }}
             placeholder="Ask Admin AI…"
-            rows={3}
+            rows={2}
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <span className="text-[10px] text-gray-400">Enter to send · Shift+Enter for a new line</span>
+            <span className="text-[10px] text-gray-400 hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
+            <span className="text-[10px] text-gray-400 sm:hidden">Enter to send</span>
             <button
               type="button"
               disabled={running || !draft.trim()}
