@@ -32,4 +32,13 @@ describe('AI Studio preview BFF proxy', () => {
     expect(proxyIndex).toBeGreaterThan(-1);
     expect(localRouterIndex).toBeGreaterThan(proxyIndex);
   });
+
+  it('forwards the configured preview tenant for bootstrap before the browser knows it', () => {
+    const proxySource = fs.readFileSync(
+      path.resolve(process.cwd(), 'server/aiStudioPreviewProxy.ts'),
+      'utf8'
+    );
+    expect(proxySource).toContain("if (!headers['x-tenant-id'] && env.PREVIEW_TENANT_ID)");
+    expect(proxySource).toContain("headers['x-tenant-id'] = env.PREVIEW_TENANT_ID.trim()");
+  });
 });
