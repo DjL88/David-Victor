@@ -728,7 +728,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             />
           )}
 
-          {activeRoute.kind === 'cms' && <CmsPageScreen slug={activeRoute.slug} />}
+          {activeRoute.kind === 'cms' && (
+            <CmsPageScreen
+              slug={activeRoute.slug}
+              products={catalog?.products || products}
+              categories={catalog?.categories || []}
+              onSelectProduct={routeToProduct}
+              onSelectCategory={routeToCategory}
+              onAddToCart={(product) => void updateQuantity(product, getItemQuantity(product) + 1)}
+            />
+          )}
 
           {activeTab === 'search' && (
             <SearchScreen
