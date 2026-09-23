@@ -27,7 +27,9 @@ function requiredChannelLinkId(payload: any): string {
   const value = String(
     payload?.channelLinkId ||
       payload?.storeId ||
-      payload?.channelLink ||
+      payload?.channelLink?._id ||
+      payload?.channelLink?.id ||
+      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
       ''
   ).trim();
   if (!value) {

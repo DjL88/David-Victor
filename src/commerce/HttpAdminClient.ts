@@ -114,7 +114,10 @@ export class HttpAdminClient implements AdminClient {
 
   setActiveAdminUser(user: AdminUser | null) {
     this.activeUser = user;
-    if (user?.tenantId) {
+    // Tenant-scoped users are locked to their own tenant. Platform SuperAdmins
+    // keep the tenant they explicitly selected in the Admin workspace; otherwise
+    // a legacy/default tenant on their identity can silently snap the UI back.
+    if (user?.tenantId && user.role !== 'platformSuperAdmin') {
       this.currentTenantId = user.tenantId;
     }
   }

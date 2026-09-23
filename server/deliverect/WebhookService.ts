@@ -400,6 +400,101 @@ export class WebhookService {
   }
 
   /**
+   * Resolves an operational callback to an already-mapped channel link.
+   *
+   * Deliverect Menu Push payloads do not always repeat channelLinkId even though
+   * the callback URL/account/location is already bound to a store. Never trust
+   * an arbitrary payload value: only return a channel link that is already
+   * present in this tenant's active store projection (and allowlist when set).
+   */
+  static async resolveMappedOperationalChannelLinkId(
+    tenantId: string,
+    payload: any
+  ): Promise<string | null> {
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const allowed = new Set(
+      (integration?.allowedChannelLinkIds || [])
+        .map((value: unknown) => String(value || '').trim())
+        .filter(Boolean)
+    );
+    const stores = await FirestorePlatformService.getTenantStores(tenantId);
+    const activeStores = stores.filter((store: any) => {
+      const lifecycle = String(store?.lifecycleStatus || 'ACTIVE').toUpperCase();
+      const id = String(store?.channelLinkId || store?.id || '').trim();
+      return Boolean(id) &&
+        lifecycle !== 'ORPHANED' &&
+        lifecycle !== 'ARCHIVED' &&
+        (!allowed.size || allowed.has(id));
+    });
+
+    const directChannelLinkId = String(
+      payload?.channelLinkId ||
+      payload?.storeId ||
+      payload?.channelLink?._id ||
+      payload?.channelLink?.id ||
+      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
+      ''
+    ).trim();
+    if (directChannelLinkId) {
+      const direct = activeStores.find((store: any) =>
+        String(store?.channelLinkId || store?.id || '').trim() === directChannelLinkId
+      );
+      if (direct) return directChannelLinkId;
+    }
+
+    const locationCandidates = [
+      payload?.locationId,
+      payload?.channelLocationId,
+      payload?.externalLocationId,
+      payload?.location?._id,
+      payload?.location?.id,
+      typeof payload?.location === 'string' ? payload.location : undefined,
+    ]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+
+    if (locationCandidates.length) {
+      const matched = activeStores.filter((store: any) => {
+        const storeValues = [
+          store?.deliverectLocationId,
+          store?.physicalLocationId,
+          typeof store?.physicalLocationId === 'string' && store.physicalLocationId.startsWith('loc_')
+            ? store.physicalLocationId.slice(4)
+            : undefined,
+          store?.externalLocationId,
+        ]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        return locationCandidates.some((candidate) => storeValues.includes(candidate));
+      });
+      if (matched.length === 1) {
+        return String(matched[0]?.channelLinkId || matched[0]?.id || '').trim() || null;
+      }
+    }
+
+    const payloadAccountId = String(
+      payload?.accountId ||
+      payload?.account?._id ||
+      payload?.account?.id ||
+      (typeof payload?.account === 'string' ? payload.account : '') ||
+      ''
+    ).trim();
+    const mappedAccountId = String(integration?.deliverectAccountId || '').trim();
+
+    // Account-only callbacks are safe to collapse to a store only when the
+    // tenant has exactly one active mapped channel. Never guess in multi-store
+    // estates because the same account can legitimately contain many locations.
+    if (
+      activeStores.length === 1 &&
+      (!payloadAccountId || !mappedAccountId || payloadAccountId === mappedAccountId)
+    ) {
+      return String(activeStores[0]?.channelLinkId || activeStores[0]?.id || '').trim() || null;
+    }
+
+    return null;
+  }
+
+  /**
    * Section 24 & Item 16:
    * Resolves the webhook tenant authoritatively. Never trusts blind query or header parameters.
    * Tests HMAC verification across configured tenant secrets.
