@@ -22,17 +22,74 @@ function normalise(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function singulariseToken(token: string): string {
+  if (token.length <= 3) return token;
+  if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('sses')) return token.slice(0, -2);
+  if (token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+function normaliseSearchText(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => normaliseSearchText(item)).join(' ');
+  return normalise(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function productMatches(product: any, query: string): boolean {
-  const needle = normalise(query);
+  const needle = normaliseSearchText(query);
   if (!needle) return false;
-  return [
+
+  const fields = [
     product?.id,
     product?.plu,
+    product?.canonicalPlu,
     product?.name,
+    product?.description,
     product?.barcode,
     product?.gtin,
+    product?.gtins,
     product?.sku,
-  ].some((value) => normalise(value).includes(needle));
+  ].map(normaliseSearchText).filter(Boolean);
+
+  if (fields.some((field) => field.includes(needle))) return true;
+
+  const queryTokens = needle.split(' ').map(singulariseToken).filter(Boolean);
+  return fields.some((field) => {
+    const fieldTokens = field.split(' ').map(singulariseToken).filter(Boolean);
+    return queryTokens.every((token) =>
+      fieldTokens.some((fieldToken) => fieldToken === token || fieldToken.includes(token) || token.includes(fieldToken))
+    );
+  });
+}
+
+function isStoreProductInStock(product: any): boolean {
+  if (!product || product.active === false || product.snoozed === true || product.isSnoozed === true) return false;
+  if (product.stockStatus === 'OUT_OF_STOCK' || product.inStock === false || product.stockQuantity === 0) return false;
+  return product.stockStatus === 'IN_STOCK' || product.inStock === true || product.stockQuantity == null || product.stockQuantity > 0;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>
+): Promise<R[]> {
+  if (values.length === 0) return [];
+  const results: R[] = new Array(values.length);
+  let cursor = 0;
+
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index]);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 export class AdminAssistantActionService {
@@ -101,13 +158,66 @@ export class AdminAssistantActionService {
             statusCode: 400,
           });
         }
+
         const adapter = await getDeliverectAdapterAsync(args.tenantId);
-        const search = await adapter.searchProducts(query, undefined, { limit: 50 });
-        evidence.push({ source: 'deliverect.searchProducts', ok: true });
-        const matches = (search?.products || []).filter((p: any) => productMatches(p, query));
+        let search = await adapter.searchProducts(query, undefined, { limit: 100 });
+        evidence.push({ source: 'deliverect.searchProducts', ok: true, note: `query=${query}` });
+
+        let matches = (search?.products || []).filter((p: any) => productMatches(p, query));
+
+        if (matches.length === 0) {
+          const broad = await adapter.searchProducts('', undefined, { limit: 2000 });
+          evidence.push({ source: 'deliverect.searchProducts', ok: true, note: 'broad fallback' });
+          matches = (broad?.products || []).filter((p: any) => productMatches(p, query)).slice(0, 20);
+          search = broad;
+        }
+
+        const includeLocations = input.includeLocations === true;
+        const firstMatch = matches[0];
+        let locationAvailability: any[] = [];
+
+        if (includeLocations && firstMatch) {
+          const stores = (await adapter.getStores()).slice(0, 50);
+          evidence.push({
+            source: 'deliverect.stores',
+            ok: true,
+            note: `checked ${stores.length} tenant locations`,
+          });
+
+          locationAvailability = await mapWithConcurrency(stores, 5, async (store: any) => {
+            try {
+              const storeSearch = await adapter.searchProducts(firstMatch.plu || firstMatch.id, store.id, { limit: 20 });
+              const storeProduct = (storeSearch?.products || []).find(
+                (product: any) =>
+                  normalise(product?.plu) === normalise(firstMatch.plu) ||
+                  normalise(product?.id) === normalise(firstMatch.id)
+              );
+              return {
+                id: store.id,
+                name: store.name,
+                ranged: Boolean(storeProduct),
+                inStock: Boolean(storeProduct && isStoreProductInStock(storeProduct)),
+                active: storeProduct?.active,
+                stockStatus: storeProduct?.stockStatus,
+                stockQuantity: storeProduct?.stockQuantity,
+                price: storeProduct?.price,
+              };
+            } catch (err: any) {
+              return {
+                id: store.id,
+                name: store.name,
+                ranged: false,
+                inStock: false,
+                error: err?.message || 'Location catalogue unavailable',
+              };
+            }
+          });
+        }
+
+        const summaries = search?.summaries || {};
         result = {
           query,
-          matches: matches.map((p: any) => ({
+          matches: matches.map((p: any, index: number) => ({
             id: p.id,
             plu: p.plu,
             name: p.name,
@@ -119,9 +229,11 @@ export class AdminAssistantActionService {
             inStock: p.inStock,
             imagePresent: Boolean(p.imageUrl || p.image),
             categoryIds: p.categoryIds || p.categories || [],
+            availabilitySummary: summaries[p.plu],
+            locationAvailability: index === 0 && includeLocations ? locationAvailability : undefined,
           })),
           findings: matches.length === 0
-            ? ['Product was not returned by the tenant catalogue search. Check upstream ranging/catalogue assignment first.']
+            ? ['Product was not returned by the tenant catalogue search after direct and broad matching. Check the PLU/name and tenant catalogue scope.']
             : matches.flatMap((p: any) => [
                 p.active === false ? 'Product is marked inactive.' : null,
                 p.snoozed === true ? 'Product is snoozed.' : null,
