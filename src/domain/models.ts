@@ -235,6 +235,8 @@ export interface CheckoutResult {
   paymentId?: string;
   /** Verified Firebase customer UID when checkout was created signed-in. */
   customerUid?: string;
+  /** One-time plaintext guest tracking credential returned only to the creating browser. */
+  orderAccessToken?: string;
   /** Terminal Deliverect order creation path used for this customer order. */
   orderRoute?: 'retail_quest' | 'commerce_checkout';
   idempotencyKey?: string;
