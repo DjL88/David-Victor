@@ -123,10 +123,19 @@ type ChatMessage = {
   attachments?: AssistantAttachment[];
   suggestions?: string[];
   degraded?: boolean;
+  provider?: string;
   navigation?: {
     section: string;
     target?: string;
     label: string;
+    prefill?: Record<string, unknown>;
+    steps?: Array<{
+      section: string;
+      target?: string;
+      label: string;
+      instruction: string;
+      prefill?: Record<string, unknown>;
+    }>;
   } | null;
 };
 
@@ -297,6 +306,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             ? response.suggestions.filter((item) => typeof item === 'string').slice(0, 3)
             : [],
           degraded: response.degraded === true,
+          provider: response.provider,
           navigation: response.navigation || null,
         },
       ]);
@@ -345,6 +355,9 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
       if (message.role === 'assistant' && message.degraded) {
         lines.push('', '_Guided mode was active for this reply._');
+      }
+      if (message.role === 'assistant' && message.provider === 'local-agent') {
+        lines.push('', '_Handled by the local Admin agent without a generative model call._');
       }
 
       if (index < messages.length - 1) {
@@ -536,6 +549,12 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                   </div>
                 )}
 
+                {message.role === 'assistant' && message.provider === 'local-agent' && (
+                  <div className="mt-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-800">
+                    Local guide · no model call
+                  </div>
+                )}
+
                 {message.role === 'assistant' && message.navigation && (
                   <div className="mt-2">
                     <button
@@ -543,7 +562,13 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                       onClick={() => {
                         const section = message.navigation?.section as AdminTab | undefined;
                         if (!section) return;
-                        workspace.navigateTo(section, message.navigation?.target);
+                        workspace.navigateTo(section, message.navigation?.target, {
+                          prefill: message.navigation?.prefill,
+                          steps: message.navigation?.steps?.map((step) => ({
+                            ...step,
+                            section: step.section as AdminTab,
+                          })),
+                        });
                       }}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[10px] font-extrabold text-indigo-800 shadow-xs hover:bg-indigo-100"
                     >
