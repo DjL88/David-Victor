@@ -43,6 +43,7 @@ const inMemoryHeroBanners: Record<string, CategoryPromoBanner[]> = {};
 const inMemoryHeroBannersPurged: Record<string, boolean> = {};
 const inMemoryStoreOperationalStates: Record<string, Record<string, StoreOperationalState>> = {};
 const inMemoryStoreSnoozes: Record<string, Record<string, Record<string, StoreProductSnoozeState>>> = {};
+const inMemoryStoreProductOperationalStates: Record<string, Record<string, Record<string, StoreProductOperationalState>>> = {};
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -83,6 +84,26 @@ export interface StoreProductSnoozeState {
   tenantId: string;
   channelLinkId: string;
   plu: string;
+  snoozed: boolean;
+  snoozeStart?: string;
+  snoozeEnd?: string;
+  updatedAt: string;
+  source: 'DELIVERECT_WEBHOOK';
+}
+
+/**
+ * Independent PLU x store operational state.
+ *
+ * This record intentionally does not depend on a catalogue product existing yet.
+ * Deliverect can snooze/unsnooze a PLU before a menu push arrives; when that PLU
+ * later appears in the hosted catalogue, the stored state can be applied without
+ * losing the earlier operational event.
+ */
+export interface StoreProductOperationalState {
+  tenantId: string;
+  channelLinkId: string;
+  plu: string;
+  availability: 'ACTIVE' | 'SNOOZED';
   snoozed: boolean;
   snoozeStart?: string;
   snoozeEnd?: string;
@@ -3266,6 +3287,91 @@ export class FirestoreService {
       snap.forEach((doc: any) => {
         const data = doc.data() as StoreOperationalState;
         if (data?.channelLinkId) result[data.channelLinkId] = data;
+      });
+      return result;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      return fallback;
+    }
+  }
+
+  static async upsertStoreProductOperationalState(
+    tenantId: string,
+    channelLinkId: string,
+    update: Omit<StoreProductOperationalState, 'tenantId' | 'channelLinkId' | 'updatedAt' | 'source'> & Partial<Pick<StoreProductOperationalState, 'updatedAt' | 'source'>>
+  ): Promise<StoreProductOperationalState> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const plu = String(update?.plu || '').trim();
+    if (!cleanTenantId || !cleanChannelLinkId || !plu) {
+      throw BFFError.invalidInput('tenantId, channelLinkId and plu are required for product operational state.');
+    }
+
+    const state: StoreProductOperationalState = {
+      tenantId: cleanTenantId,
+      channelLinkId: cleanChannelLinkId,
+      plu,
+      availability: update.availability,
+      snoozed: update.availability === 'SNOOZED',
+      snoozeStart: update.snoozeStart,
+      snoozeEnd: update.snoozeEnd,
+      updatedAt: update.updatedAt || new Date().toISOString(),
+      source: 'DELIVERECT_WEBHOOK',
+    };
+
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId] = {};
+    }
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
+    }
+    inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][plu] = state;
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db
+          .collection('tenants')
+          .doc(cleanTenantId)
+          .collection('operationalStores')
+          .doc(cleanChannelLinkId)
+          .collection('productState')
+          .doc(plu.replace(/\//g, '_'))
+          .set(cleanUndefined(state), { merge: true });
+      } catch (err: any) {
+        if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+        throw err;
+      }
+    }
+
+    return state;
+  }
+
+  static async getStoreProductOperationalStates(
+    tenantId: string,
+    channelLinkId: string
+  ): Promise<Record<string, StoreProductOperationalState>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const fallback = {
+      ...(inMemoryStoreProductOperationalStates[cleanTenantId]?.[cleanChannelLinkId] || {}),
+    };
+
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) return fallback;
+
+    try {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('operationalStores')
+        .doc(cleanChannelLinkId)
+        .collection('productState')
+        .get();
+      const result: Record<string, StoreProductOperationalState> = { ...fallback };
+      snap.forEach((doc: any) => {
+        const data = doc.data() as StoreProductOperationalState;
+        if (data?.plu) result[data.plu] = data;
       });
       return result;
     } catch (err: any) {
