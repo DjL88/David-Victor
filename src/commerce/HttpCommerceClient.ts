@@ -808,9 +808,10 @@ export class HttpCommerceClient implements CommerceClient {
       }),
     });
 
-    if (result.orderAccessToken && result.orderId && typeof window !== 'undefined') {
+    const trackedOrderId = result.orderId || result.order?.id || result.order?.orderId;
+    if (result.orderAccessToken && trackedOrderId && typeof window !== 'undefined') {
       window.localStorage.setItem(
-        `order-access-token:${result.orderId}`,
+        `order-access-token:${trackedOrderId}`,
         result.orderAccessToken
       );
     }
