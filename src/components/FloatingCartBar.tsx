@@ -85,7 +85,7 @@ export const FloatingCartBar: React.FC<FloatingCartBarProps> = ({
                   <span className="line-through opacity-75 text-[10px]">
                     {rawSubtotalFormatted}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white/20 text-white font-black text-[10px] tracking-wide border border-white/30">
+                  <span className="px-1.5 py-0.5 rounded-md bg-white/20 font-black text-[10px] tracking-wide border border-current/30">
                     Saved £{totalSavingsMajor.toFixed(2)}
                   </span>
                 </>
@@ -99,7 +99,7 @@ export const FloatingCartBar: React.FC<FloatingCartBarProps> = ({
             <span className="text-[10px] sm:text-[11px] font-semibold opacity-90 uppercase tracking-wider leading-none">
               Total
             </span>
-            <span className="text-sm sm:text-base font-black leading-tight text-white mt-0.5">
+            <span className="text-sm sm:text-base font-black leading-tight mt-0.5">
               {actualBasketTotalFormatted}
             </span>
           </div>

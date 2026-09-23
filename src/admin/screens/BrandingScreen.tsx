@@ -8,6 +8,7 @@ import {
   FontProcessingState,
 } from '../../commerce/fontModels';
 import { applyTenantFonts } from '../../tenant/fontManager';
+import { getContrastTextColor } from '../../tenant/useTenant';
 import { GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../../commerce/googleFonts';
 import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
@@ -1269,17 +1270,19 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             </div>
 
             <div
-              className="bg-white rounded-2xl overflow-hidden p-4 space-y-4 shadow-inner"
+              className="rounded-2xl overflow-hidden p-4 space-y-4 shadow-inner"
               style={{
                 fontFamily: `'${bodyFamily}', ${bodyFallback}`,
                 borderRadius: borderRadius,
+                backgroundColor: surfaceColour,
+                color: textColour,
               }}
             >
               {/* Header mockup */}
               <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                 <span
                   className="font-black text-sm tracking-tight"
-                  style={{ color: primaryColour }}
+                  style={{ color: textColour }}
                 >
                   {brandName || 'Store'}
                 </span>
@@ -1290,9 +1293,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
               {/* Banner card */}
               <div
-                className="p-3 text-white space-y-1 shadow-xs"
+                className="p-3 space-y-1 shadow-xs"
                 style={{
                   backgroundColor: primaryColour,
+                  color: getContrastTextColor(primaryColour),
                   borderRadius: borderRadius,
                 }}
               >
@@ -1321,9 +1325,10 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 </div>
                 <button
                   type="button"
-                  className="px-2.5 py-1 text-[10px] font-bold text-white shadow-2xs"
+                  className="px-2.5 py-1 text-[10px] font-bold shadow-2xs"
                   style={{
                     backgroundColor: primaryColour,
+                    color: getContrastTextColor(primaryColour),
                     borderRadius: borderRadius,
                   }}
                 >
