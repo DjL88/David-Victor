@@ -360,8 +360,9 @@ export class WebhookService {
           ).trim();
           const payloadAccountId = String(
             payload?.accountId ||
-            payload?.account ||
             payload?.account?._id ||
+            payload?.account?.id ||
+            (typeof payload?.account === 'string' ? payload.account : '') ||
             ''
           ).trim();
           const configuredAccountId = String(
