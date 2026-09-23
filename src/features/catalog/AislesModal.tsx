@@ -5,6 +5,7 @@ import { ensureNestedCategoryTree } from '../../commerce/categoryHierarchy';
 import { CatalogFilterState } from './DietaryPreferencesModal';
 import { isProductMatchingFilters } from '../../domain/allergens';
 import { getRenderableProducts } from '../../rules/availabilityRules';
+import { useI18n } from '../../i18n/I18nContext';
 import {
   Search,
   X,
@@ -39,6 +40,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
   filterState,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
   const [browsePath, setBrowsePath] = useState<Category[]>([]);
 
@@ -174,10 +176,10 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-gray-950 leading-tight">
-                  {browsePath.length > 0 ? browsePath[browsePath.length - 1].name : 'All Aisles'}
+                  {browsePath.length > 0 ? browsePath[browsePath.length - 1].name : t('aisles.all')}
                 </h2>
                 <p className="text-[11px] text-gray-500 font-medium">
-                  {storeName ? `Browsing ${storeName}` : 'Select an aisle or product shelf'}
+                  {storeName ? `${t('aisles.browsingStore')} ${storeName}` : t('aisles.selectShelf')}
                 </p>
               </div>
             </div>
@@ -201,7 +203,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
               id="aisles-modal-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search aisles, dairy, bakery, produce..."
+              placeholder={t('aisles.searchPlaceholder')}
               className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
             />
             {searchQuery && (
@@ -222,15 +224,15 @@ export const AislesModal: React.FC<AislesModalProps> = ({
           {browsePath.length > 0 && (
             <div className="flex gap-2">
               <button type="button" onClick={() => { setBrowsePath((path) => path.slice(0, -1)); setSearchQuery(''); }} className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 flex items-center gap-1.5 cursor-pointer shadow-2xs hover:bg-gray-50">
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
+                <ArrowLeft className="w-3.5 h-3.5" /> {t('aisles.back')}
               </button>
               <button type="button" onClick={() => handleSelect(browsePath[browsePath.length - 1].id)} className="flex-1 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 cursor-pointer hover:bg-emerald-100/80">
-                View all in {browsePath[browsePath.length - 1].name}
+                {t('aisles.viewAllIn')} {browsePath[browsePath.length - 1].name}
               </button>
             </div>
           )}
 
-          {/* Quick "All Aisles" option */}
+          {/* Quick "{t('aisles.all')}" option */}
           {browsePath.length === 0 && (
             <button
               type="button"
@@ -257,14 +259,14 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                     All Aisles
                   </span>
                   <span className="text-[11px] text-gray-500 block">
-                    Browse entire catalog without category filters
+                    {t('aisles.browseEntire')}
                   </span>
                 </div>
               </div>
 
               {selectedCategoryId === null ? (
                 <span className="px-2 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Selected
+                  <Check className="w-3 h-3" /> {t('aisles.selected')}
                 </span>
               ) : (
                 <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -275,14 +277,14 @@ export const AislesModal: React.FC<AislesModalProps> = ({
           {/* Filtered Aisles Grid */}
           {filteredCategories.length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-sm font-bold text-gray-700">No aisles matching &quot;{searchQuery}&quot;</p>
-              <p className="text-xs text-gray-400 mt-1">Try searching for milk, fruit, bread, or snacks</p>
+              <p className="text-sm font-bold text-gray-700">{t('aisles.noMatching')} &quot;{searchQuery}&quot;</p>
+              <p className="text-xs text-gray-400 mt-1">{t('aisles.trySearchHint')}</p>
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
                 className="mt-3 px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold text-gray-700 cursor-pointer"
               >
-                Clear Search
+                {t('aisles.clearSearch')}
               </button>
             </div>
           ) : (
@@ -324,7 +326,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                       {cat.name}
                     </span>
                     <span className="text-[11px] font-medium text-gray-400 mt-0.5">
-                      {count} {count === 1 ? 'item' : 'items'}
+                      {count} {t(count === 1 ? 'aisles.item' : 'aisles.items')}
                     </span>
                   </button>
                 );
