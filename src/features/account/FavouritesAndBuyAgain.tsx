@@ -16,6 +16,7 @@ import {
 import { isDemoMode } from '../../domain/runtime';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { auth, onAuthStateChanged, User as FirebaseUser } from '../../firebase';
+import { getCustomerFavourites, saveCustomerFavourites } from './customerAccountClient';
 
 interface FavouritesAndBuyAgainProps {
   products: Product[];
@@ -94,26 +95,14 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
     const loadSignedInState = async () => {
       setValidationError(null);
       try {
-        const token = await currentUser.getIdToken();
-        const favouritesResponse = await fetch('/api/v1/account/favourites', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!favouritesResponse.ok) {
-          throw new Error(`Favourites request failed with ${favouritesResponse.status}`);
-        }
-
-        const [{ favouritePlus: savedFavouritePlus = [] }, orders] = await Promise.all([
-          favouritesResponse.json() as Promise<{ favouritePlus?: string[] }>,
+        const [savedFavouritePlus, orders] = await Promise.all([
+          getCustomerFavourites(tenant?.tenantId),
           getCommerceClient(tenant?.tenantId).getOrderHistory(),
         ]);
 
         if (cancelled) return;
 
-        setFavouritePlus(
-          Array.isArray(savedFavouritePlus)
-            ? savedFavouritePlus.filter((value): value is string => typeof value === 'string')
-            : []
-        );
+        setFavouritePlus(savedFavouritePlus);
 
         const recentPlus = Array.from(
           new Set(
@@ -213,23 +202,8 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
     }
 
     try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/v1/account/favourites', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ favouritePlus: next }),
-      });
-      if (!response.ok) {
-        throw new Error(`Favourites save failed with ${response.status}`);
-      }
-
-      const saved = (await response.json()) as { favouritePlus?: string[] };
-      if (Array.isArray(saved.favouritePlus)) {
-        setFavouritePlus(saved.favouritePlus);
-      }
+      const saved = await saveCustomerFavourites(next, tenant?.tenantId);
+      setFavouritePlus(saved);
     } catch (err) {
       console.warn('Could not save favourite:', err);
       setFavouritePlus(previous);
