@@ -238,6 +238,10 @@ export interface LocaleTranslations {
   'orders.payment': string;
   'orders.pending': string;
   'orders.trackOrder': string;
+  'orders.paymentAuthorized': string;
+  'orders.paymentCaptured': string;
+  'orders.paymentActionRequired': string;
+  'orders.paymentTokenized': string;
   'order.statusSubmitted': string;
   'order.statusPickedPacked': string;
   'order.statusReadyCollection': string;
@@ -511,6 +515,10 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'orders.payment': 'Payment',
     'orders.pending': 'Pending',
     'orders.trackOrder': 'Track Order',
+    'orders.paymentAuthorized': 'Authorised',
+    'orders.paymentCaptured': 'Captured',
+    'orders.paymentActionRequired': 'Action required',
+    'orders.paymentTokenized': 'Card saved securely',
     'order.statusSubmitted': 'Order Submitted',
     'order.statusPickedPacked': 'Items Picked & Packed',
     'order.statusReadyCollection': 'Ready for Collection',
@@ -779,6 +787,10 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'orders.payment': 'Pago',
     'orders.pending': 'Pendiente',
     'orders.trackOrder': 'Seguir pedido',
+    'orders.paymentAuthorized': 'Autorizado',
+    'orders.paymentCaptured': 'Cobrado',
+    'orders.paymentActionRequired': 'Acción necesaria',
+    'orders.paymentTokenized': 'Tarjeta guardada de forma segura',
     'order.statusSubmitted': 'Pedido enviado',
     'order.statusPickedPacked': 'Artículos preparados',
     'order.statusReadyCollection': 'Listo para recoger',
@@ -1047,6 +1059,10 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'orders.payment': 'Paiement',
     'orders.pending': 'En attente',
     'orders.trackOrder': 'Suivre la commande',
+    'orders.paymentAuthorized': 'Autorisé',
+    'orders.paymentCaptured': 'Débité',
+    'orders.paymentActionRequired': 'Action requise',
+    'orders.paymentTokenized': 'Carte enregistrée de façon sécurisée',
     'order.statusSubmitted': 'Commande envoyée',
     'order.statusPickedPacked': 'Articles préparés',
     'order.statusReadyCollection': 'Prêt pour le retrait',
@@ -1315,6 +1331,10 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'orders.payment': 'Zahlung',
     'orders.pending': 'Ausstehend',
     'orders.trackOrder': 'Bestellung verfolgen',
+    'orders.paymentAuthorized': 'Autorisiert',
+    'orders.paymentCaptured': 'Abgebucht',
+    'orders.paymentActionRequired': 'Aktion erforderlich',
+    'orders.paymentTokenized': 'Karte sicher gespeichert',
     'order.statusSubmitted': 'Bestellung gesendet',
     'order.statusPickedPacked': 'Artikel kommissioniert & gepackt',
     'order.statusReadyCollection': 'Bereit zur Abholung',
