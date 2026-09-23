@@ -10,9 +10,10 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
-import { CategoryPromoBanner, Product, moneyToMinor, formatMoney } from '../../commerce/models';
+import { CategoryPromoBanner, Product, moneyToMinor } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
-import { formatCurrency } from '../../utils/formatters';
+import { useTenant } from '../../tenant/TenantContext';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 
 interface PromoShoppingListDialogProps {
   banner: CategoryPromoBanner | null;
@@ -38,6 +39,7 @@ export const PromoShoppingListDialog: React.FC<PromoShoppingListDialogProps> = (
   onUpdateQuantity,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { tenant } = useTenant();
 
   // Close on Escape
   useEffect(() => {
@@ -209,7 +211,7 @@ export const PromoShoppingListDialog: React.FC<PromoShoppingListDialogProps> = (
                           </p>
                         )}
                         <span className="text-xs font-bold text-gray-700">
-                          {formatMoney(product.price)}
+                          {formatStorefrontCurrency(product.price, tenant)}
                         </span>
                       </div>
                     </div>
@@ -271,7 +273,7 @@ export const PromoShoppingListDialog: React.FC<PromoShoppingListDialogProps> = (
             >
               <ShoppingBag className="w-4 h-4" />
               <span>
-                Add All ({availableProducts.length}) • {formatCurrency(totalMinor)}
+                Add All ({availableProducts.length}) • {formatStorefrontCurrency(totalMinor, tenant)}
               </span>
             </button>
           </div>
