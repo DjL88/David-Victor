@@ -10,7 +10,8 @@ export type DeliverectOperationalWebhookType =
   | 'busy_mode'
   | 'store_status'
   | 'snooze'
-  | 'menu_update';
+  | 'menu_update'
+  | 'prep_time';
 
 export interface DeliverectOperationalWebhookResult {
   success: boolean;
@@ -174,6 +175,35 @@ export class DeliverectOperationalWebhookService {
           type,
           channelLinkId,
           status,
+        };
+      } else if (type === 'prep_time') {
+        const rawDelay =
+          payload?.preparationTime ??
+          payload?.prepTime ??
+          payload?.averagePreparationTime ??
+          payload?.delay;
+        const delay = Number(rawDelay);
+        if (!Number.isFinite(delay) || delay < 0) {
+          const err: any = new Error('Prep time webhook must contain a non-negative preparation time.');
+          err.statusCode = 400;
+          err.code = 'WEBHOOK_PREP_TIME_INVALID';
+          throw err;
+        }
+
+        await FirestorePlatformService.saveStoreOperationalState(
+          tenantId,
+          channelLinkId,
+          {
+            preparationTimeDelay: delay,
+            locationId: payload?.locationId,
+            accountId: payload?.accountId,
+          }
+        );
+
+        result = {
+          success: true,
+          type,
+          channelLinkId,
         };
       } else if (type === 'menu_update') {
         const menuId = String(payload?.menuId || payload?._id || '').trim();
