@@ -408,7 +408,16 @@ export interface AdminClient {
       attachments?: Array<{ name: string; contentType?: string; content: string; byteSize?: number; truncated?: boolean }>;
     }>;
     context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string };
-  }): Promise<{ message: string; suggestions?: string[]; provider?: string; model?: string; degraded?: boolean; mode?: string; safety?: Record<string, unknown> }>;
+  }): Promise<{
+    message: string;
+    suggestions?: string[];
+    provider?: string;
+    model?: string;
+    degraded?: boolean;
+    navigation?: { section: string; target?: string; label: string } | null;
+    mode?: string;
+    safety?: Record<string, unknown>;
+  }>;
 
   /** Lists server-authorized assistant actions, including proposal-only write actions. */
   getAssistantActions?(tenantId?: string): Promise<any>;
