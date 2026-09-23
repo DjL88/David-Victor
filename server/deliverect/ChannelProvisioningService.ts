@@ -10,6 +10,8 @@ export interface ChannelProvisioningResult {
   channelLinkId?: string;
   locationId?: string;
   externalLocationId?: string;
+  accountId?: string;
+  status?: string;
   warnings: string[];
 }
 
@@ -41,16 +43,33 @@ export class ChannelProvisioningService {
     ).trim() || undefined;
     const externalLocationId = String(
       payload?.externalLocationId ||
+      payload?.channelLocationId ||
       payload?.externalLocation?.id ||
       payload?.externalId ||
       ''
     ).trim() || undefined;
+    const accountId = String(
+      payload?.accountId ||
+      payload?.account ||
+      payload?.account?._id ||
+      ''
+    ).trim() || undefined;
+    const status = String(
+      payload?.status ||
+      payload?.action ||
+      payload?.event ||
+      ''
+    ).trim().toLowerCase() || undefined;
 
     const warnings: string[] = [];
     if (!channelLinkId) warnings.push('CHANNEL_LINK_ID_MISSING');
     if (!locationId) warnings.push('LOCATION_ID_MISSING');
 
     const quarantined = warnings.length > 0;
+    const isInactiveLifecycle =
+      status === 'inactive' ||
+      status === 'disable' ||
+      status === 'disabled';
 
     if (channelLinkId) {
       await FirestorePlatformService.saveTenantStore(tenantId, {
@@ -58,8 +77,16 @@ export class ChannelProvisioningService {
         physicalLocationId: locationId ? (locationId.startsWith('loc_') ? locationId : `loc_${locationId}`) : undefined,
         deliverectLocationId: locationId,
         externalLocationId,
-        lifecycleStatus: 'ACTIVE',
-        provisioningState: quarantined ? 'QUARANTINED' : type === 'CHANNEL_REGISTRATION' ? 'REGISTERED' : 'PROVISIONED',
+        accountId,
+        accountLinkId: accountId ? `acclink_${accountId}` : undefined,
+        lifecycleStatus: isInactiveLifecycle ? 'INACTIVE' : 'ACTIVE',
+        status: isInactiveLifecycle ? 'INACTIVE' : undefined,
+        assigned: !isInactiveLifecycle,
+        provisioningState: quarantined
+          ? 'QUARANTINED'
+          : type === 'CHANNEL_REGISTRATION'
+            ? (isInactiveLifecycle ? 'DISABLED' : status === 'active' ? 'ACTIVE' : 'REGISTERED')
+            : 'PROVISIONED',
         provisioningSource: 'DELIVERECT_CHANNEL',
         lastProvisioningEventAt: new Date().toISOString(),
       });
@@ -76,6 +103,8 @@ export class ChannelProvisioningService {
         channelLinkId,
         locationId,
         externalLocationId,
+        accountId,
+        status,
         quarantined,
         warnings,
       }),
@@ -89,6 +118,8 @@ export class ChannelProvisioningService {
       channelLinkId,
       locationId,
       externalLocationId,
+      accountId,
+      status,
       warnings,
     };
   }
