@@ -209,6 +209,27 @@ export interface LocaleTranslations {
   'checkout.stepPaymentAuthorised': string;
   'checkout.stepPlacingOrder': string;
   'checkout.stepOrderConfirmed': string;
+  'checkout.chooseOptions': string;
+  'checkout.preChosen': string;
+  'checkout.removeRefundItem': string;
+  'checkout.cancelEntireOrder': string;
+  'checkout.bestMatchGuarantee': string;
+  'checkout.dispatchQuoteGuaranteed': string;
+  'checkout.dispatchQuoteExpired': string;
+  'checkout.dispatchConfirmation': string;
+  'checkout.checking': string;
+  'checkout.recheck': string;
+  'checkout.collectionIssue': string;
+  'checkout.dispatchUnavailable': string;
+  'checkout.partnerStore': string;
+  'checkout.switchAndOrder': string;
+  'checkout.tipCourier': string;
+  'checkout.none': string;
+  'checkout.promoGiftCode': string;
+  'checkout.applying': string;
+  'checkout.apply': string;
+  'checkout.placingCollectionOrder': string;
+  'checkout.authorizingSubmitting': string;
 
   // Order & Picking States
   'order.statusAccepted': string;
@@ -443,6 +464,27 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.stepPaymentAuthorised': 'Payment authorised',
     'checkout.stepPlacingOrder': 'Placing order with store',
     'checkout.stepOrderConfirmed': 'Order confirmed',
+    'checkout.chooseOptions': 'Choose options',
+    'checkout.preChosen': 'Pre-chosen',
+    'checkout.removeRefundItem': 'Remove & refund item',
+    'checkout.cancelEntireOrder': 'Cancel entire order',
+    'checkout.bestMatchGuarantee': 'Best match (Same or lower price guarantee)',
+    'checkout.dispatchQuoteGuaranteed': 'Dispatch quote guaranteed',
+    'checkout.dispatchQuoteExpired': 'Dispatch quote expired',
+    'checkout.dispatchConfirmation': 'Authoritative Deliverect Dispatch slot confirmation',
+    'checkout.checking': 'Checking...',
+    'checkout.recheck': 'Recheck',
+    'checkout.collectionIssue': 'Collection Order Issue',
+    'checkout.dispatchUnavailable': 'Dispatch Unavailable',
+    'checkout.partnerStore': 'Partner Store',
+    'checkout.switchAndOrder': 'Switch & Order',
+    'checkout.tipCourier': 'Tip your courier (100% goes to driver)',
+    'checkout.none': 'None',
+    'checkout.promoGiftCode': 'Promo or Gift Code',
+    'checkout.applying': 'Applying...',
+    'checkout.apply': 'Apply',
+    'checkout.placingCollectionOrder': 'Placing Collection Order...',
+    'checkout.authorizingSubmitting': 'Authorizing & Submitting...',
 
     'order.statusAccepted': 'Order Accepted by Store',
     'order.statusPicking': 'Quest Picking in Progress',
@@ -673,6 +715,27 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.stepPaymentAuthorised': 'Pago autorizado',
     'checkout.stepPlacingOrder': 'Enviando pedido a la tienda',
     'checkout.stepOrderConfirmed': 'Pedido confirmado',
+    'checkout.chooseOptions': 'Elegir opciones',
+    'checkout.preChosen': 'Elegido previamente',
+    'checkout.removeRefundItem': 'Eliminar y reembolsar artículo',
+    'checkout.cancelEntireOrder': 'Cancelar todo el pedido',
+    'checkout.bestMatchGuarantee': 'Mejor opción (garantía de mismo o menor precio)',
+    'checkout.dispatchQuoteGuaranteed': 'Cotización de reparto garantizada',
+    'checkout.dispatchQuoteExpired': 'La cotización de reparto ha caducado',
+    'checkout.dispatchConfirmation': 'Confirmación autorizada de franja de Deliverect Dispatch',
+    'checkout.checking': 'Comprobando...',
+    'checkout.recheck': 'Volver a comprobar',
+    'checkout.collectionIssue': 'Problema con el pedido de recogida',
+    'checkout.dispatchUnavailable': 'Reparto no disponible',
+    'checkout.partnerStore': 'Tienda asociada',
+    'checkout.switchAndOrder': 'Cambiar y pedir',
+    'checkout.tipCourier': 'Propina al repartidor (100% para el conductor)',
+    'checkout.none': 'Ninguna',
+    'checkout.promoGiftCode': 'Código promocional o regalo',
+    'checkout.applying': 'Aplicando...',
+    'checkout.apply': 'Aplicar',
+    'checkout.placingCollectionOrder': 'Enviando pedido de recogida...',
+    'checkout.authorizingSubmitting': 'Autorizando y enviando...',
 
     'order.statusAccepted': 'Pedido Aceptado por la tienda',
     'order.statusPicking': 'Preparación en curso',
@@ -903,6 +966,27 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.stepPaymentAuthorised': 'Paiement autorisé',
     'checkout.stepPlacingOrder': 'Envoi de la commande au magasin',
     'checkout.stepOrderConfirmed': 'Commande confirmée',
+    'checkout.chooseOptions': 'Choisir les options',
+    'checkout.preChosen': 'Choisi à l’avance',
+    'checkout.removeRefundItem': 'Supprimer et rembourser l’article',
+    'checkout.cancelEntireOrder': 'Annuler toute la commande',
+    'checkout.bestMatchGuarantee': 'Meilleure correspondance (prix identique ou inférieur garanti)',
+    'checkout.dispatchQuoteGuaranteed': 'Devis de livraison garanti',
+    'checkout.dispatchQuoteExpired': 'Le devis de livraison a expiré',
+    'checkout.dispatchConfirmation': 'Confirmation officielle du créneau Deliverect Dispatch',
+    'checkout.checking': 'Vérification...',
+    'checkout.recheck': 'Revérifier',
+    'checkout.collectionIssue': 'Problème avec la commande à retirer',
+    'checkout.dispatchUnavailable': 'Livraison indisponible',
+    'checkout.partnerStore': 'Magasin partenaire',
+    'checkout.switchAndOrder': 'Changer et commander',
+    'checkout.tipCourier': 'Pourboire au coursier (100 % pour le livreur)',
+    'checkout.none': 'Aucun',
+    'checkout.promoGiftCode': 'Code promo ou cadeau',
+    'checkout.applying': 'Application...',
+    'checkout.apply': 'Appliquer',
+    'checkout.placingCollectionOrder': 'Envoi de la commande à retirer...',
+    'checkout.authorizingSubmitting': 'Autorisation et envoi...',
 
     'order.statusAccepted': 'Commande acceptée',
     'order.statusPicking': 'Préparation en cours',
@@ -1133,6 +1217,27 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.stepPaymentAuthorised': 'Zahlung autorisiert',
     'checkout.stepPlacingOrder': 'Bestellung wird an die Filiale gesendet',
     'checkout.stepOrderConfirmed': 'Bestellung bestätigt',
+    'checkout.chooseOptions': 'Optionen wählen',
+    'checkout.preChosen': 'Vorab gewählt',
+    'checkout.removeRefundItem': 'Artikel entfernen & erstatten',
+    'checkout.cancelEntireOrder': 'Gesamte Bestellung stornieren',
+    'checkout.bestMatchGuarantee': 'Beste Übereinstimmung (gleicher oder niedrigerer Preis garantiert)',
+    'checkout.dispatchQuoteGuaranteed': 'Kurierangebot garantiert',
+    'checkout.dispatchQuoteExpired': 'Kurierangebot abgelaufen',
+    'checkout.dispatchConfirmation': 'Verbindliche Bestätigung des Deliverect-Dispatch-Zeitfensters',
+    'checkout.checking': 'Prüfung...',
+    'checkout.recheck': 'Erneut prüfen',
+    'checkout.collectionIssue': 'Problem mit Abholbestellung',
+    'checkout.dispatchUnavailable': 'Kurierzustellung nicht verfügbar',
+    'checkout.partnerStore': 'Partnerfiliale',
+    'checkout.switchAndOrder': 'Wechseln & bestellen',
+    'checkout.tipCourier': 'Trinkgeld für den Kurier (100 % gehen an den Fahrer)',
+    'checkout.none': 'Keins',
+    'checkout.promoGiftCode': 'Promo- oder Geschenrcode',
+    'checkout.applying': 'Wird angewendet...',
+    'checkout.apply': 'Anwenden',
+    'checkout.placingCollectionOrder': 'Abholbestellung wird aufgegeben...',
+    'checkout.authorizingSubmitting': 'Autorisierung & Übermittlung...',
 
     'order.statusAccepted': 'Bestellung angenommen',
     'order.statusPicking': 'Kommissionierung läuft',
