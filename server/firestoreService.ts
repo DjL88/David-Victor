@@ -3529,8 +3529,7 @@ export class FirestoreService {
   }
 }
 
-export const FirestorePlatformService = FirestoreService;
-, CAD: 'CA
+export const FirestorePlatformService = FirestoreService;, CAD: 'CA
       tenantId,
       brandName: newTenant.brandName || (isDemoMode() ? 'New Artisan Brand' : tenantId),
       tagline: newTenant.tagline || (isDemoMode() ? 'Fresh essentials delivered in minutes' : ''),
@@ -6178,8 +6177,7 @@ export const FirestorePlatformService = FirestoreService;
   }
 }
 
-export const FirestorePlatformService = FirestoreService;
-, AUD: 'A
+export const FirestorePlatformService = FirestoreService;, AUD: 'A
       tenantId,
       brandName: newTenant.brandName || (isDemoMode() ? 'New Artisan Brand' : tenantId),
       tagline: newTenant.tagline || (isDemoMode() ? 'Fresh essentials delivered in minutes' : ''),
@@ -8827,8 +8825,7 @@ export const FirestorePlatformService = FirestoreService;
   }
 }
 
-export const FirestorePlatformService = FirestoreService;
-, NZD: 'NZ
+export const FirestorePlatformService = FirestoreService;, NZD: 'NZ
       tenantId,
       brandName: newTenant.brandName || (isDemoMode() ? 'New Artisan Brand' : tenantId),
       tagline: newTenant.tagline || (isDemoMode() ? 'Fresh essentials delivered in minutes' : ''),
@@ -11476,8 +11473,7 @@ export const FirestorePlatformService = FirestoreService;
   }
 }
 
-export const FirestorePlatformService = FirestoreService;
- } as Record<string, string>)[currency] ||
+export const FirestorePlatformService = FirestoreService; } as Record<string, string>)[currency] ||
       currency;
 
     const fullTenant: TenantConfig = {
