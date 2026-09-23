@@ -254,16 +254,62 @@ export class AdminAssistantActionService {
       case 'stores.inspect': {
         const stores = await FirestorePlatformService.getTenantStores(args.tenantId);
         evidence.push({ source: 'firestore.stores', ok: true });
-        result = {
-          storeCount: stores.length,
-          stores: stores.map((store: any) => ({
+
+        const duplicateValues = (key: string) => {
+          const counts = new Map<string, number>();
+          for (const store of stores) {
+            const value = String((store as any)?.[key] || '').trim();
+            if (!value) continue;
+            counts.set(value, (counts.get(value) || 0) + 1);
+          }
+          return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([value]) => value));
+        };
+
+        const duplicatePhysicalIds = duplicateValues('physicalLocationId');
+        const duplicateChannelLinks = duplicateValues('channelLinkId');
+        const duplicateBrandStoreIds = duplicateValues('brandStoreId');
+
+        const normalized = stores.map((store: any) => {
+          const issues: string[] = [];
+          if (!store.channelLinkId) issues.push('Missing commerce channel link ID');
+          if (!store.physicalLocationId || store.physicalLocationId === 'Unresolved') issues.push('Missing physical location mapping');
+          if (!store.brandStoreId) issues.push('Missing brand/POS store ID');
+          if (store.channelLinkId && duplicateChannelLinks.has(String(store.channelLinkId))) issues.push('Duplicate commerce channel link ID');
+          if (store.physicalLocationId && duplicatePhysicalIds.has(String(store.physicalLocationId))) issues.push('Duplicate physical location ID');
+          if (store.brandStoreId && duplicateBrandStoreIds.has(String(store.brandStoreId))) issues.push('Duplicate brand/POS store ID');
+          if (store.supportsDelivery === false && store.supportsPickup === false) issues.push('Neither delivery nor pickup is enabled');
+          if (String(store.status || '').toUpperCase() === 'INACTIVE') issues.push('Location status is inactive');
+          if (store.snoozed === true) issues.push('Location is snoozed');
+
+          return {
             id: store.id,
             name: store.name,
+            status: store.status,
             active: store.active,
+            snoozed: store.snoozed,
+            stateProjection: store.stateProjection,
+            channelLinkId: store.channelLinkId,
+            physicalLocationId: store.physicalLocationId,
+            deliverectLocationId: store.deliverectLocationId,
+            brandStoreId: store.brandStoreId,
+            locationGroup: store.locationGroup,
+            supportsDelivery: store.supportsDelivery,
+            supportsPickup: store.supportsPickup,
+            collectionAvailable: store.collectionAvailable,
             address: store.address,
             openingHours: store.openingHours,
-            deliveryRadius: store.deliveryRadius,
-          })),
+            deliveryRadiusKm: store.deliveryRadiusKm,
+            issues,
+          };
+        });
+
+        result = {
+          storeCount: stores.length,
+          issueCount: normalized.filter((store: any) => store.issues.length > 0).length,
+          duplicatePhysicalLocationIds: Array.from(duplicatePhysicalIds),
+          duplicateChannelLinkIds: Array.from(duplicateChannelLinks),
+          duplicateBrandStoreIds: Array.from(duplicateBrandStoreIds),
+          stores: normalized,
         };
         break;
       }
