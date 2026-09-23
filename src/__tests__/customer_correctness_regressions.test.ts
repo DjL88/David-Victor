@@ -35,6 +35,14 @@ describe('customer correctness regressions', () => {
     path.resolve(process.cwd(), 'src/app/AppLayout.tsx'),
     'utf8'
   );
+  const locationPickerSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/features/location/LocationPickerModal.tsx'),
+    'utf8'
+  );
+  const firestoreRulesSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'firestore.rules'),
+    'utf8'
+  );
 
   it('uses the supported basket item removal API in checkout', () => {
     expect(checkoutSource).not.toContain('removeFromBasket(basket.id, plu)');
@@ -83,5 +91,12 @@ describe('customer correctness regressions', () => {
     expect(customerAccountClientSource).toContain("fetch('/api/v1/account/addresses'");
     expect(appLayoutSource).toContain('savedAddresses={savedAddresses}');
     expect(appLayoutSource).toContain('onSavedAddressesChange={setSavedAddresses}');
+  });
+
+  it('keeps saved address PII BFF-only and never fabricates saved-address coordinates', () => {
+    expect(firestoreRulesSource).toContain('match /customerProfiles/{customerUid}');
+    expect(firestoreRulesSource).toContain('allow read, write: if false;');
+    expect(locationPickerSource).toContain('await onSelectAddress(query)');
+    expect(locationPickerSource).not.toContain("stores[0]?.coordinates || { latitude: 51.5074, longitude: -0.1278 }");
   });
 });
