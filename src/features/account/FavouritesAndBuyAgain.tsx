@@ -122,9 +122,13 @@ export const FavouritesAndBuyAgain: React.FC<FavouritesAndBuyAgainProps> = ({
                 (a, b) =>
                   new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
               )
-              .flatMap((order) => order.picking?.items || order.items || [])
-              .map((item) => item.plu)
-              .filter((plu): plu is string => Boolean(plu))
+              .flatMap((order) => {
+                if (order.picking?.items?.length) {
+                  return order.picking.items.map((item) => item.plu);
+                }
+                return (order.items || []).map((item) => item.plu);
+              })
+              .filter((plu): plu is string => typeof plu === 'string' && Boolean(plu))
           )
         ).slice(0, 50);
         setBuyAgainPlus(recentPlus);
