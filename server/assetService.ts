@@ -215,7 +215,9 @@ export class AssetService {
               assetType: params.type,
               originalFileName: params.fileName,
               assetId,
-              firebaseStorageDownloadTokens: downloadToken,
+              ...(params.type === 'BRAND_GUIDELINES'
+                ? {}
+                : { firebaseStorageDownloadTokens: downloadToken }),
             },
           },
         });
