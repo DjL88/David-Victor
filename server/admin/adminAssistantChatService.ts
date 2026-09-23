@@ -36,7 +36,8 @@ interface ChatClient {
   ai: GoogleGenAI;
 }
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
+const FALLBACK_MODELS = ['gemini-3.5-flash-lite'];
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_REPLY_CHARS = 720;
 
@@ -263,7 +264,7 @@ function isTransientGenerationError(err: any): boolean {
 }
 
 function modelCandidates(preferred: string): string[] {
-  return preferred === DEFAULT_MODEL ? [preferred] : [preferred, DEFAULT_MODEL];
+  return Array.from(new Set([preferred, DEFAULT_MODEL, ...FALLBACK_MODELS]));
 }
 
 async function wait(ms: number): Promise<void> {
@@ -301,7 +302,6 @@ export class AdminAssistantChatService {
             contents,
             config: {
               systemInstruction: buildAdminAssistantSystemInstruction(args),
-              temperature: 0.2,
               maxOutputTokens: 320,
             },
           });
@@ -341,11 +341,25 @@ export class AdminAssistantChatService {
     }
 
     console.error('[AdminAssistantChat] Generation failed:', lastError?.message || lastError);
-    if (lastError instanceof BFFError) throw lastError;
-    throw new BFFError(
-      'UPSTREAM_UNAVAILABLE',
-      'Admin AI could not answer right now. Please try again.',
-      503
-    );
+    if (lastError instanceof BFFError && lastError.code === 'INTEGRATION_NOT_CONFIGURED') {
+      throw lastError;
+    }
+
+    // Keep the Admin usable during an upstream model outage. This is deliberately
+    // transparent: it does not pretend a model answered, and it never fabricates live data.
+    const section = args.context?.section;
+    const fallbackMessage =
+      section === 'catalog'
+        ? 'I cannot reach the AI service just now. I can still run the read-only catalogue check below, or help you navigate Products & Stock.'
+        : section === 'hero_banners'
+        ? 'I cannot reach the AI service just now. You can still manage banners normally; try one of the shortcuts below and I will retry the model.'
+        : 'I cannot reach the AI service just now. The Admin controls still work normally, and you can retry the assistant with one of the shortcuts below.';
+
+    return {
+      message: fallbackMessage,
+      suggestions: getAdminAssistantSuggestions(section),
+      provider: client.provider,
+      model: client.model,
+    };
   }
 }
