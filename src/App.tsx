@@ -3,14 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { TenantProvider } from './tenant/TenantContext';
 import { I18nProvider } from './i18n/I18nContext';
 import { AppLayout } from './app/AppLayout';
-import { AdminLayout } from './admin/AdminLayout';
-import { AdminGuard } from './admin/AdminGuard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+const AdminGuard = lazy(() =>
+  import('./admin/AdminGuard').then((module) => ({ default: module.AdminGuard }))
+);
+const AdminLayout = lazy(() =>
+  import('./admin/AdminLayout').then((module) => ({ default: module.AdminLayout }))
+);
 
 const GOOGLE_MAPS_API_KEY =
   (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) ||
@@ -77,9 +82,11 @@ export default function App() {
         <TenantProvider>
           <I18nProvider>
             {isAdminMode ? (
-              <AdminGuard onExit={handleExitAdmin}>
-                {(user) => <AdminLayout onExitAdmin={handleExitAdmin} initialUser={user} />}
-              </AdminGuard>
+              <Suspense fallback={<div className="min-h-screen grid place-items-center text-sm text-gray-500">Loading admin…</div>}>
+                <AdminGuard onExit={handleExitAdmin}>
+                  {(user) => <AdminLayout onExitAdmin={handleExitAdmin} initialUser={user} />}
+                </AdminGuard>
+              </Suspense>
             ) : (
               <AppLayout onOpenAdmin={handleOpenAdmin} />
             )}

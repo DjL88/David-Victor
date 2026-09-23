@@ -223,12 +223,11 @@ export class WebhookService {
     const tenantSpecific = process.env[`DELIVERECT_WEBHOOK_SECRET_${tenantId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`];
     if (tenantSpecific) return tenantSpecific;
 
-    if (process.env.DELIVERECT_WEBHOOK_SECRET) {
-      return process.env.DELIVERECT_WEBHOOK_SECRET;
-    }
-
+    // A shared global secret is acceptable only in explicit demo/test. In
+    // staging/production every tenant must resolve its own secret so a valid
+    // signature for Tenant A can never authenticate a Tenant B webhook.
     if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      return 'demo_deliverect_webhook_secret_key_123';
+      return process.env.DELIVERECT_WEBHOOK_SECRET || 'demo_deliverect_webhook_secret_key_123';
     }
 
     return '';
@@ -355,15 +354,6 @@ export class WebhookService {
         }
       } catch (e) {
         console.warn('[WebhookService] Failed scanning tenant webhook secrets:', e);
-      }
-    }
-
-    // 3. Legacy shared secret is accepted only when routing has already
-    // resolved a concrete tenant from a registered integration/host. Never let
-    // a shared signature implicitly select brand-alpha or another tenant.
-    if (candidateTenantId && process.env.DELIVERECT_WEBHOOK_SECRET) {
-      if (this.verifyDeliverectHmac(rawBody, signatureHeader, process.env.DELIVERECT_WEBHOOK_SECRET)) {
-        return { tenantId: candidateTenantId, secret: process.env.DELIVERECT_WEBHOOK_SECRET };
       }
     }
 
