@@ -12,7 +12,7 @@ describe('adminActionRegistry', () => {
   it('exposes only assistant-enabled actions permitted to the role', () => {
     const viewer = listAssistantActionsForRole('viewer');
     expect(viewer.map((action) => action.name)).toEqual(
-      expect.arrayContaining(['catalog.inspect', 'stores.inspect'])
+      expect.arrayContaining(['catalog.inspect', 'stores.inspect', 'rules.inspect'])
     );
     expect(viewer.map((action) => action.name)).not.toContain('catalog.diagnoseVisibility');
     expect(viewer.every((action) => action.enabledForAssistant)).toBe(true);
@@ -46,6 +46,7 @@ describe('adminActionRegistry', () => {
     const actions = listAssistantActionsForRole('tenantAdmin');
     expect(actions.find((action) => action.name === 'branding.proposeUpdate')?.assistantMode).toBe('PROPOSE_ONLY');
     expect(actions.find((action) => action.name === 'catalog.inspect')?.assistantMode).toBe('EXECUTE_READ');
+    expect(actions.find((action) => action.name === 'rules.inspect')?.assistantMode).toBe('EXECUTE_READ');
     expect(listAssistantActionsForRole('viewer').some((action) => action.name === 'branding.proposeUpdate')).toBe(false);
   });
 
