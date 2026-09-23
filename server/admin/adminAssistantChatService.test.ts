@@ -82,6 +82,11 @@ describe('AdminAssistantChatService foundations', () => {
       target: 'languages-terminology',
       label: 'Open Languages · Wording',
     });
+    expect(resolveAdminAssistantNavigationHint("What is Dave's Delicatessen top selling item?", 'catalog')).toEqual({
+      section: 'insights',
+      target: undefined,
+      label: 'Open Insights',
+    });
   });
 
   it('extracts a product term or explicit identifier from live stock questions', () => {
@@ -92,6 +97,8 @@ describe('AdminAssistantChatService foundations', () => {
     expect(extractCatalogLookupQuery('How about plu DAV001')).toBe('DAV001');
     expect(extractCatalogLookupQuery('DLV1006 How many stores in stock')).toBe('DLV1006');
     expect(extractCatalogLookupQuery('How many locations have barcode 5012345678901?')).toBe('5012345678901');
+    expect(extractCatalogLookupQuery('How many locations have stock (unsnooze) of Bananas?')).toBe('Bananas');
+    expect(extractCatalogLookupQuery('Can you list all locations with bananas?')).toBe('bananas');
     expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
   });
 
