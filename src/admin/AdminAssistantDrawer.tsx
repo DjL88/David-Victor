@@ -7,6 +7,7 @@ import {
   Wrench,
   Paperclip,
   FileText,
+  Download,
   X,
 } from 'lucide-react';
 import { useAdminWorkspace } from './AdminWorkspaceContext';
@@ -305,6 +306,79 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
     await sendMessage(failedRequest.message, failedRequest.history, false, failedRequest.attachments);
   };
 
+  const downloadTranscript = () => {
+    if (messages.length === 0) return;
+
+    const exportedAt = new Date();
+    const lines: string[] = [
+      '# Admin Assistant Transcript',
+      '',
+      `- Brand: ${workspace.tenantId}`,
+      `- Area: ${sectionLabel}`,
+      `- Exported: ${exportedAt.toLocaleString('en-GB')}`,
+      `- Admin role: ${workspace.actor.role}`,
+    ];
+
+    if (workspace.scope.locationId) {
+      lines.push(`- Location: ${workspace.scope.locationId}`);
+    }
+
+    lines.push('', '---', '');
+
+    messages.forEach((message, index) => {
+      const speaker = message.role === 'user' ? 'You' : 'Admin Assistant';
+      lines.push(`## ${speaker}`, '', message.content || '');
+
+      if (message.attachments?.length) {
+        lines.push('', 'Attachments:');
+        for (const attachment of message.attachments) {
+          lines.push(`- ${attachment.name}${attachment.truncated ? ' (preview was truncated)' : ''}`);
+        }
+      }
+
+      if (message.role === 'assistant' && message.degraded) {
+        lines.push('', '_Guided mode was active for this reply._');
+      }
+
+      if (index < messages.length - 1) {
+        lines.push('', '---', '');
+      }
+    });
+
+    if (diagnosticResult?.result) {
+      lines.push(
+        '',
+        '---',
+        '',
+        '## Latest read-only diagnostic',
+        '',
+        '```json',
+        JSON.stringify(diagnosticResult.result, null, 2),
+        '```'
+      );
+    }
+
+    lines.push(
+      '',
+      '---',
+      '',
+      '_Exported from the Square Shaped Admin Assistant. Attached file contents are not embedded in this transcript; only their filenames are listed._'
+    );
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const safeTenant = workspace.tenantId.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '');
+    const safeSection = (workspace.section || 'admin').replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '');
+    const date = exportedAt.toISOString().slice(0, 10);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `admin-assistant-${safeTenant || 'tenant'}-${safeSection || 'admin'}-${date}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const runPageDiagnostic = async () => {
     if (!diagnosticAction || diagnosticRunning) return;
     setError('');
@@ -340,14 +414,26 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-2 rounded-lg hover:bg-gray-100"
-          aria-label="Close assistant"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={downloadTranscript}
+            disabled={messages.length === 0}
+            className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Download transcript"
+            title="Download conversation as Markdown"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-100"
+            aria-label="Close assistant"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div ref={transcriptRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 space-y-4">
