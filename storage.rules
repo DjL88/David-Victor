@@ -3,38 +3,42 @@ service firebase.storage {
   match /b/{bucket}/o {
     
     // --- RETAIL COMMERCE PLATFORM & TENANT ASSETS ---
-    // Public read for customer storefront rendering, authenticated write for admin uploads & BFF asset processing
+    // Storefront assets are publicly readable, but browser writes are forbidden.
+    // Admin uploads use the authenticated BFF / short-lived signed GCS URLs, so
+    // Firebase Storage rules do not need to grant customers or admins direct write access.
     match /tenant-assets-public/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /tenant-assets-incoming/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if false;
+    }
+    match /tenant-assets-private/{allPaths=**} {
+      allow read, write: if false;
     }
     match /tenants/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /stories/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /heroes/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /fonts/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /cms/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     match /products/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
 
     // --- AVES RADAR: ENGINE CORE ---
