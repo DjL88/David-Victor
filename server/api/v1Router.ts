@@ -321,6 +321,9 @@ v1Router.use(async (req: Request, res: Response, next) => {
       host.endsWith('.run.app') ||
       host.endsWith('.google.com') ||
       host.endsWith('.googleusercontent.com') ||
+      host.endsWith('.hosted.app') ||
+      host.endsWith('.web.app') ||
+      host.endsWith('.firebaseapp.com') ||
       host.endsWith('.ai.studio') ||
       host.includes('aistudio') ||
       host === 'localhost' ||
