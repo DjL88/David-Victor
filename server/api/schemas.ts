@@ -118,6 +118,10 @@ export const UpdateBasketCustomerSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const CustomerFavouritesSchema = z.object({
+  favouritePlus: z.array(z.string().trim().min(1).max(128)).max(500),
+});
+
 export const UpdateBasketFulfillmentSchema = z.object({
   fulfillmentType: z.enum(['delivery', 'pickup']).optional(),
   type: z.enum(['delivery', 'pickup']).optional(),
