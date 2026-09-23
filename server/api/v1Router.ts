@@ -64,6 +64,7 @@ import { AdminAssistantActionService } from '../admin/adminAssistantActionServic
 import { AdminAssistantChatService } from '../admin/adminAssistantChatService';
 import { AdminChangeSetService } from '../admin/adminChangeSetService';
 import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
+import { FirebaseAuthDomainService } from '../firebaseAuthDomainService';
 import {
   createDomainVerificationToken,
   domainVerificationRecordName,
@@ -4041,10 +4042,23 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
       .find((domain) => domain.hostname === cleanHost);
 
     if (existing && existing.tenantId !== tenantId) {
-      return res.status(409).json({
-        error: 'This hostname is already claimed by another tenant.',
-        code: 'DOMAIN_ALREADY_CLAIMED',
-      });
+      const claimAgeMs = Date.now() - Date.parse(existing.updatedAt || existing.createdAt || '');
+      const stalePendingClaim =
+        existing.status === 'pending' &&
+        !existing.ownershipVerifiedAt &&
+        Number.isFinite(claimAgeMs) &&
+        claimAgeMs > 7 * 24 * 60 * 60 * 1000;
+
+      if (!stalePendingClaim) {
+        return res.status(409).json({
+          error: 'This hostname is already claimed by another tenant.',
+          code: 'DOMAIN_ALREADY_CLAIMED',
+        });
+      }
+
+      // Unverified claims expire after seven days so abandoned/squatted claims
+      // cannot block the legitimate owner indefinitely.
+      await FirestorePlatformService.deleteDomain(existing.domainId);
     }
 
     // Custom domains never become live on creation. Generate a tenant-bound TXT
@@ -4176,7 +4190,82 @@ v1Router.post('/admin/domains/:domainId/verify', requireAdminAuth('tenantAdmin')
   }
 });
 
-// 9.4e Delete a domain mapping
+// 9.4e Activate a verified custom domain after the serving edge reports TLS ready.
+// Edge/TLS provisioning is provider-specific and must happen outside this service;
+// this endpoint is the fail-closed control-plane transition that makes the host live.
+v1Router.post('/admin/domains/:domainId/activate', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const domainId = String(req.params.domainId || '').trim();
+    const existing = (await FirestorePlatformService.listAllDomains())
+      .find((domain) => domain.domainId === domainId || domain.hostname === domainId.toLowerCase());
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Domain mapping not found.', code: 'DOMAIN_NOT_FOUND' });
+    }
+    if (existing.status !== 'verified' && existing.status !== 'active') {
+      return res.status(409).json({
+        error: 'DNS ownership must be verified before activation.',
+        code: 'DOMAIN_NOT_VERIFIED',
+      });
+    }
+
+    // Re-check ownership at activation time so an old verification cannot be
+    // promoted after the TXT record has been removed.
+    const verification = existing.verificationToken
+      ? await verifyDomainOwnershipTxt(existing.hostname, existing.verificationToken)
+      : { verified: false };
+    if (!verification.verified) {
+      return res.status(409).json({
+        error: 'DNS ownership verification is no longer present.',
+        code: 'DOMAIN_REVERIFICATION_FAILED',
+        verification,
+      });
+    }
+
+    if (req.body?.tlsReady !== true) {
+      return res.status(409).json({
+        error: 'Confirm the serving edge has provisioned HTTPS before activation.',
+        code: 'DOMAIN_TLS_NOT_READY',
+      });
+    }
+
+    // Authorize Firebase sign-in before exposing the host as active. If this
+    // fails, the domain remains verified rather than becoming half-live.
+    const authSync = await FirebaseAuthDomainService.ensureAuthorizedDomain(existing.hostname);
+    const updated = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: existing.hostname,
+      tenantId: existing.tenantId,
+      isPrimary: existing.isPrimary,
+      status: 'active',
+      verificationToken: existing.verificationToken,
+      verificationRecordName: existing.verificationRecordName,
+      verificationRecordValue: existing.verificationRecordValue,
+      ownershipVerifiedAt: existing.ownershipVerifiedAt || new Date().toISOString(),
+      tlsStatus: 'ready',
+    });
+
+    await FirestorePlatformService.addAuditLog(existing.tenantId, {
+      userId: authAdmin.uid || 'admin',
+      userName: authAdmin.name || 'Admin',
+      userRole: authAdmin.role || 'platformSuperAdmin',
+      tenantId: existing.tenantId,
+      category: 'Tenant',
+      action: 'ACTIVATE_DOMAIN',
+      details: `Activated verified HTTPS domain "${existing.hostname}"`,
+    });
+
+    res.json({ success: true, domain: updated, authSync });
+  } catch (err: any) {
+    const status = err.statusCode || err.status || 500;
+    res.status(status).json({
+      error: err.message || 'Domain activation failed.',
+      code: err.code || 'DOMAIN_ACTIVATION_FAILED',
+    });
+  }
+});
+
+// 9.4f Delete a domain mapping
 v1Router.delete('/admin/domains/:domainId', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
