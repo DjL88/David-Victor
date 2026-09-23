@@ -621,19 +621,19 @@ export class FirestoreService {
     if (!cleanHost) return null;
 
     // 1. Direct match in persistent / in-memory domain registry
-    if (inMemoryDomains[cleanHost]) {
+    if (inMemoryDomains[cleanHost]?.status === 'active') {
       return inMemoryDomains[cleanHost].tenantId;
     }
 
     // 2. www-prefixed or non-www equivalent
     if (cleanHost.startsWith('www.')) {
       const withoutWww = cleanHost.slice(4);
-      if (inMemoryDomains[withoutWww]) {
+      if (inMemoryDomains[withoutWww]?.status === 'active') {
         return inMemoryDomains[withoutWww].tenantId;
       }
     } else {
       const withWww = `www.${cleanHost}`;
-      if (inMemoryDomains[withWww]) {
+      if (inMemoryDomains[withWww]?.status === 'active') {
         return inMemoryDomains[withWww].tenantId;
       }
     }
@@ -646,16 +646,19 @@ export class FirestoreService {
         if (!snap.empty) {
           const data = snap.docs[0].data();
           if (data && data.tenantId) {
+            const status = data.status || 'pending';
             inMemoryDomains[cleanHost] = {
               domainId: snap.docs[0].id,
               hostname: cleanHost,
               tenantId: data.tenantId,
               isPrimary: data.isPrimary ?? true,
-              status: data.status || 'active',
+              status,
               createdAt: data.createdAt || new Date().toISOString(),
               updatedAt: data.updatedAt || new Date().toISOString(),
             };
-            return data.tenantId as string;
+            if (status === 'active') {
+              return data.tenantId as string;
+            }
           }
         }
       } catch (err: any) {
@@ -665,22 +668,14 @@ export class FirestoreService {
       }
     }
 
-    // 4. Check if any tenant has this as defaultDomain
-    for (const t of Object.values(inMemoryTenants)) {
-      const tDom = (t as any).defaultDomain || (t as any).domain;
-      if (tDom && tDom.toLowerCase().split(':')[0] === cleanHost) {
-        return t.tenantId;
-      }
-    }
+    // 4. Custom domains only route through an ACTIVE domain record.
+    // A tenant's branding/defaultDomain field is not proof of DNS ownership.
 
     // 5. Subdomain heuristic (e.g. brand-beta.1bwydi.ai.studio -> brand-beta)
     const hostParts = cleanHost.split('.');
     if (hostParts.length > 2) {
       const candidateSlug = hostParts[0].toLowerCase();
       if (inMemoryTenants[candidateSlug]) {
-        return candidateSlug;
-      }
-      if (candidateSlug.startsWith('brand-') || candidateSlug === 'marketlane') {
         return candidateSlug;
       }
     }
@@ -771,12 +766,13 @@ export class FirestoreService {
     savePersistedTenants(inMemoryTenants);
 
     const domainName = newTenant.domain || `${tenantId}.marketlane.app`;
+    const isPlatformSubdomain = domainName.endsWith('.marketlane.app');
     try {
       await FirestoreService.addOrUpdateDomain({
         hostname: domainName,
         tenantId,
         isPrimary: true,
-        status: 'active',
+        status: isPlatformSubdomain ? 'active' : 'pending',
       });
     } catch (dErr) {
       console.warn('[FirestoreService] Could not auto-register domain for new tenant:', dErr);
@@ -830,7 +826,6 @@ export class FirestoreService {
       });
 
       // 3. Subdomain and Domain Routing
-      const isPlatformSubdomain = domainName.endsWith('.marketlane.app');
       // Top-level domains collection
       const topDomainRef = db.collection('domains').doc(domainSlug);
       batch.set(topDomainRef, {

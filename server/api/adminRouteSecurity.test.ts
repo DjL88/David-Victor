@@ -24,6 +24,20 @@ describe('admin route security policy', () => {
     expect(unsecured, `Admin mutations missing an explicit permission policy: ${unsecured.join(', ')}`).toEqual([]);
   });
 
+  it('makes route tenant parameters authoritative over x-tenant-id', () => {
+    expect(source).toContain('resolveAdminRequestedTenant');
+    const helper = source.match(/export function resolveAdminRequestedTenant[\s\S]{0,900}/)?.[0] || '';
+    expect(helper.indexOf('req.params?.tenantId')).toBeGreaterThanOrEqual(0);
+    expect(helper.indexOf("req.path?.startsWith('/admin/tenants/')")).toBeGreaterThanOrEqual(0);
+    expect(helper.indexOf("req.headers['x-tenant-id']")).toBeGreaterThan(helper.indexOf('req.params?.tenantId'));
+  });
+
+  it('never activates a newly claimed custom domain before verification', () => {
+    const domainRoute = source.match(/v1Router\.post\('\/admin\/domains'[\s\S]{0,2400}/)?.[0] || '';
+    expect(domainRoute).toContain("status: 'pending'");
+    expect(domainRoute).toContain('DOMAIN_ALREADY_CLAIMED');
+  });
+
   it('protects the direct binary upload fallback', () => {
     const directUpload = source.match(
       /v1Router\.put\('\/admin\/assets\/direct-upload\/:assetId'([\s\S]{0,260})/

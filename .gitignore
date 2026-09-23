@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local runtime persistence / diagnostics (may contain tenant or customer data)
+.data/
