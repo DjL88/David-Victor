@@ -233,6 +233,10 @@ export class HttpAdminClient implements AdminClient {
     secondaryColour?: string;
     fontFamily?: string;
     headingFontFamily?: string;
+    currency?: string;
+    currencySymbol?: string;
+    country?: string;
+    domain?: string;
     adminEmail?: string;
     adminName?: string;
   } | Partial<TenantConfig>): Promise<TenantConfig> {
