@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AdminUser, TenantConfig } from '../commerce/models';
 import { defaultAdminClient } from '../commerce/HttpAdminClient';
 import { ALL_MOCK_ADMIN_USERS } from '../commerce/mockData';
@@ -264,8 +264,44 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     setIsMobileNavOpen(false);
   };
 
+  const handleAssistantNavigate = useCallback((tab: AdminTab, target?: string) => {
+    setActiveTab(tab);
+    setIsMobileNavOpen(false);
+    setIsAssistantOpen(false);
+
+    // Wait for the destination screen to mount, then bring the requested control
+    // into view and briefly highlight it so the assistant can visually guide the user.
+    window.setTimeout(() => {
+      const selector = target ? `[data-admin-ai-target="${target}"]` : null;
+      const element = selector ? document.querySelector<HTMLElement>(selector) : null;
+      const destination = element || adminMainRef.current;
+
+      destination?.scrollIntoView?.({ behavior: 'smooth', block: element ? 'center' : 'start' });
+
+      if (element) {
+        element.classList.remove('admin-ai-highlight');
+        void element.offsetWidth;
+        element.classList.add('admin-ai-highlight');
+
+        const focusable = (
+          element.matches('input, select, textarea, button, [tabindex]')
+            ? element
+            : element.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]')
+        );
+        focusable?.focus({ preventScroll: true });
+
+        window.setTimeout(() => element.classList.remove('admin-ai-highlight'), 3600);
+      }
+    }, 180);
+  }, []);
+
   return (
-    <AdminWorkspaceProvider tenantId={currentTenantId} section={activeTab} actor={currentUser}>
+    <AdminWorkspaceProvider
+      tenantId={currentTenantId}
+      section={activeTab}
+      actor={currentUser}
+      onNavigate={handleAssistantNavigate}
+    >
     <div className="h-[100dvh] min-h-[100dvh] bg-gray-50 flex text-gray-900 font-sans overflow-hidden">
       {/* MOBILE NAV TRIGGER ONLY — desktop Admin is side-navigation only. */}
       <button
