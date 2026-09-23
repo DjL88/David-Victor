@@ -4,6 +4,7 @@ import {
   isoWeekKey,
   normalizeOrderCodePrefix,
   OrderReferenceService,
+  toDisplayOrderReference,
 } from '../../server/orderReferenceService';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
 
@@ -49,6 +50,7 @@ describe('compact order references', () => {
     expect(retry).toBe(first);
     expect(second).toBe('LT26390002');
     expect(first.length).toBe(10);
+    expect(toDisplayOrderReference(first)).toBe('LT390001');
   });
 
   it('honours a configured 2-4 character prefix', async () => {
