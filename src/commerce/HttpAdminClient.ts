@@ -291,6 +291,29 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async updateIntegrationCredentials(
+    tenantId: string,
+    credentials: {
+      credentialMode: 'platform' | 'dedicated';
+      clientId?: string;
+      clientSecret?: string;
+      webhookSecret?: string;
+      environment?: 'staging' | 'production';
+    }
+  ): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/credentials`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(credentials),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to update Deliverect credentials: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
   // ==========================================
   // ASSET SERVICE (LOGOS, FONTS, HEROES, STORIES)
   // ==========================================
