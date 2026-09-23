@@ -30,6 +30,7 @@ import {
   type DeliverectOperationalWebhookType,
 } from '../deliverect/DeliverectOperationalWebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
+import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2765,6 +2766,74 @@ v1Router.post(
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'menu_update')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/prep_time',
+    '/webhooks/deliverect/:identifier/channel/prep-time',
+    '/webhooks/deliverect/channel/prep_time',
+    '/webhooks/deliverect/channel/prep-time',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'prep_time')
+);
+
+async function handleDeliverectChannelProvisioning(
+  req: Request,
+  res: Response,
+  type: ChannelProvisioningEventType
+): Promise<void> {
+  try {
+    const candidateTenantId = await resolveDeliverectWebhookTenant(req);
+    const rawBody =
+      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const signatureHeader =
+      (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+      (req.headers['x-deliverect-signature'] as string) ||
+      (req.headers['x-signature'] as string) ||
+      (req.headers['x-deliverect-hmac-sha256'] as string);
+
+    const { tenantId } = await WebhookService.resolveTenantForWebhook(
+      rawBody,
+      signatureHeader,
+      candidateTenantId
+    );
+
+    const result = await ChannelProvisioningService.process(
+      tenantId,
+      type,
+      req.body
+    );
+
+    res.status(result.quarantined ? 202 : 200).json(result);
+  } catch (err: any) {
+    const status = err.status || err.statusCode || 500;
+    const code = err.code || 'CHANNEL_PROVISIONING_ERROR';
+    console.error(
+      `[Deliverect Channel Provisioning Error] (${status} ${code}):`,
+      err.message
+    );
+    res.status(status).json({ error: err.message, code });
+  }
+}
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/provision',
+    '/webhooks/deliverect/channel/provision',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectChannelProvisioning(req, res, 'STORE_PROVISION')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/register',
+    '/webhooks/deliverect/channel/register',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectChannelProvisioning(req, res, 'CHANNEL_REGISTRATION')
 );
 
 /**
