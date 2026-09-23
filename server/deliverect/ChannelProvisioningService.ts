@@ -50,8 +50,9 @@ export class ChannelProvisioningService {
     ).trim() || undefined;
     const accountId = String(
       payload?.accountId ||
-      payload?.account ||
       payload?.account?._id ||
+      payload?.account?.id ||
+      (typeof payload?.account === 'string' ? payload.account : '') ||
       ''
     ).trim() || undefined;
     const status = String(
