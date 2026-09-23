@@ -243,7 +243,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                   name="substitution-preference"
                   value="BEST_MATCH"
                   checked={preference === 'BEST_MATCH'}
-                  on{t('basket.change')}={() => setPreference('BEST_MATCH')}
+                  onChange={() => setPreference('BEST_MATCH')}
                   className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
                 />
               </div>
@@ -279,7 +279,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                     name="substitution-preference"
                     value="CUSTOMER_SELECTED"
                     checked={preference === 'CUSTOMER_SELECTED'}
-                    on{t('basket.change')}={() => setPreference('CUSTOMER_SELECTED')}
+                    onChange={() => setPreference('CUSTOMER_SELECTED')}
                     className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
                   />
                 </div>
@@ -390,7 +390,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                         <input
                           type="text"
                           value={searchFilter}
-                          on{t('basket.change')}={(e) => setSearchFilter(e.target.value)}
+                          onChange={(e) => setSearchFilter(e.target.value)}
                           placeholder={t('basket.searchAlternatives')}
                           className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-emerald-600"
                         />
@@ -473,7 +473,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                   name="substitution-preference"
                   value="REMOVE_IF_UNAVAILABLE"
                   checked={preference === 'REMOVE_IF_UNAVAILABLE'}
-                  on{t('basket.change')}={() => setPreference('REMOVE_IF_UNAVAILABLE')}
+                  onChange={() => setPreference('REMOVE_IF_UNAVAILABLE')}
                   className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
                 />
               </div>
@@ -506,7 +506,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                   name="substitution-preference"
                   value="CANCEL_ORDER_IF_UNAVAILABLE"
                   checked={preference === 'CANCEL_ORDER_IF_UNAVAILABLE'}
-                  on{t('basket.change')}={() => setPreference('CANCEL_ORDER_IF_UNAVAILABLE')}
+                  onChange={() => setPreference('CANCEL_ORDER_IF_UNAVAILABLE')}
                   className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
                 />
               </div>
