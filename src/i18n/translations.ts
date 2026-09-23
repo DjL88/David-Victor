@@ -209,6 +209,7 @@ export interface LocaleTranslations {
   'search.noResults': string;
   'search.noResultsHint': string;
   'aisles.all': string;
+  'aisles.allCategoryPrefix': string;
   'aisles.browsingStore': string;
   'aisles.selectShelf': string;
   'aisles.searchPlaceholder': string;
@@ -436,6 +437,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'search.noResults': 'No matching products found',
     'search.noResultsHint': 'Try searching for another product, brand or category.',
     'aisles.all': 'All Aisles',
+    'aisles.allCategoryPrefix': 'All',
     'aisles.browsingStore': 'Browsing',
     'aisles.selectShelf': 'Select an aisle or product shelf',
     'aisles.searchPlaceholder': 'Search aisles, dairy, bakery, produce…',
@@ -655,6 +657,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'search.noResults': 'No se encontraron productos',
     'search.noResultsHint': 'Prueba con otro producto, marca o categoría.',
     'aisles.all': 'Todos los pasillos',
+    'aisles.allCategoryPrefix': 'Todo',
     'aisles.browsingStore': 'Explorando',
     'aisles.selectShelf': 'Selecciona un pasillo o sección',
     'aisles.searchPlaceholder': 'Buscar pasillos, lácteos, panadería, fruta…',
@@ -874,6 +877,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'search.noResults': 'Aucun produit correspondant',
     'search.noResultsHint': 'Essayez un autre produit, une marque ou une catégorie.',
     'aisles.all': 'Tous les rayons',
+    'aisles.allCategoryPrefix': 'Tout',
     'aisles.browsingStore': 'Navigation dans',
     'aisles.selectShelf': 'Sélectionnez un rayon ou une catégorie',
     'aisles.searchPlaceholder': 'Rechercher rayons, lait, boulangerie, fruits…',
@@ -1093,6 +1097,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'search.noResults': 'Keine passenden Produkte gefunden',
     'search.noResultsHint': 'Suche nach einem anderen Produkt, einer Marke oder Kategorie.',
     'aisles.all': 'Alle Abteilungen',
+    'aisles.allCategoryPrefix': 'Alle',
     'aisles.browsingStore': 'Durchsuchen',
     'aisles.selectShelf': 'Abteilung oder Produktbereich auswählen',
     'aisles.searchPlaceholder': 'Abteilungen, Milch, Backwaren, Obst suchen…',
