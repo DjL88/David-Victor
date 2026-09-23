@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAdminAssistantSystemInstruction,
+  buildDegradedAssistantReply,
   getAdminAssistantSuggestions,
   normaliseAssistantReply,
   normaliseChatHistory,
@@ -61,5 +62,14 @@ describe('AdminAssistantChatService foundations', () => {
       'What details do you need?',
     ]);
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
+  });
+
+  it('keeps guided fallback useful without claiming live catalogue data', () => {
+    expect(buildDegradedAssistantReply('catalog', 'Are bananas in stock?')).toContain(
+      'can’t confirm live stock'
+    );
+    expect(buildDegradedAssistantReply('hero_banners', 'What can I customise?')).toContain(
+      'image, headline'
+    );
   });
 });
