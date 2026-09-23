@@ -3903,17 +3903,28 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
     const verificationRecordName = domainVerificationRecordName(cleanHost);
     const verificationRecordValue = domainVerificationRecordValue(verificationToken);
 
-    const created = await FirestorePlatformService.addOrUpdateDomain({
-      hostname: cleanHost,
-      tenantId,
-      isPrimary: Boolean(isPrimary),
-      status: existing?.status === 'active' ? 'active' : existing?.status === 'verified' ? 'verified' : 'pending',
-      verificationToken,
-      verificationRecordName,
-      verificationRecordValue,
-      tlsStatus: existing?.tlsStatus || 'pending',
-      ownershipVerifiedAt: existing?.ownershipVerifiedAt,
-    });
+    const created = existing
+      ? await FirestorePlatformService.addOrUpdateDomain({
+          hostname: cleanHost,
+          tenantId,
+          isPrimary: Boolean(isPrimary),
+          status: existing.status || 'pending',
+          verificationToken,
+          verificationRecordName,
+          verificationRecordValue,
+          tlsStatus: existing.tlsStatus || 'pending',
+          ownershipVerifiedAt: existing.ownershipVerifiedAt,
+        })
+      : await FirestorePlatformService.addOrUpdateDomain({
+          hostname: cleanHost,
+          tenantId,
+          isPrimary: Boolean(isPrimary),
+          status: 'pending',
+          verificationToken,
+          verificationRecordName,
+          verificationRecordValue,
+          tlsStatus: 'pending',
+        });
 
     await FirestorePlatformService.addAuditLog(tenantId, {
       userId: authAdmin.uid || 'admin',
