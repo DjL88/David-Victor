@@ -191,6 +191,45 @@ export interface LocaleTranslations {
   'order.reauthorizeRequired': string;
   'order.approveReauth': string;
 
+  // Product detail
+  'product.noImage': string;
+  'product.caloriesEnergy': string;
+  'product.fat': string;
+  'product.carbs': string;
+  'product.protein': string;
+  'product.sugars': string;
+  'product.salt': string;
+  'product.netQuantity': string;
+  'product.storageInstructions': string;
+  'product.manufacturerOrigin': string;
+  'product.manufacturer': string;
+  'product.countryOrigin': string;
+  'product.alcoholDetails': string;
+  'product.legalNotice': string;
+  'product.age18Notice': string;
+  'product.depositScheme': string;
+  'product.depositNotice': string;
+  'product.total': string;
+  'product.chooseStore': string;
+  'product.addToBasket': string;
+
+  // Orders list
+  'orders.title': string;
+  'orders.refresh': string;
+  'orders.recentActivity': string;
+  'orders.noActive': string;
+  'orders.emptyLive': string;
+  'orders.actionRequired': string;
+  'orders.item': string;
+  'orders.items': string;
+  'orders.withSubstitutions': string;
+  'orders.payment': string;
+  'orders.pending': string;
+  'orders.trackOrder': string;
+  'order.statusSubmitted': string;
+  'order.statusPickedPacked': string;
+  'order.statusReadyCollection': string;
+
   // Errors & Fallbacks
   'error.general': string;
   'error.stockDepleted': string;
@@ -416,6 +455,42 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'Picked basket exceeded initial authorization ceiling.',
     'order.approveReauth': 'Approve Updated Total',
 
+    'product.noImage': 'No image available',
+    'product.caloriesEnergy': 'Calories / Energy',
+    'product.fat': 'Fat',
+    'product.carbs': 'Carbs',
+    'product.protein': 'Protein',
+    'product.sugars': 'Sugars',
+    'product.salt': 'Salt',
+    'product.netQuantity': 'Net Quantity',
+    'product.storageInstructions': 'Storage Instructions',
+    'product.manufacturerOrigin': 'Manufacturer & Origin Information',
+    'product.manufacturer': 'FBO / Manufacturer',
+    'product.countryOrigin': 'Country of Origin',
+    'product.alcoholDetails': 'Alcohol & Licensing Details',
+    'product.legalNotice': 'Legal Notice',
+    'product.age18Notice': 'Age 18+ only. Courier ID verification may be required.',
+    'product.depositScheme': 'Deposit Return Scheme (DRS)',
+    'product.depositNotice': 'Price includes a refundable container deposit.',
+    'product.total': 'Total',
+    'product.chooseStore': 'Choose Store to Order',
+    'product.addToBasket': 'Add to Basket',
+    'orders.title': 'Your Orders & Deliveries',
+    'orders.refresh': 'Refresh',
+    'orders.recentActivity': 'Recent Activity',
+    'orders.noActive': 'No active orders yet',
+    'orders.emptyLive': 'Your current and previous orders will appear here.',
+    'orders.actionRequired': 'Action Required',
+    'orders.item': 'item',
+    'orders.items': 'items',
+    'orders.withSubstitutions': 'with substitutions',
+    'orders.payment': 'Payment',
+    'orders.pending': 'Pending',
+    'orders.trackOrder': 'Track Order',
+    'order.statusSubmitted': 'Order Submitted',
+    'order.statusPickedPacked': 'Items Picked & Packed',
+    'order.statusReadyCollection': 'Ready for Collection',
+
     'error.general': 'An unexpected error occurred. Please try again.',
     'error.stockDepleted': 'Selected product is out of stock in this store.',
     'error.noServiceableStore': 'No serviceable stores found for your current delivery address.',
@@ -635,6 +710,42 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.itemRemoved': 'Agotado',
     'order.reauthorizeRequired': 'El total preparado superó el límite inicial autorizado.',
     'order.approveReauth': 'Aprobar Total Actualizado',
+
+    'product.noImage': 'Imagen no disponible',
+    'product.caloriesEnergy': 'Calorías / Energía',
+    'product.fat': 'Grasas',
+    'product.carbs': 'Carbohidratos',
+    'product.protein': 'Proteínas',
+    'product.sugars': 'Azúcares',
+    'product.salt': 'Sal',
+    'product.netQuantity': 'Cantidad neta',
+    'product.storageInstructions': 'Conservación',
+    'product.manufacturerOrigin': 'Fabricante y origen',
+    'product.manufacturer': 'Operador / Fabricante',
+    'product.countryOrigin': 'País de origen',
+    'product.alcoholDetails': 'Alcohol y licencia',
+    'product.legalNotice': 'Aviso legal',
+    'product.age18Notice': 'Solo para mayores de 18 años. Puede requerirse verificación de identidad.',
+    'product.depositScheme': 'Sistema de depósito y devolución (DRS)',
+    'product.depositNotice': 'El precio incluye un depósito reembolsable por el envase.',
+    'product.total': 'Total',
+    'product.chooseStore': 'Elegir tienda para pedir',
+    'product.addToBasket': 'Añadir a la cesta',
+    'orders.title': 'Tus pedidos y entregas',
+    'orders.refresh': 'Actualizar',
+    'orders.recentActivity': 'Actividad reciente',
+    'orders.noActive': 'Todavía no hay pedidos activos',
+    'orders.emptyLive': 'Tus pedidos actuales y anteriores aparecerán aquí.',
+    'orders.actionRequired': 'Acción necesaria',
+    'orders.item': 'artículo',
+    'orders.items': 'artículos',
+    'orders.withSubstitutions': 'con sustituciones',
+    'orders.payment': 'Pago',
+    'orders.pending': 'Pendiente',
+    'orders.trackOrder': 'Seguir pedido',
+    'order.statusSubmitted': 'Pedido enviado',
+    'order.statusPickedPacked': 'Artículos preparados',
+    'order.statusReadyCollection': 'Listo para recoger',
 
     'error.general': 'Ocurrió un error inesperado. Inténtalo de nuevo.',
     'error.stockDepleted': 'El producto seleccionado está agotado en esta tienda.',
@@ -856,6 +967,42 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'Le montant final dépasse le plafond pré-autorisé.',
     'order.approveReauth': 'Approuver le nouveau total',
 
+    'product.noImage': 'Image indisponible',
+    'product.caloriesEnergy': 'Calories / Énergie',
+    'product.fat': 'Matières grasses',
+    'product.carbs': 'Glucides',
+    'product.protein': 'Protéines',
+    'product.sugars': 'Sucres',
+    'product.salt': 'Sel',
+    'product.netQuantity': 'Quantité nette',
+    'product.storageInstructions': 'Conseils de conservation',
+    'product.manufacturerOrigin': 'Fabricant et origine',
+    'product.manufacturer': 'Opérateur / Fabricant',
+    'product.countryOrigin': 'Pays d’origine',
+    'product.alcoholDetails': 'Alcool et licence',
+    'product.legalNotice': 'Mention légale',
+    'product.age18Notice': 'Réservé aux 18 ans et plus. Une vérification d’identité peut être demandée.',
+    'product.depositScheme': 'Système de consigne (DRS)',
+    'product.depositNotice': 'Le prix comprend une consigne remboursable pour le contenant.',
+    'product.total': 'Total',
+    'product.chooseStore': 'Choisir un magasin pour commander',
+    'product.addToBasket': 'Ajouter au panier',
+    'orders.title': 'Vos commandes et livraisons',
+    'orders.refresh': 'Actualiser',
+    'orders.recentActivity': 'Activité récente',
+    'orders.noActive': 'Aucune commande active',
+    'orders.emptyLive': 'Vos commandes actuelles et passées apparaîtront ici.',
+    'orders.actionRequired': 'Action requise',
+    'orders.item': 'article',
+    'orders.items': 'articles',
+    'orders.withSubstitutions': 'avec substitutions',
+    'orders.payment': 'Paiement',
+    'orders.pending': 'En attente',
+    'orders.trackOrder': 'Suivre la commande',
+    'order.statusSubmitted': 'Commande envoyée',
+    'order.statusPickedPacked': 'Articles préparés',
+    'order.statusReadyCollection': 'Prêt pour le retrait',
+
     'error.general': 'Une erreur inattendue est survenue.',
     'error.stockDepleted': 'Le produit sélectionné est en rupture de stock.',
     'error.noServiceableStore': 'Aucun magasin disponible pour cette adresse.',
@@ -1075,6 +1222,42 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.itemRemoved': 'Ausverkauft',
     'order.reauthorizeRequired': 'Endbetrag übersteigt vorautorisiertes Limit.',
     'order.approveReauth': 'Neuen Gesamtbetrag bestätigen',
+
+    'product.noImage': 'Kein Bild verfügbar',
+    'product.caloriesEnergy': 'Kalorien / Energie',
+    'product.fat': 'Fett',
+    'product.carbs': 'Kohlenhydrate',
+    'product.protein': 'Eiweiß',
+    'product.sugars': 'Zucker',
+    'product.salt': 'Salz',
+    'product.netQuantity': 'Nettomenge',
+    'product.storageInstructions': 'Lagerhinweise',
+    'product.manufacturerOrigin': 'Hersteller & Herkunft',
+    'product.manufacturer': 'Lebensmittelunternehmer / Hersteller',
+    'product.countryOrigin': 'Herkunftsland',
+    'product.alcoholDetails': 'Alkohol & Lizenzhinweise',
+    'product.legalNotice': 'Rechtlicher Hinweis',
+    'product.age18Notice': 'Nur ab 18 Jahren. Eine Ausweiskontrolle kann erforderlich sein.',
+    'product.depositScheme': 'Pfand- und Rückgabesystem (DRS)',
+    'product.depositNotice': 'Der Preis enthält ein erstattungsfähiges Behälterpfand.',
+    'product.total': 'Gesamt',
+    'product.chooseStore': 'Filiale zum Bestellen wählen',
+    'product.addToBasket': 'In den Warenkorb',
+    'orders.title': 'Deine Bestellungen & Lieferungen',
+    'orders.refresh': 'Aktualisieren',
+    'orders.recentActivity': 'Letzte Aktivitäten',
+    'orders.noActive': 'Noch keine aktiven Bestellungen',
+    'orders.emptyLive': 'Deine aktuellen und früheren Bestellungen erscheinen hier.',
+    'orders.actionRequired': 'Aktion erforderlich',
+    'orders.item': 'Artikel',
+    'orders.items': 'Artikel',
+    'orders.withSubstitutions': 'mit Ersatzartikeln',
+    'orders.payment': 'Zahlung',
+    'orders.pending': 'Ausstehend',
+    'orders.trackOrder': 'Bestellung verfolgen',
+    'order.statusSubmitted': 'Bestellung gesendet',
+    'order.statusPickedPacked': 'Artikel kommissioniert & gepackt',
+    'order.statusReadyCollection': 'Bereit zur Abholung',
 
     'error.general': 'Ein unerwarteter Fehler ist aufgetreten.',
     'error.stockDepleted': 'Artikel in dieser Filiale ausverkauft.',
