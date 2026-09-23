@@ -290,7 +290,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
               <p className="text-gray-500 text-[11px]">
                 {order.scheduledTime?.type === 'SCHEDULED' && order.scheduledTime.slot
                   ? `${t('tracking.scheduled')}: ${order.scheduledTime.slot.dayLabel} • ${order.scheduledTime.slot.formatted}`
-                  : `${t('tracking.asapDelivery')}${order.delivery?.courier?.eta ? ` (${t('checkout.eta')}: ${order.delivery.courier.eta})` : ''}`}
+                  : `${t('tracking.asapDelivery')}${order.delivery?.courier?.eta ? ` (${t('tracking.eta')}: ${order.delivery.courier.eta})` : ''}`}
               </p>
             </div>
           </div>
