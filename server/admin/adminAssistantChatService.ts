@@ -215,7 +215,10 @@ export function extractCatalogLookupQuery(message: string): string | null {
   const identifierToken = raw
     .replace(/[?.,!()[\]{}]/g, ' ')
     .split(/\s+/)
-    .find((token) => /[a-z]/i.test(token) && /\d/.test(token) && token.length >= 4);
+    .find((token) =>
+      (/^[a-z][a-z0-9._/#-]*\d[a-z0-9._/#-]*$/i.test(token) && token.length >= 4) ||
+      /^\d{8,}$/.test(token)
+    );
   if (identifierToken) return identifierToken;
 
   const cleaned = raw
@@ -428,7 +431,7 @@ export function buildAdminAssistantSystemInstruction(args: {
     JSON.stringify(args.readContext || null),
     '',
     'Attachments supplied with the current turn:',
-    JSON.stringify((args as any).attachments || []),
+    JSON.stringify(args.attachments || []),
     '',
     'Actions currently exposed to this role:',
     JSON.stringify(actions),
