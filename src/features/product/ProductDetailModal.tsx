@@ -4,6 +4,7 @@ import { evaluateProductAvailability } from '../../rules/availabilityRules';
 import { QuantitySelector } from '../../components/QuantitySelector';
 import { AgeGateModal } from '../compliance/AgeGateModal';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { resolveAllergenTags, isKnownAllergen, isDietaryTag, normalizeDietaryTag, getCanonicalDietaryLabel } from '../../domain/allergens';
@@ -68,6 +69,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onPromptSelectStore,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { t } = useI18n();
   const [showAgeGate, setShowAgeGate] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [fetchedSummary, setFetchedSummary] = useState<ProductAvailabilitySummary | null>(null);
@@ -239,7 +241,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <div className="text-gray-400 flex flex-col items-center p-4 text-center">
                   <Package className="w-12 h-12 stroke-1 mb-2 text-gray-400" />
                   <span className="text-xs font-semibold text-gray-600 line-clamp-1">{product.name}</span>
-                  <span className="text-[11px] text-gray-400 mt-0.5">No image available</span>
+                  <span className="text-[11px] text-gray-400 mt-0.5">{t('product.noImage')}</span>
                 </div>
               )}
 
@@ -276,7 +278,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     if ((product as any).basePrice != null) {
                       return formatCurrency((product as any).basePrice, currencySymbol);
                     }
-                    return 'Price unavailable';
+                    return t('product.priceUnavailable');
                   }
                   const minPrice = activeSummary?.minimumPrice;
                   const maxPrice = activeSummary?.maximumPrice;
@@ -300,7 +302,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   if ((product as any).basePrice != null) {
                     return formatCurrency((product as any).basePrice, currencySymbol);
                   }
-                  return 'Price unavailable';
+                  return t('product.priceUnavailable');
                 })()}
               </span>
 
@@ -333,12 +335,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         ? activeSummary.eligibleStoreCount
                         : avail;
                       if (avail === 0) {
-                        return 'Currently out of stock nearby. View store availability.';
+                        return t('product.outOfStockNearby');
                       }
                       if (avail >= total && total > 0) {
-                        return `Available at all ${avail} shops. View prices per store.`;
+                        return t('product.availableAllStores').replace('{count}', String(avail));
                       }
-                      return `Available in ${avail} of ${total} shops. View prices per store.`;
+                      return t('product.availableSomeStores').replace('{available}', String(avail)).replace('{total}', String(total));
                     })()}
                   </span>
                 </div>
@@ -393,7 +395,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-5 p-3.5 rounded-2xl bg-amber-50/70 border border-amber-100">
                 <h2 className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                  Allergen Information
+                  {t('product.allergenInformation')}
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
                   {resolveAllergenTags(allergenLabels).map((a) => {
@@ -427,7 +429,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-5 p-3.5 rounded-2xl bg-gray-50 border border-gray-100">
                 <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <Leaf className="w-3.5 h-3.5 text-emerald-600" />
-                  Ingredients
+                  {t('product.ingredients')}
                 </h2>
                 <p className="text-xs text-gray-700 leading-relaxed">
                   {product.supplementalInfo!.ingredients}
@@ -439,12 +441,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {hasNutrition && (
               <div className="mb-5">
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Nutritional Values (per {product.nutritionalInfo!.portionSize || '100g/ml'})
+                  {t('product.nutritionalValues')} (per {product.nutritionalInfo!.portionSize || '100g/ml'})
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   {hasCalories && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Calories / Energy</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.caloriesEnergy')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.energyKcal} kcal
                       </span>
@@ -452,7 +454,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                   {product.nutritionalInfo!.fat !== undefined && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Fat</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.fat')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.fat}g
                       </span>
@@ -460,7 +462,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                   {product.nutritionalInfo!.carbohydrates !== undefined && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Carbs</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.carbs')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.carbohydrates}g
                       </span>
@@ -468,7 +470,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                   {product.nutritionalInfo!.protein !== undefined && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Protein</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.protein')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.protein}g
                       </span>
@@ -476,7 +478,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                   {product.nutritionalInfo!.sugars !== undefined && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Sugars</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.sugars')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.sugars}g
                       </span>
@@ -484,7 +486,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                   {product.nutritionalInfo!.salt !== undefined && (
                     <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                      <span className="text-gray-400 block text-[10px]">Salt</span>
+                      <span className="text-gray-400 block text-[10px]">{t('product.salt')}</span>
                       <span className="font-bold text-gray-900">
                         {product.nutritionalInfo!.salt}g
                       </span>
@@ -499,7 +501,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-4 text-xs text-gray-700 flex items-center gap-2 p-2.5 rounded-xl bg-gray-50 border border-gray-100">
                 <Package className="w-4 h-4 text-gray-400 shrink-0" />
                 <span>
-                  <strong>Net Quantity:</strong> {product.supplementalInfo!.netQuantity}
+                  <strong>{t('product.netQuantity')}:</strong> {product.supplementalInfo!.netQuantity}
                 </span>
               </div>
             )}
@@ -509,7 +511,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-4 text-xs text-gray-700 flex items-start gap-2 p-2.5 rounded-xl bg-gray-50 border border-gray-100">
                 <Boxes className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Storage Instructions:</strong>{' '}
+                  <strong>{t('product.storageInstructions')}:</strong>{' '}
                   {product.supplementalInfo!.storageInstructions}
                 </span>
               </div>
@@ -520,17 +522,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-4 text-xs text-gray-700 space-y-1 p-2.5 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="flex items-center gap-2 text-gray-500 font-semibold mb-1">
                   <Factory className="w-4 h-4" />
-                  <span>Manufacturer & Origin Information</span>
+                  <span>{t('product.manufacturerOrigin')}</span>
                 </div>
                 {product.supplementalInfo?.manufacturer && (
                   <p>
-                    <strong>FBO / Manufacturer:</strong>{' '}
+                    <strong>{t('product.manufacturer')}:</strong>{' '}
                     {product.supplementalInfo.manufacturer}
                   </p>
                 )}
                 {product.supplementalInfo?.origin && (
                   <p>
-                    <strong>Country of Origin:</strong> {product.supplementalInfo.origin}
+                    <strong>{t('product.countryOrigin')}:</strong> {product.supplementalInfo.origin}
                   </p>
                 )}
               </div>
@@ -541,7 +543,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-5 p-3.5 rounded-2xl bg-purple-50/80 border border-purple-100 text-xs text-purple-950">
                 <div className="flex items-center gap-2 font-bold mb-1">
                   <Wine className="w-4 h-4 text-purple-700" />
-                  <span>Alcohol & Licensing Details</span>
+                  <span>{t('product.alcoholDetails')}</span>
                 </div>
                 <div className="space-y-1 text-purple-900">
                   {product.beverageInfo?.alcoholByVolume !== undefined && (
@@ -550,8 +552,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     </p>
                   )}
                   <p>
-                    <strong>Legal Notice:</strong> Age 18+ only. Courier ID verification (Challenge
-                    25) required upon delivery.
+                    <strong>{t('product.legalNotice')}:</strong> {t('product.age18Notice')}
                   </p>
                 </div>
               </div>
@@ -562,12 +563,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="mb-5 p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-100 text-xs text-emerald-950">
                 <div className="flex items-center gap-2 font-bold mb-1">
                   <Layers className="w-4 h-4 text-emerald-700" />
-                  <span>Deposit Return Scheme (DRS)</span>
+                  <span>{t('product.depositScheme')}</span>
                 </div>
                 <p className="text-emerald-900 leading-relaxed">
-                  Price includes a refundable <strong>£{(depositAmount || 0).toFixed(2)}</strong> container
-                  deposit. Return this bottle or can to any participating store reverse-vending point
-                  for a voucher or cash refund.
+                  <strong>{currencySymbol}{(depositAmount || 0).toFixed(2)}</strong> {t('product.depositNotice')}
                 </p>
               </div>
             )}
@@ -603,7 +602,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Fixed Bottom Action Bar */}
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-md border-t border-gray-100 flex items-center justify-between gap-3 shadow-lg">
             <div>
-              <span className="text-[11px] text-gray-400 block">Total</span>
+              <span className="text-[11px] text-gray-400 block">{t('product.total')}</span>
               <span className="text-xl font-extrabold text-gray-900 leading-[1.05]">
                 {(() => {
                   const qty = Math.max(1, basketQuantity);
@@ -644,7 +643,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   className="py-3 px-6 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-md active:scale-95 transition-transform"
                 >
                   <Store className="w-4 h-4" />
-                  <span>Choose Store to Order</span>
+                  <span>{t('product.chooseStore')}</span>
                 </button>
               ) : basketQuantity > 0 ? (
                 <QuantitySelector
@@ -663,7 +662,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   className="py-3 px-7 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-md active:scale-95 transition-transform"
                 >
                   <Plus className="w-4 h-4 stroke-[2.5]" />
-                  <span>Add to Basket</span>
+                  <span>{t('product.addToBasket')}</span>
                 </button>
               )}
             </div>
