@@ -269,6 +269,18 @@ export class AdminAssistantActionService {
         const duplicateChannelLinks = duplicateValues('channelLinkId');
         const duplicateBrandStoreIds = duplicateValues('brandStoreId');
 
+        const nameCounts = new Map<string, number>();
+        for (const store of stores) {
+          const name = String((store as any)?.name || '').trim().toLowerCase();
+          if (!name) continue;
+          nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
+        }
+        const duplicateNames = new Set(
+          Array.from(nameCounts.entries())
+            .filter(([, count]) => count > 1)
+            .map(([name]) => name)
+        );
+
         const normalized = stores.map((store: any) => {
           const issues: string[] = [];
           if (!store.channelLinkId) issues.push('Missing commerce channel link ID');
@@ -277,6 +289,7 @@ export class AdminAssistantActionService {
           if (store.channelLinkId && duplicateChannelLinks.has(String(store.channelLinkId))) issues.push('Duplicate commerce channel link ID');
           if (store.physicalLocationId && duplicatePhysicalIds.has(String(store.physicalLocationId))) issues.push('Duplicate physical location ID');
           if (store.brandStoreId && duplicateBrandStoreIds.has(String(store.brandStoreId))) issues.push('Duplicate brand/POS store ID');
+          if (store.name && duplicateNames.has(String(store.name).trim().toLowerCase())) issues.push('Duplicate location display name');
           if (store.supportsDelivery === false && store.supportsPickup === false) issues.push('Neither delivery nor pickup is enabled');
           if (String(store.status || '').toUpperCase() === 'INACTIVE') issues.push('Location status is inactive');
           if (store.snoozed === true) issues.push('Location is snoozed');
@@ -309,6 +322,14 @@ export class AdminAssistantActionService {
           duplicatePhysicalLocationIds: Array.from(duplicatePhysicalIds),
           duplicateChannelLinkIds: Array.from(duplicateChannelLinks),
           duplicateBrandStoreIds: Array.from(duplicateBrandStoreIds),
+          duplicateLocationNames: Array.from(
+            new Set(
+              stores
+                .filter((store: any) => duplicateNames.has(String(store?.name || '').trim().toLowerCase()))
+                .map((store: any) => String(store?.name || '').trim())
+                .filter(Boolean)
+            )
+          ),
           stores: normalized,
         };
         break;

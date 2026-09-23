@@ -287,6 +287,31 @@ export function resolveAdminAssistantNavigationHint(
     ...extras,
   });
 
+  if (/(what branding|what.*brand.*custom|customi[sz]e.*brand|branding options?|brand settings?)/i.test(text)) {
+    return choose('branding', 'branding-logo', 'Open Branding', {
+      steps: [
+        {
+          section: 'branding',
+          target: 'branding-logo',
+          label: 'Logo & identity',
+          instruction: 'Start with the logo/favicon and brand identity assets.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-primary-colour',
+          label: 'Colours',
+          instruction: 'Review primary, secondary, background, surface and text colours.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-typography',
+          label: 'Typography',
+          instruction: 'Choose heading/body typography or upload a licensed custom font.',
+        },
+      ],
+    });
+  }
+
   if (/(brand guidelines?|brand guide|style guide|brand profile|analyse.*brand|analyze.*brand|upload.*brand|upload.*logo.*brand)/i.test(text)) {
     return choose('branding', 'branding-brand-profile', 'Open Branding · Brand Profile', {
       steps: [
@@ -557,6 +582,25 @@ export function resolveAdminAssistantNavigationHint(
   }
 
   if (/(location|store|opening hours|delivery radius|collection)/i.test(text)) {
+    if (/opening hours/i.test(text)) {
+      return choose('stores', 'stores-opening-hours', 'Open Locations · Opening hours', {
+        steps: [
+          {
+            section: 'stores',
+            target: 'stores-opening-hours',
+            label: 'Opening hours',
+            instruction: 'Opening hours are currently read-only on this page and come from the location source. I’ll highlight where they are shown.',
+          },
+          {
+            section: 'integrations',
+            target: undefined,
+            label: 'Upstream source',
+            instruction: 'If the source hours are wrong, update them upstream. Automatic inbound opening-hours synchronisation is part of the Deliverect foundation work.',
+          },
+        ],
+      });
+    }
+
     const radius = extractRadiusKm(message);
     if (radius != null && /delivery radius/i.test(text) && /\b(all|every)\b/i.test(text)) {
       const prefill = { selectAllFiltered: true, openBatchRadius: true, batchRadius: String(radius) };
@@ -715,7 +759,13 @@ async function resolveReadContext(
 
   const directCatalogQuery = extractCatalogLookupQuery(args.message);
   const contextualCatalogQuery = resolveContextualCatalogLookupQuery(args.message, history);
-  const inheritedCatalogContext = Boolean(contextualCatalogQuery && !directCatalogQuery);
+  const storeContextIntent =
+    /\b(store|stores|location|locations|branch|branches|duplicate|duplicated|twice|same name|opening hours|radius)\b/i.test(args.message);
+  const inheritedCatalogContext = Boolean(
+    contextualCatalogQuery &&
+    !directCatalogQuery &&
+    !storeContextIntent
+  );
 
   const analyticsIntent =
     /\b(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)\b/i.test(args.message);
@@ -763,7 +813,7 @@ async function resolveReadContext(
   if (
     available.has('stores.inspect') &&
     !explicitProductIntent &&
-    /(how many|list|which|store|stores|location|locations|opening|radius|duplicate|eligible)/i.test(args.message)
+    /(how many|list|which|store|stores|location|locations|opening|radius|duplicate|duplicated|twice|same name|eligible)/i.test(args.message)
   ) {
     try {
       const execution = await AdminAssistantActionService.executeReadOnly({
@@ -816,7 +866,7 @@ async function resolveReadContext(
   return null;
 }
 
-function summariseReadContext(readContext: AssistantReadContext | null): string | null {
+function summariseReadContext(readContext: AssistantReadContext | null, message: string = ''): string | null {
   if (!readContext) return null;
 
   if (readContext.actionName === 'catalog.diagnoseVisibility') {
@@ -871,9 +921,40 @@ function summariseReadContext(readContext: AssistantReadContext | null): string 
   if (readContext.actionName === 'stores.inspect') {
     const count = Number(readContext.result?.storeCount || 0);
     const stores = Array.isArray(readContext.result?.stores) ? readContext.result.stores : [];
+    const duplicateNames = Array.isArray(readContext.result?.duplicateLocationNames)
+      ? readContext.result.duplicateLocationNames
+      : [];
+    const duplicateQuestion = /\b(why|duplicate|duplicated|twice|same name)\b/i.test(message || '');
+
+    if (duplicateQuestion && duplicateNames.length > 0) {
+      const groups = duplicateNames.map((duplicateName: string) => {
+        const matches = stores.filter(
+          (store: any) => String(store?.name || '').trim().toLowerCase() === duplicateName.trim().toLowerCase()
+        );
+        const identities = matches.map((store: any) => {
+          const parts = [
+            store.id ? `store ${store.id}` : null,
+            store.channelLinkId ? `channel ${store.channelLinkId}` : null,
+            store.physicalLocationId ? `physical ${store.physicalLocationId}` : null,
+          ].filter(Boolean);
+          return parts.join(' · ');
+        }).filter(Boolean);
+
+        const samePhysical = new Set(matches.map((store: any) => store.physicalLocationId).filter(Boolean)).size === 1;
+        const reason = samePhysical && matches.length > 1
+          ? 'They appear to point at the same physical location through more than one commerce-store record.'
+          : 'They are separate location records sharing the same display name.';
+        return `${duplicateName} appears ${matches.length} times. ${reason}${identities.length ? ` Records: ${identities.join(' | ')}.` : ''}`;
+      });
+      return groups.join(' ');
+    }
+
     const names = stores.map((store: any) => store.name || store.id).filter(Boolean);
     const detail = names.length > 0 ? ` They are: ${names.join(', ')}.` : '';
-    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.${detail}`;
+    const duplicateNote = duplicateNames.length
+      ? ` Duplicate display name${duplicateNames.length === 1 ? '' : 's'} detected: ${duplicateNames.join(', ')}.`
+      : '';
+    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.${detail}${duplicateNote}`;
   }
 
   if (readContext.actionName === 'rules.inspect') {
@@ -899,18 +980,23 @@ function buildLocalGuidedReply(
   const text = String(message || '').trim();
   const lower = text.toLowerCase();
 
-  const liveSummary = summariseReadContext(readContext);
+  const liveSummary = summariseReadContext(readContext, message);
+  const explicitlyGuided =
+    /\b(show me|take me|open|where do i|where is|how do i|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft |upload |analyse |analyze )\b/i.test(text);
   const simpleLiveRead =
     Boolean(readContext) &&
+    !explicitlyGuided &&
     !/\b(why|explain|diagnose|reason|cause|wrong|issue|problem)\b/i.test(lower);
 
   if (liveSummary && simpleLiveRead) return liveSummary;
 
+  if (/\b(what branding|what.*brand.*custom|customi[sz]e.*brand|branding options?)\b/i.test(lower)) {
+    return 'You can customise the logo/favicon, brand colours, typography/custom fonts, border radius and support details here. Storefront language and terminology are managed separately under Languages & wording. I can walk you through any of them.';
+  }
+
   if (!navigation) return null;
 
   const hasPreparedFields = Boolean(navigation.prefill && Object.keys(navigation.prefill).length > 0);
-  const explicitlyGuided =
-    /\b(show me|take me|open|where do i|where is|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft |upload |analyse |analyze )\b/i.test(text);
 
   if (!hasPreparedFields && !explicitlyGuided) return null;
 
@@ -930,7 +1016,7 @@ export function buildDegradedAssistantReply(
   message: string,
   readContext: AssistantReadContext | null = null
 ): string {
-  const liveSummary = summariseReadContext(readContext);
+  const liveSummary = summariseReadContext(readContext, message);
   if (liveSummary) return liveSummary;
 
   const text = String(message || '').trim().toLowerCase();
