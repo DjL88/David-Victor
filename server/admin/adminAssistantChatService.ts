@@ -308,7 +308,7 @@ export class AdminAssistantChatService {
 
           const rawText =
             typeof response?.text === 'function'
-              ? response.text()
+              ? await response.text()
               : response?.text;
           const message = normaliseAssistantReply(rawText);
 
