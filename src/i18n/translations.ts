@@ -38,10 +38,27 @@ export interface LocaleTranslations {
   'fulfilment.deliverTo': string;
   'fulfilment.delivery': string;
   'fulfilment.collection': string;
+  'fulfilment.comingSoon': string;
+  'fulfilment.available': string;
+  'fulfilment.limitedZone': string;
+  'fulfilment.notAvailableYet': string;
+  'fulfilment.storeDelivers': string;
+  'fulfilment.storesDeliver': string;
+  'fulfilment.collectionAvailable': string;
+  'fulfilment.free': string;
+  'fulfilment.localBranch': string;
+  'fulfilment.localBranches': string;
   'location.deliveryAddress': string;
   'location.liveRouting': string;
   'location.map': string;
   'location.list': string;
+  'location.selectedLocation': string;
+  'location.hideMap': string;
+  'location.showMap': string;
+  'location.locating': string;
+  'location.useCurrentLocation': string;
+  'location.savedAddresses': string;
+  'location.confirmContinue': string;
 
   // Account
   'account.languageRegion': string;
@@ -172,6 +189,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'location.liveRouting': 'Live distance and routing',
     'location.map': 'Map',
     'location.list': 'List',
+    'fulfilment.comingSoon': 'Coming Soon',
+    'fulfilment.available': 'Available',
+    'fulfilment.limitedZone': 'Limited Zone',
+    'fulfilment.notAvailableYet': 'Not available yet — please choose Click & Collect',
+    'fulfilment.storeDelivers': 'nearby store delivers to your address',
+    'fulfilment.storesDeliver': 'nearby stores deliver to your address',
+    'fulfilment.collectionAvailable': 'Collection available from nearby locations',
+    'fulfilment.free': 'Free',
+    'fulfilment.localBranch': 'local branch',
+    'fulfilment.localBranches': 'local branches',
+    'location.selectedLocation': 'Selected Location',
+    'location.hideMap': 'Hide Map',
+    'location.showMap': 'Show Map',
+    'location.locating': 'Locating…',
+    'location.useCurrentLocation': 'Use Current Location',
+    'location.savedAddresses': 'Saved Addresses',
+    'location.confirmContinue': 'Confirm & Continue',
 
     'account.languageRegion': 'Language & Region',
     'account.savedAddresses': 'Saved delivery addresses',
@@ -295,6 +329,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'location.liveRouting': 'Distancia y ruta en tiempo real',
     'location.map': 'Mapa',
     'location.list': 'Lista',
+    'fulfilment.comingSoon': 'Próximamente',
+    'fulfilment.available': 'Disponible',
+    'fulfilment.limitedZone': 'Zona limitada',
+    'fulfilment.notAvailableYet': 'Todavía no disponible — elige recogida en tienda',
+    'fulfilment.storeDelivers': 'tienda cercana entrega en tu dirección',
+    'fulfilment.storesDeliver': 'tiendas cercanas entregan en tu dirección',
+    'fulfilment.collectionAvailable': 'Recogida disponible en tiendas cercanas',
+    'fulfilment.free': 'Gratis',
+    'fulfilment.localBranch': 'tienda local',
+    'fulfilment.localBranches': 'tiendas locales',
+    'location.selectedLocation': 'Ubicación seleccionada',
+    'location.hideMap': 'Ocultar mapa',
+    'location.showMap': 'Mostrar mapa',
+    'location.locating': 'Localizando…',
+    'location.useCurrentLocation': 'Usar ubicación actual',
+    'location.savedAddresses': 'Direcciones guardadas',
+    'location.confirmContinue': 'Confirmar y continuar',
 
     'account.languageRegion': 'Idioma y región',
     'account.savedAddresses': 'Direcciones de entrega guardadas',
@@ -418,6 +469,40 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'location.liveRouting': 'Distance et itinéraire en direct',
     'location.map': 'Carte',
     'location.list': 'Liste',
+    'fulfilment.comingSoon': 'Demnächst',
+    'fulfilment.available': 'Verfügbar',
+    'fulfilment.limitedZone': 'Begrenztes Gebiet',
+    'fulfilment.notAvailableYet': 'Noch nicht verfügbar — bitte Click & Collect wählen',
+    'fulfilment.storeDelivers': 'Filiale in der Nähe liefert an deine Adresse',
+    'fulfilment.storesDeliver': 'Filialen in der Nähe liefern an deine Adresse',
+    'fulfilment.collectionAvailable': 'Abholung in Filialen in der Nähe verfügbar',
+    'fulfilment.free': 'Kostenlos',
+    'fulfilment.localBranch': 'lokale Filiale',
+    'fulfilment.localBranches': 'lokale Filialen',
+    'location.selectedLocation': 'Ausgewählter Standort',
+    'location.hideMap': 'Karte ausblenden',
+    'location.showMap': 'Karte anzeigen',
+    'location.locating': 'Standort wird ermittelt…',
+    'location.useCurrentLocation': 'Aktuellen Standort verwenden',
+    'location.savedAddresses': 'Gespeicherte Adressen',
+    'location.confirmContinue': 'Bestätigen & fortfahren',
+    'fulfilment.comingSoon': 'Bientôt disponible',
+    'fulfilment.available': 'Disponible',
+    'fulfilment.limitedZone': 'Zone limitée',
+    'fulfilment.notAvailableYet': 'Pas encore disponible — choisissez le retrait en magasin',
+    'fulfilment.storeDelivers': 'magasin à proximité livre à votre adresse',
+    'fulfilment.storesDeliver': 'magasins à proximité livrent à votre adresse',
+    'fulfilment.collectionAvailable': 'Retrait disponible dans les magasins à proximité',
+    'fulfilment.free': 'Gratuit',
+    'fulfilment.localBranch': 'magasin local',
+    'fulfilment.localBranches': 'magasins locaux',
+    'location.selectedLocation': 'Lieu sélectionné',
+    'location.hideMap': 'Masquer la carte',
+    'location.showMap': 'Afficher la carte',
+    'location.locating': 'Localisation…',
+    'location.useCurrentLocation': 'Utiliser ma position',
+    'location.savedAddresses': 'Adresses enregistrées',
+    'location.confirmContinue': 'Confirmer et continuer',
 
     'account.languageRegion': 'Langue et région',
     'account.savedAddresses': 'Adresses de livraison enregistrées',
