@@ -652,9 +652,17 @@ export class HttpCommerceClient implements CommerceClient {
 
   async getOrder(orderId: string): Promise<Order | null> {
     const token = await getCurrentIdToken().catch(() => null);
-    return this.request<Order>(`/orders/${encodeURIComponent(orderId)}`, token
-      ? { headers: { Authorization: `Bearer ${token}` } }
-      : undefined);
+    const guestToken =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem(`order-access-token:${orderId}`)
+        : null;
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (guestToken) headers['X-Order-Access-Token'] = guestToken;
+    return this.request<Order>(
+      `/orders/${encodeURIComponent(orderId)}`,
+      Object.keys(headers).length ? { headers } : undefined
+    );
   }
 
   async getUserOrders(): Promise<Order[]> {
@@ -790,7 +798,7 @@ export class HttpCommerceClient implements CommerceClient {
   ): Promise<CheckoutResult> {
     const token = await getCurrentIdToken().catch(() => null);
 
-    return this.request<CheckoutResult>('/checkouts', {
+    const result = await this.request<CheckoutResult>('/checkouts', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       body: JSON.stringify({
@@ -799,6 +807,14 @@ export class HttpCommerceClient implements CommerceClient {
         tenantId: this.currentTenantId,
       }),
     });
+
+    if (result.orderAccessToken && result.orderId && typeof window !== 'undefined') {
+      window.localStorage.setItem(
+        `order-access-token:${result.orderId}`,
+        result.orderAccessToken
+      );
+    }
+    return result;
   }
 
   async processPickingEvent(_orderId: string, _event: PickingEvent): Promise<Order> {
