@@ -933,21 +933,50 @@ export class FirestoreService {
   /**
    * Resolves tenant ID by integration identifier (for tenant/integration-specific webhook routes).
    */
-  static async resolveTenantByIntegrationId(integrationId: string): Promise<string | null> {
-    if (!integrationId) return null;
+  static async resolveTenantByIntegrationId(identifier: string): Promise<string | null> {
+    const cleanIdentifier = String(identifier || '').trim();
+    if (!cleanIdentifier) return null;
     const db = getFirestoreDb();
     if (db) {
       try {
-        const snap = await db.collection('integrations').where('integrationId', '==', integrationId).limit(1).get();
-        if (!snap.empty) {
-          return (snap.docs[0].data()?.tenantId as string) || snap.docs[0].id;
+        // Deliverect may address callbacks using our internal integration ID,
+        // its account ID, or a channelLinkId. Resolve all three to the tenant.
+        for (const field of ['integrationId', 'deliverectAccountId', 'channelLinkId'] as const) {
+          const snap = await db
+            .collection('integrations')
+            .where(field, '==', cleanIdentifier)
+            .limit(1)
+            .get();
+          if (!snap.empty) {
+            return (snap.docs[0].data()?.tenantId as string) || snap.docs[0].id;
+          }
+        }
+
+        const allowedSnap = await db
+          .collection('integrations')
+          .where('allowedChannelLinkIds', 'array-contains', cleanIdentifier)
+          .limit(1)
+          .get();
+        if (!allowedSnap.empty) {
+          return (allowedSnap.docs[0].data()?.tenantId as string) || allowedSnap.docs[0].id;
         }
       } catch (err) {
-        console.warn(`[FirestoreService] Failed to resolve tenant for integrationId "${integrationId}":`, err);
+        console.warn(
+          `[FirestoreService] Failed to resolve tenant for integration identifier "${cleanIdentifier}":`,
+          err
+        );
       }
     }
     for (const [tId, cfg] of Object.entries(inMemoryIntegrations)) {
-      if ((cfg as any).integrationId === integrationId || tId === integrationId) {
+      const integration = cfg as any;
+      if (
+        integration.integrationId === cleanIdentifier ||
+        integration.deliverectAccountId === cleanIdentifier ||
+        integration.channelLinkId === cleanIdentifier ||
+        (Array.isArray(integration.allowedChannelLinkIds) &&
+          integration.allowedChannelLinkIds.map(String).includes(cleanIdentifier)) ||
+        tId === cleanIdentifier
+      ) {
         return tId;
       }
     }
