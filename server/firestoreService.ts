@@ -583,16 +583,6 @@ export class FirestoreService {
     const list: DomainRecord[] = [];
     const seenHostnames = new Set<string>();
 
-    // A tenant can have many verified aliases, but only one primary domain.
-    // Keep this invariant in both demo/test memory and the authoritative store.
-    if (record.isPrimary) {
-      for (const [host, existingRecord] of Object.entries(inMemoryDomains)) {
-        if (host !== cleanHost && existingRecord.tenantId === tenantId && existingRecord.isPrimary) {
-          inMemoryDomains[host] = { ...existingRecord, isPrimary: false, updatedAt: now };
-        }
-      }
-    }
-
     const db = getFirestoreDb();
     if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
       const permission = getFirestorePermissionStatus();
@@ -712,6 +702,16 @@ export class FirestoreService {
       createdAt: inMemoryDomains[cleanHost]?.createdAt || now,
       updatedAt: now,
     };
+
+    // A tenant can have many verified aliases, but only one primary domain.
+    // Keep this invariant in both demo/test memory and the authoritative store.
+    if (record.isPrimary) {
+      for (const [host, existingRecord] of Object.entries(inMemoryDomains)) {
+        if (host !== cleanHost && existingRecord.tenantId === tenantId && existingRecord.isPrimary) {
+          inMemoryDomains[host] = { ...existingRecord, isPrimary: false, updatedAt: now };
+        }
+      }
+    }
 
     const db = getFirestoreDb();
     if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
