@@ -419,6 +419,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                     />
                   )}
                   <input
+                    data-admin-ai-target="branding-logo"
                     type="text"
                     value={logoUrl}
                     onChange={(e) => setLogoUrl(e.target.value)}
@@ -504,7 +505,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-              <div>
+              <div data-admin-ai-target="branding-colours">
                 <label className="block text-xs font-bold text-gray-700 mb-1">Primary Brand Colour</label>
                 <div className="flex items-center gap-2">
                   <input
@@ -839,7 +840,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         {/* RIGHT COLUMN: LIVE TYPOGRAPHY PREVIEW & MOBILE VIEW */}
         <div className="lg:col-span-5 space-y-6">
           {/* LIVE TYPOGRAPHY PREVIEW PANEL */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+          <div data-admin-ai-target="branding-typography" className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                 <Type className="w-4 h-4 text-indigo-600" />
