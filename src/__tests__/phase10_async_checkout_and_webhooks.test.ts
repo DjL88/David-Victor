@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import crypto from 'crypto';
-import { WebhookService, ORDER_STATE_RANKING } from '../../server/deliverect/WebhookService';
+import { WebhookService, ORDER_STATE_RANKING, normalizeDeliverectOrderStatus } from '../../server/deliverect/WebhookService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { MockDeliverectAdapter } from '../../server/deliverect/MockDeliverectAdapter';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
@@ -393,6 +393,63 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       expect(secondResult.status).toBe('DEDUPLICATED');
       expect(secondResult.message).toContain('previously processed');
     });
+  });
+
+  it('normalizes Deliverect numeric order statuses without crashing', () => {
+    expect(normalizeDeliverectOrderStatus(20)).toBe('ACCEPTED');
+    expect(normalizeDeliverectOrderStatus('50')).toBe('PREPARING');
+    expect(normalizeDeliverectOrderStatus(90)).toBe('FINALIZED');
+    expect(normalizeDeliverectOrderStatus(110)).toBe('ORDER_CANCELLED');
+    expect(normalizeDeliverectOrderStatus(120)).toBe('ORDER_FAILED');
+  });
+
+  it('releases failed webhook claims so the same external event can be retried', async () => {
+    const key = `evt_retry_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const firstEventId = `wh_first_${Date.now()}`;
+    const first = await FirestorePlatformService.claimWebhookIdempotency('deliverect', key, firstEventId);
+    expect(first.claimed).toBe(true);
+
+    await FirestorePlatformService.releaseWebhookIdempotency('deliverect', key, firstEventId);
+
+    const second = await FirestorePlatformService.claimWebhookIdempotency(
+      'deliverect',
+      key,
+      `wh_second_${Date.now()}`
+    );
+    expect(second.claimed).toBe(true);
+  });
+
+  it('keeps an unmatched valid webhook retryable instead of acknowledging and dropping it', async () => {
+    const eventId = `evt_unmatched_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const payload = {
+      eventId,
+      orderId: `missing_order_${Date.now()}`,
+      status: 20,
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+    await expect(
+      WebhookService.processWebhook(
+        payload,
+        rawBody,
+        { 'x-deliverect-signature': signature },
+        testTenant
+      )
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'WEBHOOK_ORDER_NOT_FOUND_RETRYABLE',
+    });
+
+    const journal = await FirestorePlatformService.getWebhookEvent(eventId);
+    expect(journal?.processingStatus).toBe('FAILED');
+
+    const retryClaim = await FirestorePlatformService.claimWebhookIdempotency(
+      'deliverect',
+      eventId,
+      `wh_retry_${Date.now()}`
+    );
+    expect(retryClaim.claimed).toBe(true);
   });
 
   // ========================================================
