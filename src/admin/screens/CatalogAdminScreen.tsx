@@ -4,6 +4,7 @@ import { Product, ProductStockStatus, formatMoney, moneyToMajor, Category, Store
 import { useTenant } from '../../tenant/TenantContext';
 import { DEFAULT_TENANT_ID } from '../../tenant/constants';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import {
   Package,
   Search,
