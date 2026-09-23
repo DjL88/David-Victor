@@ -92,6 +92,8 @@ export interface StoreProductSnoozeState {
 
 export interface IntegrationConfig {
   tenantId: string;
+  credentialMode?: 'platform' | 'dedicated';
+  credentialsConfigured?: boolean;
   deliverectAccountId?: string;
   channelLinkId?: string;
   /** Explicit tenant storefront allowlist; absent means all stores in the assigned account. */
@@ -1025,6 +1027,8 @@ export class FirestoreService {
       batch.set(integrationRef, {
         integrationId: `int_${tenantId}`,
         tenantId,
+        credentialMode: 'platform',
+        credentialsConfigured: false,
         deliverectAccountId: '',
         environment: 'staging',
         status: 'UNCONFIGURED',
