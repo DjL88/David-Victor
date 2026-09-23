@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import { defaultRuleEngine } from '../rules/RuleEngine';
 import { visualRulesToRetailRules } from '../rules/visualRuleAdapter';
 import { useTenant } from '../tenant/TenantContext';
@@ -21,8 +21,11 @@ import { FulfilmentModal } from '../features/location/FulfilmentModal';
 import { StorePickerModal } from '../features/stores/StorePickerModal';
 import { StoreSwitchDiffModal } from '../features/stores/StoreSwitchDiffModal';
 import { CartDrawerModal } from '../features/cart/CartDrawerModal';
-import { CheckoutModal } from '../features/checkout/CheckoutModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
+
+const CheckoutModal = lazy(() =>
+  import('../features/checkout/CheckoutModal').then((module) => ({ default: module.CheckoutModal }))
+);
 import { AislesModal } from '../features/catalog/AislesModal';
 import { CatalogFilterState } from '../features/catalog/DietaryPreferencesModal';
 import { MealDealDialog } from '../components/deals/MealDealDialog';
@@ -1015,6 +1018,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
       {/* Checkout Modal - mounted conditionally when open to guarantee consistent hook execution order */}
       {isCheckoutOpen && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/70 text-sm text-gray-500">Loading checkout…</div>}>
         <CheckoutModal
           isOpen={isCheckoutOpen}
           basket={basket}
@@ -1031,6 +1035,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             closeRoutedOverlay('checkout');
           }}
         />
+        </Suspense>
       )}
     </div>
   );
