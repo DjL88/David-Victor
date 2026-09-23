@@ -155,6 +155,10 @@ export class MediaHealthService {
       }
 
       for (const product of productsMap.values()) {
+        // Deliverect bundle/modifier pseudo-items use "#" PLUs and are not
+        // independently rendered catalogue products, so do not flag them.
+        if (String(product.plu || '').includes('#')) continue;
+
         const urlsToTest: string[] = [];
         if (product.imageUrl) urlsToTest.push(product.imageUrl);
         if (product.image && !urlsToTest.includes(product.image)) urlsToTest.push(product.image);
@@ -164,6 +168,16 @@ export class MediaHealthService {
               urlsToTest.push(imgUrl);
             }
           }
+        }
+
+        if (urlsToTest.length === 0) {
+          rawAssets.push({
+            url: '',
+            assetType: 'product',
+            referenceName: product.name || 'Unnamed Product',
+            referenceId: product.plu || product.id,
+          });
+          continue;
         }
 
         for (const [imgIdx, imgUrl] of urlsToTest.entries()) {
@@ -236,11 +250,13 @@ export class MediaHealthService {
       console.warn(`[MediaHealthService] Could not load uploaded assets for ${tenantId}:`, e);
     }
 
-    // Deduplicate items by URL
+    // Deduplicate normal assets by URL. Missing-image product records need a
+    // per-product key so every affected PLU remains visible in the report.
     const uniqueMap = new Map<string, typeof rawAssets[0]>();
     for (const item of rawAssets) {
-      if (!uniqueMap.has(item.url)) {
-        uniqueMap.set(item.url, item);
+      const dedupeKey = item.url || `missing:${item.assetType}:${item.referenceId}`;
+      if (!uniqueMap.has(dedupeKey)) {
+        uniqueMap.set(dedupeKey, item);
       }
     }
     const assetList = Array.from(uniqueMap.values());
@@ -271,6 +287,20 @@ export class MediaHealthService {
     now: string
   ): Promise<MediaHealth> {
     const { url, assetType, referenceName, referenceId } = item;
+
+    if (!url || !url.trim()) {
+      return {
+        id,
+        url: '',
+        assetType,
+        referenceName,
+        referenceId,
+        status: 'failing',
+        httpStatus: 0,
+        failureReason: 'No image supplied',
+        lastCheckedAt: now,
+      };
+    }
 
     if (url.startsWith('data:')) {
       return {
