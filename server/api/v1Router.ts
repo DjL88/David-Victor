@@ -1323,7 +1323,7 @@ v1Router.post('/dispatch/quotes', validateBody(GetDispatchQuotesSchema), async (
   }
 });
 
-v1Router.post('/dispatch/assign', validateBody(AssignDispatchSchema), async (req: Request, res: Response) => {
+v1Router.post('/dispatch/assign', requireAdminAuth('operationsEditor'), validateBody(AssignDispatchSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
     const dispatchAdapter = getDispatchAdapter(tenantId);
@@ -1345,7 +1345,7 @@ v1Router.post('/dispatch/assign', validateBody(AssignDispatchSchema), async (req
   }
 });
 
-v1Router.post('/dispatch/cancel', validateBody(CancelDispatchSchema), async (req: Request, res: Response) => {
+v1Router.post('/dispatch/cancel', requireAdminAuth('operationsEditor'), validateBody(CancelDispatchSchema), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
     const dispatchAdapter = getDispatchAdapter(tenantId);
