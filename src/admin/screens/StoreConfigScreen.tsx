@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Store, AdminUser } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
-import { RefreshCw, CheckSquare, Square, Filter } from 'lucide-react';
+import { RefreshCw, CheckSquare, Square, Filter, Trash2 } from 'lucide-react';
 
 interface StoreConfigScreenProps {
   tenantId: string;
@@ -23,7 +23,11 @@ const addressText = (store: Store) =>
   'Not supplied';
 
 const statusText = (store: Store) =>
-  typeof store.status === 'string' ? store.status.toUpperCase() : 'UNKNOWN';
+  store.lifecycleStatus === 'ORPHANED'
+    ? 'ORPHANED'
+    : typeof store.status === 'string'
+      ? store.status.toUpperCase()
+      : 'UNKNOWN';
 
 const suppliedFlag = (value: boolean | undefined) =>
   value == null ? 'Unknown' : value ? 'Yes' : 'No';
@@ -294,6 +298,33 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
     }
   };
 
+  const handleHardDeleteStore = async (store: Store) => {
+    if (!defaultAdminClient.deleteStore) {
+      setNotice('Hard-delete is not available in this build.');
+      return;
+    }
+    const label = store.name || store.channelLinkId || store.id;
+    if (!window.confirm(
+      `Permanently delete the local location record "${label}"? This does not delete anything in Deliverect, but local history/operational state for this channel link will be removed.`
+    )) {
+      return;
+    }
+    setSaving(true);
+    setNotice('');
+    try {
+      await defaultAdminClient.deleteStore(tenantId, store.channelLinkId || store.id);
+      setSelectedStore(null);
+      setSelectedIds((ids) => ids.filter((id) => id !== store.id));
+      setNotice(`Deleted local location record "${label}".`);
+      setRevision((value) => value + 1);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Unable to hard-delete location.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap justify-between gap-3">
@@ -329,7 +360,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
           className="border rounded-xl p-2"
         >
           <option value="all">All statuses</option>
-          {['OPEN', 'CLOSED', 'PAUSED', 'BUSY', 'UNKNOWN'].map((value) => (
+          {['OPEN', 'CLOSED', 'PAUSED', 'BUSY', 'ORPHANED', 'UNKNOWN'].map((value) => (
             <option key={value}>{value}</option>
           ))}
         </select>
@@ -521,6 +552,11 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
                     <td className="p-3 font-semibold text-gray-900">
                       <div className="flex items-center gap-1.5">
                         {store.name || 'Unnamed location'}
+                        {store.lifecycleStatus === 'ORPHANED' && (
+                          <span className="inline-block px-1.5 py-0.5 text-[10px] bg-red-100 text-red-700 rounded font-bold">
+                            Orphaned
+                          </span>
+                        )}
                         {unassigned && (
                           <span className="inline-block px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-800 rounded font-bold">
                             Unassigned
@@ -559,21 +595,35 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
                       Collection: {suppliedFlag(store.supportsPickup)}
                     </td>
                     <td className="p-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedStore(store);
-                          setRadius(
-                            store.deliveryRadiusKm == null
-                              ? ''
-                              : String(store.deliveryRadiusKm)
-                          );
-                          setNotice('');
-                        }}
-                        className="text-emerald-700 font-bold hover:underline"
-                      >
-                        Details
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedStore(store);
+                            setRadius(
+                              store.deliveryRadiusKm == null
+                                ? ''
+                                : String(store.deliveryRadiusKm)
+                            );
+                            setNotice('');
+                          }}
+                          className="text-emerald-700 font-bold hover:underline"
+                        >
+                          Details
+                        </button>
+                        {currentUser.role === 'platformSuperAdmin' && (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => handleHardDeleteStore(store)}
+                            className="inline-flex items-center gap-1 text-red-600 font-bold hover:underline disabled:opacity-50"
+                            title="Hard-delete local location record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
