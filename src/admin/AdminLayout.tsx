@@ -225,11 +225,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       ],
     },
     {
-      title: 'Marketing',
+      title: 'Brand',
       items: [
         { id: 'branding', label: 'Branding', icon: Palette },
         { id: 'languages', label: 'Languages & wording', icon: Languages },
         { id: 'features', label: 'Feature switches', icon: SlidersHorizontal },
+      ],
+    },
+    {
+      title: 'Marketing',
+      items: [
         { id: 'hero_banners', label: 'Banners', icon: Flag },
         { id: 'stories', label: 'Stories', icon: Film },
         { id: 'search_merch', label: 'Search & Recommendations', icon: Search },
