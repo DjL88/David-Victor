@@ -149,6 +149,17 @@ describe('Pre-Staging Security Closure & Hardening', () => {
     it('records the resolved Deliverect integration environment in the webhook journal', async () => {
       const testTenant = 'brand-alpha';
       const eventKey = `evt_test_env_${Date.now()}`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId: 'ord_env_test_01',
+        tenantId: testTenant,
+        status: 'SUBMITTED',
+        fulfillmentType: 'collection',
+        itemsCount: 1,
+        total: 100,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
+
       const payload = {
         eventId: eventKey,
         event: 'ORDER_ACCEPTED',
