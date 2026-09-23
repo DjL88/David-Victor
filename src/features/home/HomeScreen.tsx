@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Product, ProductAvailabilitySummary, Story, Category, Store, BasketItem, moneyToMajor } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { BundleProduct } from '../../commerce/bundleModels';
@@ -117,6 +117,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const { favourites, isFavourite, toggleFavourite } = useFavourites();
   const isStoreSelected = selectedStore !== null;
   const [mainCarouselTab, setMainCarouselTab] = useState<'featured' | 'deals'>('featured');
+  const previousSearchQueryRef = useRef(searchQuery);
+
+  const settleAisleControlsBelowHeader = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    window.setTimeout(() => {
+      document.getElementById('category-nav-section')?.scrollIntoView({
+        behavior,
+        block: 'start',
+      });
+    }, 40);
+  }, []);
+
+  const handleCategorySelection = useCallback((id: string | null) => {
+    onSelectCategory(id);
+    settleAisleControlsBelowHeader();
+  }, [onSelectCategory, settleAisleControlsBelowHeader]);
+
+  const handleSearchInput = useCallback((query: string) => {
+    const wasEmpty = !previousSearchQueryRef.current.trim();
+    previousSearchQueryRef.current = query;
+    onSearchChange?.(query);
+    if (query.trim() && wasEmpty) {
+      settleAisleControlsBelowHeader();
+    }
+  }, [onSearchChange, settleAisleControlsBelowHeader]);
+
+  useEffect(() => {
+    previousSearchQueryRef.current = searchQuery;
+  }, [searchQuery]);
 
   // Filter state for dietary preferences & favourites toggle
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -344,9 +372,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         categories={categories}
         breadcrumbs={breadcrumbs}
         selectedCategoryId={selectedCategoryId}
-        onSelectCategory={onSelectCategory}
+        onSelectCategory={handleCategorySelection}
         searchQuery={searchQuery}
-        onSearchChange={onSearchChange}
+        onSearchChange={handleSearchInput}
         activeDealFilter={activeDealFilter}
         onClearDealFilter={onClearDealFilter}
         onOpenDealSelector={() => {
