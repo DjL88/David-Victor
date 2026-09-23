@@ -65,12 +65,31 @@ describe('AdminAssistantChatService foundations', () => {
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
   });
 
-  it('extracts a product term from live stock questions without treating generic help as a lookup', () => {
+  it('extracts a product term or explicit identifier from live stock questions', () => {
     expect(extractCatalogLookupQuery('Are bananas in stock?')).toBe('bananas');
     expect(extractCatalogLookupQuery("Why is Dave's Salted Potato Crisps 150g not showing?")).toBe(
       "Dave's Salted Potato Crisps 150g"
     );
+    expect(extractCatalogLookupQuery('How about plu DAV001')).toBe('DAV001');
+    expect(extractCatalogLookupQuery('DLV1006 How many stores in stock')).toBe('DLV1006');
+    expect(extractCatalogLookupQuery('How many locations have barcode 5012345678901?')).toBe('5012345678901');
     expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
+  });
+
+  it('retains safe text attachments in chat history', () => {
+    const result = normaliseChatHistory([{
+      role: 'user',
+      content: 'Use this example',
+      attachments: [{
+        name: 'catalog.csv',
+        contentType: 'text/csv',
+        content: 'plu,name\\nDLV1006,Bananas',
+        byteSize: 30,
+      }],
+    }]);
+
+    expect(result[0].attachments?.[0].name).toBe('catalog.csv');
+    expect(result[0].attachments?.[0].content).toContain('DLV1006');
   });
 
   it('uses trusted read results in guided mode and remains useful without them', () => {
