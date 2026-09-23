@@ -8,12 +8,11 @@ const PREVIEW_PROXY_ENV_KEYS = [
 
 export function isAiStudioPreviewHost(hostname: string): boolean {
   const host = String(hostname || '').trim().toLowerCase().split(':')[0];
-  return (
-    host.startsWith('ais-') ||
-    host.includes('ai-studio') ||
-    host.includes('aistudio') ||
-    host.endsWith('.ai.studio')
-  );
+  // Only the ephemeral AI Studio development Cloud Run host needs the
+  // published-BFF proxy. A published *.ai.studio storefront is itself the
+  // stable backend target and must serve /api/v1 locally; proxying it would
+  // point the deployment back at itself.
+  return host.startsWith('ais-') && host.endsWith('.run.app');
 }
 
 export function resolvePreviewBffBaseUrl(
@@ -125,10 +124,10 @@ export async function aiStudioPreviewBffProxy(
 
   // Protect against accidental self-proxy loops.
   if (target.hostname.toLowerCase() === host) {
-    res.status(500).json({
-      error: 'AI Studio preview backend proxy points back to the preview host.',
-      code: 'PREVIEW_BFF_PROXY_LOOP',
-    });
+    // A self-target means this request is already on the configured stable
+    // backend. Fall through to the local v1 router instead of taking the whole
+    // storefront/admin offline.
+    next();
     return;
   }
 

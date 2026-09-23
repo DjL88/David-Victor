@@ -13,8 +13,10 @@ describe('AI Studio preview BFF proxy', () => {
         'ais-dev-ciigtiumqqu7x57kplguwi-232948319569.europe-west3.run.app'
       )
     ).toBe(true);
-    expect(isAiStudioPreviewHost('preview.ai.studio')).toBe(true);
+    expect(isAiStudioPreviewHost('preview.ai.studio')).toBe(false);
     expect(isAiStudioPreviewHost('retail-storefront-delivery-platform-abc.europe-west3.run.app')).toBe(false);
+    // Published AI Studio hosts are stable backends, not ephemeral preview sandboxes.
+    expect(isAiStudioPreviewHost('1bwydi.ai.studio')).toBe(false);
   });
 
   it('accepts only a secure configured published backend outside tests', () => {
