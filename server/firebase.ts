@@ -70,7 +70,7 @@ export function getFirestoreDb(): AdminFirestore | null {
   if ((process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') && !process.env.TEST_LIVE_FIRESTORE) {
     return null;
   }
-  if (firestorePermissionDeniedDetected) {
+  if (isFirestorePermissionDenied()) {
     return null;
   }
   if (firestoreInstance) return firestoreInstance;
@@ -100,8 +100,14 @@ export function getFirestoreDb(): AdminFirestore | null {
 }
 
 let firestorePermissionDeniedDetected = false;
+let firestorePermissionDeniedAt: number | null = null;
 let lastFirestorePermissionError: string | null = null;
 let firestorePermissionDiagnosticsLogged = false;
+
+const FIRESTORE_PERMISSION_RETRY_MS = (() => {
+  const configured = Number(process.env.FIRESTORE_PERMISSION_RETRY_MS || 60_000);
+  return Number.isFinite(configured) && configured >= 5_000 ? configured : 60_000;
+})();
 
 function safeFirestoreErrorDetails(err: any): Record<string, unknown> {
   return {
@@ -168,8 +174,45 @@ async function logFirestorePermissionDiagnostics(err?: any): Promise<void> {
   );
 }
 
+function refreshFirestorePermissionState(now: number = Date.now()): void {
+  if (
+    firestorePermissionDeniedDetected &&
+    firestorePermissionDeniedAt &&
+    now - firestorePermissionDeniedAt >= FIRESTORE_PERMISSION_RETRY_MS
+  ) {
+    firestorePermissionDeniedDetected = false;
+    firestorePermissionDeniedAt = null;
+    firestorePermissionDiagnosticsLogged = false;
+    console.info('[Firestore IAM] Permission-denied cooldown expired; Firestore access will be retried.');
+  }
+}
+
 export function isFirestorePermissionDenied(): boolean {
+  refreshFirestorePermissionState();
   return firestorePermissionDeniedDetected;
+}
+
+export function getFirestorePermissionStatus(): {
+  denied: boolean;
+  lastError: string | null;
+  deniedAt: string | null;
+  retryAfterMs: number;
+  retryInMs: number;
+} {
+  refreshFirestorePermissionState();
+  const now = Date.now();
+  const retryInMs =
+    firestorePermissionDeniedDetected && firestorePermissionDeniedAt
+      ? Math.max(0, FIRESTORE_PERMISSION_RETRY_MS - (now - firestorePermissionDeniedAt))
+      : 0;
+
+  return {
+    denied: firestorePermissionDeniedDetected,
+    lastError: lastFirestorePermissionError,
+    deniedAt: firestorePermissionDeniedAt ? new Date(firestorePermissionDeniedAt).toISOString() : null,
+    retryAfterMs: FIRESTORE_PERMISSION_RETRY_MS,
+    retryInMs,
+  };
 }
 
 export function isFirestorePermissionDeniedError(err: any): boolean {
@@ -192,13 +235,16 @@ export function getFirestorePermissionErrorMessage(): string | null {
 }
 
 export function markFirestorePermissionDenied(err?: any): void {
-  if (!firestorePermissionDeniedDetected) {
-    firestorePermissionDeniedDetected = true;
-    lastFirestorePermissionError =
-      err?.message ||
-      'Firestore returned PERMISSION_DENIED. Inspect [Firestore IAM Diagnostics] for the actual runtime identity and Google error.';
+  const firstDetection = !firestorePermissionDeniedDetected;
+  firestorePermissionDeniedDetected = true;
+  firestorePermissionDeniedAt = Date.now();
+  lastFirestorePermissionError =
+    err?.message ||
+    'Firestore returned PERMISSION_DENIED. Inspect [Firestore IAM Diagnostics] for the actual runtime identity and Google error.';
+
+  if (firstDetection) {
     console.warn(
-      '[Firestore IAM] Firestore returned PERMISSION_DENIED. Persistence is disabled for this container instance; see [Firestore IAM Diagnostics] for the actual Google error and runtime identity.'
+      `[Firestore IAM] Firestore returned PERMISSION_DENIED. Access is paused for ${Math.round(FIRESTORE_PERMISSION_RETRY_MS / 1000)}s before an automatic retry; see [Firestore IAM Diagnostics] for the actual Google error and runtime identity.`
     );
     void logFirestorePermissionDiagnostics(err);
   }

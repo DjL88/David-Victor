@@ -123,7 +123,9 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         isPrimary,
       });
 
-      setSuccessMessage(`Domain "${cleanHost}" successfully mapped to ${getTenantName(selectedTenantId)}!`);
+      setSuccessMessage(
+        `Domain "${cleanHost}" has been claimed for ${getTenantName(selectedTenantId)} and is pending ownership/TLS verification.`
+      );
       setNewHostname('');
       setIsPrimary(false);
       await loadDomains();
@@ -213,7 +215,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
               How domain routing works
             </p>
             <p>
-              Each configured hostname resolves to its assigned brand automatically. Customers can open the storefront normally without selecting a tenant or adding brand parameters to the URL.
+              New custom domains stay pending until ownership and serving are verified. Only active domains resolve storefront traffic; the platform domain lifecycle will also synchronize Firebase Authentication authorization when activation completes.
             </p>
           </div>
         </div>
@@ -239,7 +241,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Plus className="w-4 h-4 text-indigo-600" />
-            <span>Map a domain to a brand</span>
+            <span>Claim a domain for a brand</span>
           </h2>
           <button
             type="button"
@@ -398,10 +400,17 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                             Primary
                           </span>
                         )}
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          Configured
-                        </span>
+                        {dom.status === 'active' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            Pending verification
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -420,16 +429,22 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <a
-                      href={`https://${dom.hostname}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 shadow-2xs"
-                      title={`Open https://${dom.hostname} in new tab`}
-                    >
-                      <span>Open Storefront</span>
-                      <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-                    </a>
+                    {dom.status === 'active' ? (
+                      <a
+                        href={`https://${dom.hostname}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 shadow-2xs"
+                        title={`Open https://${dom.hostname} in new tab`}
+                      >
+                        <span>Open Storefront</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                      </a>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-[10px] font-bold text-amber-800">
+                        Awaiting verification
+                      </span>
+                    )}
 
                     <button
                       type="button"
