@@ -183,6 +183,32 @@ export interface LocaleTranslations {
   'checkout.tryOrderAgain': string;
   'checkout.tryPaymentAgain': string;
   'checkout.closeKeepBasket': string;
+  'checkout.paymentNoticeStart': string;
+  'checkout.paymentNoticeEstimated': string;
+  'checkout.paymentNoticeBuffer': string;
+  'checkout.paymentNoticeEnd': string;
+  'checkout.collectionNoPayment': string;
+  'checkout.resolveOutOfStock': string;
+  'checkout.collectionIssueRetry': string;
+  'checkout.dispatchUnavailableRetry': string;
+  'checkout.placeCollectionOrder': string;
+  'checkout.authorizeUpTo': string;
+  'checkout.recoveringOrder': string;
+  'checkout.retryCollectionOrder': string;
+  'checkout.checkingAvailability': string;
+  'checkout.retryAvailabilityCheck': string;
+  'checkout.switchToPickup': string;
+  'checkout.availableStoresCouriers': string;
+  'checkout.initializingPayment': string;
+  'checkout.preparingPayment': string;
+  'checkout.paymentGateway': string;
+  'checkout.paymentAuthorised': string;
+  'checkout.placingOrder': string;
+  'checkout.stepPlacingCollection': string;
+  'checkout.stepPreparingPayment': string;
+  'checkout.stepPaymentAuthorised': string;
+  'checkout.stepPlacingOrder': string;
+  'checkout.stepOrderConfirmed': string;
 
   // Order & Picking States
   'order.statusAccepted': string;
@@ -391,6 +417,32 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.tryOrderAgain': 'Try Placing Order Again',
     'checkout.tryPaymentAgain': 'Try Payment Again',
     'checkout.closeKeepBasket': 'Close & Keep Basket',
+    'checkout.paymentNoticeStart': 'You are not charged immediately. We pre-authorize up to',
+    'checkout.paymentNoticeEstimated': 'estimated total',
+    'checkout.paymentNoticeBuffer': 'pre-chosen alternative buffer',
+    'checkout.paymentNoticeEnd': 'The final amount will only be captured when store picking completes.',
+    'checkout.collectionNoPayment': 'No payment authorisation or courier dispatch for Collection',
+    'checkout.resolveOutOfStock': 'Resolve Out of Stock Items Above',
+    'checkout.collectionIssueRetry': 'Collection Order Issue - Retry Above',
+    'checkout.dispatchUnavailableRetry': 'Courier Dispatch Unavailable - Retry Above',
+    'checkout.placeCollectionOrder': 'Place Collection Order',
+    'checkout.authorizeUpTo': 'Authorize & Place Order (up to',
+    'checkout.recoveringOrder': 'Recovering Order...',
+    'checkout.retryCollectionOrder': 'Retry Collection Order',
+    'checkout.checkingAvailability': 'Checking Availability...',
+    'checkout.retryAvailabilityCheck': 'Retry Availability Check',
+    'checkout.switchToPickup': 'Switch to Pickup',
+    'checkout.availableStoresCouriers': 'Available stores with couriers',
+    'checkout.initializingPayment': 'Initializing payment session...',
+    'checkout.preparingPayment': 'Preparing payment...',
+    'checkout.paymentGateway': 'Communicating with payment gateway...',
+    'checkout.paymentAuthorised': 'Payment authorised by bank. Securing dispatch slot...',
+    'checkout.placingOrder': 'Placing order with store & dispatching courier...',
+    'checkout.stepPlacingCollection': 'Placing collection order with store',
+    'checkout.stepPreparingPayment': 'Preparing payment',
+    'checkout.stepPaymentAuthorised': 'Payment authorised',
+    'checkout.stepPlacingOrder': 'Placing order with store',
+    'checkout.stepOrderConfirmed': 'Order confirmed',
 
     'order.statusAccepted': 'Order Accepted by Store',
     'order.statusPicking': 'Quest Picking in Progress',
@@ -595,6 +647,32 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.tryOrderAgain': 'Intentar realizar el pedido de nuevo',
     'checkout.tryPaymentAgain': 'Intentar el pago de nuevo',
     'checkout.closeKeepBasket': 'Cerrar y conservar la cesta',
+    'checkout.paymentNoticeStart': 'No se te cobra inmediatamente. Preautorizamos hasta',
+    'checkout.paymentNoticeEstimated': 'total estimado',
+    'checkout.paymentNoticeBuffer': 'margen para la alternativa elegida',
+    'checkout.paymentNoticeEnd': 'El importe final solo se cobrará cuando la tienda termine de preparar el pedido.',
+    'checkout.collectionNoPayment': 'Sin autorización de pago ni envío con repartidor para la recogida',
+    'checkout.resolveOutOfStock': 'Resuelve los artículos agotados de arriba',
+    'checkout.collectionIssueRetry': 'Problema con el pedido de recogida: vuelve a intentarlo arriba',
+    'checkout.dispatchUnavailableRetry': 'Reparto no disponible: vuelve a intentarlo arriba',
+    'checkout.placeCollectionOrder': 'Realizar pedido para recogida',
+    'checkout.authorizeUpTo': 'Autorizar y realizar pedido (hasta',
+    'checkout.recoveringOrder': 'Recuperando pedido...',
+    'checkout.retryCollectionOrder': 'Reintentar pedido de recogida',
+    'checkout.checkingAvailability': 'Comprobando disponibilidad...',
+    'checkout.retryAvailabilityCheck': 'Volver a comprobar disponibilidad',
+    'checkout.switchToPickup': 'Cambiar a recogida',
+    'checkout.availableStoresCouriers': 'Tiendas disponibles con repartidores',
+    'checkout.initializingPayment': 'Iniciando sesión de pago...',
+    'checkout.preparingPayment': 'Preparando pago...',
+    'checkout.paymentGateway': 'Conectando con la pasarela de pago...',
+    'checkout.paymentAuthorised': 'Pago autorizado por el banco. Reservando reparto...',
+    'checkout.placingOrder': 'Enviando pedido a la tienda y asignando repartidor...',
+    'checkout.stepPlacingCollection': 'Enviando pedido de recogida a la tienda',
+    'checkout.stepPreparingPayment': 'Preparando pago',
+    'checkout.stepPaymentAuthorised': 'Pago autorizado',
+    'checkout.stepPlacingOrder': 'Enviando pedido a la tienda',
+    'checkout.stepOrderConfirmed': 'Pedido confirmado',
 
     'order.statusAccepted': 'Pedido Aceptado por la tienda',
     'order.statusPicking': 'Preparación en curso',
@@ -799,6 +877,32 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.tryOrderAgain': 'Réessayer la commande',
     'checkout.tryPaymentAgain': 'Réessayer le paiement',
     'checkout.closeKeepBasket': 'Fermer et conserver le panier',
+    'checkout.paymentNoticeStart': 'Vous n’êtes pas débité immédiatement. Nous préautorisons jusqu’à',
+    'checkout.paymentNoticeEstimated': 'total estimé',
+    'checkout.paymentNoticeBuffer': 'marge pour l’alternative choisie',
+    'checkout.paymentNoticeEnd': 'Le montant final ne sera débité qu’une fois la préparation terminée en magasin.',
+    'checkout.collectionNoPayment': 'Aucune autorisation de paiement ni livraison par coursier pour le retrait',
+    'checkout.resolveOutOfStock': 'Résolvez les articles indisponibles ci-dessus',
+    'checkout.collectionIssueRetry': 'Problème avec la commande à retirer — réessayez ci-dessus',
+    'checkout.dispatchUnavailableRetry': 'Livraison indisponible — réessayez ci-dessus',
+    'checkout.placeCollectionOrder': 'Passer la commande à retirer',
+    'checkout.authorizeUpTo': 'Autoriser et commander (jusqu’à',
+    'checkout.recoveringOrder': 'Récupération de la commande...',
+    'checkout.retryCollectionOrder': 'Réessayer la commande à retirer',
+    'checkout.checkingAvailability': 'Vérification de la disponibilité...',
+    'checkout.retryAvailabilityCheck': 'Revérifier la disponibilité',
+    'checkout.switchToPickup': 'Passer au retrait',
+    'checkout.availableStoresCouriers': 'Magasins disponibles avec coursiers',
+    'checkout.initializingPayment': 'Initialisation de la session de paiement...',
+    'checkout.preparingPayment': 'Préparation du paiement...',
+    'checkout.paymentGateway': 'Connexion à la passerelle de paiement...',
+    'checkout.paymentAuthorised': 'Paiement autorisé par la banque. Réservation de la livraison...',
+    'checkout.placingOrder': 'Envoi de la commande au magasin et affectation du coursier...',
+    'checkout.stepPlacingCollection': 'Envoi de la commande de retrait au magasin',
+    'checkout.stepPreparingPayment': 'Préparation du paiement',
+    'checkout.stepPaymentAuthorised': 'Paiement autorisé',
+    'checkout.stepPlacingOrder': 'Envoi de la commande au magasin',
+    'checkout.stepOrderConfirmed': 'Commande confirmée',
 
     'order.statusAccepted': 'Commande acceptée',
     'order.statusPicking': 'Préparation en cours',
@@ -1003,6 +1107,32 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.tryOrderAgain': 'Bestellung erneut versuchen',
     'checkout.tryPaymentAgain': 'Zahlung erneut versuchen',
     'checkout.closeKeepBasket': 'Schließen & Warenkorb behalten',
+    'checkout.paymentNoticeStart': 'Du wirst nicht sofort belastet. Wir autorisieren vorab bis zu',
+    'checkout.paymentNoticeEstimated': 'geschätzter Gesamtbetrag',
+    'checkout.paymentNoticeBuffer': 'Puffer für die gewählte Alternative',
+    'checkout.paymentNoticeEnd': 'Der endgültige Betrag wird erst nach Abschluss der Kommissionierung abgebucht.',
+    'checkout.collectionNoPayment': 'Keine Zahlungsautorisierung oder Kurierzustellung bei Abholung',
+    'checkout.resolveOutOfStock': 'Nicht verfügbare Artikel oben klären',
+    'checkout.collectionIssueRetry': 'Problem mit Abholbestellung — oben erneut versuchen',
+    'checkout.dispatchUnavailableRetry': 'Kurierzustellung nicht verfügbar — oben erneut versuchen',
+    'checkout.placeCollectionOrder': 'Abholbestellung aufgeben',
+    'checkout.authorizeUpTo': 'Autorisieren & bestellen (bis zu',
+    'checkout.recoveringOrder': 'Bestellung wird wiederhergestellt...',
+    'checkout.retryCollectionOrder': 'Abholbestellung erneut versuchen',
+    'checkout.checkingAvailability': 'Verfügbarkeit wird geprüft...',
+    'checkout.retryAvailabilityCheck': 'Verfügbarkeit erneut prüfen',
+    'checkout.switchToPickup': 'Zur Abholung wechseln',
+    'checkout.availableStoresCouriers': 'Verfügbare Filialen mit Kurieren',
+    'checkout.initializingPayment': 'Zahlungssitzung wird initialisiert...',
+    'checkout.preparingPayment': 'Zahlung wird vorbereitet...',
+    'checkout.paymentGateway': 'Verbindung zum Zahlungsanbieter...',
+    'checkout.paymentAuthorised': 'Zahlung von der Bank autorisiert. Zustellung wird reserviert...',
+    'checkout.placingOrder': 'Bestellung wird an die Filiale gesendet und Kurier disponiert...',
+    'checkout.stepPlacingCollection': 'Abholbestellung wird an die Filiale gesendet',
+    'checkout.stepPreparingPayment': 'Zahlung wird vorbereitet',
+    'checkout.stepPaymentAuthorised': 'Zahlung autorisiert',
+    'checkout.stepPlacingOrder': 'Bestellung wird an die Filiale gesendet',
+    'checkout.stepOrderConfirmed': 'Bestellung bestätigt',
 
     'order.statusAccepted': 'Bestellung angenommen',
     'order.statusPicking': 'Kommissionierung läuft',
