@@ -35,6 +35,7 @@ import {
   Store as StoreIcon,
   Calendar,
   Layers,
+  ReceiptText,
 } from 'lucide-react';
 
 interface OrderTrackingViewProps {
@@ -55,7 +56,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   const [order, setOrder] = useState<Order>(initialOrder);
   const [isAdvancing, setIsAdvancing] = useState<boolean>(false);
   const [isReauthorizing, setIsReauthorizing] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'timeline' | 'items' | 'payment'>('items');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'items' | 'payment' | 'receipt'>('items');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   // Synchronize with prop changes
@@ -414,6 +415,21 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           <span>{t('tracking.timeline')} ({order.events?.length || 0})</span>
         </button>
 
+        {order.receipt?.available && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('receipt')}
+            className={`pb-2 px-4 flex items-center gap-1.5 border-b-2 transition-colors ${
+              activeTab === 'receipt'
+                ? 'border-emerald-600 text-emerald-700 font-extrabold'
+                : 'border-transparent hover:text-gray-700'
+            }`}
+          >
+            <ReceiptText className="w-3.5 h-3.5" />
+            <span>{order.receipt.isVatReceipt ? 'VAT receipt' : 'Receipt'}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => setActiveTab('payment')}
@@ -463,6 +479,13 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2.5 flex-1">
+                      <div className="w-12 h-12 rounded-xl bg-gray-50 overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name || item.plu} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-5 h-5 text-gray-300" />
+                        )}
+                      </div>
                       {/* State Icon Indicator */}
                       <div className="mt-0.5">
                         {isPicked && (
@@ -574,6 +597,66 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+            {activeTab === 'receipt' && order.receipt?.available && (
+        <div className="p-5 rounded-3xl bg-white border border-gray-100 space-y-4 text-xs">
+          <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-3">
+            <div>
+              <h2 className="text-base font-extrabold text-gray-900">
+                {order.receipt.isVatReceipt ? 'VAT receipt' : 'Paid receipt'}
+              </h2>
+              <p className="text-gray-500 mt-1">{order.receipt.legalName || brandName} • {order.displayId}</p>
+              {order.receipt.legalAddress && <p className="text-gray-500">{order.receipt.legalAddress}</p>}
+              {order.receipt.isVatReceipt && order.receipt.vatRegistrationNumber && (
+                <p className="font-semibold text-gray-700 mt-1">VAT registration: {order.receipt.vatRegistrationNumber}</p>
+              )}
+            </div>
+            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold">Paid</span>
+          </div>
+
+          <div className="space-y-2">
+            {(order.receipt.items || []).map((item) => (
+              <div key={item.id || item.plu} className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gray-50 overflow-hidden border border-gray-100 flex items-center justify-center shrink-0">
+                  {item.imageUrl ? <img src={item.imageUrl} alt={item.name || item.plu} className="w-full h-full object-cover" /> : <Package className="w-4 h-4 text-gray-300" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-gray-900 truncate">{item.name || item.plu}</div>
+                  <div className="text-gray-500">{item.quantity} × {formatCurrency(item.unitPrice || item.price, currencySymbol)}</div>
+                </div>
+                <div className="font-bold text-gray-900">
+                  {formatCurrency(item.totalPrice || { amount: (item.unitPrice || item.price).amount * item.quantity, currency: (item.unitPrice || item.price).currency }, currencySymbol)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {(order.receipt.discounts || []).map((discount) => (
+            <div key={discount.id || discount.code} className="flex justify-between text-emerald-700">
+              <span>{discount.title}</span><span>-{formatCurrency(discount.amount, currencySymbol)}</span>
+            </div>
+          ))}
+          {(order.receipt.charges || []).map((charge) => (
+            <div key={charge.id} className="flex justify-between text-gray-600">
+              <span>{charge.title}</span><span>{formatCurrency(charge.amount, currencySymbol)}</span>
+            </div>
+          ))}
+          {order.receipt.tax && (
+            <div className="flex justify-between text-gray-700">
+              <span>{order.receipt.isVatReceipt ? 'VAT' : 'Tax'}</span>
+              <span>{formatCurrency(order.receipt.tax, currencySymbol)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-gray-200 pt-3 text-sm font-extrabold text-gray-900">
+            <span>Total paid</span><span>{formatCurrency(finalTotal, currencySymbol)}</span>
+          </div>
+          {!order.receipt.isVatReceipt && (
+            <p className="text-[10px] text-gray-400">
+              This is a paid receipt. It is only labelled as a VAT receipt when the merchant VAT registration and authoritative VAT amount are configured.
+            </p>
+          )}
         </div>
       )}
 
