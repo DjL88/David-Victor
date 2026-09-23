@@ -414,7 +414,19 @@ export interface AdminClient {
     provider?: string;
     model?: string;
     degraded?: boolean;
-    navigation?: { section: string; target?: string; label: string } | null;
+    navigation?: {
+      section: string;
+      target?: string;
+      label: string;
+      prefill?: Record<string, unknown>;
+      steps?: Array<{
+        section: string;
+        target?: string;
+        label: string;
+        instruction: string;
+        prefill?: Record<string, unknown>;
+      }>;
+    } | null;
     mode?: string;
     safety?: Record<string, unknown>;
   }>;
