@@ -2045,7 +2045,12 @@ export class FirestoreService {
   /**
    * Saves a GDPR-safe order projection in Firestore for customer status tracking.
    */
-  static async saveOrderProjection(rawOrderInput: Order | any, tenantId: string = 'brand-alpha', checkoutId?: string): Promise<OrderProjection> {
+  static async saveOrderProjection(
+    rawOrderInput: Order | any,
+    tenantId: string = 'brand-alpha',
+    checkoutId?: string,
+    customerUid?: string
+  ): Promise<OrderProjection> {
     const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
     const checkoutProjection = checkoutId ? await this.getCheckoutProjection(checkoutId) : null;
@@ -2202,6 +2207,7 @@ export class FirestoreService {
     const projection: OrderProjection = {
       orderId: resolvedOrderId,
       tenantId,
+      customerUid: customerUid || (rawOrderInput as any)?.customerUid || undefined,
       status: order.status,
       itemsCount: order.currentOrder?.itemCount || order.originalBasket?.items?.length || (order as any).itemsCount || 0,
       total: order.currentOrder ? order.currentOrder.total.amount : (order.originalBasket?.total?.amount ?? (order as any).total ?? 0),
