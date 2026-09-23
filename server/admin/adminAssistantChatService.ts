@@ -1,9 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
-import { BFFError } from '../errors';
 import { SecretManager } from '../secrets';
 import { listAssistantActionsForRole } from './adminActionRegistry';
 
 export type AdminAssistantChatRole = 'user' | 'assistant';
+export type AdminAssistantProvider = 'google-ai' | 'vertex-ai' | 'local-fallback';
 
 export interface AdminAssistantChatMessage {
   role: AdminAssistantChatRole;
@@ -31,12 +31,13 @@ interface ChatArgs {
 }
 
 interface ChatClient {
-  provider: 'google-ai' | 'vertex-ai';
-  model: string;
+  provider: Exclude<AdminAssistantProvider, 'local-fallback'>;
+  preferredModel: string;
   ai: GoogleGenAI;
 }
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
+const MODEL_FALLBACKS = ['gemini-3.8-flash', 'gemini-2.5-flash'];
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_REPLY_CHARS = 720;
 
@@ -68,7 +69,7 @@ const SECTION_SUGGESTIONS: Record<string, string[]> = {
   ],
   media_health: [
     'What should I fix first?',
-    'Explain broken image handling',
+    'Explain missing images',
     'How do I recheck media?',
   ],
   branding: [
@@ -101,6 +102,31 @@ const SECTION_SUGGESTIONS: Record<string, string[]> = {
     'Help me tune search',
     'What can I change here?',
   ],
+};
+
+const DEGRADED_PAGE_HELP: Record<string, string> = {
+  hero_banners:
+    'On Banners you can manage the image, headline, supporting copy, button/action, order, scheduling and stock-linked visibility. I can guide you through those controls while live AI reconnects.',
+  catalog:
+    'On Products & Stock I can still guide you through ranging, stock, pricing and storefront visibility. Use Run check when you need a live catalogue snapshot.',
+  stores:
+    'On Locations I can still help with store configuration, opening settings and delivery setup while live AI reconnects.',
+  product_rules:
+    'On Rules & Fulfilment I can still explain Where → Action logic and safer rule design while live AI reconnects.',
+  media_health:
+    'On Media Health I can still help interpret broken, unreachable or missing images and explain what to fix first.',
+  branding:
+    'On Branding I can still explain colours, fonts, languages and brand-specific wording while live AI reconnects.',
+  stories:
+    'On Stories I can still explain media, visibility and storefront behaviour while live AI reconnects.',
+  pages:
+    'On Pages I can still explain CMS content, translated variants and Account/header visibility while live AI reconnects.',
+  fees:
+    'On Fees I can still explain location-level charges and fee rules while live AI reconnects.',
+  integrations:
+    'On Deliverect Setup I can still explain the configuration flow and safe diagnostics while live AI reconnects.',
+  connection_health:
+    'On Connection Status I can still help interpret diagnostics and narrow down where a request is failing.',
 };
 
 export function getAdminAssistantSuggestions(section?: string): string[] {
@@ -138,6 +164,26 @@ export function normaliseAssistantReply(raw: unknown): string {
   );
   const cutAt = sentenceBreak >= 360 ? sentenceBreak + 1 : MAX_REPLY_CHARS;
   return `${slice.slice(0, cutAt).trim()}…`;
+}
+
+export function buildDegradedAssistantReply(section: string | undefined, message: string): string {
+  const text = String(message || '').trim().toLowerCase();
+
+  if (/^(hi|hello|hey|morning|afternoon|evening)\b/.test(text)) {
+    return 'Hi. Live AI is temporarily reconnecting, but the guided Admin controls and read-only diagnostics still work. What would you like help with?';
+  }
+
+  if (
+    section === 'catalog' &&
+    /(stock|in stock|available|availability|price|product|item|banana)/.test(text)
+  ) {
+    return 'I can’t confirm live stock from conversation alone while live AI is reconnecting. Tap Run check for the current catalogue snapshot; I can still help you interpret stock, ranging and visibility.';
+  }
+
+  return (
+    DEGRADED_PAGE_HELP[section || ''] ||
+    'Live AI is temporarily reconnecting. I can still guide you through this Admin page and the safe read-only diagnostics remain available.'
+  );
 }
 
 export function buildAdminAssistantSystemInstruction(args: {
@@ -202,50 +248,54 @@ export function normaliseChatHistory(history: AdminAssistantChatMessage[] = []):
     .slice(-MAX_HISTORY_MESSAGES);
 }
 
-async function createChatClient(): Promise<ChatClient> {
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+function resolveProjectId(): string | undefined {
+  if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
+  if (process.env.GCP_PROJECT) return process.env.GCP_PROJECT;
+  try {
+    return process.env.FIREBASE_CONFIG
+      ? JSON.parse(process.env.FIREBASE_CONFIG).projectId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function createChatClients(): Promise<ChatClient[]> {
+  const preferredModel = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+  const clients: ChatClient[] = [];
   const apiKey =
     (await SecretManager.getSecret('GEMINI_API_KEY')) ||
     (await SecretManager.getSecret('GOOGLE_API_KEY'));
 
   if (apiKey) {
-    return {
+    clients.push({
       provider: 'google-ai',
-      model,
-      ai: new GoogleGenAI({ apiKey }),
-    };
+      preferredModel,
+      ai: new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      }),
+    });
   }
 
-  const project =
-    process.env.GOOGLE_CLOUD_PROJECT ||
-    process.env.GCP_PROJECT ||
-    (() => {
-      try {
-        return process.env.FIREBASE_CONFIG
-          ? JSON.parse(process.env.FIREBASE_CONFIG).projectId
-          : undefined;
-      } catch {
-        return undefined;
-      }
-    })();
-
+  const project = resolveProjectId();
   if (project) {
-    return {
+    clients.push({
       provider: 'vertex-ai',
-      model,
+      preferredModel,
       ai: new GoogleGenAI({
         vertexai: true,
         project,
         location: process.env.GOOGLE_CLOUD_LOCATION || 'global',
       } as any),
-    };
+    });
   }
 
-  throw new BFFError(
-    'INTEGRATION_NOT_CONFIGURED',
-    'Admin AI is not configured yet. Configure GEMINI_API_KEY or enable Vertex AI for the Cloud Run project.',
-    503
-  );
+  return clients;
 }
 
 function isTransientGenerationError(err: any): boolean {
@@ -258,12 +308,13 @@ function isTransientGenerationError(err: any): boolean {
     message.includes('temporarily unavailable') ||
     message.includes('rate limit') ||
     message.includes('resource exhausted') ||
-    message.includes('network')
+    message.includes('network') ||
+    message.includes('overloaded')
   );
 }
 
 function modelCandidates(preferred: string): string[] {
-  return preferred === DEFAULT_MODEL ? [preferred] : [preferred, DEFAULT_MODEL];
+  return Array.from(new Set([preferred, ...MODEL_FALLBACKS].filter(Boolean)));
 }
 
 async function wait(ms: number): Promise<void> {
@@ -274,12 +325,11 @@ export class AdminAssistantChatService {
   static async chat(args: ChatArgs): Promise<{
     message: string;
     suggestions: string[];
-    provider: 'google-ai' | 'vertex-ai';
+    provider: AdminAssistantProvider;
     model: string;
+    degraded?: boolean;
   }> {
-    const client = await createChatClient();
     const history = normaliseChatHistory(args.history);
-
     const contents = [
       ...history.map((message) => ({
         role: message.role === 'assistant' ? 'model' : 'user',
@@ -291,61 +341,68 @@ export class AdminAssistantChatService {
       },
     ];
 
+    const clients = await createChatClients();
     let lastError: any = null;
 
-    for (const model of modelCandidates(client.model)) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const response: any = await client.ai.models.generateContent({
-            model,
-            contents,
-            config: {
-              systemInstruction: buildAdminAssistantSystemInstruction(args),
-              temperature: 0.2,
-              maxOutputTokens: 320,
-            },
-          });
+    for (const client of clients) {
+      for (const model of modelCandidates(client.preferredModel)) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const response: any = await client.ai.models.generateContent({
+              model,
+              contents,
+              config: {
+                systemInstruction: buildAdminAssistantSystemInstruction(args),
+                temperature: 0.2,
+                maxOutputTokens: 320,
+              },
+            });
 
-          const rawText =
-            typeof response?.text === 'function'
-              ? await response.text()
-              : response?.text;
-          const message = normaliseAssistantReply(rawText);
+            const rawText =
+              typeof response?.text === 'function'
+                ? await response.text()
+                : response?.text;
+            const message = normaliseAssistantReply(rawText);
 
-          if (!message) {
-            throw new Error('Model returned an empty response.');
+            if (!message) {
+              throw new Error('Model returned an empty response.');
+            }
+
+            return {
+              message,
+              suggestions: getAdminAssistantSuggestions(args.context?.section),
+              provider: client.provider,
+              model,
+            };
+          } catch (err: any) {
+            lastError = err;
+            const transient = isTransientGenerationError(err);
+            console.warn(
+              `[AdminAssistantChat] Generation attempt failed provider=${client.provider} model=${model} attempt=${attempt + 1}:`,
+              err?.message || err
+            );
+
+            if (transient && attempt === 0) {
+              await wait(250);
+              continue;
+            }
+
+            break;
           }
-
-          return {
-            message,
-            suggestions: getAdminAssistantSuggestions(args.context?.section),
-            provider: client.provider,
-            model,
-          };
-        } catch (err: any) {
-          lastError = err;
-          const transient = isTransientGenerationError(err);
-          console.warn(
-            `[AdminAssistantChat] Generation attempt failed model=${model} attempt=${attempt + 1}:`,
-            err?.message || err
-          );
-
-          if (transient && attempt === 0) {
-            await wait(250);
-            continue;
-          }
-
-          break;
         }
       }
     }
 
-    console.error('[AdminAssistantChat] Generation failed:', lastError?.message || lastError);
-    if (lastError instanceof BFFError) throw lastError;
-    throw new BFFError(
-      'UPSTREAM_UNAVAILABLE',
-      'Admin AI could not answer right now. Please try again.',
-      503
-    );
+    // Do not strand the Admin drawer behind a generic red error if the upstream
+    // model/quota/preview runtime is unavailable. The fallback is deliberately
+    // deterministic and never pretends to have live data or write access.
+    console.error('[AdminAssistantChat] Falling back to guided mode:', lastError?.message || 'No AI provider configured');
+    return {
+      message: buildDegradedAssistantReply(args.context?.section, args.message),
+      suggestions: getAdminAssistantSuggestions(args.context?.section),
+      provider: 'local-fallback',
+      model: 'guided-admin-fallback',
+      degraded: true,
+    };
   }
 }

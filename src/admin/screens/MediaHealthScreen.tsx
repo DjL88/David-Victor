@@ -84,7 +84,7 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Check product, category, story and CMS media so broken assets can be fixed before shoppers encounter them.
+            Check product, category, story and CMS media, including catalogue products with no image supplied.
           </p>
         </div>
 
@@ -209,15 +209,19 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
                   </td>
 
                   <td className="py-3 px-4 max-w-xs truncate font-mono text-[11px] text-gray-600">
-                    <a
-                      href={asset.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hover:underline flex items-center gap-1"
-                    >
-                      <span className="truncate">{asset.url}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 text-gray-400" />
-                    </a>
+                    {asset.url ? (
+                      <a
+                        href={asset.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline flex items-center gap-1"
+                      >
+                        <span className="truncate">{asset.url}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 text-gray-400" />
+                      </a>
+                    ) : (
+                      <span className="font-sans font-semibold text-rose-700">No image supplied</span>
+                    )}
                   </td>
 
                   <td className="py-3 px-4">
@@ -234,7 +238,9 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
                         <AlertTriangle className="w-3 h-3" />
                       )}
                       <span>
-                        {asset.status.toUpperCase()} ({asset.httpStatus})
+                        {asset.httpStatus === 0
+                          ? 'MISSING IMAGE'
+                          : `${asset.status.toUpperCase()} (${asset.httpStatus ?? '—'})`}
                       </span>
                     </span>
                   </td>
