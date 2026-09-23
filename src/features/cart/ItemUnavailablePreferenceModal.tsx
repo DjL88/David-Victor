@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BasketItem, Product, SubstitutionPreferenceType, Money, moneyToMajor } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import {
   X,
@@ -44,6 +45,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
   onRemoveItem,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { t } = useI18n();
 
   // Local form state
   const [quantity, setQuantity] = useState<number>(1);
@@ -164,14 +166,14 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
             onClick={handleDeleteItem}
             id="modal-delete-item-btn"
             className="w-9 h-9 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50 flex items-center justify-center transition-colors"
-            title="Remove item from basket"
-            aria-label="Remove item from basket"
+            title={t('basket.removeItem')}
+            aria-label={t('basket.removeItem')}
           >
             <Trash2 className="w-5 h-5 stroke-[2.2]" />
           </button>
 
           <h3 className="text-sm font-bold text-gray-900 text-center px-3 truncate max-w-[260px]">
-            {item.name || 'Basket Item'}
+            {item.name || t('basket.item')}
           </h3>
 
           <button
@@ -218,10 +220,10 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
           {/* SECTION HEADER */}
           <div>
             <h4 className="text-base font-extrabold text-gray-900 tracking-tight">
-              If this item is unavailable
+              {t('basket.ifItemUnavailable')}
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
-              Choose how your store picker should handle this item during picking.
+              {t('basket.unavailablePreferenceHelp')}
             </p>
           </div>
 
@@ -248,14 +250,14 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-900">
-                    Substitute if unavailable (Best match)
+                    {t('basket.substituteBestMatch')}
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 shrink-0">
-                    Cheapest Option
+                    {t('basket.cheapestOption')}
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                  The picker in shop will only be able to swap with the same value or lower. You are guaranteed the lowest price.
+                  {t('basket.bestMatchHelp')}
                 </p>
               </div>
             </label>
@@ -284,14 +286,14 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-gray-900">
-                      Pre-choose substitute
+                      {t('basket.preChooseSubstitute')}
                     </span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-900 shrink-0">
-                      Buffer Adjusted
+                      {t('basket.bufferAdjusted')}
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                    Select 1 alternative option. If it costs more, this higher value is calculated into the pre-authorisation buffer on your card payment.
+                    {t('basket.preChooseHelp')}
                   </p>
                 </div>
               </label>
@@ -324,11 +326,11 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                             </span>
                             {priceDifferenceMajor > 0 ? (
                               <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-extrabold text-[10px]">
-                                +£{priceDifferenceMajor.toFixed(2)} buffer
+                                +{currencySymbol}{priceDifferenceMajor.toFixed(2)} {t('basket.buffer')}
                               </span>
                             ) : (
                               <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                                Same or cheaper
+                                {t('basket.sameOrCheaper')}
                               </span>
                             )}
                           </div>
@@ -340,7 +342,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                         onClick={() => setIsChoosingAlternative(true)}
                         className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg shrink-0 transition-colors"
                       >
-                        Change
+                        {t('basket.change')}
                       </button>
                     </div>
                   ) : (
@@ -350,7 +352,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                       className="w-full py-2.5 px-3 bg-white border-2 border-dashed border-emerald-400 hover:border-emerald-600 rounded-xl text-xs font-bold text-emerald-700 flex items-center justify-center gap-2 transition-colors shadow-2xs"
                     >
                       <Sparkles className="w-4 h-4 text-emerald-600" />
-                      <span>Select 1 alternative option</span>
+                      <span>{t('basket.selectAlternative')}</span>
                     </button>
                   )}
 
@@ -359,9 +361,9 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                     <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
                       <ArrowRightLeft className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                       <p className="leading-snug">
-                        <strong>Pre-auth buffer update:</strong> Extra{' '}
-                        <strong>£{(priceDifferenceMajor * quantity).toFixed(2)}</strong> (
-                        +£{priceDifferenceMajor.toFixed(2)} × {quantity}) will be reserved on your card. If picked, you only pay this higher price; if the original item is available, you pay the original price.
+                        <strong>{t('basket.preAuthBufferUpdate')}:</strong> {t('basket.extra')}{' '}
+                        <strong>{currencySymbol}{(priceDifferenceMajor * quantity).toFixed(2)}</strong> (
+                        +{currencySymbol}{priceDifferenceMajor.toFixed(2)} × {quantity}) {t('basket.bufferNoticeSuffix')}
                       </p>
                     </div>
                   )}
@@ -371,7 +373,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                     <div className="p-3 bg-gray-50 rounded-2xl border border-gray-200 space-y-2.5 animate-in fade-in duration-100">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-gray-800">
-                          Choose Alternative Product:
+                          {t('basket.chooseAlternativeProduct')}:
                         </span>
                         <button
                           type="button"
@@ -389,7 +391,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                           type="text"
                           value={searchFilter}
                           onChange={(e) => setSearchFilter(e.target.value)}
-                          placeholder="Search alternatives..."
+                          placeholder={t('basket.searchAlternatives')}
                           className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-emerald-600"
                         />
                       </div>
@@ -436,11 +438,11 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {diff > 0 ? (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-900">
-                                    +£{diff.toFixed(2)}
+                                    +{currencySymbol}{diff.toFixed(2)}
                                   </span>
                                 ) : (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700">
-                                    £0 diff
+                                    {t('basket.noPriceDifference')}
                                   </span>
                                 )}
                                 {isSelected && (
@@ -478,14 +480,14 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-900">
-                    Remove if unavailable
+                    {t('basket.removeIfUnavailable')}
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-gray-100 text-gray-700 shrink-0">
-                    Auto Refund
+                    {t('basket.autoRefund')}
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                  The picker can only remove this item if unavailable. You will be refunded the full amount.
+                  {t('basket.removeUnavailableHelp')}
                 </p>
               </div>
             </label>
@@ -511,14 +513,14 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-900">
-                    Cancel entire order if unavailable
+                    {t('basket.cancelIfUnavailable')}
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-red-100 text-red-800 shrink-0">
-                    Essential Item
+                    {t('basket.essentialItem')}
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                  If this item is unavailable, do not deliver. Your entire order will be cancelled with no charge.
+                  {t('basket.cancelUnavailableHelp')}
                 </p>
               </div>
             </label>
@@ -534,7 +536,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
             style={primaryBtnStyle}
             className="w-full py-3.5 rounded-2xl font-extrabold text-sm text-center shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
           >
-            <span>Update</span>
+            <span>{t('basket.update')}</span>
           </button>
         </div>
       </div>

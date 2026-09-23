@@ -9,6 +9,8 @@ import {
 } from '../../commerce/models';
 import { QuantitySelector } from '../../components/QuantitySelector';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useTenant } from '../../tenant/TenantContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { calculateReverseDeals } from '../../commerce/reverseDealEngine';
 import { ReverseDealPromptCard } from '../deals/ReverseDealPromptCard';
@@ -84,6 +86,9 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   loading,
 }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
+  const { tenant } = useTenant();
+  const { t } = useI18n();
+  const isUkTenant = tenant?.country === 'GB';
 
   // State for active Deliveroo-style unavailable preference modal
   const [comboChoice, setComboChoice] = useState<ReturnType<typeof findMissedBundleOffers>[number] | null>(null);
@@ -258,15 +263,15 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h2 className="text-base font-bold text-gray-900">Your Basket</h2>
+                <h2 className="text-base font-bold text-gray-900">{t('basket.title')}</h2>
                 {combinedDiscountsMajor > 0 && (
                   <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-tight">
-                    Saving {currencySymbol}{combinedDiscountsMajor.toFixed(2)}
+                    {t('basket.saving')} {currencySymbol}{combinedDiscountsMajor.toFixed(2)}
                   </span>
                 )}
               </div>
               <p className="text-xs text-gray-500">
-                {basket?.storeName || 'Selected Store'}
+                {basket?.storeName || t('basket.selectedStore')}
               </p>
             </div>
           </div>
@@ -285,10 +290,10 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
               <Package className="w-16 h-16 stroke-1 mb-3 text-gray-300" />
               <h3 className="text-base font-bold text-gray-700 mb-1">
-                Your basket is empty
+                {t('basket.emptyTitle')}
               </h3>
               <p className="text-xs text-gray-500 max-w-xs mb-4">
-                Explore our fresh aisles and trending stories to add items.
+                {t('basket.emptySubtitle')}
               </p>
 
 
@@ -298,7 +303,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 style={primaryBtnStyle}
                 className="px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs"
               >
-                Start Shopping
+                {t('basket.startShopping')}
               </button>
             </div>
           ) : (
@@ -309,7 +314,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-bold text-amber-950 text-xs">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>{snoozeAudit.affectedItems.length} item(s) unavailable at this store</span>
+                      <span>{snoozeAudit.affectedItems.length} {t('basket.unavailableAtStore')}</span>
                     </div>
                     {snoozeAudit.availableSwaps.length > 0 && onSwapAllSubstitutes && (
                       <button
@@ -317,12 +322,12 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         onClick={onSwapAllSubstitutes}
                         className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10.5px] cursor-pointer transition-colors shadow-2xs"
                       >
-                        Swap All In-Stock ({snoozeAudit.availableSwaps.length})
+                        {t('basket.swapAllInStock')} ({snoozeAudit.availableSwaps.length})
                       </button>
                     )}
                   </div>
                   <p className="text-[11px] text-amber-800 leading-snug">
-                    Real-time stock check found items that are snoozed or out of stock. You can swap them with in-stock alternatives or remove them.
+                    {t('basket.stockCheckNotice')}
                   </p>
                 </div>
               )}
@@ -331,7 +336,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               {effectiveBasket && (
                 <div className="space-y-2.5">
                   {effectiveBasket.items.map((item) => {
-                    const itemName = item?.name || item?.plu || 'Item';
+                    const itemName = item?.name || item?.plu || t('orders.item');
                     const reconciledUnavailable = item.availabilityState === 'UNAVAILABLE_AT_STORE' || item.availabilityState === 'QUANTITY_UNAVAILABLE';
                     const affected = snoozeAudit.affectedItems.find((a) => a.plu === item.plu) || (reconciledUnavailable ? { plu: item.plu, reason: 'unavailable' as const } : undefined);
                     const swap = snoozeAudit.availableSwaps.find((s) => s.originalPlu === item.plu);
@@ -384,17 +389,17 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               </h4>
                               {item.isCombo && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                  Combo Deal
+                                  {t('basket.comboDeal')}
                                 </span>
                               )}
                               {affected && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
-                                  {item.availabilityState === 'QUANTITY_UNAVAILABLE' ? 'Quantity unavailable' : affected.reason === 'snoozed' ? 'Snoozed by store' : 'Unavailable at this store'}
+                                  {item.availabilityState === 'QUANTITY_UNAVAILABLE' ? t('basket.quantityUnavailable') : affected.reason === 'snoozed' ? t('basket.snoozedByStore') : t('basket.unavailableHere')}
                                 </span>
                               )}
                             </div>
                             <p className="text-[11px] font-mono text-gray-500">
-                              {formatCurrency(item.price, currencySymbol)} each
+                              {formatCurrency(item.price, currencySymbol)} {t('basket.each')}
                             </p>
                             {item.subItems && item.subItems.length > 0 && (
                               <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-emerald-400/60">
@@ -417,7 +422,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                             )}
                             {item.deposit && moneyToMajor(item.deposit) > 0 ? (
                               <span className="text-[10px] text-emerald-700 font-semibold block">
-                                +{formatCurrency(item.deposit, currencySymbol)} DRS Deposit
+                                +{formatCurrency(item.deposit, currencySymbol)} {t('basket.drsDeposit')}
                               </span>
                             ) : null}
                           </div>
@@ -451,7 +456,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                             <div className="flex items-center gap-1.5 text-[11px] text-amber-950 font-medium truncate">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               <span className="truncate">
-                                In-stock substitute: <strong>{swap.substituteName}</strong>
+                                {t('basket.inStockSubstitute')}: <strong>{swap.substituteName}</strong>
                               </span>
                             </div>
                             <button
@@ -460,7 +465,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
                             >
                               <Repeat className="w-3 h-3" />
-                              <span>Swap</span>
+                              <span>{t('basket.swap')}</span>
                             </button>
                           </div>
                         )}
@@ -485,16 +490,16 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               <div className="min-w-0 truncate">
                                 <span className="text-[11px] font-bold text-gray-800 group-hover:text-emerald-950 block truncate">
                                   {item.substitutionPreference === 'CUSTOMER_SELECTED'
-                                    ? 'If unavailable: Pre-chosen substitute'
+                                    ? `${t('basket.ifUnavailable')}: ${t('basket.preChosenSubstitute')}`
                                     : item.substitutionPreference === 'REMOVE_IF_UNAVAILABLE'
-                                    ? 'If unavailable: Remove item'
+                                    ? `${t('basket.ifUnavailable')}: ${t('basket.removeItem')}`
                                     : item.substitutionPreference === 'CANCEL_ORDER_IF_UNAVAILABLE'
-                                    ? 'If unavailable: Cancel entire order'
-                                    : 'If unavailable: Best match'}
+                                    ? `${t('basket.ifUnavailable')}: ${t('basket.cancelEntireOrder')}`
+                                    : `${t('basket.ifUnavailable')}: ${t('basket.bestMatch')}`}
                                 </span>
                                 {item.substitutionPreference === 'CUSTOMER_SELECTED' && (
                                   <span className="text-[10px] text-gray-500 block truncate font-medium">
-                                    {item.preferredSubstituteName || item.preferredSubstitutePlu || '1 alternative selected'}
+                                    {item.preferredSubstituteName || item.preferredSubstitutePlu || `1 ${t('basket.alternativeSelected')}`}
                                   </span>
                                 )}
                               </div>
@@ -505,19 +510,19 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                               item.preferredSubstitutePrice != null &&
                               moneyToMajor(item.preferredSubstitutePrice) > moneyToMajor(item.unitPrice || item.price) ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-amber-100 text-amber-950">
-                                  +£{(moneyToMajor(item.preferredSubstitutePrice) - moneyToMajor(item.unitPrice || item.price)).toFixed(2)} buffer
+                                  +{currencySymbol}{(moneyToMajor(item.preferredSubstitutePrice) - moneyToMajor(item.unitPrice || item.price)).toFixed(2)} {t('basket.buffer')}
                                 </span>
                               ) : item.substitutionPreference === 'CANCEL_ORDER_IF_UNAVAILABLE' ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-red-100 text-red-800">
-                                  Cancel
+                                  {t('basket.cancel')}
                                 </span>
                               ) : item.substitutionPreference === 'REMOVE_IF_UNAVAILABLE' ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-gray-200 text-gray-700">
-                                  Refund
+                                  {t('basket.refund')}
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-800">
-                                  Cheapest
+                                  {t('basket.cheapest')}
                                 </span>
                               )}
                               <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-emerald-700 transition-colors" />
@@ -563,14 +568,14 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                         <div className="flex-1 min-w-0">
                           <span className="font-extrabold text-emerald-900 text-xs block">{offer.bundle.name}</span>
                           <p className="text-[11px] text-emerald-800 leading-tight">
-                            {choices.length > 1 ? `Choose 1 ${offer.missingSection.sectionName}` : `Add ${first?.name}`} to complete this deal
+                            {choices.length > 1 ? `${t('basket.chooseOne')} ${offer.missingSection.sectionName}` : `Add ${first?.name}`} {t('basket.addToCompleteDeal')}
                           </p>
                         </div>
                         <button type="button" disabled={loading} onClick={() => {
                           if (choices.length > 1) setComboChoice(offer);
                           else if (product) addProductQuantity(product, offer.missingSection.quantityNeeded);
                         }} className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50">
-                          {choices.length > 1 ? 'Choose item' : 'Add & save'}
+                          {choices.length > 1 ? t('basket.chooseItem') : t('basket.addSave')}
                         </button>
                       </div>
                     );
@@ -583,8 +588,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                   <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-sm font-extrabold text-gray-900">Complete {comboChoice.bundle.name}</h3>
-                        <p className="text-xs text-gray-500">Choose an in-stock {comboChoice.missingSection.sectionName}</p>
+                        <h3 className="text-sm font-extrabold text-gray-900">{t('basket.completeDeal')} {comboChoice.bundle.name}</h3>
+                        <p className="text-xs text-gray-500">{t('basket.chooseInStock')} {comboChoice.missingSection.sectionName}</p>
                       </div>
                       <button type="button" onClick={() => setComboChoice(null)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><X className="w-4 h-4" /></button>
                     </div>
@@ -607,15 +612,15 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               )}
 
               {/* HFSS REGULATORY COMPLIANCE BANNER */}
-              {reverseDealResults.hfssBlocked.length > 0 && (
+              {isUkTenant && reverseDealResults.hfssBlocked.length > 0 && (
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-2 text-[11px] text-slate-700">
                   <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-extrabold text-slate-900 block">
-                      UK Food Promotion Compliance (HFSS Protected)
+                      {t('basket.hfssTitle')}
                     </span>
                     <p className="text-[10px] text-slate-500 leading-tight">
-                      {reverseDealResults.hfssBlocked.length} bundle opportunity suppressed from upsell prompts in accordance with The Food (Promotion and Placement) Regulations because the candidate item is High in Fat, Sugar or Salt.
+                      {reverseDealResults.hfssBlocked.length} {t('basket.hfssNotice')}
                     </p>
                   </div>
                 </div>
@@ -629,7 +634,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
           <div className="p-4 border-t border-gray-100 bg-gray-50/90 space-y-3">
             <div className="space-y-1.5 text-xs text-gray-600">
               <div className="flex justify-between">
-                <span>Items Subtotal ({totalItemsCount} items)</span>
+                <span>{t('basket.subtotal')} ({totalItemsCount} {t(totalItemsCount === 1 ? 'orders.item' : 'orders.items')})</span>
                 <span className="font-semibold text-gray-900">
                   {currencySymbol}{(combinedSubtotalMajor || 0).toFixed(2)}
                 </span>
@@ -645,13 +650,13 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                     >
                       <span className="flex items-center gap-1.5">
                         <BadgePercent className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                        <span>{disc.title || 'Deal Discount'}</span>
+                        <span>{disc.title || t('basket.dealDiscount')}</span>
                       </span>
                       <span>-{currencySymbol}{moneyToMajor(disc.amount).toFixed(2)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between text-xs font-black text-emerald-800 px-0.5">
-                    <span>Total Deal Savings Applied</span>
+                    <span>{t('basket.totalDealSavings')}</span>
                     <span>-{currencySymbol}{combinedDiscountsMajor.toFixed(2)}</span>
                   </div>
                 </div>
@@ -659,7 +664,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
 
               {totalDeliveryFees > 0 && (
                 <div className="flex justify-between">
-                  <span>Delivery Fee</span>
+                  <span>{t('basket.deliveryFee')}</span>
                   <span className="font-semibold text-gray-900">
                     {currencySymbol}{(totalDeliveryFees || 0).toFixed(2)}
                   </span>
@@ -678,13 +683,13 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
 
               {totalDepositsMajor > 0 && (
                 <div className="flex justify-between text-emerald-700 font-medium">
-                  <span>Refundable DRS Deposit</span>
+                  <span>{t('basket.deposit')}</span>
                   <span>+{currencySymbol}{(totalDepositsMajor || 0).toFixed(2)}</span>
                 </div>
               )}
 
               <div className="flex justify-between pt-2 border-t border-gray-200 text-sm font-extrabold text-gray-900">
-                <span>Total to Pay</span>
+                <span>{t('basket.totalToPay')}</span>
                 <span className="text-base font-black text-emerald-950">
                   {currencySymbol}{(grandTotal || 0).toFixed(2)}
                 </span>
@@ -696,14 +701,14 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               <div className="flex items-center justify-between font-bold">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Card Pre-Authorisation:</span>
+                  <span>{t('basket.cardPreAuth')}:</span>
                 </div>
                 <span className="text-xs font-black font-mono text-emerald-950">
-                  {currencySymbol}{preAuthMaxMajor.toFixed(2)} est.
+                  {currencySymbol}{preAuthMaxMajor.toFixed(2)} {t('basket.estimated')}
                 </span>
               </div>
               <p className="text-[10.5px] text-emerald-900/80 leading-snug">
-                Your payment method is authorized for the estimated total ({currencySymbol}{grandTotal.toFixed(2)}). You are only charged for what is confirmed and picked in store; any difference is released immediately.
+                {t('basket.preAuthNotice')}
               </p>
             </div>
 
@@ -715,7 +720,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               style={primaryBtnStyle}
               className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-98 transition-transform cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{snoozeAudit.hasSnoozedOrUnavailableItems ? 'Review & Resolve Items at Checkout' : 'Go to Checkout'}</span>
+              <span>{snoozeAudit.hasSnoozedOrUnavailableItems ? t('basket.reviewResolve') : t('basket.goCheckout')}</span>
               <ArrowRight className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>

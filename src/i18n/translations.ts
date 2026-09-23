@@ -101,6 +101,70 @@ export interface LocaleTranslations {
   'basket.checkoutBtn': string;
   'basket.clearBasket': string;
   'basket.youMayHaveForgotten': string;
+  'basket.saving': string;
+  'basket.selectedStore': string;
+  'basket.unavailableAtStore': string;
+  'basket.swapAllInStock': string;
+  'basket.stockCheckNotice': string;
+  'basket.comboDeal': string;
+  'basket.quantityUnavailable': string;
+  'basket.snoozedByStore': string;
+  'basket.unavailableHere': string;
+  'basket.each': string;
+  'basket.drsDeposit': string;
+  'basket.inStockSubstitute': string;
+  'basket.swap': string;
+  'basket.ifUnavailable': string;
+  'basket.preChosenSubstitute': string;
+  'basket.removeItem': string;
+  'basket.cancelEntireOrder': string;
+  'basket.bestMatch': string;
+  'basket.alternativeSelected': string;
+  'basket.buffer': string;
+  'basket.cancel': string;
+  'basket.refund': string;
+  'basket.cheapest': string;
+  'basket.chooseOne': string;
+  'basket.addToCompleteDeal': string;
+  'basket.chooseItem': string;
+  'basket.addSave': string;
+  'basket.completeDeal': string;
+  'basket.chooseInStock': string;
+  'basket.dealDiscount': string;
+  'basket.totalDealSavings': string;
+  'basket.totalToPay': string;
+  'basket.cardPreAuth': string;
+  'basket.estimated': string;
+  'basket.preAuthNotice': string;
+  'basket.reviewResolve': string;
+  'basket.goCheckout': string;
+  'basket.hfssTitle': string;
+  'basket.hfssNotice': string;
+  'basket.item': string;
+  'basket.ifItemUnavailable': string;
+  'basket.unavailablePreferenceHelp': string;
+  'basket.substituteBestMatch': string;
+  'basket.cheapestOption': string;
+  'basket.bestMatchHelp': string;
+  'basket.preChooseSubstitute': string;
+  'basket.bufferAdjusted': string;
+  'basket.preChooseHelp': string;
+  'basket.sameOrCheaper': string;
+  'basket.change': string;
+  'basket.selectAlternative': string;
+  'basket.preAuthBufferUpdate': string;
+  'basket.extra': string;
+  'basket.bufferNoticeSuffix': string;
+  'basket.chooseAlternativeProduct': string;
+  'basket.searchAlternatives': string;
+  'basket.noPriceDifference': string;
+  'basket.removeIfUnavailable': string;
+  'basket.autoRefund': string;
+  'basket.removeUnavailableHelp': string;
+  'basket.cancelIfUnavailable': string;
+  'basket.essentialItem': string;
+  'basket.cancelUnavailableHelp': string;
+  'basket.update': string;
 
   // Checkout & Pre-Authorization
   'checkout.title': string;
@@ -433,6 +497,70 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.checkoutBtn': 'Review & Checkout',
     'basket.clearBasket': 'Clear Basket',
     'basket.youMayHaveForgotten': 'You may have forgotten...',
+    'basket.saving': 'Saving',
+    'basket.selectedStore': 'Selected Store',
+    'basket.unavailableAtStore': 'item(s) unavailable at this store',
+    'basket.swapAllInStock': 'Swap All In-Stock',
+    'basket.stockCheckNotice': 'Real-time stock check found items that are snoozed or out of stock. You can swap them with in-stock alternatives or remove them.',
+    'basket.comboDeal': 'Combo Deal',
+    'basket.quantityUnavailable': 'Quantity unavailable',
+    'basket.snoozedByStore': 'Snoozed by store',
+    'basket.unavailableHere': 'Unavailable at this store',
+    'basket.each': 'each',
+    'basket.drsDeposit': 'DRS Deposit',
+    'basket.inStockSubstitute': 'In-stock substitute',
+    'basket.swap': 'Swap',
+    'basket.ifUnavailable': 'If unavailable',
+    'basket.preChosenSubstitute': 'Pre-chosen substitute',
+    'basket.removeItem': 'Remove item',
+    'basket.cancelEntireOrder': 'Cancel entire order',
+    'basket.bestMatch': 'Best match',
+    'basket.alternativeSelected': 'alternative selected',
+    'basket.buffer': 'buffer',
+    'basket.cancel': 'Cancel',
+    'basket.refund': 'Refund',
+    'basket.cheapest': 'Cheapest',
+    'basket.chooseOne': 'Choose 1',
+    'basket.addToCompleteDeal': 'to complete this deal',
+    'basket.chooseItem': 'Choose item',
+    'basket.addSave': 'Add & save',
+    'basket.completeDeal': 'Complete',
+    'basket.chooseInStock': 'Choose an in-stock',
+    'basket.dealDiscount': 'Deal Discount',
+    'basket.totalDealSavings': 'Total Deal Savings Applied',
+    'basket.totalToPay': 'Total to Pay',
+    'basket.cardPreAuth': 'Card Pre-Authorisation',
+    'basket.estimated': 'est.',
+    'basket.preAuthNotice': 'Your payment method is authorised for the estimated total. You are only charged for what is confirmed and picked in store; any difference is released immediately.',
+    'basket.reviewResolve': 'Review & Resolve Items at Checkout',
+    'basket.goCheckout': 'Go to Checkout',
+    'basket.hfssTitle': 'UK Food Promotion Compliance (HFSS Protected)',
+    'basket.hfssNotice': 'bundle opportunity suppressed from upsell prompts under UK Food Promotion and Placement rules because the candidate item is high in fat, sugar or salt.',
+    'basket.item': 'Basket Item',
+    'basket.ifItemUnavailable': 'If this item is unavailable',
+    'basket.unavailablePreferenceHelp': 'Choose how your store picker should handle this item during picking.',
+    'basket.substituteBestMatch': 'Substitute if unavailable (Best match)',
+    'basket.cheapestOption': 'Cheapest Option',
+    'basket.bestMatchHelp': 'The picker in shop will only swap with the same value or lower. You are guaranteed the lowest price.',
+    'basket.preChooseSubstitute': 'Pre-choose substitute',
+    'basket.bufferAdjusted': 'Buffer Adjusted',
+    'basket.preChooseHelp': 'Select 1 alternative option. If it costs more, the higher value is calculated into the pre-authorisation buffer on your card payment.',
+    'basket.sameOrCheaper': 'Same or cheaper',
+    'basket.change': 'Change',
+    'basket.selectAlternative': 'Select 1 alternative option',
+    'basket.preAuthBufferUpdate': 'Pre-auth buffer update',
+    'basket.extra': 'Extra',
+    'basket.bufferNoticeSuffix': 'will be reserved on your card. If picked, you only pay this higher price; if the original item is available, you pay the original price.',
+    'basket.chooseAlternativeProduct': 'Choose Alternative Product',
+    'basket.searchAlternatives': 'Search alternatives...',
+    'basket.noPriceDifference': 'no price difference',
+    'basket.removeIfUnavailable': 'Remove if unavailable',
+    'basket.autoRefund': 'Auto Refund',
+    'basket.removeUnavailableHelp': 'The picker can only remove this item if unavailable. You will be refunded the full amount.',
+    'basket.cancelIfUnavailable': 'Cancel entire order if unavailable',
+    'basket.essentialItem': 'Essential Item',
+    'basket.cancelUnavailableHelp': 'If this item is unavailable, do not deliver. Your entire order will be cancelled with no charge.',
+    'basket.update': 'Update',
 
     'checkout.title': 'Grocery Checkout & Authorization',
     'checkout.scheduling': 'Fulfillment Timing',
@@ -754,6 +882,70 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.checkoutBtn': 'Revisar y Pagar',
     'basket.clearBasket': 'Vaciar cesta',
     'basket.youMayHaveForgotten': '¿Has olvidado algo?',
+    'basket.saving': 'Ahorras',
+    'basket.selectedStore': 'Tienda seleccionada',
+    'basket.unavailableAtStore': 'artículo(s) no disponible(s) en esta tienda',
+    'basket.swapAllInStock': 'Cambiar todos los disponibles',
+    'basket.stockCheckNotice': 'La comprobación de stock en tiempo real encontró artículos pausados o agotados. Puedes cambiarlos por alternativas disponibles o eliminarlos.',
+    'basket.comboDeal': 'Oferta combinada',
+    'basket.quantityUnavailable': 'Cantidad no disponible',
+    'basket.snoozedByStore': 'Pausado por la tienda',
+    'basket.unavailableHere': 'No disponible en esta tienda',
+    'basket.each': 'cada uno',
+    'basket.drsDeposit': 'Depósito DRS',
+    'basket.inStockSubstitute': 'Sustituto disponible',
+    'basket.swap': 'Cambiar',
+    'basket.ifUnavailable': 'Si no está disponible',
+    'basket.preChosenSubstitute': 'Sustituto elegido',
+    'basket.removeItem': 'Eliminar artículo',
+    'basket.cancelEntireOrder': 'Cancelar todo el pedido',
+    'basket.bestMatch': 'Mejor opción',
+    'basket.alternativeSelected': 'alternativa seleccionada',
+    'basket.buffer': 'margen',
+    'basket.cancel': 'Cancelar',
+    'basket.refund': 'Reembolso',
+    'basket.cheapest': 'Más barato',
+    'basket.chooseOne': 'Elige 1',
+    'basket.addToCompleteDeal': 'para completar esta oferta',
+    'basket.chooseItem': 'Elegir artículo',
+    'basket.addSave': 'Añadir y ahorrar',
+    'basket.completeDeal': 'Completar',
+    'basket.chooseInStock': 'Elige un artículo disponible de',
+    'basket.dealDiscount': 'Descuento de oferta',
+    'basket.totalDealSavings': 'Ahorro total aplicado',
+    'basket.totalToPay': 'Total a pagar',
+    'basket.cardPreAuth': 'Preautorización de tarjeta',
+    'basket.estimated': 'estim.',
+    'basket.preAuthNotice': 'Tu método de pago se autoriza por el total estimado. Solo se cobra lo confirmado y preparado en tienda; cualquier diferencia se libera inmediatamente.',
+    'basket.reviewResolve': 'Revisar y resolver artículos en el pago',
+    'basket.goCheckout': 'Ir al pago',
+    'basket.hfssTitle': 'Cumplimiento de promociones alimentarias del Reino Unido (HFSS)',
+    'basket.hfssNotice': 'oportunidad de oferta suprimida de las recomendaciones por las normas británicas de promoción y colocación de alimentos al contener un artículo alto en grasa, azúcar o sal.',
+    'basket.item': 'Artículo de la cesta',
+    'basket.ifItemUnavailable': 'Si este artículo no está disponible',
+    'basket.unavailablePreferenceHelp': 'Elige qué debe hacer la tienda con este artículo durante la preparación.',
+    'basket.substituteBestMatch': 'Sustituir si no está disponible (mejor opción)',
+    'basket.cheapestOption': 'Opción más barata',
+    'basket.bestMatchHelp': 'La tienda solo podrá cambiarlo por un producto del mismo precio o más barato. Siempre pagarás el precio más bajo.',
+    'basket.preChooseSubstitute': 'Elegir sustituto previamente',
+    'basket.bufferAdjusted': 'Margen ajustado',
+    'basket.preChooseHelp': 'Elige 1 alternativa. Si cuesta más, ese valor se incluye en el margen de preautorización de tu tarjeta.',
+    'basket.sameOrCheaper': 'Igual o más barato',
+    'basket.change': 'Cambiar',
+    'basket.selectAlternative': 'Seleccionar 1 alternativa',
+    'basket.preAuthBufferUpdate': 'Actualización del margen de preautorización',
+    'basket.extra': 'Extra',
+    'basket.bufferNoticeSuffix': 'se reservará en tu tarjeta. Si se prepara, pagarás ese precio; si el artículo original está disponible, pagarás el precio original.',
+    'basket.chooseAlternativeProduct': 'Elegir producto alternativo',
+    'basket.searchAlternatives': 'Buscar alternativas...',
+    'basket.noPriceDifference': 'sin diferencia de precio',
+    'basket.removeIfUnavailable': 'Eliminar si no está disponible',
+    'basket.autoRefund': 'Reembolso automático',
+    'basket.removeUnavailableHelp': 'La tienda solo eliminará este artículo si no está disponible. Se reembolsará el importe completo.',
+    'basket.cancelIfUnavailable': 'Cancelar todo el pedido si no está disponible',
+    'basket.essentialItem': 'Artículo esencial',
+    'basket.cancelUnavailableHelp': 'Si este artículo no está disponible, no se entregará el pedido. Se cancelará sin ningún cargo.',
+    'basket.update': 'Actualizar',
 
     'checkout.title': 'Pago y Preautorización',
     'checkout.scheduling': 'Horario de entrega',
@@ -1075,6 +1267,70 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.checkoutBtn': 'Vérifier et Payer',
     'basket.clearBasket': 'Vider le panier',
     'basket.youMayHaveForgotten': 'Avez-vous oublié quelque chose ?',
+    'basket.saving': 'Économie',
+    'basket.selectedStore': 'Magasin sélectionné',
+    'basket.unavailableAtStore': 'article(s) indisponible(s) dans ce magasin',
+    'basket.swapAllInStock': 'Tout remplacer par des articles disponibles',
+    'basket.stockCheckNotice': 'La vérification du stock en temps réel a trouvé des articles suspendus ou en rupture. Vous pouvez les remplacer par des alternatives disponibles ou les supprimer.',
+    'basket.comboDeal': 'Offre combinée',
+    'basket.quantityUnavailable': 'Quantité indisponible',
+    'basket.snoozedByStore': 'Suspendu par le magasin',
+    'basket.unavailableHere': 'Indisponible dans ce magasin',
+    'basket.each': 'l’unité',
+    'basket.drsDeposit': 'Consigne DRS',
+    'basket.inStockSubstitute': 'Substitut disponible',
+    'basket.swap': 'Remplacer',
+    'basket.ifUnavailable': 'Si indisponible',
+    'basket.preChosenSubstitute': 'Substitut choisi',
+    'basket.removeItem': 'Supprimer l’article',
+    'basket.cancelEntireOrder': 'Annuler toute la commande',
+    'basket.bestMatch': 'Meilleure correspondance',
+    'basket.alternativeSelected': 'alternative sélectionnée',
+    'basket.buffer': 'marge',
+    'basket.cancel': 'Annuler',
+    'basket.refund': 'Rembourser',
+    'basket.cheapest': 'Moins cher',
+    'basket.chooseOne': 'Choisissez 1',
+    'basket.addToCompleteDeal': 'pour compléter cette offre',
+    'basket.chooseItem': 'Choisir un article',
+    'basket.addSave': 'Ajouter et économiser',
+    'basket.completeDeal': 'Compléter',
+    'basket.chooseInStock': 'Choisissez un article disponible de',
+    'basket.dealDiscount': 'Réduction de l’offre',
+    'basket.totalDealSavings': 'Économies totales appliquées',
+    'basket.totalToPay': 'Total à payer',
+    'basket.cardPreAuth': 'Préautorisation de carte',
+    'basket.estimated': 'estim.',
+    'basket.preAuthNotice': 'Votre moyen de paiement est autorisé pour le total estimé. Seuls les articles confirmés et préparés sont débités; toute différence est libérée immédiatement.',
+    'basket.reviewResolve': 'Vérifier les articles au paiement',
+    'basket.goCheckout': 'Passer au paiement',
+    'basket.hfssTitle': 'Conformité britannique des promotions alimentaires (HFSS)',
+    'basket.hfssNotice': 'opportunité d’offre supprimée des recommandations conformément aux règles britanniques sur la promotion et le placement des aliments, car l’article est riche en graisse, sucre ou sel.',
+    'basket.item': 'Article du panier',
+    'basket.ifItemUnavailable': 'Si cet article est indisponible',
+    'basket.unavailablePreferenceHelp': 'Choisissez ce que le magasin doit faire avec cet article pendant la préparation.',
+    'basket.substituteBestMatch': 'Remplacer si indisponible (meilleure correspondance)',
+    'basket.cheapestOption': 'Option la moins chère',
+    'basket.bestMatchHelp': 'Le magasin ne pourra le remplacer que par un article de même prix ou moins cher. Vous bénéficiez du prix le plus bas.',
+    'basket.preChooseSubstitute': 'Choisir un substitut à l’avance',
+    'basket.bufferAdjusted': 'Marge ajustée',
+    'basket.preChooseHelp': 'Choisissez 1 alternative. Si elle coûte plus cher, ce montant est inclus dans la marge de préautorisation de votre carte.',
+    'basket.sameOrCheaper': 'Même prix ou moins cher',
+    'basket.change': 'Modifier',
+    'basket.selectAlternative': 'Sélectionner 1 alternative',
+    'basket.preAuthBufferUpdate': 'Mise à jour de la marge de préautorisation',
+    'basket.extra': 'Supplément',
+    'basket.bufferNoticeSuffix': 'sera réservé sur votre carte. Si l’alternative est préparée, vous payez ce prix; si l’article original est disponible, vous payez le prix original.',
+    'basket.chooseAlternativeProduct': 'Choisir un produit alternatif',
+    'basket.searchAlternatives': 'Rechercher des alternatives...',
+    'basket.noPriceDifference': 'aucune différence de prix',
+    'basket.removeIfUnavailable': 'Supprimer si indisponible',
+    'basket.autoRefund': 'Remboursement automatique',
+    'basket.removeUnavailableHelp': 'Le magasin supprimera cet article uniquement s’il est indisponible. Le montant complet sera remboursé.',
+    'basket.cancelIfUnavailable': 'Annuler toute la commande si indisponible',
+    'basket.essentialItem': 'Article essentiel',
+    'basket.cancelUnavailableHelp': 'Si cet article est indisponible, la commande ne sera pas livrée. Elle sera annulée sans frais.',
+    'basket.update': 'Mettre à jour',
 
     'checkout.title': 'Commande & Autorisation',
     'checkout.scheduling': 'Créneau de livraison',
@@ -1396,6 +1652,70 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.checkoutBtn': 'Zur Kasse',
     'basket.clearBasket': 'Warenkorb leeren',
     'basket.youMayHaveForgotten': 'Vielleicht hast du vergessen...',
+    'basket.saving': 'Ersparnis',
+    'basket.selectedStore': 'Ausgewählte Filiale',
+    'basket.unavailableAtStore': 'Artikel in dieser Filiale nicht verfügbar',
+    'basket.swapAllInStock': 'Alle durch verfügbare Artikel ersetzen',
+    'basket.stockCheckNotice': 'Die Live-Bestandsprüfung hat pausierte oder ausverkaufte Artikel gefunden. Du kannst sie durch verfügbare Alternativen ersetzen oder entfernen.',
+    'basket.comboDeal': 'Kombi-Angebot',
+    'basket.quantityUnavailable': 'Menge nicht verfügbar',
+    'basket.snoozedByStore': 'Von der Filiale pausiert',
+    'basket.unavailableHere': 'In dieser Filiale nicht verfügbar',
+    'basket.each': 'je',
+    'basket.drsDeposit': 'DRS-Pfand',
+    'basket.inStockSubstitute': 'Verfügbarer Ersatzartikel',
+    'basket.swap': 'Ersetzen',
+    'basket.ifUnavailable': 'Wenn nicht verfügbar',
+    'basket.preChosenSubstitute': 'Gewählter Ersatz',
+    'basket.removeItem': 'Artikel entfernen',
+    'basket.cancelEntireOrder': 'Gesamte Bestellung stornieren',
+    'basket.bestMatch': 'Beste Übereinstimmung',
+    'basket.alternativeSelected': 'Alternative ausgewählt',
+    'basket.buffer': 'Puffer',
+    'basket.cancel': 'Stornieren',
+    'basket.refund': 'Erstatten',
+    'basket.cheapest': 'Günstigste Option',
+    'basket.chooseOne': 'Wähle 1',
+    'basket.addToCompleteDeal': 'um dieses Angebot abzuschließen',
+    'basket.chooseItem': 'Artikel wählen',
+    'basket.addSave': 'Hinzufügen & sparen',
+    'basket.completeDeal': 'Vervollständigen',
+    'basket.chooseInStock': 'Wähle einen verfügbaren Artikel aus',
+    'basket.dealDiscount': 'Angebotsrabatt',
+    'basket.totalDealSavings': 'Gesamte Angebotsersparnis',
+    'basket.totalToPay': 'Zu zahlender Gesamtbetrag',
+    'basket.cardPreAuth': 'Kartenvorautorisierung',
+    'basket.estimated': 'gesch.',
+    'basket.preAuthNotice': 'Deine Zahlungsmethode wird für den geschätzten Gesamtbetrag autorisiert. Belastet wird nur, was in der Filiale bestätigt und kommissioniert wurde; die Differenz wird sofort freigegeben.',
+    'basket.reviewResolve': 'Artikel beim Checkout prüfen',
+    'basket.goCheckout': 'Zum Checkout',
+    'basket.hfssTitle': 'Britische Lebensmittel-Promotionsregeln (HFSS)',
+    'basket.hfssNotice': 'Angebotsmöglichkeit wurde gemäß den britischen Regeln zur Lebensmittelpromotion und -platzierung aus den Empfehlungen entfernt, da der Artikel viel Fett, Zucker oder Salz enthält.',
+    'basket.item': 'Warenkorbartikel',
+    'basket.ifItemUnavailable': 'Wenn dieser Artikel nicht verfügbar ist',
+    'basket.unavailablePreferenceHelp': 'Wähle, wie die Filiale während der Kommissionierung mit diesem Artikel umgehen soll.',
+    'basket.substituteBestMatch': 'Bei Nichtverfügbarkeit ersetzen (beste Übereinstimmung)',
+    'basket.cheapestOption': 'Günstigste Option',
+    'basket.bestMatchHelp': 'Die Filiale darf nur gegen einen gleich teuren oder günstigeren Artikel tauschen. Du erhältst garantiert den niedrigeren Preis.',
+    'basket.preChooseSubstitute': 'Ersatzartikel vorab wählen',
+    'basket.bufferAdjusted': 'Puffer angepasst',
+    'basket.preChooseHelp': 'Wähle 1 Alternative. Ist sie teurer, wird der höhere Betrag in den Vorautorisierungspuffer deiner Karte eingerechnet.',
+    'basket.sameOrCheaper': 'Gleich teuer oder günstiger',
+    'basket.change': 'Ändern',
+    'basket.selectAlternative': '1 Alternative auswählen',
+    'basket.preAuthBufferUpdate': 'Aktualisierung des Vorautorisierungspuffers',
+    'basket.extra': 'Zusätzlich',
+    'basket.bufferNoticeSuffix': 'wird auf deiner Karte reserviert. Wird die Alternative kommissioniert, zahlst du diesen Preis; ist der Originalartikel verfügbar, zahlst du den Originalpreis.',
+    'basket.chooseAlternativeProduct': 'Alternativprodukt wählen',
+    'basket.searchAlternatives': 'Alternativen suchen...',
+    'basket.noPriceDifference': 'kein Preisunterschied',
+    'basket.removeIfUnavailable': 'Bei Nichtverfügbarkeit entfernen',
+    'basket.autoRefund': 'Automatische Erstattung',
+    'basket.removeUnavailableHelp': 'Die Filiale entfernt den Artikel nur, wenn er nicht verfügbar ist. Der volle Betrag wird erstattet.',
+    'basket.cancelIfUnavailable': 'Gesamte Bestellung stornieren, wenn nicht verfügbar',
+    'basket.essentialItem': 'Wichtiger Artikel',
+    'basket.cancelUnavailableHelp': 'Ist dieser Artikel nicht verfügbar, wird die gesamte Bestellung ohne Belastung storniert.',
+    'basket.update': 'Aktualisieren',
 
     'checkout.title': 'Kasse & Autorisierung',
     'checkout.scheduling': 'Lieferzeitpunkt',
