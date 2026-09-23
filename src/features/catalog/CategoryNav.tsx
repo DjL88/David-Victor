@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Category, Store } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { CatalogFilterState } from './DietaryPreferencesModal';
@@ -40,6 +40,7 @@ interface CategoryNavProps {
   onClearAllergenFilters?: () => void;
   favouritesCount?: number;
   activeFiltersCount?: number;
+  onProductIntent?: () => void;
 }
 
 export const CategoryNav: React.FC<CategoryNavProps> = ({
@@ -61,9 +62,86 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   onClearAllergenFilters,
   favouritesCount = 0,
   activeFiltersCount = 0,
+  onProductIntent,
 }) => {
   const { primaryBtnStyle, primaryColour } = useTenantStyles();
   const { t } = useI18n();
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLDivElement>(null);
+  const [dockMode, setDockMode] = useState<'normal' | 'top' | 'bottom'>('normal');
+  const [navHeight, setNavHeight] = useState(0);
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const updateDocking = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const anchor = anchorRef.current;
+        const nav = navRef.current;
+        if (!anchor || !nav) return;
+
+        const measuredHeight = Math.ceil(nav.getBoundingClientRect().height);
+        if (measuredHeight > 0) {
+          setNavHeight((current) => current === measuredHeight ? current : measuredHeight);
+          document.documentElement.style.setProperty('--category-nav-height', `${measuredHeight}px`);
+        }
+
+        const mobileNav = document.getElementById('mobile-bottom-nav');
+        const mobileNavHeight = Math.ceil(mobileNav?.getBoundingClientRect().height || 64);
+        document.documentElement.style.setProperty('--mobile-bottom-nav-height', `${mobileNavHeight}px`);
+
+        if (window.innerWidth >= 768) {
+          setDockMode('normal');
+          return;
+        }
+
+        if (searchFocused) {
+          setDockMode('top');
+          return;
+        }
+
+        const header = document.getElementById('sticky-header-container');
+        const headerBottom = header?.getBoundingClientRect().bottom || 0;
+        const viewport = window.visualViewport;
+        const visibleBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight);
+        const bottomThreshold = visibleBottom - mobileNavHeight - 8;
+        const rect = anchor.getBoundingClientRect();
+
+        if (rect.top <= headerBottom + 4) {
+          setDockMode('top');
+        } else if (rect.bottom >= bottomThreshold) {
+          setDockMode('bottom');
+        } else {
+          setDockMode('normal');
+        }
+      });
+    };
+
+    updateDocking();
+    window.addEventListener('scroll', updateDocking, { passive: true });
+    window.addEventListener('resize', updateDocking);
+    window.visualViewport?.addEventListener('resize', updateDocking);
+    window.visualViewport?.addEventListener('scroll', updateDocking);
+
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateDocking) : null;
+    if (navRef.current) observer?.observe(navRef.current);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('scroll', updateDocking);
+      window.removeEventListener('resize', updateDocking);
+      window.visualViewport?.removeEventListener('resize', updateDocking);
+      window.visualViewport?.removeEventListener('scroll', updateDocking);
+    };
+  }, [searchFocused]);
+
+  const selectCategoryWithIntent = (categoryId: string | null) => {
+    onSelectCategory(categoryId);
+    onProductIntent?.();
+  };
 
   // Hide bundle category under aisles
   const visibleCategories = useMemo(() => {
@@ -106,14 +184,14 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
   const handleAllItemsClick = () => {
     if (useParentBackPill && parentCategory) {
-      onSelectCategory(parentCategory.id);
+      selectCategoryWithIntent(parentCategory.id);
       return;
     }
 
     if (currentCategory) {
-      onSelectCategory(currentCategory.id);
+      selectCategoryWithIntent(currentCategory.id);
     } else {
-      onSelectCategory(null);
+      selectCategoryWithIntent(null);
     }
   };
 
@@ -133,7 +211,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
   const handleBackClick = () => {
     if (breadcrumbs.length > 1) {
-      onSelectCategory(breadcrumbs[breadcrumbs.length - 2].id);
+      selectCategoryWithIntent(breadcrumbs[breadcrumbs.length - 2].id);
     } else {
       onSelectCategory(null);
     }
@@ -143,11 +221,34 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
     (filterState?.excludedAllergens?.length || 0) > 0 ||
     (filterState?.selectedDietaryTags?.length || 0) > 0;
 
+  const dockClass =
+    dockMode === 'top'
+      ? 'fixed left-0 right-0 z-[35] shadow-md'
+      : dockMode === 'bottom'
+        ? 'fixed left-0 right-0 z-[35] shadow-[0_-4px_16px_rgba(15,23,42,0.10)]'
+        : 'relative md:sticky md:top-[54px] z-30 shadow-xs';
+
+  const dockStyle: React.CSSProperties | undefined =
+    dockMode === 'top'
+      ? { top: 'var(--storefront-header-height, 104px)' }
+      : dockMode === 'bottom'
+        ? { bottom: 'var(--mobile-bottom-nav-height, 64px)' }
+        : undefined;
+
   return (
     <div
-      id="category-nav-section"
-      className="sticky top-[82px] md:top-[54px] z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-3 sm:px-6 py-2 transition-all w-full max-w-full space-y-1.5"
+      ref={anchorRef}
+      id="category-nav-anchor"
+      className="relative w-full max-w-full"
+      style={dockMode !== 'normal' && navHeight > 0 ? { minHeight: navHeight } : undefined}
     >
+      <div
+        ref={navRef}
+        id="category-nav-section"
+        style={dockStyle}
+        data-dock-mode={dockMode}
+        className={`${dockClass} bg-white/95 backdrop-blur-md border-y border-gray-200/80 px-3 sm:px-6 py-2 transition-[box-shadow,background-color] w-full max-w-full space-y-1.5`}
+      >
       {/* ROW 1: AISLE CATEGORIES & NAVIGATION */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 w-full max-w-full">
         {/* 'Search Aisles' button at the start */}
@@ -169,7 +270,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
           <button
             type="button"
             id="cat-pill-back-all-aisles"
-            onClick={() => onSelectCategory(null)}
+            onClick={() => selectCategoryWithIntent(null)}
             className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200/80 shadow-2xs cursor-pointer active:scale-95"
           >
             <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-gray-600" />
@@ -181,7 +282,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
           <button
             type="button"
             id="cat-pill-back-parent-cat"
-            onClick={() => onSelectCategory(breadcrumbs[breadcrumbs.length - 2].id)}
+            onClick={() => selectCategoryWithIntent(breadcrumbs[breadcrumbs.length - 2].id)}
             className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs cursor-pointer active:scale-95"
           >
             <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
@@ -199,7 +300,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               key={cat.id}
               id={`cat-pill-${cat.id}`}
               type="button"
-              onClick={() => onSelectCategory(cat.id)}
+              onClick={() => selectCategoryWithIntent(cat.id)}
               style={isSelected ? primaryBtnStyle : undefined}
               className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
                 isSelected
@@ -265,6 +366,11 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               id="aisle-search-input"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
+              onFocus={() => {
+                setSearchFocused(true);
+                onProductIntent?.();
+              }}
+              onBlur={() => setSearchFocused(false)}
               placeholder={t('aisles.productsSearchPlaceholder')}
               className="w-full pl-8 pr-7 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
             />
@@ -347,6 +453,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
