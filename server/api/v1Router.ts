@@ -3094,6 +3094,7 @@ function mapOrderProjectionToOrder(proj: OrderProjection, tenant?: { currency?: 
       updatedAt: proj.updatedAt,
     },
     picking: proj.picking,
+    refunds: proj.refunds || [],
     receipt: {
       available: proj.paymentState === 'CAPTURED',
       isVatReceipt: Boolean((tenant as any)?.vatRegistrationNumber && proj.metadata?.tax?.amount > 0),
