@@ -113,6 +113,12 @@ describe('AdminAssistantChatService foundations', () => {
       target: undefined,
       label: 'Open Insights',
     });
+
+    expect(resolveAdminAssistantNavigationHint('Upload our brand guidelines and help me set the site up', 'branding')).toMatchObject({
+      section: 'branding',
+      target: 'branding-brand-profile',
+      label: 'Open Branding · Brand Profile',
+    });
   });
 
   it('does not invent unsupported time-of-day product rule conditions', () => {

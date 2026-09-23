@@ -596,6 +596,11 @@ export const AssetFinalizeSchema = z.object({
   assetId: z.string().min(1, 'assetId is required'),
 });
 
+export const BrandProfileAnalyseSchema = z.object({
+  tenantId: z.string().optional(),
+  assetId: z.string().min(1, 'assetId is required'),
+}).strict();
+
 
 const AdminAssistantAttachmentSchema = z.object({
   name: z.string().trim().min(1).max(255),

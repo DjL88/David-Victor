@@ -11,6 +11,7 @@ import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
 import { getFirestoreDb, getFirebaseStorage, getFirebaseAuth, getFirebaseAdminAuth, verifyAdminSession, verifyAdminSessionWithStatus, AuthenticatedAdmin } from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
+import { BrandProfileService } from '../brandProfileService';
 import { MediaHealthService } from '../mediaHealthService';
 import { LocationService } from '../locationService';
 import { WebhookService, WebhookProcessingResult } from '../deliverect/WebhookService';
@@ -98,6 +99,7 @@ import {
   AssetUploadSchema,
   AssetUploadUrlSchema,
   AssetFinalizeSchema,
+  BrandProfileAnalyseSchema,
   AdminAssistantChatSchema,
   AdminAssistantPlanSchema,
   AdminAssistantExecuteSchema,
@@ -4498,6 +4500,45 @@ v1Router.post('/admin/assets/finalize', requireAdminAuth(), requireAdminCapabili
     res.status(statusCode).json({ error: err.message, code: err.code || 'ASSET_ERROR' });
   }
 });
+
+v1Router.post(
+  '/admin/brand-profile/analyse',
+  requireAdminAuth(),
+  requireAdminCapability('branding.write'),
+  validateBody(BrandProfileAnalyseSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      let { tenantId, assetId } = req.body;
+
+      if (authAdmin.role !== 'platformSuperAdmin') {
+        tenantId = authAdmin.tenantId;
+      } else if (!tenantId) {
+        tenantId = authAdmin.tenantId || 'brand-alpha';
+      }
+
+      const analysis = await BrandProfileService.analyse(tenantId, assetId);
+
+      await FirestorePlatformService.addAuditLog(tenantId, {
+        userId: authAdmin.uid,
+        userName: authAdmin.name,
+        userRole: authAdmin.role,
+        tenantId,
+        category: 'Branding',
+        action: 'ANALYSE_BRAND_PROFILE',
+        details: `Analysed brand material: ${analysis.assetName} (${analysis.analysisMode})`,
+      });
+
+      res.json({ success: true, analysis });
+    } catch (err: any) {
+      const statusCode = err.statusCode || err.status || 500;
+      res.status(statusCode).json({
+        error: err.message || 'Brand profile analysis failed.',
+        code: err.code || 'BRAND_PROFILE_ANALYSIS_FAILED',
+      });
+    }
+  }
+);
 
 v1Router.get('/admin/assets/:tenantId', requireAdminAuth(), async (req: Request, res: Response) => {
   try {

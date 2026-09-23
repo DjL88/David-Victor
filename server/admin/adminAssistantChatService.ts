@@ -287,6 +287,31 @@ export function resolveAdminAssistantNavigationHint(
     ...extras,
   });
 
+  if (/(brand guidelines?|brand guide|style guide|brand profile|analyse.*brand|analyze.*brand|upload.*brand|upload.*logo.*brand)/i.test(text)) {
+    return choose('branding', 'branding-brand-profile', 'Open Branding · Brand Profile', {
+      steps: [
+        {
+          section: 'branding',
+          target: 'branding-brand-profile',
+          label: 'Upload source material',
+          instruction: 'Upload the logo or brand-guidelines source here. Guidelines stay private; analysis is cached so the same file is not repeatedly sent to a hosted model.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-primary-colour',
+          label: 'Review extracted styling',
+          instruction: 'After analysis, use Prefill visual branding, then review the proposed colours and typography before saving.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-save',
+          label: 'Save when ready',
+          instruction: 'Nothing is written automatically. Save only after the extracted brand settings look right.',
+        },
+      ],
+    });
+  }
+
   if (/(colour|color|colour scheme|color scheme|palette|theme)/i.test(text)) {
     const colours = extractHexColours(message);
     const primary = colours[0];
@@ -850,7 +875,7 @@ function buildLocalGuidedReply(
 
   const hasPreparedFields = Boolean(navigation.prefill && Object.keys(navigation.prefill).length > 0);
   const explicitlyGuided =
-    /\b(show me|take me|open|where do i|where is|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft )\b/i.test(text);
+    /\b(show me|take me|open|where do i|where is|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft |upload |analyse |analyze )\b/i.test(text);
 
   if (!hasPreparedFields && !explicitlyGuided) return null;
 

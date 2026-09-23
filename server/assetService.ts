@@ -11,7 +11,8 @@ export type AssetType =
   | 'STORY_IMAGE'
   | 'STORY_VIDEO'
   | 'HERO_IMAGE'
-  | 'CMS_IMAGE';
+  | 'CMS_IMAGE'
+  | 'BRAND_GUIDELINES';
 
 export const ALLOWED_MIME_TYPES: Record<AssetType, string[]> = {
   LOGO: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
@@ -30,6 +31,16 @@ export const ALLOWED_MIME_TYPES: Record<AssetType, string[]> = {
   STORY_VIDEO: ['video/mp4', 'video/webm', 'video/quicktime'],
   HERO_IMAGE: ['image/png', 'image/jpeg', 'image/webp'],
   CMS_IMAGE: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+  BRAND_GUIDELINES: [
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/svg+xml',
+    'application/pdf',
+    'text/plain',
+    'text/markdown',
+    'application/json',
+  ],
 };
 
 export const MAX_FILE_SIZE_BYTES: Record<AssetType, number> = {
@@ -40,6 +51,7 @@ export const MAX_FILE_SIZE_BYTES: Record<AssetType, number> = {
   STORY_VIDEO: 100 * 1024 * 1024, // 100 MB
   HERO_IMAGE: 15 * 1024 * 1024, // 15 MB
   CMS_IMAGE: 10 * 1024 * 1024, // 10 MB
+  BRAND_GUIDELINES: 20 * 1024 * 1024, // 20 MB
 };
 
 export interface AssetMetadata {
@@ -59,8 +71,10 @@ export interface AssetMetadata {
   updatedAt: string;
 }
 
-// In-memory store for unit tests and offline demo environments
+// In-memory stores for unit tests and offline demo environments.
+// Private source documents keep their bytes separately rather than exposing a data: URL.
 const inMemoryAssets: Record<string, AssetMetadata> = {};
+const inMemoryAssetBuffers: Record<string, Buffer> = {};
 
 export function normalizeAssetType(raw: string): AssetType {
   const upper = raw.toUpperCase().replace('-', '_');
@@ -71,6 +85,7 @@ export function normalizeAssetType(raw: string): AssetType {
   if (upper === 'STORY_VIDEO') return 'STORY_VIDEO';
   if (upper === 'HERO' || upper === 'HERO_IMAGE') return 'HERO_IMAGE';
   if (upper === 'CMS' || upper === 'CMS_IMAGE') return 'CMS_IMAGE';
+  if (upper === 'BRAND_GUIDELINES' || upper === 'BRAND_GUIDELINE' || upper === 'GUIDELINES') return 'BRAND_GUIDELINES';
   throw BFFError.invalidInput(`Unrecognized asset type: "${raw}"`);
 }
 
@@ -96,6 +111,12 @@ export function validateFileMagicBytes(buffer: Buffer, contentType: string): voi
   if (mimeType === 'image/webp') {
     if (buffer.toString('ascii', 0, 4) !== 'RIFF' || (buffer.length >= 12 && buffer.toString('ascii', 8, 12) !== 'WEBP')) {
       throw BFFError.invalidInput('Binary payload signature mismatch: expected WebP header.');
+    }
+    return;
+  }
+  if (mimeType === 'application/pdf') {
+    if (buffer.toString('ascii', 0, 5) !== '%PDF-') {
+      throw BFFError.invalidInput('Binary payload signature mismatch: expected PDF header.');
     }
     return;
   }
@@ -173,7 +194,8 @@ export class AssetService {
 
     const typeFolder = params.type.toLowerCase().replace('_', '-');
     const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `tenant-assets-public/tenants/${params.tenantId}/${typeFolder}/${assetId}_${safeName}`;
+    const storageNamespace = params.type === 'BRAND_GUIDELINES' ? 'tenant-assets-private' : 'tenant-assets-public';
+    const storagePath = `${storageNamespace}/tenants/${params.tenantId}/${typeFolder}/${assetId}_${safeName}`;
     const calculatedSize = params.byteSize || fileBuffer.length;
 
     let publicUrl = '';
@@ -193,13 +215,20 @@ export class AssetService {
               assetType: params.type,
               originalFileName: params.fileName,
               assetId,
-              firebaseStorageDownloadTokens: downloadToken,
+              ...(params.type === 'BRAND_GUIDELINES'
+                ? {}
+                : { firebaseStorageDownloadTokens: downloadToken }),
             },
           },
         });
 
-        publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
-        console.log(`[AssetService] Stored binary in Cloud Storage with public token: ${storagePath}`);
+        if (params.type === 'BRAND_GUIDELINES') {
+          publicUrl = '';
+          console.log(`[AssetService] Stored private brand material in Cloud Storage: ${storagePath}`);
+        } else {
+          publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+          console.log(`[AssetService] Stored binary in Cloud Storage with public token: ${storagePath}`);
+        }
       } catch (storageErr: any) {
         console.warn('[AssetService] Cloud Storage upload failed:', storageErr);
         if (!isDemoMode()) {
@@ -209,9 +238,14 @@ export class AssetService {
             500
           );
         }
-        publicUrl = params.fileData.startsWith('data:')
-          ? params.fileData
-          : `data:${params.contentType};base64,${params.fileData}`;
+        if (params.type === 'BRAND_GUIDELINES') {
+          publicUrl = '';
+          inMemoryAssetBuffers[assetId] = fileBuffer;
+        } else {
+          publicUrl = params.fileData.startsWith('data:')
+            ? params.fileData
+            : `data:${params.contentType};base64,${params.fileData}`;
+        }
       }
     } else {
       if (!isDemoMode()) {
@@ -222,9 +256,14 @@ export class AssetService {
         );
       }
       // In offline development without storage bucket (Demo only)
-      publicUrl = params.fileData.startsWith('data:')
-        ? params.fileData
-        : `data:${params.contentType};base64,${params.fileData}`;
+      if (params.type === 'BRAND_GUIDELINES') {
+        publicUrl = '';
+        inMemoryAssetBuffers[assetId] = fileBuffer;
+      } else {
+        publicUrl = params.fileData.startsWith('data:')
+          ? params.fileData
+          : `data:${params.contentType};base64,${params.fileData}`;
+      }
     }
 
     const assetRecord: AssetMetadata = {
@@ -390,9 +429,30 @@ export class AssetService {
         byteSize: buffer.length,
         status: 'PROCESSING',
       };
+      if (asset.type === 'BRAND_GUIDELINES') {
+        inMemoryAssetBuffers[assetId] = buffer;
+      }
     }
 
     return asset;
+  }
+
+  static async getAssetBinary(assetId: string): Promise<Buffer | null> {
+    if (inMemoryAssetBuffers[assetId]) {
+      return inMemoryAssetBuffers[assetId];
+    }
+
+    const asset = await this.getAsset(assetId);
+    if (!asset?.storagePath) return null;
+
+    const storage = getFirebaseStorage();
+    if (!storage) return null;
+
+    const file = storage.bucket().file(asset.storagePath);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [buffer] = await file.download();
+    return buffer;
   }
 
   /**
@@ -509,23 +569,43 @@ export class AssetService {
               console.warn('[AssetService] Magic byte validation warning:', validationErr.message);
             }
 
-            // 4. Move/copy to published namespace
-            const publishedPath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-public');
-            if (publishedPath !== assetData.storagePath) {
-              const publishedFile = storage.bucket().file(publishedPath);
-              await file.copy(publishedFile);
-              const downloadToken = crypto.randomUUID();
-              await publishedFile.setMetadata({
-                contentType: actualContentType,
-                cacheControl: 'public, max-age=31536000, immutable',
-                metadata: {
-                  firebaseStorageDownloadTokens: downloadToken,
-                },
-              });
-              await file.delete().catch(() => {});
-              const bucketName = storage.bucket().name;
-              assetData.storagePath = publishedPath;
-              assetData.publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(publishedPath)}?alt=media&token=${downloadToken}`;
+            // 4. Publish storefront assets, but keep brand-guideline source documents private.
+            if (assetData.type === 'BRAND_GUIDELINES') {
+              const privatePath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-private');
+              if (privatePath !== assetData.storagePath) {
+                const privateFile = storage.bucket().file(privatePath);
+                await file.copy(privateFile);
+                await privateFile.setMetadata({
+                  contentType: actualContentType,
+                  cacheControl: 'private, no-store',
+                  metadata: {
+                    tenantId: assetData.tenantId,
+                    assetType: assetData.type,
+                    assetId: assetData.id,
+                  },
+                });
+                await file.delete().catch(() => {});
+                assetData.storagePath = privatePath;
+              }
+              assetData.publicUrl = '';
+            } else {
+              const publishedPath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-public');
+              if (publishedPath !== assetData.storagePath) {
+                const publishedFile = storage.bucket().file(publishedPath);
+                await file.copy(publishedFile);
+                const downloadToken = crypto.randomUUID();
+                await publishedFile.setMetadata({
+                  contentType: actualContentType,
+                  cacheControl: 'public, max-age=31536000, immutable',
+                  metadata: {
+                    firebaseStorageDownloadTokens: downloadToken,
+                  },
+                });
+                await file.delete().catch(() => {});
+                const bucketName = storage.bucket().name;
+                assetData.storagePath = publishedPath;
+                assetData.publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(publishedPath)}?alt=media&token=${downloadToken}`;
+              }
             }
 
             assetData.byteSize = actualSize;
@@ -612,6 +692,7 @@ export class AssetService {
    */
   static async deleteAsset(tenantId: string, assetId: string): Promise<boolean> {
     delete inMemoryAssets[assetId];
+    delete inMemoryAssetBuffers[assetId];
 
     const db = getFirestoreDb();
     if (!db) return true;

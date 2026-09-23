@@ -196,6 +196,22 @@ export interface AdminClient {
    */
   uploadAssetFile?(file: File, type: string, tenantId?: string): Promise<any>;
 
+  /** Analyse an uploaded logo or private brand-guideline document into a reusable Brand Profile. */
+  analyseBrandProfile?(tenantId: string, assetId: string): Promise<{
+    id: string;
+    tenantId: string;
+    assetId: string;
+    assetName: string;
+    contentType: string;
+    sourceHash: string;
+    profile: Record<string, any>;
+    evidence: Array<{ field: string; value: string; source: string; confidence: 'HIGH' | 'MEDIUM' | 'LOW' }>;
+    warnings: string[];
+    analysisMode: 'DETERMINISTIC' | 'AI_ASSISTED';
+    model?: string;
+    createdAt: string;
+  }>;
+
   /**
    * List assets for a tenant, optionally filtered by asset type.
    */
