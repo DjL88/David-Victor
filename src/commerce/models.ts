@@ -181,6 +181,8 @@ export interface TenantConfig {
   currency: string; // e.g. 'GBP'
   currencySymbol: string; // e.g. '£'
   locale: string; // e.g. 'en-GB'
+  /** 2-4 character human-facing prefix used for short order references, e.g. LT. */
+  orderCodePrefix?: string;
   /** Storefront languages enabled for this tenant. Defaults to all supported locales when omitted. */
   enabledLocales?: string[];
   /** Per-locale brand wording overrides keyed by typed storefront copy key. */
