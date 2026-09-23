@@ -26,6 +26,12 @@ import type { CheckoutResult } from '../../src/domain/models';
 import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
 import { evaluateStoreOpenNow, computeNextOpeningTime, normalizeOpeningHours } from '../../src/services/storeOpeningHoursService';
 import {
+  getZonedDateParts,
+  resolveStoreTimeZone,
+  weekdayIndexForDateString,
+  zonedLocalDateTimeToUtc,
+} from '../../src/utils/zonedTime';
+import {
   Store,
   StoreStatus,
   StoreEligibilityResult,
@@ -2404,16 +2410,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
       return this.unsupportedLiveCapability('Basket fulfillment update for delivery');
     }
 
-    // Prefer an explicit slot object (dateString + startTime); it's the only reliable
-    // way to recover a real ISO datetime — slotId alone isn't a documented Deliverect
-    // concept, it's this client's own id scheme (see getAvailableSlots).
+    const api = await this.getCommerceBasketApi();
     let time: string | undefined;
+
     if (fulfillment.slot?.dateString && fulfillment.slot?.startTime) {
-      const parsed = new Date(`${fulfillment.slot.dateString}T${fulfillment.slot.startTime}:00`);
-      if (!Number.isNaN(parsed.getTime())) time = parsed.toISOString();
+      const currentRaw = await api.getBasket(basketId);
+      const storeId = String(currentRaw?.storeId || currentRaw?.channelLinkId || '').trim();
+      const store = storeId ? await this.getStore(storeId) : null;
+      const timeZone = resolveStoreTimeZone(store);
+      const parsed = zonedLocalDateTimeToUtc(
+        fulfillment.slot.dateString,
+        fulfillment.slot.startTime,
+        timeZone
+      );
+
+      if (!parsed) {
+        throw new CommerceError(
+          'INVALID_FULFILLMENT',
+          `The selected collection time ${fulfillment.slot.dateString} ${fulfillment.slot.startTime} is not valid in timezone ${timeZone}.`,
+          422
+        );
+      }
+      time = parsed.toISOString();
     }
 
-    const api = await this.getCommerceBasketApi();
     const raw = await api.updateFulfillment(basketId, { type: 'pickup', time });
     return this.mapLiveCommerceBasket(raw);
   }
@@ -2648,54 +2668,52 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const days: Array<{ dayLabel: string; dateString: string; slots: DeliverySlot[] }> = [];
     let nextAvailableSlot: DeliverySlot | undefined;
 
-    // Same-day scheduled pre-order is a distinct, independently-toggleable capability
-    // from next-opening pre-order (createBasket) — if the tenant has it off, there are
-    // simply no pickable slots, not an error.
     if (store.scheduling?.acceptsSameDayPreOrders === false) {
       return { asapAvailable: evaluateStoreOpenNow(store).isOpen, days, nextAvailableSlot };
     }
 
-    // Deliverect has no "get available slots" endpoint — available pickup times are
-    // derived from the store's own real opening hours (never fabricated), matching
-    // what createBasket/updateBasketFulfillment will actually accept. Capped to today
-    // only: pre-ordering beyond the current day is intentionally not supported.
+    // Deliverect opening hours are location-local. Generate slot labels using the
+    // store timezone rather than the Cloud Run process timezone so BST/DST cannot
+    // shift displayed or submitted collection times.
     const normalizedMap = normalizeOpeningHours(store.openingHours);
     const now = new Date();
+    const timeZone = resolveStoreTimeZone(store);
+    const localNow = getZonedDateParts(now, timeZone);
     const dayNames: Array<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday'> =
       ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const SLOT_MINUTES = 30;
+    const hours = normalizedMap[dayNames[weekdayIndexForDateString(localNow.dateString)]];
+    const SLOT_MINUTES = store.scheduling?.slotLengthMinutes || 30;
+    const leadTimeMinutes = Math.max(0, store.scheduling?.minimumLeadTimeMinutes || 0);
 
-    // Loop bound is intentionally 0 (today only), kept as a loop rather than inlined so
-    // this reads the same as the rest of the per-day generation logic below.
-    for (let offset = 0; offset <= 0; offset++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() + offset);
-      const hours = normalizedMap[dayNames[date.getDay()]];
-      if (!hours) continue;
-
+    if (hours) {
       const [openHour, openMinute] = hours.open.split(':').map((n) => parseInt(n, 10));
       const [closeHour, closeMinute] = hours.close.split(':').map((n) => parseInt(n, 10));
-      if ([openHour, openMinute, closeHour, closeMinute].some((n) => Number.isNaN(n))) continue;
 
-      const dateString = date.toISOString().slice(0, 10);
-      const dayLabel =
-        offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      if (![openHour, openMinute, closeHour, closeMinute].some((n) => Number.isNaN(n))) {
+        const openMinutes = openHour * 60 + openMinute;
+        const closeMinutes = closeHour * 60 + closeMinute;
+        const earliestMinute = localNow.hour * 60 + localNow.minute + leadTimeMinutes;
+        const slotsForDay: DeliverySlot[] = [];
 
-      const slotsForDay: DeliverySlot[] = [];
-      const cursor = new Date(date);
-      cursor.setHours(openHour, openMinute, 0, 0);
-      const close = new Date(date);
-      close.setHours(closeHour, closeMinute, 0, 0);
+        for (let slotStart = openMinutes; slotStart + SLOT_MINUTES <= closeMinutes; slotStart += SLOT_MINUTES) {
+          if (slotStart <= earliestMinute) continue;
 
-      while (cursor < close) {
-        if (cursor > now) {
-          const slotEnd = new Date(Math.min(cursor.getTime() + SLOT_MINUTES * 60_000, close.getTime()));
-          const startTime = cursor.toTimeString().slice(0, 5);
-          const endTime = slotEnd.toTimeString().slice(0, 5);
+          const slotEnd = slotStart + SLOT_MINUTES;
+          const startTime =
+            String(Math.floor(slotStart / 60)).padStart(2, '0') + ':' +
+            String(slotStart % 60).padStart(2, '0');
+          const endTime =
+            String(Math.floor(slotEnd / 60)).padStart(2, '0') + ':' +
+            String(slotEnd % 60).padStart(2, '0');
+
+          // Validate the wall-clock time against the actual timezone. This drops
+          // non-existent slots during a spring-forward DST transition.
+          if (!zonedLocalDateTimeToUtc(localNow.dateString, startTime, timeZone)) continue;
+
           const slot: DeliverySlot = {
-            id: `${dateString}_${startTime}`,
-            dayLabel,
-            dateString,
+            id: `${localNow.dateString}_${startTime}`,
+            dayLabel: 'Today',
+            dateString: localNow.dateString,
             startTime,
             endTime,
             formatted: `${startTime} – ${endTime}`,
@@ -2704,16 +2722,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
           slotsForDay.push(slot);
           if (!nextAvailableSlot) nextAvailableSlot = slot;
         }
-        cursor.setMinutes(cursor.getMinutes() + SLOT_MINUTES);
-      }
 
-      if (slotsForDay.length > 0) {
-        days.push({ dayLabel, dateString, slots: slotsForDay });
+        if (slotsForDay.length > 0) {
+          days.push({ dayLabel: 'Today', dateString: localNow.dateString, slots: slotsForDay });
+        }
       }
     }
 
     return {
-      asapAvailable: evaluateStoreOpenNow(store).isOpen,
+      asapAvailable: evaluateStoreOpenNow(store, now).isOpen,
       days,
       nextAvailableSlot,
     };
@@ -2841,6 +2858,16 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const api = await this.getCommerceBasketApi();
     const reconciledRaw = await api.reconcileBasket(basketId);
     const basket = await this.mapLiveCommerceBasket(reconciledRaw);
+    const rawFulfillmentTime = String(
+      reconciledRaw?.fulfillment?.time ||
+      reconciledRaw?.pickupTime ||
+      ''
+    ).trim();
+    const parsedFulfillmentTime = rawFulfillmentTime ? new Date(rawFulfillmentTime) : null;
+    const scheduledFulfillmentTime =
+      parsedFulfillmentTime && !Number.isNaN(parsedFulfillmentTime.getTime())
+        ? parsedFulfillmentTime.toISOString()
+        : undefined;
     const context = await IntegrationContext.getContext(this.tenantId);
 
     // Read the latest persisted integration record as well as the cached
@@ -3081,11 +3108,20 @@ export class DeliverectApiClient implements DeliverectAdapter {
       }
     }
 
-        const payload: any = {
+    const isScheduledMoreThanThirtyMinutesAhead =
+      Boolean(scheduledFulfillmentTime) &&
+      new Date(scheduledFulfillmentTime!).getTime() - Date.now() > 30 * 60_000;
+
+    const payload: any = {
       channelOrderId: channelOrderReference,
       channelOrderDisplayId,
       orderType: basket.fulfillmentType === 'delivery' ? 2 : 1,
-      deliveryIsAsap: true,
+      deliveryIsAsap: !isScheduledMoreThanThirtyMinutesAhead,
+      ...(scheduledFulfillmentTime
+        ? basket.fulfillmentType === 'delivery'
+          ? { deliveryTime: scheduledFulfillmentTime }
+          : { pickupTime: scheduledFulfillmentTime }
+        : {}),
       placedTime: now,
       courier: 'restaurant',
       decimalDigits: 2,
