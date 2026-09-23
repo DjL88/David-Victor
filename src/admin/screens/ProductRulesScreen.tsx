@@ -8,13 +8,19 @@ import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck,
 interface ProductRulesScreenProps {
   tenantId: string;
   currentUser: AdminUser;
+  view?: 'product' | 'dispatch' | 'scheduling';
 }
 
 export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   tenantId,
   currentUser,
+  view,
 }) => {
-  const [activeTab, setActiveTab] = useState<'product' | 'dispatch' | 'scheduling'>('product');
+  const [activeTab, setActiveTab] = useState<'product' | 'dispatch' | 'scheduling'>(view || 'product');
+
+  useEffect(() => {
+    if (view) setActiveTab(view);
+  }, [view]);
   const [rules, setRules] = useState<VisualRule[]>([]);
   const [dispatchRules, setDispatchRules] = useState<TenantDispatchRules>(DEFAULT_DISPATCH_RULES);
   const [schedulingPolicy, setSchedulingPolicy] = useState<TenantSchedulingPolicy>(DEFAULT_TENANT_SCHEDULING_POLICY);
@@ -243,11 +249,27 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-indigo-600" />
-            <span>Product Rules</span>
+            {activeTab === 'dispatch' ? (
+              <Truck className="w-5 h-5 text-indigo-600" />
+            ) : activeTab === 'scheduling' ? (
+              <CalendarClock className="w-5 h-5 text-indigo-600" />
+            ) : (
+              <ShieldCheck className="w-5 h-5 text-indigo-600" />
+            )}
+            <span>
+              {activeTab === 'dispatch'
+                ? 'Courier Settings'
+                : activeTab === 'scheduling'
+                ? 'Order Scheduling'
+                : 'Product Rules'}
+            </span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Build product controls with clear Where → Action logic. Courier and order scheduling settings are available in the tabs alongside product rules.
+            {activeTab === 'dispatch'
+              ? 'Control courier assignment, provider selection and picking-time orchestration.'
+              : activeTab === 'scheduling'
+              ? 'Configure ASAP and scheduled-order behaviour independently from product rules.'
+              : 'Build product controls with clear Where → Action logic.'}
           </p>
         </div>
 
@@ -263,8 +285,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-3 border-b border-gray-200">
+      {/* Legacy tabs remain available for direct reuse, but Admin navigation now gives each area its own page. */}
+      {!view && <div className="flex items-center gap-3 border-b border-gray-200">
         <button
           type="button"
           onClick={() => setActiveTab('product')}
@@ -314,7 +336,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </span>
           )}
         </button>
-      </div>
+      </div>}
 
       {operationsError && (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">
