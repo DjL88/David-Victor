@@ -4,6 +4,7 @@ import { ProductCard } from '../../components/ProductCard';
 import { getRenderableProducts } from '../../rules/availabilityRules';
 import { useFavourites } from '../../hooks/useFavourites';
 import { Search as SearchIcon, X, TrendingUp } from 'lucide-react';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface SearchScreenProps {
   query: string;
@@ -33,6 +34,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   basketItems = [],
 }) => {
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { t } = useI18n();
   const popularKeywords = ['Strawberries', 'Milk', 'Sourdough', 'Pizza', 'Rosé', 'IPA', 'Paracetamol', 'Crisps'];
 
   const renderableResults = useMemo(() => {
@@ -49,7 +51,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
           id="main-search-input"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search groceries, brands, GTIN barcode, or tags..."
+          placeholder={t('search.placeholder')}
           autoFocus
           className="w-full pl-10 pr-10 py-3.5 rounded-2xl bg-white border border-gray-200 text-sm font-semibold text-gray-900 focus:outline-hidden focus:border-emerald-500 shadow-xs transition-all"
         />
@@ -69,7 +71,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
         <div className="mb-6">
           <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Trending Searches</span>
+            <span>{t('search.trending')}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {popularKeywords.map((kw) => (
@@ -91,12 +93,12 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
         <div className="flex items-center justify-between mb-3 text-xs text-gray-500">
           <span>
             {loading
-              ? 'Searching catalogue...'
-              : `Found ${renderableResults.length} ${renderableResults.length === 1 ? 'item' : 'items'} for "${query}"`}
+              ? t('search.searching')
+              : `${renderableResults.length} ${t(renderableResults.length === 1 ? 'search.foundItem' : 'search.foundItems')} ${t('search.forQuery')} "${query}"`}
           </span>
           {!isStoreSelected && (
             <span className="text-emerald-700 font-semibold">
-              Showing multi-store availability
+              {t('search.multiStore')}
             </span>
           )}
         </div>
@@ -124,9 +126,9 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       ) : query.trim() && !loading ? (
         <div className="text-center py-16 text-gray-400">
           <SearchIcon className="w-12 h-12 stroke-1 mx-auto mb-2 text-gray-300" />
-          <h3 className="text-sm font-bold text-gray-700">No matching products found</h3>
+          <h3 className="text-sm font-bold text-gray-700">{t('search.noResults')}</h3>
           <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
-            Try searching for something else like fresh milk, sourdough, or craft beer.
+            {t('search.noResultsHint')}
           </p>
         </div>
       ) : null}
