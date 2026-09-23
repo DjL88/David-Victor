@@ -43,7 +43,8 @@ import {
   evaluateBundleStockStatus,
 } from '../../commerce/bundleModels';
 import { useTenantStyles } from '../../tenant/useTenant';
-import { formatCurrency, formatMoney } from '../../utils/formatters';
+import { useTenant } from '../../tenant/TenantContext';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 import { PromoShoppingListDialog } from '../../components/deals/PromoShoppingListDialog';
 
 interface PromotionalBannerCarouselProps {
@@ -94,6 +95,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
   tenantId = 'brand-alpha',
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { tenant } = useTenant();
 
   // Internal tab state for uncontrolled usage, or respect controlled prop
   const [uncontrolledTab, setUncontrolledTab] = useState<'featured' | 'deals'>('featured');
@@ -555,7 +557,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                     >
                       <ShoppingBag className="w-3.5 h-3.5" />
                       <span>
-                        Add All ({shoppingListProducts.length}) • {formatCurrency(shoppingListPriceMinor)}
+                        Add All ({shoppingListProducts.length}) • {formatStorefrontCurrency(shoppingListPriceMinor, tenant)}
                       </span>
                     </button>
                   )}
@@ -702,7 +704,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                           <span className="text-base sm:text-lg font-black text-emerald-400">
                             {(() => {
                               if (selectedStore) {
-                                return `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, bundle.currency || 'GBP')}`;
+                                return `${hasPricedUpsells ? 'From ' : ''}${formatStorefrontCurrency(bundle.price, tenant, bundle.currency || 'GBP')}`;
                               }
                               // No store selected: show a cross-store range the same
                               // way ProductCard does, instead of always saying
@@ -716,9 +718,9 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                               const minMinor = typeof minPrice === 'number' ? minPrice : minPrice.amount;
                               const maxMinor = typeof maxPrice === 'number' ? maxPrice : maxPrice.amount;
                               if (minMinor !== maxMinor) {
-                                return `${formatMoney(minPrice, bundle.currency || 'GBP')} – ${formatMoney(maxPrice, bundle.currency || 'GBP')}`;
+                                return `${formatStorefrontCurrency(minPrice, tenant, bundle.currency || 'GBP')} – ${formatStorefrontCurrency(maxPrice, tenant, bundle.currency || 'GBP')}`;
                               }
-                              return `${hasPricedUpsells ? 'From ' : ''}${formatMoney(minPrice, bundle.currency || 'GBP')}`;
+                              return `${hasPricedUpsells ? 'From ' : ''}${formatStorefrontCurrency(minPrice, tenant, bundle.currency || 'GBP')}`;
                             })()}
                           </span>
                         </div>
