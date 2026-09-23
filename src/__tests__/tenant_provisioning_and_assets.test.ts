@@ -78,6 +78,8 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     expect(normalizeAssetType('story_video')).toBe('STORY_VIDEO');
     expect(normalizeAssetType('hero')).toBe('HERO_IMAGE');
     expect(normalizeAssetType('cms')).toBe('CMS_IMAGE');
+    expect(normalizeAssetType('brand_guidelines')).toBe('BRAND_GUIDELINES');
+    expect(normalizeAssetType('guidelines')).toBe('BRAND_GUIDELINES');
 
     expect(() => normalizeAssetType('executable')).toThrow(BFFError);
   });
@@ -100,6 +102,14 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
       AssetService.validateAssetUpload('STORY_VIDEO', 'video/mp4', 50 * 1024 * 1024)
     ).not.toThrow();
 
+    expect(() =>
+      AssetService.validateAssetUpload('BRAND_GUIDELINES', 'application/pdf', 2 * 1024 * 1024)
+    ).not.toThrow();
+
+    expect(() =>
+      AssetService.validateAssetUpload('BRAND_GUIDELINES', 'text/markdown', 10 * 1024)
+    ).not.toThrow();
+
     // Invalid MIME types
     expect(() =>
       AssetService.validateAssetUpload('LOGO', 'application/x-msdownload', 1024)
@@ -111,6 +121,10 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
 
     expect(() =>
       AssetService.validateAssetUpload('STORY_IMAGE', 'video/mp4', 1024)
+    ).toThrow(/Invalid content type/);
+
+    expect(() =>
+      AssetService.validateAssetUpload('BRAND_GUIDELINES', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 1024)
     ).toThrow(/Invalid content type/);
   });
 
@@ -131,6 +145,11 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     const oversizedFontBytes = 20 * 1024 * 1024;
     expect(() =>
       AssetService.validateAssetUpload('FONT', 'font/woff2', oversizedFontBytes)
+    ).toThrow(/exceeds maximum permitted limit/);
+
+    const oversizedGuidelines = 21 * 1024 * 1024;
+    expect(() =>
+      AssetService.validateAssetUpload('BRAND_GUIDELINES', 'application/pdf', oversizedGuidelines)
     ).toThrow(/exceeds maximum permitted limit/);
   });
 
@@ -170,6 +189,26 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     expect(postDeleteAssets.find((a) => a.id === uploadSession.assetId)).toBeUndefined();
   });
 
+  it('keeps demo brand-guideline source bytes private and readable to the server', async () => {
+    const payload = Buffer.from('Primary #112233\nSecondary #445566\nHeading font: Example Sans');
+    const asset = await AssetService.saveAsset({
+      tenantId: testTenant,
+      type: 'BRAND_GUIDELINES',
+      fileName: 'brand-guidelines.txt',
+      contentType: 'text/plain',
+      fileData: payload.toString('base64'),
+      byteSize: payload.length,
+    });
+
+    expect(asset.storagePath).toContain('tenant-assets-private');
+    expect(asset.publicUrl).toBe('');
+
+    const stored = await AssetService.getAssetBinary(asset.id);
+    expect(stored?.toString('utf8')).toContain('#112233');
+
+    await AssetService.deleteAsset(testTenant, asset.id);
+  });
+
   it('strictly prohibits finalization across tenant boundaries', async () => {
     // Create an asset for brand-alpha
     const uploadSession = await AssetService.createUploadUrl({
@@ -203,6 +242,12 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     // Valid JPEG signature (FF D8 FF)
     const validJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
     expect(() => validateFileMagicBytes(validJpeg, 'image/jpeg')).not.toThrow();
+
+    const validPdf = Buffer.from('%PDF-1.7\n');
+    expect(() => validateFileMagicBytes(validPdf, 'application/pdf')).not.toThrow();
+
+    const invalidPdf = Buffer.from('NOTPDF');
+    expect(() => validateFileMagicBytes(invalidPdf, 'application/pdf')).toThrow(/expected PDF header/);
 
     // Valid SVG markup
     const validSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>');
