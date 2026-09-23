@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { v1Router } from './server/api/v1Router';
@@ -10,6 +11,12 @@ import { securityHeadersMiddleware } from './server/securityHeaders';
 import { standardApiRateLimiter } from './server/rateLimiter';
 import { MetricsService } from './server/metricsService';
 import { getServerRuntimeMode } from './server/runtimeMode';
+import { FirestorePlatformService } from './server/firestoreService';
+import {
+  buildStorefrontManifest,
+  buildStorefrontMetadata,
+  injectStorefrontMetadata,
+} from './server/storefrontMetadataService';
 
 export interface AppRequest extends Request {
   requestId?: string;
@@ -166,6 +173,62 @@ async function startServer() {
   app.get('/ready', handleReady);
   app.get('/api/ready', handleReady);
 
+  const resolveStorefrontTenant = async (req: Request) => {
+    const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    const host = (forwardedHost || req.get('host') || '').toLowerCase().split(':')[0];
+    if (!host) return null;
+
+    try {
+      const tenantId = await FirestorePlatformService.resolveTenantByHostname(host);
+      if (!tenantId) return null;
+      return await FirestorePlatformService.getTenantConfig(tenantId);
+    } catch (err: any) {
+      console.warn(
+        `[Storefront Metadata] Could not resolve tenant for ${host}: ${err?.message || err}`
+      );
+      return null;
+    }
+  };
+
+  const requestOrigin = (req: Request): string => {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const proto = forwardedProto || req.protocol || 'https';
+    const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    const host = forwardedHost || req.get('host') || 'localhost';
+    return `${proto}://${host}`;
+  };
+
+  // Tenant-branded web-app metadata is served before the SPA boots. This makes
+  // custom-domain link previews/PWA install metadata brand-correct for crawlers
+  // and native wrappers rather than relying on client-side React after load.
+  app.get('/manifest.webmanifest', async (req, res) => {
+    const tenant = await resolveStorefrontTenant(req);
+    if (!tenant) {
+      return res.status(404).json({ error: 'Storefront tenant not found for this hostname.' });
+    }
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.json(buildStorefrontManifest(tenant));
+  });
+
+  app.get('/robots.txt', async (req, res) => {
+    const origin = requestOrigin(req);
+    res.type('text/plain');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /checkout\nDisallow: /basket\nDisallow: /account\nSitemap: ${origin}/sitemap.xml\n`);
+  });
+
+  app.get('/sitemap.xml', async (req, res) => {
+    const tenant = await resolveStorefrontTenant(req);
+    if (!tenant) return res.status(404).type('text/plain').send('Storefront tenant not found.');
+    const origin = requestOrigin(req).replace(/[<>&"']/g, '');
+    res.type('application/xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/</loc></url></urlset>`
+    );
+  });
+
   // API routes FIRST with standard rate limiting (Section 45, 47)
   app.use('/api', standardApiRateLimiter.middleware());
   app.use('/api/v1', v1Router);
@@ -202,9 +265,28 @@ async function startServer() {
   } else {
     console.log('[Server] Running in PRODUCTION mode with static file serving');
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    const indexTemplate = await fs.readFile(path.join(distPath, 'index.html'), 'utf8');
+
+    // Never let express.static answer index.html directly: the fallback below
+    // injects hostname-bound brand metadata on every document request.
+    app.use(express.static(distPath, { index: false }));
+    app.get('*', async (req, res) => {
+      const tenant = await resolveStorefrontTenant(req);
+      if (!tenant) {
+        return res
+          .setHeader('Cache-Control', 'no-store')
+          .type('html')
+          .send(indexTemplate);
+      }
+
+      const metadata = buildStorefrontMetadata(
+        tenant,
+        req.path || '/',
+        requestOrigin(req)
+      );
+      const html = injectStorefrontMetadata(indexTemplate, metadata);
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      return res.type('html').send(html);
     });
   }
 
