@@ -12,6 +12,8 @@
   --font-heading: var(--font-body);
   --font-carousel-title: var(--font-heading);
   --storefront-header-height: 104px;
+  --category-nav-height: 76px;
+  --mobile-bottom-nav-height: 64px;
 }
 
 body { background: var(--brand-background); color: var(--brand-text); font-family: var(--font-body); }
@@ -93,10 +95,27 @@ body,
 
   #stories-section,
   #main-promotional-super-carousel,
-  #offers-near-you-section,
-  #main-product-listing {
+  #category-nav-anchor {
     scroll-snap-align: start;
     scroll-snap-stop: normal;
     scroll-margin-top: calc(var(--storefront-header-height, 104px) + 10px);
+  }
+
+  /*
+   * Once the aisle/search controls have docked under the header, the shopping
+   * journey becomes ordinary free scrolling. This prevents product cards from
+   * feeling like separate snap pages.
+   */
+  html:has(#category-nav-section[data-dock-mode="top"]),
+  body:has(#category-nav-section[data-dock-mode="top"]) {
+    scroll-snap-type: none;
+  }
+
+  #main-product-listing {
+    scroll-margin-top: calc(
+      var(--storefront-header-height, 104px) +
+      var(--category-nav-height, 76px) +
+      10px
+    );
   }
 }
