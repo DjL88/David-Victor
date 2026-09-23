@@ -217,7 +217,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
         {/* White-label Brand Support Details */}
         <div className="p-4 rounded-3xl bg-gray-50 border border-gray-100 text-xs text-gray-600">
           <span className="font-bold text-gray-900 block mb-2">
-            {tenant?.brandName ? `${tenant.brandName} t('account.customerSupport')` : t('account.customerSupport')}
+            {tenant?.brandName ? `${tenant.brandName} ${t('account.customerSupport')}` : t('account.customerSupport')}
           </span>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
