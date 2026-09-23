@@ -61,6 +61,12 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+
+      // Customer profile documents contain PII such as saved delivery addresses.
+      // They are BFF-only and must never inherit the tenant's public read policy.
+      match /customerProfiles/{customerUid} {
+        allow read, write: if false;
+      }
     }
 
     // Top-level stories read-only collection for public storefront
