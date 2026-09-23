@@ -3,6 +3,7 @@ import { Category, Store } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { CatalogFilterState } from './DietaryPreferencesModal';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useI18n } from '../../i18n/I18nContext';
 import {
   ChevronRight,
   LayoutGrid,
@@ -62,6 +63,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   activeFiltersCount = 0,
 }) => {
   const { primaryBtnStyle, primaryColour } = useTenantStyles();
+  const { t } = useI18n();
 
   // Hide bundle category under aisles
   const visibleCategories = useMemo(() => {
@@ -116,10 +118,10 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   };
 
   const leadingPillLabel = useParentBackPill && parentCategory
-    ? `All ${parentCategory.name || 'Parent Aisle'}`
+    ? `${t('aisles.allCategoryPrefix')} ${parentCategory.name || t('aisles.parentAisle')}`
     : currentCategory?.name
-      ? `All ${currentCategory.name}`
-      : 'Search Aisles';
+      ? `${t('aisles.allCategoryPrefix')} ${currentCategory.name}`
+      : t('aisles.searchAisles');
 
   const parentBackPillStyle = useParentBackPill
     ? {
@@ -155,10 +157,10 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             id="cat-pill-search-aisles"
             onClick={onOpenAislesModal}
             className="px-3 py-1.5 rounded-full text-xs font-black transition-all shrink-0 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer active:scale-95"
-            title="Search Aisles & Categories"
+            title={t('aisles.searchAisles')}
           >
             <LayoutGrid className="w-3.5 h-3.5 text-white shrink-0" />
-            <span>Search Aisles</span>
+            <span>{t('aisles.searchAisles')}</span>
           </button>
         )}
 
@@ -171,7 +173,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200/80 shadow-2xs cursor-pointer active:scale-95"
           >
             <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-gray-600" />
-            <span>All Aisles</span>
+            <span>{t('aisles.all')}</span>
           </button>
         )}
 
@@ -183,7 +185,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs cursor-pointer active:scale-95"
           >
             <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
-            <span>All {breadcrumbs[breadcrumbs.length - 2]?.name || 'Parent Category'}</span>
+            <span>{t('aisles.allCategoryPrefix')} {breadcrumbs[breadcrumbs.length - 2]?.name || t('aisles.parentAisle')}</span>
           </button>
         )}
 
@@ -205,7 +207,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200/60'
               }`}
             >
-              <span>{cat.name || 'Category'}</span>
+              <span>{cat.name || t('aisles.category')}</span>
               {cat.subcategories && cat.subcategories.length > 0 && (
                 <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
               )}
@@ -221,7 +223,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             onClick={onOpenAislesModal}
             className="px-2.5 py-1.5 rounded-full text-xs font-extrabold transition-all shrink-0 bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer"
           >
-            +{remainingCategoriesCount} More
+            +{remainingCategoriesCount} {t('aisles.more')}
           </button>
         )}
       </div>
@@ -263,7 +265,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               id="aisle-search-input"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search products & aisles..."
+              placeholder={t('aisles.productsSearchPlaceholder')}
               className="w-full pl-8 pr-7 py-1.5 rounded-full bg-gray-100 hover:bg-gray-50 focus:bg-white border border-gray-200 focus:border-gray-900 focus:ring-1 focus:ring-gray-900/10 text-xs font-semibold text-gray-900 transition-all outline-hidden shadow-2xs"
             />
             {searchQuery && (
@@ -272,7 +274,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
                 id="clear-aisle-search-btn"
                 onClick={() => onSearchChange('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
-                title="Clear search"
+                title={t('aisles.clearSearch')}
               >
                 <X className="w-3 h-3" />
               </button>
