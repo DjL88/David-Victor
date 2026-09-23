@@ -2183,12 +2183,25 @@ v1Router.post(
       if (!checkoutResult.order.payment && (options?.paymentId || checkoutResult.paymentId)) {
         (checkoutResult.order as any).paymentId = options?.paymentId || checkoutResult.paymentId;
       }
+      // Guest tracking uses an unguessable bearer credential. Persist only its
+      // SHA-256 digest; the plaintext is returned once to the creating browser.
+      const guestOrderAccessToken = callerUid
+        ? undefined
+        : crypto.randomBytes(32).toString('base64url');
+      const guestOrderAccessTokenHash = guestOrderAccessToken
+        ? crypto.createHash('sha256').update(guestOrderAccessToken).digest('hex')
+        : undefined;
+
       const savedOrderProjection = await FirestorePlatformService.saveOrderProjection(
         checkoutResult.order,
         resolvedTenant,
         checkoutResult.checkoutId,
-        callerUid
+        callerUid,
+        guestOrderAccessTokenHash
       );
+      if (guestOrderAccessToken) {
+        checkoutResult.orderAccessToken = guestOrderAccessToken;
+      }
 
       // Initialize dispatch lifecycle from the canonical CheckoutResult fulfillment.
       // Never infer delivery from a missing raw order field.
@@ -2916,14 +2929,32 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
     // Merge or fall back to Firestore order projection for authoritative picking updates
     const proj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
 
-    // Section 26 & Item 18: Customer Access Control
-    if (proj?.customerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
+    // Customer Access Control: signed-in orders require the owning Firebase
+    // identity. Guest orders require the unguessable credential issued at
+    // checkout; knowing an order ID alone is never sufficient.
+    if (proj && !isDemoMode() && process.env.NODE_ENV !== 'test') {
       const callerUid = await getCallerUid(req);
       const adminUser = (req as AuthenticatedRequest).adminUser;
-      const isAuthorized = adminUser || (callerUid && callerUid === proj.customerUid);
+      let isAuthorized = Boolean(adminUser);
+
+      if (proj.customerUid) {
+        isAuthorized = isAuthorized || Boolean(callerUid && callerUid === proj.customerUid);
+      } else {
+        const suppliedToken = String(
+          req.headers['x-order-access-token'] || req.query.accessToken || ''
+        ).trim();
+        if (suppliedToken && proj.orderAccessTokenHash) {
+          const suppliedHash = crypto.createHash('sha256').update(suppliedToken).digest();
+          const expectedHash = Buffer.from(proj.orderAccessTokenHash, 'hex');
+          isAuthorized =
+            expectedHash.length === suppliedHash.length &&
+            crypto.timingSafeEqual(expectedHash, suppliedHash);
+        }
+      }
+
       if (!isAuthorized) {
         return res.status(403).json({
-          error: 'Access denied: Customer order does not belong to caller.',
+          error: 'Access denied: valid order ownership proof is required.',
           code: 'FORBIDDEN',
         });
       }
