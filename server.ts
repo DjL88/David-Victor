@@ -12,6 +12,7 @@ import { standardApiRateLimiter } from './server/rateLimiter';
 import { MetricsService } from './server/metricsService';
 import { getServerRuntimeMode } from './server/runtimeMode';
 import { FirestorePlatformService } from './server/firestoreService';
+import { aiStudioPreviewBffProxy } from './server/aiStudioPreviewProxy';
 import {
   buildStorefrontManifest,
   buildStorefrontMetadata,
@@ -231,6 +232,11 @@ async function startServer() {
 
   // API routes FIRST with standard rate limiting (Section 45, 47)
   app.use('/api', standardApiRateLimiter.middleware());
+
+  // AI Studio's managed preview identity may not have Firestore IAM on the
+  // staging database. When PREVIEW_BFF_URL is configured, proxy API calls to
+  // the published BFF instead of weakening database IAM for the sandbox.
+  app.use('/api/v1', aiStudioPreviewBffProxy);
   app.use('/api/v1', v1Router);
   // Alias /api/commerce to v1Router for compatibility
   app.use('/api/commerce', v1Router);
