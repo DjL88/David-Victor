@@ -10,6 +10,7 @@ export interface LocaleTranslations {
   'nav.search': string;
   'nav.orders': string;
   'nav.account': string;
+  'nav.aisles': string;
   'nav.favourites': string;
   'nav.buyAgain': string;
   'nav.admin': string;
@@ -22,6 +23,25 @@ export interface LocaleTranslations {
   'header.openStores': string;
   'header.closedStoreNotice': string;
   'header.acceptsPreOrders': string;
+  'header.setLocation': string;
+  'header.allStores': string;
+  'header.delivery': string;
+  'header.collect': string;
+  'header.deliveryOnly': string;
+  'header.profilePreferences': string;
+  'header.ordersTracking': string;
+  'header.basket': string;
+
+  // Fulfilment & Location
+  'fulfilment.title': string;
+  'fulfilment.subtitle': string;
+  'fulfilment.deliverTo': string;
+  'fulfilment.delivery': string;
+  'fulfilment.collection': string;
+  'location.deliveryAddress': string;
+  'location.liveRouting': string;
+  'location.map': string;
+  'location.list': string;
 
   // Account
   'account.languageRegion': string;
@@ -123,6 +143,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'nav.search': 'Search',
     'nav.orders': 'Orders',
     'nav.account': 'Account',
+    'nav.aisles': 'Aisles',
     'nav.favourites': 'Favourites',
     'nav.buyAgain': 'Buy Again',
     'nav.admin': 'Admin Console',
@@ -134,6 +155,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Open Stores Nearby',
     'header.closedStoreNotice': 'Currently Closed',
     'header.acceptsPreOrders': 'Pre-ordering open for scheduled delivery',
+    'header.setLocation': 'Set Location',
+    'header.allStores': 'All Stores',
+    'header.delivery': 'Delivery',
+    'header.collect': 'Collect',
+    'header.deliveryOnly': 'Delivery Only',
+    'header.profilePreferences': 'Profile & Preferences',
+    'header.ordersTracking': 'Orders & Tracking',
+    'header.basket': 'Basket',
+    'fulfilment.title': 'How would you like your order?',
+    'fulfilment.subtitle': 'Choose delivery to your door or store collection',
+    'fulfilment.deliverTo': 'Deliver to',
+    'fulfilment.delivery': 'Doorstep Delivery',
+    'fulfilment.collection': 'Click & Collect',
+    'location.deliveryAddress': 'Delivery Address',
+    'location.liveRouting': 'Live distance and routing',
+    'location.map': 'Map',
+    'location.list': 'List',
 
     'account.languageRegion': 'Language & Region',
     'account.savedAddresses': 'Saved delivery addresses',
@@ -228,6 +266,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'nav.search': 'Buscar',
     'nav.orders': 'Pedidos',
     'nav.account': 'Cuenta',
+    'nav.aisles': 'Pasillos',
     'nav.favourites': 'Favoritos',
     'nav.buyAgain': 'Comprar de nuevo',
     'nav.admin': 'Panel de Control',
@@ -239,6 +278,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Tiendas abiertas cercanas',
     'header.closedStoreNotice': 'Actualmente cerrada',
     'header.acceptsPreOrders': 'Reserva abierta para entrega programada',
+    'header.setLocation': 'Establecer ubicación',
+    'header.allStores': 'Todas las tiendas',
+    'header.delivery': 'Entrega',
+    'header.collect': 'Recogida',
+    'header.deliveryOnly': 'Solo entrega',
+    'header.profilePreferences': 'Perfil y preferencias',
+    'header.ordersTracking': 'Pedidos y seguimiento',
+    'header.basket': 'Cesta',
+    'fulfilment.title': '¿Cómo quieres recibir tu pedido?',
+    'fulfilment.subtitle': 'Elige entrega a domicilio o recogida en tienda',
+    'fulfilment.deliverTo': 'Entregar en',
+    'fulfilment.delivery': 'Entrega a domicilio',
+    'fulfilment.collection': 'Recoger en tienda',
+    'location.deliveryAddress': 'Dirección de entrega',
+    'location.liveRouting': 'Distancia y ruta en tiempo real',
+    'location.map': 'Mapa',
+    'location.list': 'Lista',
 
     'account.languageRegion': 'Idioma y región',
     'account.savedAddresses': 'Direcciones de entrega guardadas',
@@ -333,6 +389,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'nav.search': 'Recherche',
     'nav.orders': 'Commandes',
     'nav.account': 'Compte',
+    'nav.aisles': 'Rayons',
     'nav.favourites': 'Favoris',
     'nav.buyAgain': 'Commander à nouveau',
     'nav.admin': 'Console Admin',
@@ -344,6 +401,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Magasins ouverts à proximité',
     'header.closedStoreNotice': 'Actuellement fermé',
     'header.acceptsPreOrders': 'Précommande ouverte pour livraison programmée',
+    'header.setLocation': 'Définir le lieu',
+    'header.allStores': 'Tous les magasins',
+    'header.delivery': 'Livraison',
+    'header.collect': 'Retrait',
+    'header.deliveryOnly': 'Livraison uniquement',
+    'header.profilePreferences': 'Profil et préférences',
+    'header.ordersTracking': 'Commandes et suivi',
+    'header.basket': 'Panier',
+    'fulfilment.title': 'Comment souhaitez-vous recevoir votre commande ?',
+    'fulfilment.subtitle': 'Choisissez la livraison à domicile ou le retrait en magasin',
+    'fulfilment.deliverTo': 'Livrer à',
+    'fulfilment.delivery': 'Livraison à domicile',
+    'fulfilment.collection': 'Retrait en magasin',
+    'location.deliveryAddress': 'Adresse de livraison',
+    'location.liveRouting': 'Distance et itinéraire en direct',
+    'location.map': 'Carte',
+    'location.list': 'Liste',
 
     'account.languageRegion': 'Langue et région',
     'account.savedAddresses': 'Adresses de livraison enregistrées',
@@ -438,6 +512,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'nav.search': 'Suche',
     'nav.orders': 'Bestellungen',
     'nav.account': 'Konto',
+    'nav.aisles': 'Abteilungen',
     'nav.favourites': 'Favoriten',
     'nav.buyAgain': 'Wieder bestellen',
     'nav.admin': 'Admin-Konsole',
@@ -449,6 +524,23 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'header.openStores': 'Geöffnete Filialen in der Nähe',
     'header.closedStoreNotice': 'Derzeit geschlossen',
     'header.acceptsPreOrders': 'Vorbestellungen für geplante Lieferung möglich',
+    'header.setLocation': 'Standort festlegen',
+    'header.allStores': 'Alle Filialen',
+    'header.delivery': 'Lieferung',
+    'header.collect': 'Abholung',
+    'header.deliveryOnly': 'Nur Lieferung',
+    'header.profilePreferences': 'Profil & Einstellungen',
+    'header.ordersTracking': 'Bestellungen & Tracking',
+    'header.basket': 'Warenkorb',
+    'fulfilment.title': 'Wie möchtest du deine Bestellung erhalten?',
+    'fulfilment.subtitle': 'Wähle Lieferung an die Tür oder Abholung in der Filiale',
+    'fulfilment.deliverTo': 'Liefern an',
+    'fulfilment.delivery': 'Lieferung an die Tür',
+    'fulfilment.collection': 'Click & Collect',
+    'location.deliveryAddress': 'Lieferadresse',
+    'location.liveRouting': 'Live-Entfernung und Route',
+    'location.map': 'Karte',
+    'location.list': 'Liste',
 
     'account.languageRegion': 'Sprache & Region',
     'account.savedAddresses': 'Gespeicherte Lieferadressen',
