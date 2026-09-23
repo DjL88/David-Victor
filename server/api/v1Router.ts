@@ -2859,6 +2859,24 @@ v1Router.post(
         context: req.body.context,
       });
 
+      if (response.readAction) {
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: authAdmin.uid,
+          userName: authAdmin.name || authAdmin.email || 'Admin',
+          userRole: authAdmin.role,
+          tenantId,
+          category: 'Integration',
+          action: `Assistant automatic read: ${response.readAction}`,
+          details: JSON.stringify({
+            context: req.body.context || null,
+            source: 'assistant.chat',
+          }),
+          actorType: 'assistant',
+          actionRisk: 'READ',
+          reversible: false,
+        });
+      }
+
       res.json({
         ...response,
         mode: 'CONVERSATION',
