@@ -96,4 +96,62 @@ describe('Deliverect Channel registration contract', () => {
       quarantined: false,
     });
   });
+  it('accepts a Menu Push on an accountId URL using the staging channelLinkId HMAC secret', async () => {
+    const suffix = `${Date.now()}-menu`;
+    const tenantId = `brand-menu-${suffix}`;
+    const accountId = `account-${suffix}`;
+    const channelLinkId = `channel-${suffix}`;
+
+    await FirestorePlatformService.updateIntegrationConfig(tenantId, {
+      deliverectAccountId: accountId,
+      allowedChannelLinkIds: [channelLinkId],
+      environment: 'staging',
+      status: 'COMMERCE_VERIFIED',
+    } as any);
+    await FirestorePlatformService.saveTenantStore(tenantId, {
+      channelLinkId,
+      deliverectLocationId: `location-${suffix}`,
+      lifecycleStatus: 'ACTIVE',
+    });
+
+    const payload = {
+      accountId,
+      locationId: `location-${suffix}`,
+      channelLinkId,
+      menuId: `menu-${suffix}`,
+      menu: 'Internal Test',
+      categories: [],
+      products: {},
+      modifierGroups: {},
+      modifiers: {},
+      snoozedProducts: {},
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = crypto
+      .createHmac('sha256', channelLinkId)
+      .update(rawBody)
+      .digest('hex');
+
+    const res = await fetch(
+      `${baseUrl}/webhooks/deliverect/${accountId}/channel/menu_update`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-server-authorization-hmac-sha256': signature,
+        },
+        body: rawBody,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      type: 'menu_update',
+      channelLinkId,
+      menuId: payload.menuId,
+    });
+  });
+
 });
