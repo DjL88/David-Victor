@@ -208,7 +208,7 @@ export class ChannelMenuIngestionService {
     eventId: string
   ): Promise<ChannelMenuIngressRecord | null> {
     const memory = memoryIngress.get(`${tenantId}:${eventId}`);
-    const db = getFirestoreDb();
+    const db = liveEnvironment() ? getFirestoreDb() : null;
     if (!db) return memory || null;
     try {
       const doc = await db
@@ -225,7 +225,7 @@ export class ChannelMenuIngestionService {
 
   private static async saveIngressRecord(record: ChannelMenuIngressRecord): Promise<void> {
     memoryIngress.set(`${record.tenantId}:${record.eventId}`, record);
-    const db = getFirestoreDb();
+    const db = liveEnvironment() ? getFirestoreDb() : null;
     if (!db) {
       if (liveEnvironment()) {
         throw new BFFError(
@@ -250,7 +250,7 @@ export class ChannelMenuIngestionService {
     body: Buffer,
     metadata: Record<string, string>
   ): Promise<void> {
-    const storage = getFirebaseStorage();
+    const storage = liveEnvironment() ? getFirebaseStorage() : null;
     if (!storage) {
       if (liveEnvironment()) {
         throw new BFFError(
@@ -274,7 +274,7 @@ export class ChannelMenuIngestionService {
   }
 
   private static async loadPrivateObject(storagePath: string): Promise<Buffer> {
-    const storage = getFirebaseStorage();
+    const storage = liveEnvironment() ? getFirebaseStorage() : null;
     if (!storage) {
       const value = memoryRaw.get(storagePath) || memoryNormalized.get(storagePath);
       if (!value) {
@@ -291,7 +291,7 @@ export class ChannelMenuIngestionService {
     body: Buffer,
     metadata: Record<string, string>
   ): Promise<void> {
-    const storage = getFirebaseStorage();
+    const storage = liveEnvironment() ? getFirebaseStorage() : null;
     if (!storage) {
       memoryNormalized.set(storagePath, Buffer.from(body));
       return;
@@ -423,7 +423,7 @@ export class ChannelMenuIngestionService {
       const raw = await this.loadPrivateObject(job.storagePath);
       const payload = JSON.parse(raw.toString('utf8'));
       const menus = menuArray(payload);
-      const db = getFirestoreDb();
+      const db = liveEnvironment() ? getFirestoreDb() : null;
 
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
