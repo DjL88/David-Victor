@@ -1166,13 +1166,24 @@ export class WebhookService {
       };
     }
 
-    // Do not acknowledge an order event that arrived before its local projection.
-    // Keep the journal entry as FAILED and release the claim so Deliverect retry
-    // or an operator replay can process it once correlation data exists.
-    const unmatched: any = new Error('Webhook is valid but no local order projection is available yet.');
-    unmatched.statusCode = 503;
-    unmatched.code = 'WEBHOOK_ORDER_NOT_FOUND_RETRYABLE';
-    throw unmatched;
+    // Do not acknowledge an order-correlated event that arrived before its
+    // local projection. Keep the journal entry as FAILED and release the claim
+    // so Deliverect retry or an operator replay can process it later.
+    if (correlationCandidates.length > 0) {
+      const unmatched: any = new Error('Webhook is valid but no local order projection is available yet.');
+      unmatched.statusCode = 503;
+      unmatched.code = 'WEBHOOK_ORDER_NOT_FOUND_RETRYABLE';
+      throw unmatched;
+    }
+
+    // Non-order events can be safely journaled without a local order projection.
+    await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+    return {
+      success: true,
+      eventId: webhookEventId,
+      status: 'PROCESSED',
+      message: 'Webhook processed; no order correlation was supplied.',
+    };
     } catch (err: any) {
       const errorCode = err?.code || 'WEBHOOK_PROCESSING_ERROR';
       await FirestorePlatformService.updateWebhookEventStatus(
