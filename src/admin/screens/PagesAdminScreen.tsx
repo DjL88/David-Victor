@@ -258,7 +258,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-1">URL Slug</label>
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-400 font-mono">/pages/</span>
+                <span className="text-xs text-gray-400 font-mono">/</span>
                 <input
                   type="text"
                   value={selectedPage.slug}
