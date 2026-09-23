@@ -1034,6 +1034,7 @@ export class FirestoreService {
       currency: newTenant.currency || 'GBP',
       currencySymbol: newTenant.currencySymbol || '£',
       locale: newTenant.locale || 'en-GB',
+      orderCodePrefix: newTenant.orderCodePrefix,
       supportDetails: newTenant.supportDetails || (isDemoMode() ? {
         email: `support@${tenantId}.co.uk`,
         phone: '0800 000 0000',
