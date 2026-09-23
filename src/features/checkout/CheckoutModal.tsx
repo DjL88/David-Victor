@@ -1367,8 +1367,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {/* TIP SELECTION — delivery courier only */}
-            {!isCollectionBasket && (
+            {/* Tip controls stay hidden outside Demo until the live commerce API applies tips end-to-end. */}
+            {isDemo && !isCollectionBasket && (
               <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
                 <span className="font-bold text-gray-900 block mb-2 flex items-center gap-1.5">
                   <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
@@ -1393,8 +1393,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {/* PROMO CODE INPUT */}
-            <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
+            {/* Promo codes stay hidden outside Demo until the live commerce API applies them authoritatively. */}
+            {isDemo && <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
               <span className="font-bold text-gray-900 block mb-1.5 flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-gray-600" />
                 <span>{t('checkout.promoCode')}</span>
@@ -1418,7 +1418,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
               {promoSuccess && <span className="text-emerald-700 font-bold block mt-1">{promoSuccess}</span>}
               {promoError && <span className="text-red-600 font-bold block mt-1">{promoError}</span>}
-            </div>
+            </div>}
 
             {/* REVERSE DEAL MEAL PROMPTS (2 of 3 items in basket -> prompt 3rd unless HFSS) */}
             {reverseDealResults.eligible.length > 0 && (
@@ -1913,7 +1913,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }}
         onRemoveItem={async (plu) => {
           if (basket) {
-            const updated = await defaultCommerceClient.removeFromBasket(basket.id, plu);
+            const updated = await defaultCommerceClient.removeBasketItem(basket.id, plu);
             setBasket(updated);
             onBasketUpdated?.(updated);
           }
