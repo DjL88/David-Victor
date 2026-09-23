@@ -22,8 +22,21 @@ const tenant: TenantConfig = {
   currency: 'GBP',
   currencySymbol: '£',
   locale: 'en-GB',
-  supportDetails: {},
-  featureFlags: {},
+  supportDetails: {
+    email: 'help@example.com',
+    phone: '01234 567890',
+    openingHours: 'Mon-Sun',
+  },
+  featureFlags: {
+    enableStories: true,
+    enableRootCatalogBrowse: true,
+    enableCollection: true,
+    allowStoreSwitchingWithBasket: true,
+    enableDelivery: true,
+    enablePayments: true,
+    enableDispatch: true,
+    enableStoreFinder: true,
+  },
 };
 
 describe('server storefront metadata', () => {
