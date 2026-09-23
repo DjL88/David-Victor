@@ -32,6 +32,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
+import { PickingStatusIngressService } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2659,9 +2660,50 @@ async function handleQuestRetailCallback(
       Buffer.from(JSON.stringify(req.body), 'utf8');
 
     if (kind === 'status') {
+      const signatureHeader =
+        (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+        (req.headers['x-deliverect-signature'] as string) ||
+        (req.headers['x-signature'] as string) ||
+        (req.headers['x-deliverect-hmac-sha256'] as string);
+
+      const stagingTemporarySecrets =
+        await WebhookService.getMappedStagingChannelLinkSecrets(
+          tenantId,
+          req.body
+        );
+      const canonicalBody = JSON.stringify(req.body ?? {});
+      const rawBodyText = Buffer.isBuffer(rawBody)
+        ? rawBody.toString('utf8')
+        : String(rawBody);
+
+      const verified = await WebhookService.resolveTenantForWebhook(
+        rawBody,
+        signatureHeader,
+        tenantId,
+        {
+          stagingTemporarySecrets,
+          stagingAlternateBodies:
+            canonicalBody !== rawBodyText ? [canonicalBody] : [],
+        }
+      );
+
       const payload = normalizeQuestPickingStatusPayload(req.body);
-      const result = await WebhookService.processWebhook(payload, rawBody, req.headers, tenantId);
-      return res.status(200).json({ ...result, callbackType: 'PICKING_STATUS' });
+      await PickingStatusIngressService.acceptVerified({
+        tenantId: verified.tenantId,
+        payload,
+        rawBody,
+        signature: signatureHeader,
+        externalEventId:
+          (req.headers['x-deliverect-event-id'] as string) ||
+          req.body?.eventId ||
+          req.body?.id ||
+          req.body?._id,
+      });
+
+      // Deliverect only requires an immediate HTTP 200 acknowledgement here.
+      // The durable queue processes order state after the response has left the
+      // request thread, avoiding "No response from channel" picker timeouts.
+      return res.status(200).type('text/plain').send('OK');
     }
 
     const results = await processQuestAmendments(req.body, rawBody, req.headers, tenantId);
@@ -6716,6 +6758,21 @@ v1Router.post('/internal/tasks/channel-menu', async (req: Request, res: Response
     res.status(statusCode).json({
       error: err.message,
       code: err.code || 'CHANNEL_MENU_TASK_FAILED',
+    });
+  }
+});
+
+v1Router.post('/internal/tasks/picking-status', async (req: Request, res: Response) => {
+  try {
+    await verifyCloudTasksOidcToken(req);
+    const result = await PickingStatusIngressService.processJob(req.body);
+    res.status(200).json({ success: true, result });
+  } catch (err: any) {
+    console.error('[CloudTasks Worker Error - Picking Status]:', err.message);
+    const statusCode = err.statusCode || (err.code?.startsWith('OIDC_') ? 401 : 500);
+    res.status(statusCode).json({
+      error: err.message,
+      code: err.code || 'PICKING_STATUS_TASK_FAILED',
     });
   }
 });
