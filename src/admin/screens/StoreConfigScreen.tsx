@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Store, AdminUser } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import { RefreshCw, CheckSquare, Square, Filter } from 'lucide-react';
 
 interface StoreConfigScreenProps {
@@ -56,6 +57,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [pendingAiPrefill, setPendingAiPrefill] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +126,28 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
       stores.map((store) => store.locationGroup).filter((value): value is string => !!value)
     )
   );
+
+  useEffect(() =>
+    onAdminAiPrefill('stores', ({ prefill }) => {
+      if (prefill) setPendingAiPrefill(prefill);
+    }),
+  []);
+
+  useEffect(() => {
+    if (!pendingAiPrefill || loading) return;
+
+    if (pendingAiPrefill.selectAllFiltered === true) {
+      setSelectedIds(filtered.map((store) => store.id));
+    }
+    if (typeof pendingAiPrefill.batchRadius === 'string') {
+      setBatchRadius(pendingAiPrefill.batchRadius);
+    }
+    if (pendingAiPrefill.openBatchRadius === true && filtered.length > 0) {
+      setShowBatchModal(true);
+    }
+
+    setPendingAiPrefill(null);
+  }, [pendingAiPrefill, loading, filtered]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / 25));
   const currentPage = Math.min(page, pages);
@@ -670,6 +694,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
             <label className="block text-xs font-bold text-gray-700">
               Delivery Radius (km)
               <input
+                data-admin-ai-target="stores-batch-radius"
                 type="number"
                 min="0"
                 step="0.5"
@@ -690,6 +715,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
                 Cancel
               </button>
               <button
+                data-admin-ai-target="stores-batch-save"
                 type="button"
                 onClick={handleBatchSaveRadius}
                 disabled={saving}
