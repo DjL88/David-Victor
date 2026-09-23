@@ -716,6 +716,32 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
     }
   }
 
+  if (
+    available.has('rules.inspect') &&
+    /\b(what|which|list|show|active|enabled|disabled|current|currently)\b.*\brules?\b|\brules?\b.*\b(active|enabled|disabled|current|currently)\b/i.test(args.message)
+  ) {
+    try {
+      const execution = await AdminAssistantActionService.executeReadOnly({
+        actor: {
+          uid: args.actorId,
+          role: args.actorRole as AdminRole,
+          tenantId: args.tenantId,
+        },
+        tenantId: args.tenantId,
+        actionName: 'rules.inspect',
+        input: {},
+      });
+      return {
+        actionName: execution.plan.actionName,
+        result: execution.result,
+        evidence: execution.evidence,
+        generatedAt: execution.generatedAt,
+      };
+    } catch (err: any) {
+      console.warn('[AdminAssistantChat] Automatic rules read failed:', err?.message || err);
+    }
+  }
+
   return null;
 }
 
@@ -773,10 +799,59 @@ function summariseReadContext(readContext: AssistantReadContext | null): string 
 
   if (readContext.actionName === 'stores.inspect') {
     const count = Number(readContext.result?.storeCount || 0);
-    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.`;
+    const stores = Array.isArray(readContext.result?.stores) ? readContext.result.stores : [];
+    const names = stores.map((store: any) => store.name || store.id).filter(Boolean);
+    const detail = names.length > 0 ? ` They are: ${names.join(', ')}.` : '';
+    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.${detail}`;
+  }
+
+  if (readContext.actionName === 'rules.inspect') {
+    const rules = Array.isArray(readContext.result?.rules) ? readContext.result.rules : [];
+    const active = rules.filter((rule: any) => rule.enabled !== false);
+    if (rules.length === 0) {
+      return 'I checked the live product rules. There are no configured product rules for this brand.';
+    }
+    const activeNames = active.map((rule: any) => rule.name || rule.id).filter(Boolean);
+    const disabledCount = Number(readContext.result?.disabledCount || 0);
+    const disabledText = disabledCount > 0 ? ` ${disabledCount} disabled rule${disabledCount === 1 ? '' : 's'} also exist.` : '';
+    return `I checked the live product rules. ${active.length} of ${rules.length} are active: ${activeNames.join(', ') || 'none'}.${disabledText}`;
   }
 
   return null;
+}
+
+function buildLocalGuidedReply(
+  message: string,
+  navigation: AdminAssistantNavigationHint | null,
+  readContext: AssistantReadContext | null
+): string | null {
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+
+  const liveSummary = summariseReadContext(readContext);
+  const simpleLiveRead =
+    Boolean(readContext) &&
+    !/\b(why|explain|diagnose|reason|cause|wrong|issue|problem)\b/i.test(lower);
+
+  if (liveSummary && simpleLiveRead) return liveSummary;
+
+  if (!navigation) return null;
+
+  const hasPreparedFields = Boolean(navigation.prefill && Object.keys(navigation.prefill).length > 0);
+  const explicitlyGuided =
+    /\b(show me|take me|open|where do i|where is|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft )\b/i.test(text);
+
+  if (!hasPreparedFields && !explicitlyGuided) return null;
+
+  if (navigation.steps?.length) {
+    return hasPreparedFields
+      ? `I can prepare that locally without an AI model call. I’ll prefill the supported fields and guide you through ${navigation.steps.length} review steps. Nothing is saved until you press Save.`
+      : `I can guide you through that on screen. I’ll take you to the right controls step by step; nothing changes unless you choose to save it.`;
+  }
+
+  return hasPreparedFields
+    ? 'I can prepare those fields locally and take you straight to them. Nothing is saved until you review and press Save.'
+    : 'I can take you to the relevant Admin control and highlight it.';
 }
 
 export function buildDegradedAssistantReply(
@@ -987,6 +1062,20 @@ export class AdminAssistantChatService {
     const attachments = normaliseAttachments(args.attachments);
     const readContext = await resolveReadContext(args);
     const navigation = resolveAdminAssistantNavigationHint(args.message, args.context?.section);
+    const localReply = attachments.length === 0
+      ? buildLocalGuidedReply(args.message, navigation, readContext)
+      : null;
+
+    if (localReply) {
+      return {
+        message: localReply,
+        suggestions: getAdminAssistantSuggestions(navigation?.section || args.context?.section),
+        provider: 'local-agent',
+        model: readContext ? 'deterministic-read-router' : 'deterministic-guide-router',
+        readAction: readContext?.actionName,
+        navigation,
+      };
+    }
 
     const contents = [
       ...history.map((message) => ({
