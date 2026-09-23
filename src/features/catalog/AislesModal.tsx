@@ -232,7 +232,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
             </div>
           )}
 
-          {/* Quick "{t('aisles.all')}" option */}
+          {/* Quick all-aisles option */}
           {browsePath.length === 0 && (
             <button
               type="button"
@@ -256,7 +256,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
                 </div>
                 <div>
                   <span className="font-extrabold text-xs sm:text-sm text-gray-950 block">
-                    All Aisles
+                    {t('aisles.all')}
                   </span>
                   <span className="text-[11px] text-gray-500 block">
                     {t('aisles.browseEntire')}
