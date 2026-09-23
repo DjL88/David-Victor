@@ -22,7 +22,12 @@ export interface DomainMapping {
   hostname: string;
   tenantId: string;
   isPrimary?: boolean;
-  status?: 'active' | 'pending';
+  status?: 'active' | 'verified' | 'pending';
+  verificationToken?: string;
+  verificationRecordName?: string;
+  verificationRecordValue?: string;
+  ownershipVerifiedAt?: string;
+  tlsStatus?: 'pending' | 'ready' | 'failed';
   createdAt?: string;
   updatedAt?: string;
 }
@@ -38,6 +43,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -134,6 +140,37 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       setErrorMessage(e.message || 'Failed to save domain mapping.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleVerifyDomain = async (domainId: string, hostname: string) => {
+    setVerifyingId(domainId);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const client = getAdminClient();
+      if (!client.verifyDomainOwnership) {
+        throw new Error('Domain ownership verification is not available in this Admin client.');
+      }
+
+      const result = await client.verifyDomainOwnership(domainId);
+      setSuccessMessage(
+        result?.domain?.status === 'active'
+          ? `Domain "${hostname}" is verified and active.`
+          : `Ownership of "${hostname}" is verified. Secure serving/TLS activation is the next step.`
+      );
+      await loadDomains();
+    } catch (e: any) {
+      if (e?.code === 'DOMAIN_OWNERSHIP_NOT_VERIFIED') {
+        setErrorMessage(
+          `DNS has not propagated the verification TXT record for "${hostname}" yet. Check the record below and retry.`
+        );
+      } else {
+        setErrorMessage(e?.message || 'Domain ownership verification failed.');
+      }
+    } finally {
+      setVerifyingId(null);
     }
   };
 
@@ -405,10 +442,15 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                             <CheckCircle2 className="w-2.5 h-2.5" />
                             Active
                           </span>
+                        ) : dom.status === 'verified' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                            <ShieldCheck className="w-2.5 h-2.5" />
+                            Ownership verified · TLS pending
+                          </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                             <AlertTriangle className="w-2.5 h-2.5" />
-                            Pending verification
+                            Pending DNS verification
                           </span>
                         )}
                       </div>
@@ -425,10 +467,41 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                           ({dom.tenantId})
                         </span>
                       </div>
+
+                      {dom.status !== 'active' && dom.verificationRecordName && dom.verificationRecordValue && (
+                        <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px] text-gray-600">
+                          <p className="font-extrabold uppercase tracking-wide text-gray-500">DNS ownership TXT record</p>
+                          <div className="mt-1.5 grid gap-1 font-mono break-all">
+                            <p><span className="font-bold text-gray-800">Name:</span> {dom.verificationRecordName}</p>
+                            <p><span className="font-bold text-gray-800">Value:</span> {dom.verificationRecordValue}</p>
+                          </div>
+                          {dom.ownershipVerifiedAt && (
+                            <p className="mt-1.5 font-sans font-semibold text-blue-700">
+                              Ownership verified {new Date(dom.ownershipVerifiedAt).toLocaleString('en-GB')}.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    {dom.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleVerifyDomain(dom.domainId || dom.hostname, dom.hostname)}
+                        disabled={verifyingId === (dom.domainId || dom.hostname)}
+                        className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-[10px] font-extrabold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {verifyingId === (dom.domainId || dom.hostname) ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        )}
+                        Verify DNS
+                      </button>
+                    )}
+
                     {dom.status === 'active' ? (
                       <a
                         href={`https://${dom.hostname}`}
@@ -442,7 +515,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                       </a>
                     ) : (
                       <span className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-[10px] font-bold text-amber-800">
-                        Awaiting verification
+                        {dom.status === 'verified' ? 'Awaiting secure serving' : 'Awaiting verification'}
                       </span>
                     )}
 
