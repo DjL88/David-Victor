@@ -27,6 +27,14 @@ describe('customer correctness regressions', () => {
     path.resolve(process.cwd(), 'server/customerAccountService.ts'),
     'utf8'
   );
+  const customerAccountClientSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/features/account/customerAccountClient.ts'),
+    'utf8'
+  );
+  const appLayoutSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/app/AppLayout.tsx'),
+    'utf8'
+  );
 
   it('uses the supported basket item removal API in checkout', () => {
     expect(checkoutSource).not.toContain('removeFromBasket(basket.id, plu)');
@@ -53,8 +61,11 @@ describe('customer correctness regressions', () => {
     expect(routerSource).toContain('CustomerAccountService.saveFavourites');
     expect(customerAccountSource).toContain(".collection('tenants')");
     expect(customerAccountSource).toContain(".collection('customerProfiles')");
-    expect(favouritesSource).toContain("fetch('/api/v1/account/favourites'");
-    expect(favouritesSource).toContain('Authorization: `Bearer ${token}`');
+    expect(favouritesSource).toContain('getCustomerFavourites(tenant?.tenantId)');
+    expect(favouritesSource).toContain('saveCustomerFavourites(next, tenant?.tenantId)');
+    expect(customerAccountClientSource).toContain("fetch('/api/v1/account/favourites'");
+    expect(customerAccountClientSource).toContain('Authorization: `Bearer ${token}`');
+    expect(customerAccountClientSource).toContain("'x-tenant-id': tenantId");
   });
 
   it('uses real order history and product refresh for Buy Again instead of timed simulation', () => {
@@ -62,5 +73,15 @@ describe('customer correctness regressions', () => {
     expect(favouritesSource).toContain('.getProduct(');
     expect(favouritesSource).not.toContain('Simulate authoritative BFF re-validation');
     expect(favouritesSource).not.toContain('setTimeout(r, 450)');
+  });
+
+  it('persists saved addresses through the customer profile and exposes them to the location picker', () => {
+    expect(routerSource).toContain("v1Router.get('/account/addresses'");
+    expect(routerSource).toContain("'/account/addresses',");
+    expect(routerSource).toContain('CustomerAccountService.saveAddresses');
+    expect(customerAccountSource).toContain('savedAddresses: normalizeSavedAddresses(raw.savedAddresses)');
+    expect(customerAccountClientSource).toContain("fetch('/api/v1/account/addresses'");
+    expect(appLayoutSource).toContain('savedAddresses={savedAddresses}');
+    expect(appLayoutSource).toContain('onSavedAddressesChange={setSavedAddresses}');
   });
 });
