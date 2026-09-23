@@ -42,7 +42,7 @@ describe('customer correctness regressions', () => {
     expect(clientSource).toContain('const token = await getCurrentIdToken()');
     expect(clientSource).toContain('Authorization: `Bearer ${token}`');
     expect(routerSource).toContain('const callerUid = await getCallerUid(req)');
-    expect(routerSource).toContain('callerUid\n      );');
+    expect(routerSource).toContain('callerUid,\n        guestOrderAccessTokenHash\n      );');
     expect(firestoreSource).toContain('customerUid: customerUid || (rawOrderInput as any)?.customerUid || undefined');
     expect(firestoreSource).toContain('attachCustomerUidToOrderProjection');
   });
