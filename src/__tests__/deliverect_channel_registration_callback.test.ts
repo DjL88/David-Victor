@@ -166,6 +166,45 @@ describe('Deliverect Channel registration callback', () => {
       menuId: 'menu-abc',
     });
   });
+  it('resolves a live menu push to the mapped store when Deliverect omits channelLinkId', async () => {
+    const menuPayload = {
+      accountId: 'account-123',
+      locationId: 'location-456',
+      menuId: 'menu-no-channel-link',
+      menu: 'Internal Test',
+      products: {},
+      categories: [],
+      modifiers: {},
+      modifierGroups: {},
+    };
+    const rawBody = JSON.stringify(menuPayload);
+    const signature = WebhookService.computeHmacSignature(
+      rawBody,
+      menuPayload.locationId
+    );
+
+    const res = await fetch(
+      `${baseUrl}/webhooks/deliverect/account-123/channel/menu_update`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-server-authorization-hmac-sha256': signature,
+        },
+        body: rawBody,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      type: 'menu_update',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-no-channel-link',
+    });
+  });
+
   it('accepts a live staging menu push signed with the mapped location id fallback', async () => {
     const menuPayload = {
       accountId: 'account-123',
