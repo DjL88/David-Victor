@@ -2314,6 +2314,7 @@ export class FirestoreService {
               id: item.id || `item_${item.plu || idx}`,
               plu: item.plu,
               name: item.name,
+              imageUrl: item.imageUrl || (item as any).image || undefined,
               originalQuantity: item.quantity,
               pickedQuantity: 0,
               originalPrice: priceObj,
@@ -2403,6 +2404,20 @@ export class FirestoreService {
       settlementDetails: (order as any).settlementDetails || undefined,
       metadata: cleanUndefined({
         ...((order as any).metadata || {}),
+        // Snapshot customer-facing basket lines so historic receipts/order images
+        // do not depend on the current catalogue after products are changed.
+        orderItems: (order.originalBasket?.items || []).map((item: any) => cleanUndefined({
+          id: item.id,
+          plu: item.plu,
+          name: item.name,
+          imageUrl: item.imageUrl || item.image,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice || item.price,
+          totalPrice: item.totalPrice,
+        })),
+        tax: order.originalBasket?.tax,
+        discounts: order.originalBasket?.discounts,
+        charges: order.originalBasket?.charges,
         ...(persistedBundleAllocations.length > 0
           ? {
               bundlePricingVersion: 1,

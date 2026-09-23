@@ -964,6 +964,30 @@ v1Router.post('/baskets', validateBody(CreateBasketSchema), async (req: Request,
   }
 });
 
+async function enrichBasketProductImages(adapter: DeliverectAdapter, basket: any): Promise<any> {
+  if (!basket?.items?.length || basket.items.every((item: any) => item.imageUrl)) return basket;
+  try {
+    const catalog = await adapter.getStoreCatalog(basket.storeId, basket.fulfillmentType);
+    const imageByPlu = new Map<string, string>();
+    for (const product of ((catalog?.products || []) as Product[])) {
+      const image = product.imageUrl || product.image || product.images?.[0];
+      if (product.plu && image) imageByPlu.set(product.plu, image);
+    }
+    return {
+      ...basket,
+      items: basket.items.map((item: any) => ({
+        ...item,
+        imageUrl: item.imageUrl || imageByPlu.get(item.plu),
+      })),
+    };
+  } catch (error) {
+    // Images are presentation metadata: never make a valid basket unavailable
+    // merely because catalogue enrichment had a transient failure.
+    console.warn('[Basket Images] Catalogue enrichment failed:', error);
+    return basket;
+  }
+}
+
 v1Router.get('/baskets/:basketId', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
@@ -972,7 +996,7 @@ v1Router.get('/baskets/:basketId', async (req: Request, res: Response) => {
     if (!basket) {
       return res.status(404).json({ error: 'Basket not found' });
     }
-    res.json(basket);
+    res.json(await enrichBasketProductImages(adapter, basket));
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to retrieve basket');
   }
@@ -1027,7 +1051,7 @@ v1Router.patch('/baskets/:basketId', validateBody(UpdateBasketItemSchema), async
     const adapter = await getDeliverectAdapterAsync(tenantId);
     await enforceRulesForBasketAdd(tenantId, adapter, req.params.basketId, [{ plu: productId, quantity }]);
     const basket = await adapter.updateBasketItem(req.params.basketId, productId, quantity);
-    res.json(basket);
+    res.json(await enrichBasketProductImages(adapter, basket));
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to update basket item');
   }
@@ -1045,7 +1069,7 @@ v1Router.patch('/baskets/:basketId/items', validateBody(UpdateBasketItemsSchema)
       (items || []).map((i: any) => ({ plu: i.plu, quantity: i.quantity }))
     );
     const basket = await adapter.updateBasketItems(req.params.basketId, items);
-    res.json(basket);
+    res.json(await enrichBasketProductImages(adapter, basket));
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to update basket items');
   }
@@ -1069,7 +1093,7 @@ v1Router.post(
         req.params.basketId,
         req.body
       );
-      res.json(basket);
+      res.json(await enrichBasketProductImages(adapter, basket));
     } catch (err: any) {
       handleCommerceError(res, err, 'Failed to add bundle to basket');
     }
@@ -3052,7 +3076,35 @@ function mapOrderProjectionToOrder(proj: OrderProjection, tenant?: { currency?: 
       serviceCharge: proj.metadata?.serviceCharge !== undefined && proj.metadata?.serviceCharge !== null && currency ? { amount: proj.metadata.serviceCharge, currency } : undefined,
       total: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : undefined,
     },
+    originalBasket: {
+      id: proj.basketId || '',
+      storeId: proj.channelLinkId || '',
+      storeName: proj.metadata?.storeName || '',
+      fulfillmentType: (proj.fulfillmentType as any) || 'pickup',
+      items: proj.metadata?.orderItems || [],
+      subtotal: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : { amount: 0, currency: currency || 'GBP' },
+      discounts: proj.metadata?.discounts || [],
+      charges: proj.metadata?.charges || [],
+      tax: proj.metadata?.tax,
+      total: typeof proj.total === 'number' && currency ? { amount: proj.total, currency } : { amount: 0, currency: currency || 'GBP' },
+      discountTotal: { amount: 0, currency: currency || 'GBP' },
+      currency: currency || 'GBP',
+      validationErrors: [],
+      restrictions: [],
+      updatedAt: proj.updatedAt,
+    },
     picking: proj.picking,
+    receipt: {
+      available: proj.paymentState === 'CAPTURED',
+      isVatReceipt: Boolean((tenant as any)?.vatRegistrationNumber && proj.metadata?.tax?.amount > 0),
+      vatRegistrationNumber: (tenant as any)?.vatRegistrationNumber,
+      legalName: (tenant as any)?.legalName || (tenant as any)?.brandName,
+      legalAddress: (tenant as any)?.legalAddress,
+      tax: proj.metadata?.tax,
+      items: proj.metadata?.orderItems || [],
+      discounts: proj.metadata?.discounts || [],
+      charges: proj.metadata?.charges || [],
+    },
     payment: proj.paymentId && currency ? {
       paymentId: proj.paymentId,
       state: (proj.paymentState as any) || 'AUTHORIZED',
