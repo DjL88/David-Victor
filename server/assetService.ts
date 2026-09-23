@@ -192,7 +192,8 @@ export class AssetService {
 
     const typeFolder = params.type.toLowerCase().replace('_', '-');
     const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `tenant-assets-public/tenants/${params.tenantId}/${typeFolder}/${assetId}_${safeName}`;
+    const storageNamespace = params.type === 'BRAND_GUIDELINES' ? 'tenant-assets-private' : 'tenant-assets-public';
+    const storagePath = `${storageNamespace}/tenants/${params.tenantId}/${typeFolder}/${assetId}_${safeName}`;
     const calculatedSize = params.byteSize || fileBuffer.length;
 
     let publicUrl = '';
@@ -217,8 +218,15 @@ export class AssetService {
           },
         });
 
-        publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
-        console.log(`[AssetService] Stored binary in Cloud Storage with public token: ${storagePath}`);
+        if (params.type === 'BRAND_GUIDELINES') {
+          publicUrl = '';
+          console.log(`[AssetService] Stored private brand material in Cloud Storage: ${storagePath}`);
+        } else {
+          publicUrl = params.type === 'BRAND_GUIDELINES'
+          ? ''
+          : `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+          console.log(`[AssetService] Stored binary in Cloud Storage with public token: ${storagePath}`);
+        }
       } catch (storageErr: any) {
         console.warn('[AssetService] Cloud Storage upload failed:', storageErr);
         if (!isDemoMode()) {
@@ -528,23 +536,43 @@ export class AssetService {
               console.warn('[AssetService] Magic byte validation warning:', validationErr.message);
             }
 
-            // 4. Move/copy to published namespace
-            const publishedPath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-public');
-            if (publishedPath !== assetData.storagePath) {
-              const publishedFile = storage.bucket().file(publishedPath);
-              await file.copy(publishedFile);
-              const downloadToken = crypto.randomUUID();
-              await publishedFile.setMetadata({
-                contentType: actualContentType,
-                cacheControl: 'public, max-age=31536000, immutable',
-                metadata: {
-                  firebaseStorageDownloadTokens: downloadToken,
-                },
-              });
-              await file.delete().catch(() => {});
-              const bucketName = storage.bucket().name;
-              assetData.storagePath = publishedPath;
-              assetData.publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(publishedPath)}?alt=media&token=${downloadToken}`;
+            // 4. Publish storefront assets, but keep brand-guideline source documents private.
+            if (assetData.type === 'BRAND_GUIDELINES') {
+              const privatePath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-private');
+              if (privatePath !== assetData.storagePath) {
+                const privateFile = storage.bucket().file(privatePath);
+                await file.copy(privateFile);
+                await privateFile.setMetadata({
+                  contentType: actualContentType,
+                  cacheControl: 'private, no-store',
+                  metadata: {
+                    tenantId: assetData.tenantId,
+                    assetType: assetData.type,
+                    assetId: assetData.id,
+                  },
+                });
+                await file.delete().catch(() => {});
+                assetData.storagePath = privatePath;
+              }
+              assetData.publicUrl = '';
+            } else {
+              const publishedPath = assetData.storagePath.replace('tenant-assets-incoming', 'tenant-assets-public');
+              if (publishedPath !== assetData.storagePath) {
+                const publishedFile = storage.bucket().file(publishedPath);
+                await file.copy(publishedFile);
+                const downloadToken = crypto.randomUUID();
+                await publishedFile.setMetadata({
+                  contentType: actualContentType,
+                  cacheControl: 'public, max-age=31536000, immutable',
+                  metadata: {
+                    firebaseStorageDownloadTokens: downloadToken,
+                  },
+                });
+                await file.delete().catch(() => {});
+                const bucketName = storage.bucket().name;
+                assetData.storagePath = publishedPath;
+                assetData.publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(publishedPath)}?alt=media&token=${downloadToken}`;
+              }
             }
 
             assetData.byteSize = actualSize;
