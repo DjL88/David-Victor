@@ -4878,6 +4878,36 @@ v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), requireAd
   }
 });
 
+v1Router.delete('/admin/tenants/:id/stores/:storeId', requireAdminAuth('platformSuperAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const storeId = req.params.storeId;
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+
+    await FirestorePlatformService.deleteTenantStore(tenantId, storeId);
+    IntegrationContext.invalidate(tenantId);
+    CommerceDiscoveryService.getInstance().clearCache();
+
+    await FirestorePlatformService.addAuditLog(tenantId, {
+      userId: authAdmin.uid,
+      userName: authAdmin.name || 'Platform SuperAdmin',
+      userRole: authAdmin.role,
+      tenantId,
+      category: 'Integration',
+      action: 'HARD_DELETE_LOCATION',
+      details: `Hard-deleted local location/channel projection "${storeId}". This does not delete the upstream Deliverect location.`,
+    });
+
+    res.json({ success: true, tenantId, storeId });
+  } catch (err: any) {
+    const status = err.statusCode || err.status || 500;
+    res.status(status).json({
+      error: err.message || 'Failed to hard-delete location.',
+      code: err.code || 'STORE_DELETE_FAILED',
+    });
+  }
+});
+
 // 9.7.2 Visual & Merchandising Rules
 v1Router.get('/admin/tenants/:id/rules', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
