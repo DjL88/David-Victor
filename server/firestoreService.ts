@@ -3408,6 +3408,31 @@ export class FirestoreService {
     }
     inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
 
+    // Maintain an independent PLU x status ledger even when the PLU is not
+    // present in the current catalogue. This lets out-of-order snooze events
+    // survive until a later menu push introduces the product.
+    const previousOperational = await this.getStoreProductOperationalStates(
+      cleanTenantId,
+      cleanChannelLinkId
+    );
+    for (const state of Object.values(next)) {
+      await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
+        plu: state.plu,
+        availability: 'SNOOZED',
+        snoozeStart: state.snoozeStart,
+        snoozeEnd: state.snoozeEnd,
+        updatedAt: state.updatedAt,
+      });
+    }
+    for (const [plu, state] of Object.entries(previousOperational)) {
+      if (state.availability === 'SNOOZED' && !next[plu]) {
+        await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
+          plu,
+          availability: 'ACTIVE',
+        });
+      }
+    }
+
     const db = getFirestoreDb();
     if (!db) return;
 
