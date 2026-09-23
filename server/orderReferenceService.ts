@@ -1,6 +1,6 @@
-import { getFirestoreDb } from '../firebase';
-import { BFFError } from '../errors';
-import { isDemoMode, isTestMode } from '../runtimeMode';
+import { getFirestoreDb } from './firebase';
+import { BFFError } from './errors';
+import { isDemoMode, isTestMode } from './runtimeMode';
 
 const COUNTER_WIDTH = 4;
 const MAX_WEEKLY_SEQUENCE = Math.pow(36, COUNTER_WIDTH) - 1;
