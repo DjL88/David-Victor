@@ -10,6 +10,7 @@ export interface ChannelProvisioningResult {
   channelLinkId?: string;
   locationId?: string;
   externalLocationId?: string;
+  channelStatus?: 'REGISTERED' | 'ACTIVE' | 'INACTIVE' | 'UNKNOWN';
   warnings: string[];
 }
 
@@ -41,10 +42,27 @@ export class ChannelProvisioningService {
     ).trim() || undefined;
     const externalLocationId = String(
       payload?.externalLocationId ||
+      payload?.channelLocationId ||
       payload?.externalLocation?.id ||
       payload?.externalId ||
       ''
     ).trim() || undefined;
+
+    const rawStatus = String(
+      payload?.status ||
+      payload?.channelStatus ||
+      payload?.integrationStatus ||
+      ''
+    ).trim().toUpperCase();
+
+    const channelStatus: ChannelProvisioningResult['channelStatus'] =
+      ['REGISTER', 'REGISTERED'].includes(rawStatus)
+        ? 'REGISTERED'
+        : ['ACTIVE', 'ACTIVATE', 'ACTIVATED'].includes(rawStatus)
+          ? 'ACTIVE'
+          : ['INACTIVE', 'DISABLE', 'DISABLED'].includes(rawStatus)
+            ? 'INACTIVE'
+            : 'UNKNOWN';
 
     const warnings: string[] = [];
     if (!channelLinkId) warnings.push('CHANNEL_LINK_ID_MISSING');
@@ -53,13 +71,35 @@ export class ChannelProvisioningService {
     const quarantined = warnings.length > 0;
 
     if (channelLinkId) {
+      const lifecycleStatus =
+        channelStatus === 'INACTIVE'
+          ? 'INACTIVE'
+          : channelStatus === 'ACTIVE'
+            ? 'ACTIVE'
+            : type === 'STORE_PROVISION'
+              ? 'ACTIVE'
+              : 'INACTIVE';
+
+      const provisioningState =
+        quarantined
+          ? 'QUARANTINED'
+          : type === 'STORE_PROVISION'
+            ? 'PROVISIONED'
+            : channelStatus === 'ACTIVE'
+              ? 'ACTIVE'
+              : channelStatus === 'INACTIVE'
+                ? 'INACTIVE'
+                : 'REGISTERED';
+
       await FirestorePlatformService.saveTenantStore(tenantId, {
         channelLinkId,
         physicalLocationId: locationId ? (locationId.startsWith('loc_') ? locationId : `loc_${locationId}`) : undefined,
         deliverectLocationId: locationId,
         externalLocationId,
-        lifecycleStatus: 'ACTIVE',
-        provisioningState: quarantined ? 'QUARANTINED' : type === 'CHANNEL_REGISTRATION' ? 'REGISTERED' : 'PROVISIONED',
+        lifecycleStatus,
+        status: channelStatus === 'ACTIVE' ? 'ACTIVE' : channelStatus === 'INACTIVE' ? 'INACTIVE' : undefined,
+        assigned: channelStatus === 'INACTIVE' ? false : undefined,
+        provisioningState,
         provisioningSource: 'DELIVERECT_CHANNEL',
         lastProvisioningEventAt: new Date().toISOString(),
       });
@@ -76,6 +116,7 @@ export class ChannelProvisioningService {
         channelLinkId,
         locationId,
         externalLocationId,
+        channelStatus,
         quarantined,
         warnings,
       }),
@@ -89,6 +130,7 @@ export class ChannelProvisioningService {
       channelLinkId,
       locationId,
       externalLocationId,
+      channelStatus,
       warnings,
     };
   }
