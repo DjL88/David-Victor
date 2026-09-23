@@ -202,21 +202,32 @@ function extractRadiusKm(message: string): number | null {
 }
 
 function wordingPrefill(message: string): { key: string; value: string; locale?: string } | null {
-  const text = message.toLowerCase();
   const locale =
     /\b(us|usa|american|en-us)\b/i.test(message) ? 'en-US' :
     /\b(uk|british|en-gb)\b/i.test(message) ? 'en-GB' :
     undefined;
 
-  const mappings: Array<{ pattern: RegExp; key: string; value: string }> = [
-    { pattern: /\bbasket\b.*\bcart\b|\bcart\b.*\bbasket\b/i, key: 'header.basket', value: /\bcart\b/i.test(text) ? 'Cart' : 'Basket' },
-    { pattern: /\bcollect(?:ion)?\b.*\bpickup\b|\bpickup\b.*\bcollect(?:ion)?\b/i, key: 'header.collect', value: /\bpickup\b/i.test(text) ? 'Pickup' : 'Collect' },
-    { pattern: /\baisles?\b.*\bdepartments?\b|\bdepartments?\b.*\baisles?\b/i, key: 'nav.aisles', value: /\bdepartments?\b/i.test(text) ? 'Departments' : 'Aisles' },
-    { pattern: /\bfavourites?\b.*\bfavorites?\b|\bfavorites?\b.*\bfavourites?\b/i, key: 'nav.favourites', value: /\bfavorites?\b/i.test(text) ? 'Favorites' : 'Favourites' },
+  const replacements: Array<{ pattern: RegExp; key: string; value: string }> = [
+    { pattern: /\bbasket\b\s*(?:to|as|into|→)\s*\bcart\b/i, key: 'header.basket', value: 'Cart' },
+    { pattern: /\bcart\b\s*(?:to|as|into|→)\s*\bbasket\b/i, key: 'header.basket', value: 'Basket' },
+    { pattern: /\bcollect(?:ion)?\b\s*(?:to|as|into|→)\s*\bpickup\b/i, key: 'header.collect', value: 'Pickup' },
+    { pattern: /\bpickup\b\s*(?:to|as|into|→)\s*\bcollect\b/i, key: 'header.collect', value: 'Collect' },
+    { pattern: /\baisles?\b\s*(?:to|as|into|→)\s*\bdepartments?\b/i, key: 'nav.aisles', value: 'Departments' },
+    { pattern: /\bdepartments?\b\s*(?:to|as|into|→)\s*\baisles?\b/i, key: 'nav.aisles', value: 'Aisles' },
+    { pattern: /\bfavourites?\b\s*(?:to|as|into|→)\s*\bfavorites?\b/i, key: 'nav.favourites', value: 'Favorites' },
+    { pattern: /\bfavorites?\b\s*(?:to|as|into|→)\s*\bfavourites?\b/i, key: 'nav.favourites', value: 'Favourites' },
   ];
 
-  const mapping = mappings.find((candidate) => candidate.pattern.test(message));
-  return mapping ? { key: mapping.key, value: mapping.value, locale } : null;
+  const direct = replacements.find((candidate) => candidate.pattern.test(message));
+  if (direct) return { key: direct.key, value: direct.value, locale };
+
+  // Common "use X instead of Y" phrasing.
+  if (/\buse\s+cart\b.*\binstead of\s+basket\b/i.test(message)) return { key: 'header.basket', value: 'Cart', locale };
+  if (/\buse\s+basket\b.*\binstead of\s+cart\b/i.test(message)) return { key: 'header.basket', value: 'Basket', locale };
+  if (/\buse\s+pickup\b.*\binstead of\s+collect/i.test(message)) return { key: 'header.collect', value: 'Pickup', locale };
+  if (/\buse\s+departments?\b.*\binstead of\s+aisles?/i.test(message)) return { key: 'nav.aisles', value: 'Departments', locale };
+
+  return null;
 }
 
 function buildRuleDraft(message: string): Record<string, unknown> | null {
