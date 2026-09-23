@@ -31,6 +31,7 @@ import {
 } from '../deliverect/DeliverectOperationalWebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
+import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2749,6 +2750,29 @@ async function handleDeliverectOperationalWebhook(
       !req.body?.channelLink
         ? { ...req.body, channelLinkId: mappedChannelLinkId }
         : req.body;
+
+    // Menu Pushes can contain tens of thousands of items. Authenticate and
+    // resolve the store on the request thread, then durably buffer the original
+    // payload and enqueue a small pointer-only worker task. Snooze/busy/prep
+    // updates remain synchronous and therefore are never stuck behind bulk menus.
+    if (type === 'menu_update') {
+      let menuPayload = operationalPayload;
+      if (Array.isArray(req.body) && mappedChannelLinkId) {
+        menuPayload = req.body.map((menu: any) =>
+          menu?.channelLinkId
+            ? menu
+            : { ...menu, channelLinkId: mappedChannelLinkId }
+        );
+      }
+
+      const receipt = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+        tenantId,
+        payload: menuPayload,
+        rawBody,
+      });
+      res.status(receipt.status === 'DUPLICATE' ? 200 : 202).json(receipt);
+      return;
+    }
 
     const result = await DeliverectOperationalWebhookService.process(
       tenantId,
@@ -6675,5 +6699,20 @@ v1Router.post('/internal/tasks/cancellation', async (req: Request, res: Response
     console.error('[CloudTasks Worker Error - Cancellation]:', err.message);
     const statusCode = err.statusCode || (err.code?.startsWith('OIDC_') ? 401 : 500);
     res.status(statusCode).json({ error: err.message, code: err.code || 'TASK_EXECUTION_FAILED' });
+  }
+});
+
+v1Router.post('/internal/tasks/channel-menu', async (req: Request, res: Response) => {
+  try {
+    await verifyCloudTasksOidcToken(req);
+    const result = await ChannelMenuIngestionService.processJob(req.body);
+    res.status(200).json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[CloudTasks Worker Error - Channel Menu]:', err.message);
+    const statusCode = err.statusCode || (err.code?.startsWith('OIDC_') ? 401 : 500);
+    res.status(statusCode).json({
+      error: err.message,
+      code: err.code || 'CHANNEL_MENU_TASK_FAILED',
+    });
   }
 });
