@@ -119,3 +119,25 @@ body,
     );
   }
 }
+
+
+@keyframes admin-ai-highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45);
+  }
+  45% {
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.14);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0);
+  }
+}
+
+.admin-ai-highlight {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid rgba(99, 102, 241, 0.75);
+  outline-offset: 4px;
+  border-radius: 12px;
+  animation: admin-ai-highlight-pulse 1.15s ease-out 3;
+}
