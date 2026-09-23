@@ -48,6 +48,36 @@ describe('Admin Login Loop Fixes (5 Code Errors)', () => {
     expect(resolved).toBe('custom-tenant');
   });
 
+  it('keeps an explicitly selected tenant when a Platform SuperAdmin identity still references an old tenant', async () => {
+    const client = new HttpAdminClient('brand-alpha');
+    client.setActiveAdminUser({
+      id: 'super-1',
+      uid: 'super-1',
+      name: 'Super Admin',
+      email: 'super@example.com',
+      role: 'platformSuperAdmin',
+      tenantId: 'brand-alpha',
+      isSuperAdmin: true,
+    } as any);
+
+    await client.switchTenantAsSuperAdmin('68517fde1c3ddaa7f6d0275c');
+
+    // Re-applying the authenticated identity must not snap the client back to
+    // brand-alpha just because that legacy tenantId is present on the user.
+    client.setActiveAdminUser({
+      id: 'super-1',
+      uid: 'super-1',
+      name: 'Super Admin',
+      email: 'super@example.com',
+      role: 'platformSuperAdmin',
+      tenantId: 'brand-alpha',
+      isSuperAdmin: true,
+    } as any);
+
+    const headers = await client.getHeadersAsync();
+    expect(headers['X-Tenant-ID']).toBe('68517fde1c3ddaa7f6d0275c');
+  });
+
   it('Error 4: HttpAdminClient normalizes user.id from uid if id is omitted by server payload', async () => {
     const client = new HttpAdminClient('brand-alpha');
     const mockFetch = vi.fn().mockResolvedValue({
