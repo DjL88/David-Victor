@@ -11,7 +11,8 @@ export type AssetType =
   | 'STORY_IMAGE'
   | 'STORY_VIDEO'
   | 'HERO_IMAGE'
-  | 'CMS_IMAGE';
+  | 'CMS_IMAGE'
+  | 'BRAND_GUIDELINES';
 
 export const ALLOWED_MIME_TYPES: Record<AssetType, string[]> = {
   LOGO: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
@@ -30,6 +31,16 @@ export const ALLOWED_MIME_TYPES: Record<AssetType, string[]> = {
   STORY_VIDEO: ['video/mp4', 'video/webm', 'video/quicktime'],
   HERO_IMAGE: ['image/png', 'image/jpeg', 'image/webp'],
   CMS_IMAGE: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+  BRAND_GUIDELINES: [
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/svg+xml',
+    'application/pdf',
+    'text/plain',
+    'text/markdown',
+    'application/json',
+  ],
 };
 
 export const MAX_FILE_SIZE_BYTES: Record<AssetType, number> = {
@@ -40,6 +51,7 @@ export const MAX_FILE_SIZE_BYTES: Record<AssetType, number> = {
   STORY_VIDEO: 100 * 1024 * 1024, // 100 MB
   HERO_IMAGE: 15 * 1024 * 1024, // 15 MB
   CMS_IMAGE: 10 * 1024 * 1024, // 10 MB
+  BRAND_GUIDELINES: 20 * 1024 * 1024, // 20 MB
 };
 
 export interface AssetMetadata {
@@ -71,6 +83,7 @@ export function normalizeAssetType(raw: string): AssetType {
   if (upper === 'STORY_VIDEO') return 'STORY_VIDEO';
   if (upper === 'HERO' || upper === 'HERO_IMAGE') return 'HERO_IMAGE';
   if (upper === 'CMS' || upper === 'CMS_IMAGE') return 'CMS_IMAGE';
+  if (upper === 'BRAND_GUIDELINES' || upper === 'BRAND_GUIDELINE' || upper === 'GUIDELINES') return 'BRAND_GUIDELINES';
   throw BFFError.invalidInput(`Unrecognized asset type: "${raw}"`);
 }
 
@@ -96,6 +109,12 @@ export function validateFileMagicBytes(buffer: Buffer, contentType: string): voi
   if (mimeType === 'image/webp') {
     if (buffer.toString('ascii', 0, 4) !== 'RIFF' || (buffer.length >= 12 && buffer.toString('ascii', 8, 12) !== 'WEBP')) {
       throw BFFError.invalidInput('Binary payload signature mismatch: expected WebP header.');
+    }
+    return;
+  }
+  if (mimeType === 'application/pdf') {
+    if (buffer.toString('ascii', 0, 5) !== '%PDF-') {
+      throw BFFError.invalidInput('Binary payload signature mismatch: expected PDF header.');
     }
     return;
   }
