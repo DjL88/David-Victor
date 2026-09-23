@@ -2869,7 +2869,7 @@ async function handleDeliverectChannelProvisioning(
 
       // Deliverect Channel registration expects the callback URLs in the 200
       // response. Later Activate/Disable calls reuse the same registration URL.
-      return res.status(200).json({
+      res.status(200).json({
         statusUpdateURL: webhookBase,
         menuUpdateURL: `${webhookBase}/channel/menu_update`,
         snoozeUnsnoozeURL: `${webhookBase}/channel/snooze`,
@@ -2877,6 +2877,7 @@ async function handleDeliverectChannelProvisioning(
         updatePrepTimeURL: `${webhookBase}/channel/prep_time`,
         registration: result,
       });
+      return;
     }
 
     res.status(result.quarantined ? 202 : 200).json(result);
