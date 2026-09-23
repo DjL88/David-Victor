@@ -71,8 +71,10 @@ export interface AssetMetadata {
   updatedAt: string;
 }
 
-// In-memory store for unit tests and offline demo environments
+// In-memory stores for unit tests and offline demo environments.
+// Private source documents keep their bytes separately rather than exposing a data: URL.
 const inMemoryAssets: Record<string, AssetMetadata> = {};
+const inMemoryAssetBuffers: Record<string, Buffer> = {};
 
 export function normalizeAssetType(raw: string): AssetType {
   const upper = raw.toUpperCase().replace('-', '_');
@@ -236,9 +238,14 @@ export class AssetService {
             500
           );
         }
-        publicUrl = params.fileData.startsWith('data:')
-          ? params.fileData
-          : `data:${params.contentType};base64,${params.fileData}`;
+        if (params.type === 'BRAND_GUIDELINES') {
+          publicUrl = '';
+          inMemoryAssetBuffers[assetId] = fileBuffer;
+        } else {
+          publicUrl = params.fileData.startsWith('data:')
+            ? params.fileData
+            : `data:${params.contentType};base64,${params.fileData}`;
+        }
       }
     } else {
       if (!isDemoMode()) {
@@ -249,9 +256,14 @@ export class AssetService {
         );
       }
       // In offline development without storage bucket (Demo only)
-      publicUrl = params.fileData.startsWith('data:')
-        ? params.fileData
-        : `data:${params.contentType};base64,${params.fileData}`;
+      if (params.type === 'BRAND_GUIDELINES') {
+        publicUrl = '';
+        inMemoryAssetBuffers[assetId] = fileBuffer;
+      } else {
+        publicUrl = params.fileData.startsWith('data:')
+          ? params.fileData
+          : `data:${params.contentType};base64,${params.fileData}`;
+      }
     }
 
     const assetRecord: AssetMetadata = {
@@ -417,9 +429,30 @@ export class AssetService {
         byteSize: buffer.length,
         status: 'PROCESSING',
       };
+      if (asset.type === 'BRAND_GUIDELINES') {
+        inMemoryAssetBuffers[assetId] = buffer;
+      }
     }
 
     return asset;
+  }
+
+  static async getAssetBinary(assetId: string): Promise<Buffer | null> {
+    if (inMemoryAssetBuffers[assetId]) {
+      return inMemoryAssetBuffers[assetId];
+    }
+
+    const asset = await this.getAsset(assetId);
+    if (!asset?.storagePath) return null;
+
+    const storage = getFirebaseStorage();
+    if (!storage) return null;
+
+    const file = storage.bucket().file(asset.storagePath);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [buffer] = await file.download();
+    return buffer;
   }
 
   /**
@@ -659,6 +692,7 @@ export class AssetService {
    */
   static async deleteAsset(tenantId: string, assetId: string): Promise<boolean> {
     delete inMemoryAssets[assetId];
+    delete inMemoryAssetBuffers[assetId];
 
     const db = getFirestoreDb();
     if (!db) return true;
