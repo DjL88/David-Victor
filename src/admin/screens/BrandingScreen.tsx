@@ -12,6 +12,7 @@ import { GOOGLE_FONTS_CATALOG, extractCleanFontFamily } from '../../commerce/goo
 import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
 import { FeatureSwitchesPanel } from '../components/FeatureSwitchesPanel';
+import { SUPPORTED_LOCALES } from '../../i18n/locales';
 import {
   Palette,
   Check,
@@ -23,6 +24,7 @@ import {
   ShieldCheck,
   FileCode,
   Paintbrush,
+  Languages,
 } from 'lucide-react';
 
 interface BrandingScreenProps {
@@ -62,6 +64,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [borderRadius, setBorderRadius] = useState<string>('16px');
   const [supportEmail, setSupportEmail] = useState<string>('');
   const [supportPhone, setSupportPhone] = useState<string>('');
+  const [supportOpeningHours, setSupportOpeningHours] = useState<string>('');
+  const [defaultLocale, setDefaultLocale] = useState<string>('en-GB');
+  const [enabledLocales, setEnabledLocales] = useState<string[]>(SUPPORTED_LOCALES.map((locale) => locale.code));
 
   // Custom Font Management states
   const [headingFamily, setHeadingFamily] = useState<string>('Plus Jakarta Sans');
@@ -123,6 +128,9 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
       setBorderRadius(data.borderRadius);
       setSupportEmail(data.supportDetails?.email || '');
       setSupportPhone(data.supportDetails?.phone || '');
+      setSupportOpeningHours(data.supportDetails?.openingHours || '');
+      setDefaultLocale(data.locale || 'en-GB');
+      setEnabledLocales(data.enabledLocales?.length ? data.enabledLocales : SUPPORTED_LOCALES.map((locale) => locale.code));
 
       // Load tenant-managed font assets
       try {
@@ -216,10 +224,13 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           fontFamily: `'${cleanBody}', ${bodyFallback}`,
           headingFontFamily: `'${cleanHeading}', ${headingFallback}`,
           carouselTitleFontFamily: `'${cleanCarousel}', ${headingFallback}`,
+          locale: defaultLocale,
+          enabledLocales: Array.from(new Set([defaultLocale, ...enabledLocales])),
           supportDetails: {
             ...config.supportDetails,
             email: supportEmail,
             phone: supportPhone,
+            openingHours: supportOpeningHours,
           },
         },
         currentUser
@@ -543,6 +554,87 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   onChange={(e) => setSupportEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-indigo-600"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Customer Support Phone</label>
+                <input
+                  type="tel"
+                  value={supportPhone}
+                  onChange={(e) => setSupportPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Support Hours</label>
+                <input
+                  type="text"
+                  value={supportOpeningHours}
+                  onChange={(e) => setSupportOpeningHours(e.target.value)}
+                  placeholder="e.g. Mon–Sun 07:00–23:00"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-indigo-600"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                    <Languages className="w-4 h-4 text-indigo-600" />
+                    <span>Storefront languages</span>
+                  </h3>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Customers only see languages enabled here. CMS pages can then be authored per language.
+                  </p>
+                </div>
+                <span className="text-[10px] text-gray-400">White-label</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[0.8fr_1.2fr] gap-4">
+                <label className="text-xs font-bold text-gray-700">
+                  Default language
+                  <select
+                    value={defaultLocale}
+                    onChange={(e) => {
+                      const locale = e.target.value;
+                      setDefaultLocale(locale);
+                      setEnabledLocales((current) => current.includes(locale) ? current : [...current, locale]);
+                    }}
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white"
+                  >
+                    {SUPPORTED_LOCALES.map((locale) => (
+                      <option key={locale.code} value={locale.code}>{locale.flag} {locale.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <div>
+                  <span className="block text-xs font-bold text-gray-700 mb-1">Enabled languages</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUPPORTED_LOCALES.map((locale) => {
+                      const checked = enabledLocales.includes(locale.code);
+                      const locked = locale.code === defaultLocale;
+                      return (
+                        <label key={locale.code} className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={locked}
+                            onChange={(e) => setEnabledLocales((current) =>
+                              e.target.checked
+                                ? Array.from(new Set([...current, locale.code]))
+                                : current.filter((code) => code !== locale.code)
+                            )}
+                            className="rounded border-gray-300 text-indigo-600"
+                          />
+                          <span>{locale.flag} {locale.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
