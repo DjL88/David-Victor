@@ -146,4 +146,64 @@ describe('Deliverect operational webhooks', () => {
     );
     expect(snoozes['MILK-1']?.snoozed).toBe(true);
   });
+  it('retains snooze status for a PLU that is not in the current catalogue', async () => {
+    const tenantId = `tenant-unknown-plu-${Date.now()}`;
+    const channelLinkId = 'channel-unknown-plu-1';
+
+    const payload = {
+      channelLinkId,
+      operations: [
+        {
+          action: 'snooze',
+          data: {
+            items: [{ plu: 'NOT-IN-CATALOG-YET' }],
+          },
+        },
+      ],
+    };
+
+    await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'snooze',
+      payload,
+      JSON.stringify(payload)
+    );
+
+    const independent = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(independent['NOT-IN-CATALOG-YET']).toMatchObject({
+      plu: 'NOT-IN-CATALOG-YET',
+      availability: 'SNOOZED',
+      snoozed: true,
+    });
+
+    const unsnooze = {
+      channelLinkId,
+      operations: [
+        {
+          action: 'unsnooze',
+          data: { items: [{ plu: 'NOT-IN-CATALOG-YET' }] },
+        },
+      ],
+    };
+
+    await DeliverectOperationalWebhookService.process(
+      tenantId,
+      'snooze',
+      unsnooze,
+      JSON.stringify(unsnooze)
+    );
+
+    const after = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(after['NOT-IN-CATALOG-YET']).toMatchObject({
+      availability: 'ACTIVE',
+      snoozed: false,
+    });
+  });
+
 });
