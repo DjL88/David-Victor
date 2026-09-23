@@ -1674,6 +1674,7 @@ v1Router.post(
   try {
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
+    const callerUid = await getCallerUid(req);
     const integrationContext = await IntegrationContext.getContext(resolvedTenant);
     const checkoutOptions: any = {
       ...(options || {}),
@@ -1711,6 +1712,13 @@ v1Router.post(
         resolvedTenant
       );
     if (existingBasketCheckout) {
+      if (callerUid && existingBasketCheckout.orderId) {
+        await FirestorePlatformService.attachCustomerUidToOrderProjection(
+          existingBasketCheckout.orderId,
+          resolvedTenant,
+          callerUid
+        );
+      }
       console.log(
         `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
       );
@@ -2093,7 +2101,8 @@ v1Router.post(
       const savedOrderProjection = await FirestorePlatformService.saveOrderProjection(
         checkoutResult.order,
         resolvedTenant,
-        checkoutResult.checkoutId
+        checkoutResult.checkoutId,
+        callerUid
       );
 
       // Initialize dispatch lifecycle from the canonical CheckoutResult fulfillment.
