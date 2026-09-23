@@ -3,6 +3,7 @@ import { Product, ProductAvailabilitySummary } from '../commerce/models';
 import { useTenant } from '../tenant/TenantContext';
 import { defaultAnalyticsClient } from '../analytics';
 import { getRenderableProducts } from '../rules/availabilityRules';
+import { applySearchMerchandising, resolveSearchQueryInfo } from '../commerce/searchMerchEngine';
 
 export function useProductSearch(selectedStoreId?: string) {
   const { client } = useTenant();
@@ -25,10 +26,12 @@ export function useProductSearch(selectedStoreId?: string) {
     const timer = setTimeout(async () => {
       try {
         setLoading(true);
-        const res = await client.searchProducts(query, selectedStoreId);
+        const searchInfo = resolveSearchQueryInfo(query);
+        const res = await client.searchProducts(searchInfo.normalizedQuery || query, selectedStoreId);
         if (isMounted) {
           const renderable = getRenderableProducts(res.products);
-          setResults(renderable);
+          const merchandised = applySearchMerchandising(renderable, query).map((entry) => entry.product);
+          setResults(merchandised);
           if (res.summaries) {
             setSummaries(res.summaries);
           }
@@ -36,7 +39,12 @@ export function useProductSearch(selectedStoreId?: string) {
             type: 'SEARCH_PERFORMED',
             searchTerm: query.trim(),
             storeId: selectedStoreId,
-            properties: { resultsCount: renderable.length },
+            properties: {
+              resultsCount: merchandised.length,
+              normalizedQuery: searchInfo.normalizedQuery,
+              correctedFrom: searchInfo.correctedFrom,
+              rewrittenFrom: searchInfo.rewrittenFrom,
+            },
           });
         }
       } catch (err) {
