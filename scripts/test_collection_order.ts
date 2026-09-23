@@ -8,7 +8,8 @@
  *     --store=<channelLinkId> \
  *     --menu=<menuId> \
  *     --plu=<PLU> \
- *     --qty=1
+ *     --qty=1 \
+ *     --pickup-time=2026-09-23T14:00:00Z
  *
  * By default the script stops after basket reconcile and DOES NOT create an order.
  * To inject an unpaid pickup order in staging you must pass BOTH:
@@ -55,6 +56,13 @@ async function main() {
   const menuId = required(args, 'menu');
   const plu = required(args, 'plu');
   const qty = Number(typeof args.get('qty') === 'string' ? args.get('qty') : '1');
+  const pickupTime =
+    typeof args.get('pickup-time') === 'string'
+      ? String(args.get('pickup-time')).trim()
+      : undefined;
+  if (pickupTime && Number.isNaN(new Date(pickupTime).getTime())) {
+    throw new Error('--pickup-time must be a valid ISO datetime, e.g. 2026-09-23T14:00:00Z');
+  }
   const performCheckout = args.get('checkout') === true;
   const checkoutConfirmation =
     typeof args.get('confirm-checkout') === 'string'
@@ -90,6 +98,7 @@ async function main() {
   console.log(`Store/channelLinkId: ${channelLinkId}`);
   console.log(`Menu: ${menuId}`);
   console.log(`PLU: ${plu} x ${qty}`);
+  console.log(`Pickup time: ${pickupTime || 'ASAP / basket default'}`);
   console.log(
     `Checkout: ${
       performCheckout
@@ -104,6 +113,7 @@ async function main() {
     menuId,
     plu,
     quantity: qty,
+    pickupTime,
     performCheckout,
     customer: {
       name: typeof args.get('name') === 'string' ? String(args.get('name')) : 'Bwydi Staging Test',
