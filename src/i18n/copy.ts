@@ -26,7 +26,13 @@ export const BRAND_COPY_FIELDS: BrandCopyField[] = [
   { key: 'nav.favourites', label: 'Favourites / favorites' },
   { key: 'nav.buyAgain', label: 'Buy again label' },
   { key: 'checkout.title', label: 'Checkout title' },
+  { key: 'checkout.secureCheckout', label: 'Secure checkout heading' },
   { key: 'checkout.scheduling', label: 'Fulfilment / fulfillment timing' },
+  { key: 'checkout.substitutionPreferences', label: 'Substitution preferences heading' },
+  { key: 'checkout.contactDetails', label: 'Contact details heading' },
+  { key: 'checkout.paymentModel', label: 'Payment model heading' },
+  { key: 'account.brandInfoPolicies', label: 'Account policies heading' },
+  { key: 'account.customerSupport', label: 'Customer support wording' },
 ];
 
 /**
