@@ -300,7 +300,16 @@ export class WebhookService {
   static async resolveTenantForWebhook(
     rawBody: Buffer | string,
     signatureHeader?: string,
-    candidateTenantId?: string
+    candidateTenantId?: string,
+    options?: {
+      /**
+       * Deliverect staging signs Channel partner webhooks with a temporary
+       * channelLink value prior to certification. These candidates are only
+       * accepted for a tenant already resolved from a trusted route/account
+       * mapping and never in production.
+       */
+      stagingTemporarySecrets?: string[];
+    }
   ): Promise<{ tenantId: string; secret: string }> {
     if (!signatureHeader) {
       const err: any = new Error('Missing webhook signature header');
@@ -334,9 +343,29 @@ export class WebhookService {
         return { tenantId: candidateTenantId, secret };
       }
 
-      // Never derive an HMAC secret from webhook payload fields (including
-      // channelLinkId). Staging must use an explicitly configured webhook secret
-      // just like production; otherwise a caller could sign its own payload.
+      const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+      const isProductionWebhook =
+        integration?.environment === 'production' ||
+        process.env.DELIVERECT_ENV === 'production';
+
+      if (!isProductionWebhook) {
+        const candidates = Array.from(
+          new Set(
+            (options?.stagingTemporarySecrets || [])
+              .map((value) => String(value || '').trim())
+              .filter(Boolean)
+          )
+        );
+
+        for (const temporarySecret of candidates) {
+          if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
+            console.info(
+              `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using documented temporary channelLink HMAC.`
+            );
+            return { tenantId: candidateTenantId, secret: temporarySecret };
+          }
+        }
+      }
     }
 
     // 2. Query known tenants from Firestore to find the matching secret
