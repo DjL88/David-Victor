@@ -241,6 +241,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
+              data-admin-ai-target="catalog-search"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
