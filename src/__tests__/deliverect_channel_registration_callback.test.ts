@@ -26,6 +26,7 @@ describe('Deliverect Channel registration callback', () => {
       .mockResolvedValue({
         tenantId: 'brand-alpha',
         deliverectAccountId: 'account-123',
+        allowedChannelLinkIds: ['channel-link-789'],
         environment: 'staging',
         status: 'COMMERCE_VERIFIED',
       } as any);
@@ -154,5 +155,33 @@ describe('Deliverect Channel registration callback', () => {
       menuId: 'menu-abc',
     });
   });
+  it('rejects an arbitrary payload channelLinkId even when the caller self-signs with it', async () => {
+    const forgedPayload = {
+      ...registerPayload,
+      channelLinkId: 'attacker-chosen-secret',
+    };
+    const rawBody = JSON.stringify(forgedPayload);
+    const signature = WebhookService.computeHmacSignature(
+      rawBody,
+      forgedPayload.channelLinkId
+    );
+
+    const res = await fetch(
+      `${baseUrl}/webhooks/deliverect/account-123/channel/register`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-server-authorization-hmac-sha256': signature,
+        },
+        body: rawBody,
+      }
+    );
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.code).toBe('WEBHOOK_SIGNATURE_INVALID');
+  });
+
 
 });
