@@ -157,13 +157,13 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({
-      success: true,
-      type: 'menu_update',
-      channelLinkId: 'channel-link-789',
-      menuId: 'menu-abc',
+      accepted: true,
+      status: 'QUEUED',
+      menuIds: ['menu-abc'],
+      channelLinkIds: ['channel-link-789'],
     });
   });
   it('resolves a live menu push to the mapped store when Deliverect omits channelLinkId', async () => {
@@ -195,13 +195,13 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({
-      success: true,
-      type: 'menu_update',
-      channelLinkId: 'channel-link-789',
-      menuId: 'menu-no-channel-link',
+      accepted: true,
+      status: 'QUEUED',
+      menuIds: ['menu-no-channel-link'],
+      channelLinkIds: ['channel-link-789'],
     });
   });
 
@@ -235,13 +235,13 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({
-      success: true,
-      type: 'menu_update',
-      channelLinkId: 'channel-link-789',
-      menuId: 'menu-location-secret',
+      accepted: true,
+      status: 'QUEUED',
+      menuIds: ['menu-location-secret'],
+      channelLinkIds: ['channel-link-789'],
     });
   });
 
