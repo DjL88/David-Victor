@@ -246,6 +246,56 @@ export interface LocaleTranslations {
   'order.statusPickedPacked': string;
   'order.statusReadyCollection': string;
 
+  // Order tracking
+  'tracking.allOrders': string;
+  'tracking.courierDelivery': string;
+  'tracking.storeCollection': string;
+  'tracking.scheduled': string;
+  'tracking.asapDelivery': string;
+  'tracking.finalChargedTotal': string;
+  'tracking.orderCancelled': string;
+  'tracking.cancelledFallback': string;
+  'tracking.paymentHoldReleased': string;
+  'tracking.reauthRequired': string;
+  'tracking.reauthPrefix': string;
+  'tracking.reauthExceeds': string;
+  'tracking.reauthSuffix': string;
+  'tracking.authorizing': string;
+  'tracking.approvePay': string;
+  'tracking.lifecycleTitle': string;
+  'tracking.lifecycleNotice': string;
+  'tracking.pickingItems': string;
+  'tracking.timeline': string;
+  'tracking.paymentAuthorization': string;
+  'tracking.storePickingState': string;
+  'tracking.status': string;
+  'tracking.substituted': string;
+  'tracking.quantityAdjusted': string;
+  'tracking.outOfStockRefunded': string;
+  'tracking.picked': string;
+  'tracking.awaitingPicker': string;
+  'tracking.requested': string;
+  'tracking.supplied': string;
+  'tracking.substitute': string;
+  'tracking.shelf': string;
+  'tracking.youPay': string;
+  'tracking.note': string;
+  'tracking.was': string;
+  'tracking.paymentBreakdown': string;
+  'tracking.originalEstimate': string;
+  'tracking.approvedCeiling': string;
+  'tracking.deliveryCharge': string;
+  'tracking.bagServiceFees': string;
+  'tracking.finalCaptured': string;
+  'tracking.auditHistory': string;
+  'tracking.cardTokenized': string;
+  'tracking.preAuthorizedEstimated': string;
+  'tracking.actionReauthorize': string;
+  'tracking.finalTotalCaptured': string;
+  'tracking.pending': string;
+  'tracking.by': string;
+  'tracking.eta': string;
+
   // Errors & Fallbacks
   'error.general': string;
   'error.stockDepleted': string;
@@ -523,6 +573,55 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.statusPickedPacked': 'Items Picked & Packed',
     'order.statusReadyCollection': 'Ready for Collection',
 
+    'tracking.allOrders': 'All Orders',
+    'tracking.courierDelivery': 'Courier Delivery',
+    'tracking.storeCollection': 'Store Collection',
+    'tracking.scheduled': 'Scheduled',
+    'tracking.asapDelivery': 'ASAP Delivery',
+    'tracking.finalChargedTotal': 'Final Charged / Total',
+    'tracking.orderCancelled': 'Order Cancelled',
+    'tracking.cancelledFallback': 'This order was cancelled because a required item was unavailable, per your substitution preferences.',
+    'tracking.paymentHoldReleased': 'Your payment pre-authorisation hold has been released in full. No charges were made.',
+    'tracking.reauthRequired': 'Payment Reauthorisation Required',
+    'tracking.reauthPrefix': 'During picking in store, substitutions or weight adjustments raised your final order total to',
+    'tracking.reauthExceeds': 'which exceeds your original approved limit of',
+    'tracking.reauthSuffix': 'Please review and approve the updated total to release for courier dispatch.',
+    'tracking.authorizing': 'Authorising...',
+    'tracking.approvePay': 'Approve & Pay',
+    'tracking.lifecycleTitle': 'Retail & Grocery Lifecycle',
+    'tracking.lifecycleNotice': 'You are never charged immediately at checkout. Funds are only captured when store picking completes with our Best-Match Price Guarantee.',
+    'tracking.pickingItems': 'Picking Items',
+    'tracking.timeline': 'Timeline',
+    'tracking.paymentAuthorization': 'Payment & Authorisation',
+    'tracking.storePickingState': 'Store Picking State',
+    'tracking.status': 'Status',
+    'tracking.substituted': 'Substituted',
+    'tracking.quantityAdjusted': 'Quantity Adjusted',
+    'tracking.outOfStockRefunded': 'Out of stock • Refunded',
+    'tracking.picked': 'Picked',
+    'tracking.awaitingPicker': 'Awaiting Picker',
+    'tracking.requested': 'Requested',
+    'tracking.supplied': 'Supplied',
+    'tracking.substitute': 'Substitute',
+    'tracking.shelf': 'Shelf',
+    'tracking.youPay': 'You pay',
+    'tracking.note': 'Note',
+    'tracking.was': 'was',
+    'tracking.paymentBreakdown': 'Payment Breakdown',
+    'tracking.originalEstimate': 'Original Basket Estimate',
+    'tracking.approvedCeiling': 'Customer Approved Ceiling (Auth Max)',
+    'tracking.deliveryCharge': 'Delivery Charge',
+    'tracking.bagServiceFees': 'Bag & Service Fees',
+    'tracking.finalCaptured': 'Final Captured Amount',
+    'tracking.auditHistory': 'Audit & State History',
+    'tracking.cardTokenized': 'Card Tokenized',
+    'tracking.preAuthorizedEstimated': 'Pre-Authorised (Estimated)',
+    'tracking.actionReauthorize': 'Action Required: Reauthorise',
+    'tracking.finalTotalCaptured': 'Final Total Captured',
+    'tracking.pending': 'Pending',
+    'tracking.by': 'by',
+    'tracking.eta': 'ETA',
+
     'error.general': 'An unexpected error occurred. Please try again.',
     'error.stockDepleted': 'Selected product is out of stock in this store.',
     'error.noServiceableStore': 'No serviceable stores found for your current delivery address.',
@@ -794,6 +893,55 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.statusSubmitted': 'Pedido enviado',
     'order.statusPickedPacked': 'Artículos preparados',
     'order.statusReadyCollection': 'Listo para recoger',
+
+    'tracking.allOrders': 'Todos los pedidos',
+    'tracking.courierDelivery': 'Entrega con repartidor',
+    'tracking.storeCollection': 'Recogida en tienda',
+    'tracking.scheduled': 'Programado',
+    'tracking.asapDelivery': 'Entrega lo antes posible',
+    'tracking.finalChargedTotal': 'Total final / cobrado',
+    'tracking.orderCancelled': 'Pedido cancelado',
+    'tracking.cancelledFallback': 'Este pedido se canceló porque un artículo obligatorio no estaba disponible, según tus preferencias de sustitución.',
+    'tracking.paymentHoldReleased': 'La retención de preautorización se ha liberado por completo. No se realizó ningún cargo.',
+    'tracking.reauthRequired': 'Se necesita una nueva autorización de pago',
+    'tracking.reauthPrefix': 'Durante la preparación, las sustituciones o ajustes de peso elevaron el total final a',
+    'tracking.reauthExceeds': 'que supera tu límite aprobado de',
+    'tracking.reauthSuffix': 'Revisa y aprueba el total actualizado para continuar con el reparto.',
+    'tracking.authorizing': 'Autorizando...',
+    'tracking.approvePay': 'Aprobar y pagar',
+    'tracking.lifecycleTitle': 'Ciclo del pedido',
+    'tracking.lifecycleNotice': 'No se te cobra inmediatamente. El pago solo se captura cuando termina la preparación en tienda, con nuestra garantía de mejor precio.',
+    'tracking.pickingItems': 'Artículos en preparación',
+    'tracking.timeline': 'Cronología',
+    'tracking.paymentAuthorization': 'Pago y autorización',
+    'tracking.storePickingState': 'Estado de preparación',
+    'tracking.status': 'Estado',
+    'tracking.substituted': 'Sustituido',
+    'tracking.quantityAdjusted': 'Cantidad ajustada',
+    'tracking.outOfStockRefunded': 'Agotado • Reembolsado',
+    'tracking.picked': 'Preparado',
+    'tracking.awaitingPicker': 'Pendiente de preparación',
+    'tracking.requested': 'Solicitado',
+    'tracking.supplied': 'Entregado',
+    'tracking.substitute': 'Sustituto',
+    'tracking.shelf': 'Precio en tienda',
+    'tracking.youPay': 'Pagas',
+    'tracking.note': 'Nota',
+    'tracking.was': 'antes',
+    'tracking.paymentBreakdown': 'Desglose del pago',
+    'tracking.originalEstimate': 'Estimación original de la cesta',
+    'tracking.approvedCeiling': 'Límite aprobado por el cliente',
+    'tracking.deliveryCharge': 'Gastos de entrega',
+    'tracking.bagServiceFees': 'Bolsas y servicio',
+    'tracking.finalCaptured': 'Importe final cobrado',
+    'tracking.auditHistory': 'Historial de estados',
+    'tracking.cardTokenized': 'Tarjeta tokenizada',
+    'tracking.preAuthorizedEstimated': 'Preautorizado (estimado)',
+    'tracking.actionReauthorize': 'Acción necesaria: volver a autorizar',
+    'tracking.finalTotalCaptured': 'Total final cobrado',
+    'tracking.pending': 'Pendiente',
+    'tracking.by': 'por',
+    'tracking.eta': 'Hora estimada',
 
     'error.general': 'Ocurrió un error inesperado. Inténtalo de nuevo.',
     'error.stockDepleted': 'El producto seleccionado está agotado en esta tienda.',
@@ -1067,6 +1215,55 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.statusPickedPacked': 'Articles préparés',
     'order.statusReadyCollection': 'Prêt pour le retrait',
 
+    'tracking.allOrders': 'Toutes les commandes',
+    'tracking.courierDelivery': 'Livraison par coursier',
+    'tracking.storeCollection': 'Retrait en magasin',
+    'tracking.scheduled': 'Programmé',
+    'tracking.asapDelivery': 'Livraison au plus vite',
+    'tracking.finalChargedTotal': 'Total final / débité',
+    'tracking.orderCancelled': 'Commande annulée',
+    'tracking.cancelledFallback': 'Cette commande a été annulée car un article requis était indisponible, conformément à vos préférences de substitution.',
+    'tracking.paymentHoldReleased': 'La préautorisation de paiement a été entièrement libérée. Aucun montant n’a été débité.',
+    'tracking.reauthRequired': 'Nouvelle autorisation de paiement requise',
+    'tracking.reauthPrefix': 'Pendant la préparation, les substitutions ou ajustements de poids ont porté le total final à',
+    'tracking.reauthExceeds': 'ce qui dépasse votre plafond approuvé de',
+    'tracking.reauthSuffix': 'Vérifiez et approuvez le nouveau total pour poursuivre la livraison.',
+    'tracking.authorizing': 'Autorisation...',
+    'tracking.approvePay': 'Approuver et payer',
+    'tracking.lifecycleTitle': 'Cycle de la commande',
+    'tracking.lifecycleNotice': 'Vous n’êtes jamais débité immédiatement. Le paiement n’est capturé qu’après la préparation en magasin, avec notre garantie du meilleur prix.',
+    'tracking.pickingItems': 'Articles en préparation',
+    'tracking.timeline': 'Chronologie',
+    'tracking.paymentAuthorization': 'Paiement et autorisation',
+    'tracking.storePickingState': 'État de préparation',
+    'tracking.status': 'État',
+    'tracking.substituted': 'Remplacé',
+    'tracking.quantityAdjusted': 'Quantité ajustée',
+    'tracking.outOfStockRefunded': 'Indisponible • Remboursé',
+    'tracking.picked': 'Préparé',
+    'tracking.awaitingPicker': 'En attente de préparation',
+    'tracking.requested': 'Demandé',
+    'tracking.supplied': 'Fourni',
+    'tracking.substitute': 'Substitut',
+    'tracking.shelf': 'Prix en rayon',
+    'tracking.youPay': 'Vous payez',
+    'tracking.note': 'Note',
+    'tracking.was': 'avant',
+    'tracking.paymentBreakdown': 'Détail du paiement',
+    'tracking.originalEstimate': 'Estimation initiale du panier',
+    'tracking.approvedCeiling': 'Plafond approuvé par le client',
+    'tracking.deliveryCharge': 'Frais de livraison',
+    'tracking.bagServiceFees': 'Sacs et frais de service',
+    'tracking.finalCaptured': 'Montant final débité',
+    'tracking.auditHistory': 'Historique des états',
+    'tracking.cardTokenized': 'Carte tokenisée',
+    'tracking.preAuthorizedEstimated': 'Préautorisé (estimé)',
+    'tracking.actionReauthorize': 'Action requise : réautoriser',
+    'tracking.finalTotalCaptured': 'Total final débité',
+    'tracking.pending': 'En attente',
+    'tracking.by': 'de',
+    'tracking.eta': 'Heure estimée',
+
     'error.general': 'Une erreur inattendue est survenue.',
     'error.stockDepleted': 'Le produit sélectionné est en rupture de stock.',
     'error.noServiceableStore': 'Aucun magasin disponible pour cette adresse.',
@@ -1338,6 +1535,55 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.statusSubmitted': 'Bestellung gesendet',
     'order.statusPickedPacked': 'Artikel kommissioniert & gepackt',
     'order.statusReadyCollection': 'Bereit zur Abholung',
+
+    'tracking.allOrders': 'Alle Bestellungen',
+    'tracking.courierDelivery': 'Kurierlieferung',
+    'tracking.storeCollection': 'Abholung in der Filiale',
+    'tracking.scheduled': 'Geplant',
+    'tracking.asapDelivery': 'Schnellstmögliche Lieferung',
+    'tracking.finalChargedTotal': 'Endbetrag / belastet',
+    'tracking.orderCancelled': 'Bestellung storniert',
+    'tracking.cancelledFallback': 'Diese Bestellung wurde storniert, weil ein erforderlicher Artikel gemäß deinen Ersatzpräferenzen nicht verfügbar war.',
+    'tracking.paymentHoldReleased': 'Die Zahlungsreservierung wurde vollständig aufgehoben. Es wurde nichts belastet.',
+    'tracking.reauthRequired': 'Erneute Zahlungsautorisierung erforderlich',
+    'tracking.reauthPrefix': 'Während der Kommissionierung haben Ersatzartikel oder Gewichtsanpassungen den Endbetrag erhöht auf',
+    'tracking.reauthExceeds': 'und damit dein genehmigtes Limit von überschritten',
+    'tracking.reauthSuffix': 'Prüfe und bestätige den neuen Betrag, damit die Zustellung fortgesetzt werden kann.',
+    'tracking.authorizing': 'Autorisierung...',
+    'tracking.approvePay': 'Bestätigen & zahlen',
+    'tracking.lifecycleTitle': 'Bestellablauf',
+    'tracking.lifecycleNotice': 'Du wirst nicht sofort belastet. Die Zahlung wird erst nach Abschluss der Kommissionierung mit unserer Bestpreisgarantie eingezogen.',
+    'tracking.pickingItems': 'Artikel in Kommissionierung',
+    'tracking.timeline': 'Zeitachse',
+    'tracking.paymentAuthorization': 'Zahlung & Autorisierung',
+    'tracking.storePickingState': 'Kommissionierstatus',
+    'tracking.status': 'Status',
+    'tracking.substituted': 'Ersetzt',
+    'tracking.quantityAdjusted': 'Menge angepasst',
+    'tracking.outOfStockRefunded': 'Ausverkauft • Erstattet',
+    'tracking.picked': 'Kommissioniert',
+    'tracking.awaitingPicker': 'Wartet auf Kommissionierung',
+    'tracking.requested': 'Bestellt',
+    'tracking.supplied': 'Geliefert',
+    'tracking.substitute': 'Ersatzartikel',
+    'tracking.shelf': 'Regalpreis',
+    'tracking.youPay': 'Du zahlst',
+    'tracking.note': 'Hinweis',
+    'tracking.was': 'vorher',
+    'tracking.paymentBreakdown': 'Zahlungsübersicht',
+    'tracking.originalEstimate': 'Ursprüngliche Warenkorbschätzung',
+    'tracking.approvedCeiling': 'Genehmigtes Kundenlimit',
+    'tracking.deliveryCharge': 'Liefergebühr',
+    'tracking.bagServiceFees': 'Tüten- & Servicegebühren',
+    'tracking.finalCaptured': 'Endgültig belasteter Betrag',
+    'tracking.auditHistory': 'Statusverlauf',
+    'tracking.cardTokenized': 'Karte tokenisiert',
+    'tracking.preAuthorizedEstimated': 'Vorautorisiert (geschätzt)',
+    'tracking.actionReauthorize': 'Aktion erforderlich: erneut autorisieren',
+    'tracking.finalTotalCaptured': 'Endbetrag belastet',
+    'tracking.pending': 'Ausstehend',
+    'tracking.by': 'um',
+    'tracking.eta': 'Voraussichtliche Zeit',
 
     'error.general': 'Ein unerwarteter Fehler ist aufgetreten.',
     'error.stockDepleted': 'Artikel in dieser Filiale ausverkauft.',

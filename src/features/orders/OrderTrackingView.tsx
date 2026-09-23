@@ -7,6 +7,8 @@ import {
   moneyToMajor,
 } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useTenant } from '../../tenant/TenantContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 
@@ -47,6 +49,9 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   onBackToList,
 }) => {
   const { primaryBtnStyle, currencySymbol, brandName } = useTenantStyles();
+  const { appMode } = useTenant();
+  const { t, formatDateTime } = useI18n();
+  const isDemo = appMode === 'demo';
   const [order, setOrder] = useState<Order>(initialOrder);
   const [isAdvancing, setIsAdvancing] = useState<boolean>(false);
   const [isReauthorizing, setIsReauthorizing] = useState<boolean>(false);
@@ -154,45 +159,45 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   const getStatusBadge = () => {
     switch (order.status) {
       case 'SUBMITTED':
-        return { label: 'Order Submitted', bg: 'bg-blue-100 text-blue-800 border-blue-200' };
+        return { label: t('order.statusSubmitted'), bg: 'bg-blue-100 text-blue-800 border-blue-200' };
       case 'ACCEPTED':
       case 'orderAccepted':
       case 'STORE_ACCEPTED':
       case 'CONFIRMED':
       case 'ORDER_CONFIRMED':
-        return { label: 'Store Accepted', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+        return { label: t('order.statusAccepted'), bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
       case 'PICKING':
       case 'preparing':
       case 'PICKING_STARTED':
-        return { label: 'Picking in Store', bg: 'bg-amber-100 text-amber-800 border-amber-200' };
+        return { label: t('order.statusPicking'), bg: 'bg-amber-100 text-amber-800 border-amber-200' };
       case 'PICKING_WITH_CHANGES':
-        return { label: 'Picking with Substitutions', bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
+        return { label: t('order.statusPickingWithChanges'), bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
       case 'PICKED':
       case 'PICKING_COMPLETE':
       case 'readyForPickup':
-        return { label: 'Items Picked & Packed', bg: 'bg-teal-100 text-teal-800 border-teal-200' };
+        return { label: t('order.statusPickedPacked'), bg: 'bg-teal-100 text-teal-800 border-teal-200' };
       case 'READY':
       case 'READY_FOR_PICKUP':
-        return { label: 'Ready for Collection', bg: 'bg-teal-100 text-teal-800 border-teal-200' };
+        return { label: t('order.statusReadyCollection'), bg: 'bg-teal-100 text-teal-800 border-teal-200' };
       case 'PAYMENT_FINALISING':
-        return { label: 'Payment Action Required', bg: 'bg-rose-100 text-rose-800 border-rose-200' };
+        return { label: t('order.statusPaymentFinalising'), bg: 'bg-rose-100 text-rose-800 border-rose-200' };
       case 'READY_FOR_COURIER':
-        return { label: 'Ready for Courier', bg: 'bg-purple-100 text-purple-800 border-purple-200' };
+        return { label: t('order.statusReadyCourier'), bg: 'bg-purple-100 text-purple-800 border-purple-200' };
       case 'COURIER_ASSIGNED':
       case 'courierAssigned':
       case 'courierAtStore':
-        return { label: 'Courier Assigned', bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
+        return { label: t('order.statusCourierAssigned'), bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
       case 'OUT_FOR_DELIVERY':
       case 'outForDelivery':
       case 'DISPATCHING':
-        return { label: 'Out for Delivery', bg: 'bg-sky-100 text-sky-800 border-sky-200' };
+        return { label: t('order.statusOutForDelivery'), bg: 'bg-sky-100 text-sky-800 border-sky-200' };
       case 'DELIVERED':
       case 'delivered':
-        return { label: 'Delivered', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+        return { label: t('order.statusDelivered'), bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
       case 'CANCELLED':
       case 'ORDER_CANCELLED':
       case 'ORDER_CANCELLED_UNAVAILABLE_ITEM':
-        return { label: 'Order Cancelled', bg: 'bg-red-100 text-red-800 border-red-200' };
+        return { label: t('order.statusCancelled'), bg: 'bg-red-100 text-red-800 border-red-200' };
       default:
         return { label: String(order.status), bg: 'bg-gray-100 text-gray-800 border-gray-200' };
     }
@@ -202,16 +207,16 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   const getPaymentBadge = () => {
     switch (order.payment?.state) {
       case 'TOKENIZED':
-        return { label: 'Card Tokenized', bg: 'bg-gray-100 text-gray-700' };
+        return { label: t('tracking.cardTokenized'), bg: 'bg-gray-100 text-gray-700' };
       case 'AUTHORIZED':
-        return { label: 'Pre-Authorized (Estimated)', bg: 'bg-blue-100 text-blue-800' };
+        return { label: t('tracking.preAuthorizedEstimated'), bg: 'bg-blue-100 text-blue-800' };
       case 'REAUTHORIZING':
       case 'PAYMENT_ACTION_REQUIRED':
-        return { label: 'Action Required: Reauthorize', bg: 'bg-rose-100 text-rose-800' };
+        return { label: t('tracking.actionReauthorize'), bg: 'bg-rose-100 text-rose-800' };
       case 'CAPTURED':
-        return { label: 'Final Total Captured', bg: 'bg-emerald-100 text-emerald-800' };
+        return { label: t('tracking.finalTotalCaptured'), bg: 'bg-emerald-100 text-emerald-800' };
       default:
-        return { label: order.payment?.state || 'Pending', bg: 'bg-gray-100 text-gray-700' };
+        return { label: order.payment?.state || t('tracking.pending'), bg: 'bg-gray-100 text-gray-700' };
     }
   };
 
@@ -251,7 +256,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                   onClick={onBackToList}
                   className="text-xs font-semibold text-gray-500 hover:text-gray-800"
                 >
-                  ← All Orders
+                  ← {t('tracking.allOrders')}
                 </button>
               )}
               <span className="text-xs font-bold text-gray-400">{order.displayId}</span>
@@ -280,18 +285,18 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
             )}
             <div>
               <span className="font-bold text-gray-900">
-                {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? 'Courier Delivery' : 'Store Collection'}
+                {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? t('tracking.courierDelivery') : t('tracking.storeCollection')}
               </span>
               <p className="text-gray-500 text-[11px]">
                 {order.scheduledTime?.type === 'SCHEDULED' && order.scheduledTime.slot
-                  ? `Scheduled: ${order.scheduledTime.slot.dayLabel} • ${order.scheduledTime.slot.formatted}`
-                  : `ASAP Delivery${order.delivery?.courier?.eta ? ` (ETA: ${order.delivery.courier.eta})` : ''}`}
+                  ? `${t('tracking.scheduled')}: ${order.scheduledTime.slot.dayLabel} • ${order.scheduledTime.slot.formatted}`
+                  : `${t('tracking.asapDelivery')}${order.delivery?.courier?.eta ? ` (${t('tracking.eta')}: ${order.delivery.courier.eta})` : ''}`}
               </p>
             </div>
           </div>
 
           <div className="text-right">
-            <span className="text-[11px] text-gray-400 block">Final Charged / Total</span>
+            <span className="text-[11px] text-gray-400 block">{t('tracking.finalChargedTotal')}</span>
             <span className="text-sm font-extrabold text-gray-900">
               {formatCurrency(finalTotal, currencySymbol)}
             </span>
@@ -307,14 +312,14 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
         >
           <div className="flex items-center gap-2">
             <X className="w-5 h-5 text-red-600 shrink-0" />
-            <span className="font-bold text-sm text-red-900">Order Cancelled</span>
+            <span className="font-bold text-sm text-red-900">{t('tracking.orderCancelled')}</span>
           </div>
           <p className="text-xs text-red-800">
             {order.events?.find((e) => e.status === 'CANCELLED')?.note ||
-              'This order was cancelled because a required item was unavailable, per your substitution preferences.'}
+              t('tracking.cancelledFallback')}
           </p>
           <div className="text-[11px] text-red-700 font-medium">
-            Your payment pre-authorization hold has been released in full. No charges were made.
+            {t('tracking.paymentHoldReleased')}
           </div>
         </div>
       )}
@@ -331,17 +336,16 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-bold text-rose-900">
-                Payment Reauthorization Required
+                {t('tracking.reauthRequired')}
               </h3>
               <p className="text-xs text-rose-800 mt-1 leading-relaxed">
-                During picking in store, substitutions or weight adjustments raised your final order total to{' '}
-                <strong className="font-bold">{formatCurrency(finalTotal, currencySymbol)}</strong>, which
-                exceeds your original approved limit of{' '}
-                <strong className="font-bold">{formatCurrency(authorizedMax, currencySymbol)}</strong> by{' '}
+                {t('tracking.reauthPrefix')}{' '}
+                <strong className="font-bold">{formatCurrency(finalTotal, currencySymbol)}</strong>, {t('tracking.reauthExceeds')}{' '}
+                <strong className="font-bold">{formatCurrency(authorizedMax, currencySymbol)}</strong> {t('tracking.by')}{' '}
                 <span className="underline font-bold">
                   {formatCurrency(Math.max(0, moneyToMajor(finalTotal) - moneyToMajor(authorizedMax)), currencySymbol)}
                 </span>
-                . Please review and approve the updated total to release for courier dispatch.
+                . {t('tracking.reauthSuffix')}
               </p>
             </div>
           </div>
@@ -356,12 +360,12 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
               {isReauthorizing ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Authorizing...</span>
+                  <span>{t('tracking.authorizing')}</span>
                 </>
               ) : (
                 <>
                   <Check className="w-3.5 h-3.5" />
-                  <span>Approve & Pay {formatCurrency(finalTotal, currencySymbol)}</span>
+                  <span>{t('tracking.approvePay')} {formatCurrency(finalTotal, currencySymbol)}</span>
                 </>
               )}
             </button>
@@ -374,8 +378,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
           <p className="text-[11px] leading-tight">
-            <strong>Retail & Grocery Lifecycle:</strong> You are never charged immediately at checkout.
-            Funds are only captured when store picking completes with our Best-Match Price Guarantee.
+            <strong>{t('tracking.lifecycleTitle')}:</strong> {t('tracking.lifecycleNotice')}
           </p>
         </div>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${paymentBadge.bg}`}>
@@ -395,7 +398,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           }`}
         >
           <Package className="w-3.5 h-3.5" />
-          <span>Picking Items ({order.picking.items.length})</span>
+          <span>{t('tracking.pickingItems')} ({order.picking.items.length})</span>
         </button>
 
         <button
@@ -408,7 +411,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
-          <span>Timeline ({order.events?.length || 0})</span>
+          <span>{t('tracking.timeline')} ({order.events?.length || 0})</span>
         </button>
 
         <button
@@ -421,7 +424,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           }`}
         >
           <CreditCard className="w-3.5 h-3.5" />
-          <span>Payment & Authorization</span>
+          <span>{t('tracking.paymentAuthorization')}</span>
         </button>
       </div>
 
@@ -429,9 +432,9 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
       {activeTab === 'items' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs px-1">
-            <span className="font-bold text-gray-600">Store Picking State</span>
+            <span className="font-bold text-gray-600">{t('tracking.storePickingState')}</span>
             <span className="text-gray-400 text-[11px]">
-              Status: <strong className="text-gray-700">{order.picking.status}</strong>
+              {t('tracking.status')}: <strong className="text-gray-700">{order.picking.status}</strong>
             </span>
           </div>
 
@@ -492,37 +495,37 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                       {/* Item details */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-gray-900">{item?.name || item?.plu || 'Item'}</span>
+                          <span className="font-bold text-gray-900">{item?.name || item?.plu || t('orders.item')}</span>
                           {isSubstituted && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                              Substituted
+                              {t('tracking.substituted')}
                             </span>
                           )}
                           {isAmended && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                              Quantity Adjusted
+                              {t('tracking.quantityAdjusted')}
                             </span>
                           )}
                           {isRemoved && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
-                              Out of stock • Refunded
+                              {t('tracking.outOfStockRefunded')}
                             </span>
                           )}
                           {isPicked && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                              Picked
+                              {t('tracking.picked')}
                             </span>
                           )}
                           {isPending && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                              Awaiting Picker
+                              {t('tracking.awaitingPicker')}
                             </span>
                           )}
                         </div>
 
                         <p className="text-gray-500 text-[11px] mt-0.5">
-                          Requested: {item.originalQuantity} × {formatCurrency(moneyToMajor(item.originalPrice) / (item.originalQuantity || 1), currencySymbol)}
-                          {item.pickedQuantity > 0 && ` • Supplied: ${item.pickedQuantity}`}
+                          {t('tracking.requested')}: {item.originalQuantity} × {formatCurrency(moneyToMajor(item.originalPrice) / (item.originalQuantity || 1), currencySymbol)}
+                          {item.pickedQuantity > 0 && ` • ${t('tracking.supplied')}: ${item.pickedQuantity}`}
                         </p>
 
                         {/* Substitution Details Box */}
@@ -530,17 +533,17 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                           <div className="mt-2 p-2.5 rounded-xl bg-white border border-indigo-100 space-y-1">
                             <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-950">
                               <Repeat className="w-3 h-3 text-indigo-600" />
-                              <span>Substitute: {item.substitution.substituteName}</span>
+                              <span>{t('tracking.substitute')}: {item.substitution.substituteName}</span>
                             </div>
                             <p className="text-[11px] text-gray-600">
                               {item.substitution.reason}
                             </p>
                             <div className="flex items-center gap-2 pt-1 text-[11px]">
                               <span className="text-gray-400 line-through">
-                                Shelf: {formatCurrency(item.substitution.substitutePrice, currencySymbol)}
+                                {t('tracking.shelf')}: {formatCurrency(item.substitution.substitutePrice, currencySymbol)}
                               </span>
                               <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                                You pay: {formatCurrency(item.finalPrice, currencySymbol)} (Best-Match Price Guarantee)
+                                {t('tracking.youPay')}: {formatCurrency(item.finalPrice, currencySymbol)} ({t('checkout.bestMatchGuarantee')})
                               </span>
                             </div>
                           </div>
@@ -549,7 +552,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                         {/* Quantity Amendment Box */}
                         {isAmended && item.amendment && (
                           <div className="mt-2 p-2 rounded-xl bg-white border border-amber-100 text-[11px] text-amber-900">
-                            <strong>Note:</strong> {item.amendment.reason}
+                            <strong>{t('tracking.note')}:</strong> {item.amendment.reason}
                           </div>
                         )}
                       </div>
@@ -562,7 +565,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                       </span>
                       {item.finalPrice !== item.originalPrice && (
                         <span className="text-[10px] text-gray-400 line-through block">
-                          was {formatCurrency(item.originalPrice, currencySymbol)}
+                          {t('tracking.was')} {formatCurrency(item.originalPrice, currencySymbol)}
                         </span>
                       )}
                     </div>
@@ -587,7 +590,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-gray-900">{evt.title}</span>
                     <span className="text-[11px] text-gray-400">
-                      {new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatDateTime(evt.timestamp, { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                   {evt.description && (
@@ -604,48 +607,48 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
       {activeTab === 'payment' && (
         <div className="p-5 rounded-3xl bg-white border border-gray-100 space-y-4 text-xs">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <span className="font-bold text-gray-900">Payment Breakdown</span>
+            <span className="font-bold text-gray-900">{t('tracking.paymentBreakdown')}</span>
             <span className="text-gray-500 text-[11px]">{order.payment.method}</span>
           </div>
 
           <div className="space-y-2 text-gray-600">
             <div className="flex justify-between">
-              <span>Original Basket Estimate</span>
+              <span>{t('tracking.originalEstimate')}</span>
               <span>{formatCurrency(order.originalBasket?.subtotal || order.currentOrder.subtotal, currencySymbol)}</span>
             </div>
 
             <div className="flex justify-between">
-              <span>Customer Approved Ceiling (Auth Max)</span>
+              <span>{t('tracking.approvedCeiling')}</span>
               <span className="font-bold text-gray-900">
                 {formatCurrency(authorizedMax, currencySymbol)}
               </span>
             </div>
 
             <div className="flex justify-between">
-              <span>Delivery Charge</span>
+              <span>{t('tracking.deliveryCharge')}</span>
               <span>{formatCurrency(order.currentOrder.deliveryCharge, currencySymbol)}</span>
             </div>
 
             <div className="flex justify-between">
-              <span>Bag & Service Fees</span>
+              <span>{t('tracking.bagServiceFees')}</span>
               <span>{formatCurrency(moneyToMajor(order.currentOrder.bagFee) + moneyToMajor(order.currentOrder.serviceCharge), currencySymbol)}</span>
             </div>
 
             <div className="pt-2 border-t border-gray-200 flex justify-between font-extrabold text-sm text-gray-900">
-              <span>Final Captured Amount</span>
+              <span>{t('tracking.finalCaptured')}</span>
               <span className="text-emerald-700">{formatCurrency(finalTotal, currencySymbol)}</span>
             </div>
           </div>
 
           <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
-            <p className="font-bold text-gray-700">Audit & State History:</p>
+            <p className="font-bold text-gray-700">{t('tracking.auditHistory')}:</p>
             {order.payment.history.map((h, i) => (
               <div key={i} className="flex items-center justify-between text-[10px]">
                 <span>
                   • {h.state} {h.note ? `— ${h.note}` : ''}
                 </span>
                 <span className="text-gray-400">
-                  {new Date(h.timestamp).toLocaleTimeString()}
+                  {formatDateTime(h.timestamp, { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ))}
@@ -654,6 +657,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
       )}
 
       {/* INTERACTIVE DEMO SCENARIOS & STEP SIMULATOR CONTROLS */}
+      {isDemo && (
       <div className="p-4 rounded-3xl bg-gray-900 text-white space-y-3 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs font-bold text-gray-200">
@@ -738,6 +742,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
