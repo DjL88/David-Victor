@@ -293,6 +293,7 @@ export interface LocaleTranslations {
   'tracking.actionReauthorize': string;
   'tracking.finalTotalCaptured': string;
   'tracking.pending': string;
+  'tracking.by': string;
 
   // Errors & Fallbacks
   'error.general': string;
@@ -617,6 +618,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.actionReauthorize': 'Action Required: Reauthorise',
     'tracking.finalTotalCaptured': 'Final Total Captured',
     'tracking.pending': 'Pending',
+    'tracking.by': 'by',
 
     'error.general': 'An unexpected error occurred. Please try again.',
     'error.stockDepleted': 'Selected product is out of stock in this store.',
@@ -936,6 +938,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.actionReauthorize': 'Acción necesaria: volver a autorizar',
     'tracking.finalTotalCaptured': 'Total final cobrado',
     'tracking.pending': 'Pendiente',
+    'tracking.by': 'por',
 
     'error.general': 'Ocurrió un error inesperado. Inténtalo de nuevo.',
     'error.stockDepleted': 'El producto seleccionado está agotado en esta tienda.',
@@ -1255,6 +1258,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.actionReauthorize': 'Action requise : réautoriser',
     'tracking.finalTotalCaptured': 'Total final débité',
     'tracking.pending': 'En attente',
+    'tracking.by': 'de',
 
     'error.general': 'Une erreur inattendue est survenue.',
     'error.stockDepleted': 'Le produit sélectionné est en rupture de stock.',
@@ -1574,6 +1578,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.actionReauthorize': 'Aktion erforderlich: erneut autorisieren',
     'tracking.finalTotalCaptured': 'Endbetrag belastet',
     'tracking.pending': 'Ausstehend',
+    'tracking.by': 'um',
 
     'error.general': 'Ein unerwarteter Fehler ist aufgetreten.',
     'error.stockDepleted': 'Artikel in dieser Filiale ausverkauft.',
