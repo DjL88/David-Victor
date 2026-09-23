@@ -81,6 +81,12 @@ export interface LocaleTranslations {
   'account.launchAdmin': string;
   'account.signInToManage': string;
   'account.noSavedAddresses': string;
+  'account.saveCurrentAddress': string;
+  'account.removeAddress': string;
+  'account.noCurrentAddress': string;
+  'account.addressSaveFailed': string;
+  'account.addressLimit': string;
+  'account.saving': string;
   'account.paymentProviderNote': string;
   'account.notificationNote': string;
   'account.noPolicies': string;
@@ -480,6 +486,12 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'account.launchAdmin': 'Launch Admin',
     'account.signInToManage': 'Sign in to manage settings linked to your account.',
     'account.noSavedAddresses': 'No saved delivery addresses are available for this account yet.',
+    'account.saveCurrentAddress': 'Save current delivery address',
+    'account.removeAddress': 'Remove',
+    'account.noCurrentAddress': 'Choose a delivery address first, then return here to save it.',
+    'account.addressSaveFailed': 'We could not update your saved addresses. Try again.',
+    'account.addressLimit': 'You can save up to 10 delivery addresses.',
+    'account.saving': 'Saving…',
     'account.paymentProviderNote': 'Payment methods are securely collected during checkout and are not displayed here unless the payment provider exposes a saved method.',
     'account.notificationNote': 'Order updates use the contact details and notification channels available for each order.',
     'account.noPolicies': 'No information or policy pages are published for this language yet.',
@@ -867,6 +879,12 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'account.launchAdmin': 'Abrir Admin',
     'account.signInToManage': 'Inicia sesión para gestionar la configuración de tu cuenta.',
     'account.noSavedAddresses': 'Todavía no hay direcciones de entrega guardadas en esta cuenta.',
+    'account.saveCurrentAddress': 'Guardar dirección de entrega actual',
+    'account.removeAddress': 'Eliminar',
+    'account.noCurrentAddress': 'Elige primero una dirección de entrega y luego vuelve aquí para guardarla.',
+    'account.addressSaveFailed': 'No hemos podido actualizar tus direcciones guardadas. Inténtalo de nuevo.',
+    'account.addressLimit': 'Puedes guardar hasta 10 direcciones de entrega.',
+    'account.saving': 'Guardando…',
     'account.paymentProviderNote': 'Los métodos de pago se recopilan de forma segura durante el pago y solo se muestran aquí si el proveedor de pagos permite métodos guardados.',
     'account.notificationNote': 'Las actualizaciones del pedido usan los datos de contacto y canales disponibles para cada pedido.',
     'account.noPolicies': 'Todavía no hay páginas de información o políticas publicadas en este idioma.',
@@ -1254,6 +1272,12 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'account.launchAdmin': 'Ouvrir Admin',
     'account.signInToManage': 'Connectez-vous pour gérer les paramètres liés à votre compte.',
     'account.noSavedAddresses': 'Aucune adresse de livraison enregistrée pour ce compte.',
+    'account.saveCurrentAddress': 'Enregistrer l’adresse de livraison actuelle',
+    'account.removeAddress': 'Supprimer',
+    'account.noCurrentAddress': 'Choisissez d’abord une adresse de livraison, puis revenez ici pour l’enregistrer.',
+    'account.addressSaveFailed': 'Impossible de mettre à jour vos adresses enregistrées. Réessayez.',
+    'account.addressLimit': 'Vous pouvez enregistrer jusqu’à 10 adresses de livraison.',
+    'account.saving': 'Enregistrement…',
     'account.paymentProviderNote': 'Les moyens de paiement sont collectés de manière sécurisée lors du paiement et ne sont affichés ici que si le prestataire prend en charge les moyens enregistrés.',
     'account.notificationNote': 'Les mises à jour de commande utilisent les coordonnées et canaux disponibles pour chaque commande.',
     'account.noPolicies': 'Aucune page d’information ou de politique n’est encore publiée dans cette langue.',
@@ -1641,6 +1665,12 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'account.launchAdmin': 'Admin öffnen',
     'account.signInToManage': 'Melde dich an, um Kontoeinstellungen zu verwalten.',
     'account.noSavedAddresses': 'Für dieses Konto sind noch keine Lieferadressen gespeichert.',
+    'account.saveCurrentAddress': 'Aktuelle Lieferadresse speichern',
+    'account.removeAddress': 'Entfernen',
+    'account.noCurrentAddress': 'Wähle zuerst eine Lieferadresse aus und kehre dann hierher zurück, um sie zu speichern.',
+    'account.addressSaveFailed': 'Deine gespeicherten Adressen konnten nicht aktualisiert werden. Versuche es erneut.',
+    'account.addressLimit': 'Du kannst bis zu 10 Lieferadressen speichern.',
+    'account.saving': 'Wird gespeichert…',
     'account.paymentProviderNote': 'Zahlungsmethoden werden beim Checkout sicher erfasst und nur angezeigt, wenn der Zahlungsanbieter gespeicherte Methoden unterstützt.',
     'account.notificationNote': 'Bestellupdates verwenden die für die jeweilige Bestellung verfügbaren Kontaktdaten und Benachrichtigungskanäle.',
     'account.noPolicies': 'Für diese Sprache sind noch keine Informations- oder Richtlinienseiten veröffentlicht.',
