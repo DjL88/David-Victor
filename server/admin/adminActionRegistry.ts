@@ -175,6 +175,17 @@ const ACTIONS: AdminActionDefinition[] = [
     enabledForAssistant: true,
   },
   {
+    name: 'rules.inspect',
+    description: 'Read the active and disabled product rules configured for the tenant.',
+    inputSchema: EmptyInputSchema,
+    capability: 'rules.read',
+    risk: 'READ',
+    supportsPreview: false,
+    supportsUndo: false,
+    enabledForAssistant: true,
+  },
+
+  {
     name: 'branding.proposeUpdate',
     description: 'Prepare a branding change proposal without applying it.',
     inputSchema: BrandingProposalInputSchema,

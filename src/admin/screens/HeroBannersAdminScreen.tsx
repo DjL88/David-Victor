@@ -18,6 +18,7 @@ import {
 } from '../../commerce/promoBannerData';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import {
   Sparkles,
   Plus,
@@ -152,6 +153,34 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     });
     return () => unsub();
   }, [tenantId]);
+
+  useEffect(() =>
+    onAdminAiPrefill('hero_banners', ({ prefill }) => {
+      if (!prefill || prefill.openNew !== true) return;
+
+      setCurrentEditingBanner((current) => ({
+        ...current,
+        id: `banner-${Date.now()}`,
+        title: typeof prefill.title === 'string' ? prefill.title : current.title || 'Fresh Artisan Groceries',
+        subtitle: typeof prefill.subtitle === 'string' ? prefill.subtitle : current.subtitle,
+        badge: typeof prefill.badge === 'string' ? prefill.badge : current.badge,
+        backgroundImageUrl: typeof prefill.backgroundImageUrl === 'string'
+          ? prefill.backgroundImageUrl
+          : current.backgroundImageUrl || PRESET_BANNER_IMAGES[0].url,
+        buttonLabel: typeof prefill.buttonLabel === 'string' ? prefill.buttonLabel : current.buttonLabel || 'Shop Now',
+        actionType: typeof prefill.actionType === 'string' ? prefill.actionType as any : current.actionType,
+        categorySlugMatch: typeof prefill.categorySlugMatch === 'string' ? prefill.categorySlugMatch : 'all',
+        categoryId: typeof prefill.categoryId === 'string' ? prefill.categoryId : undefined,
+        targetCategoryId: typeof prefill.targetCategoryId === 'string' ? prefill.targetCategoryId : undefined,
+        linkedProductPlus: Array.isArray(prefill.linkedProductPlus)
+          ? prefill.linkedProductPlus.filter((item): item is string => typeof item === 'string')
+          : current.linkedProductPlus || [],
+        stockMatchMode: prefill.stockMatchMode === 'AND' ? 'AND' : current.stockMatchMode || 'OR',
+      }));
+      setIsEditingExisting(false);
+      setIsEditorOpen(true);
+    }),
+  []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -508,6 +537,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                   Headline Title <span className="text-rose-500">*</span>
                 </label>
                 <input
+                  data-admin-ai-target="hero-banner-title"
                   type="text"
                   value={currentEditingBanner.title}
                   onChange={(e) =>
@@ -562,7 +592,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
               </div>
 
               {/* Background Image URL & Presets */}
-              <div className="space-y-2">
+              <div data-admin-ai-target="hero-banner-image" className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="font-extrabold text-gray-800">
                     Background Image URL <span className="text-rose-500">*</span>
@@ -643,7 +673,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-1">
+                <div data-admin-ai-target="hero-banner-placement" className="space-y-1">
                   <label className="font-extrabold text-gray-800">Banner placement</label>
                   <p className="text-[10px] text-gray-500 mb-1">
                     Choose Home, or sponsor a category/subcategory. A sponsored aisle banner replaces the generated category spotlight while that aisle is selected.

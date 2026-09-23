@@ -9,6 +9,7 @@ import {
   StorefrontCopyOverrides,
 } from '../../i18n/copy';
 import { TRANSLATIONS } from '../../i18n/translations';
+import { onAdminAiPrefill } from '../adminAiGuide';
 
 interface LanguageTerminologyScreenProps {
   tenantId: string;
@@ -54,6 +55,36 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
   useEffect(() => {
     void load();
   }, [tenantId]);
+
+  useEffect(() =>
+    onAdminAiPrefill('languages', ({ prefill }) => {
+      if (!prefill) return;
+
+      if (typeof prefill.defaultLocale === 'string') {
+        const locale = prefill.defaultLocale;
+        setDefaultLocale(locale);
+        setEnabledLocales((current) => current.includes(locale) ? current : [...current, locale]);
+        setCopyLocale(locale);
+      }
+
+      if (typeof prefill.copyLocale === 'string') {
+        const locale = prefill.copyLocale;
+        setEnabledLocales((current) => current.includes(locale) ? current : [...current, locale]);
+        setCopyLocale(locale);
+      }
+
+      if (typeof prefill.copyKey === 'string' && typeof prefill.copyValue === 'string') {
+        const locale = typeof prefill.copyLocale === 'string' ? prefill.copyLocale : copyLocale;
+        setCopyOverrides((current) => ({
+          ...current,
+          [locale]: {
+            ...(current[locale] || {}),
+            [prefill.copyKey as string]: prefill.copyValue as string,
+          },
+        }));
+      }
+    }),
+  [copyLocale]);
 
   const selectableLocales = useMemo(
     () =>
@@ -123,6 +154,7 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
           </p>
         </div>
         <button
+          data-admin-ai-target="languages-save"
           type="button"
           onClick={() => void save()}
           disabled={saving}
@@ -243,7 +275,11 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
             const value = copyOverrides[copyLocale]?.[field.key] || '';
 
             return (
-              <label key={field.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <label
+                key={field.key}
+                data-admin-ai-target={`language-copy-${field.key}`}
+                className="rounded-xl border border-gray-200 bg-gray-50 p-3"
+              >
                 <span className="block text-[11px] font-bold text-gray-800">{field.label}</span>
                 {field.hint && (
                   <span className="block text-[10px] text-gray-500 mt-0.5">{field.hint}</span>

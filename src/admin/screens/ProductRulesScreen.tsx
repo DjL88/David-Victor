@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
 import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock } from 'lucide-react';
@@ -123,6 +124,43 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() =>
+    onAdminAiPrefill('product_rules', ({ prefill }) => {
+      if (!prefill) return;
+
+      const suppliedRule = prefill.rule;
+      if (suppliedRule && typeof suppliedRule === 'object' && !Array.isArray(suppliedRule)) {
+        const partial = suppliedRule as Partial<VisualRule>;
+        setEditingRule({
+          id: `rule-${Date.now()}`,
+          name: partial.name || 'New product rule',
+          enabled: partial.enabled !== false,
+          countries: Array.isArray(partial.countries) && partial.countries.length ? partial.countries : ['GB'],
+          priority: typeof partial.priority === 'number' ? partial.priority : 50,
+          matchConditions: Array.isArray(partial.matchConditions) && partial.matchConditions.length
+            ? partial.matchConditions
+            : [{ field: 'productTag', operator: 'equals', value: '' }],
+          actions: Array.isArray(partial.actions) && partial.actions.length
+            ? partial.actions
+            : [{ type: 'HIDE_PRODUCT' }],
+        });
+        return;
+      }
+
+      if (prefill.openNew === true) {
+        setEditingRule({
+          id: `rule-${Date.now()}`,
+          name: 'New rule',
+          enabled: true,
+          countries: ['GB'],
+          priority: 50,
+          matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }],
+          actions: [{ type: 'HIDE_PRODUCT' }],
+        });
+      }
+    }),
+  []);
 
   const handleSaveSchedulingPolicy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -836,6 +874,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Rule name</label>
                 <input
+                  data-admin-ai-target="product-rule-name"
                   type="text"
                   value={editingRule.name}
                   onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
@@ -886,7 +925,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               </div>
 
               {/* Where Editor */}
-              <div className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
+              <div data-admin-ai-target="product-rule-conditions" className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
                 <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
                 {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
                   <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
@@ -919,7 +958,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 </datalist>
               </div>
 
-              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">
+              <div data-admin-ai-target="product-rule-actions" className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">
                 <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Actions <span className="font-normal text-gray-400">apply all</span></span><button type="button" onClick={()=>setEditingRule({...editingRule,actions:[...editingRule.actions,{type:'HIDE_PRODUCT'}]})} className="text-[11px] font-bold text-indigo-700">+ Add action</button></div>
                 {editingRule.actions.map((action,index)=><div key={index} className="rounded-xl bg-white border border-indigo-100 p-2 space-y-2">
                   <div className="flex gap-2"><select value={action.type} onChange={(e)=>{const a=[...editingRule.actions];a[index]=createAction(e.target.value);setEditingRule({...editingRule,actions:a})}} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white font-semibold"><option value="HIDE_PRODUCT">Hide product</option><option value="PREVENT_PURCHASE">Prevent purchase</option><option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option><option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option><option value="MINIMUM_AGE">Require minimum age</option><option value="PREVENT_UPSELL">Exclude from upsells</option><option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option><option value="EXCLUDE_FROM_DISCOUNTS">Exclude from discounts</option><option value="PREVENT_STORY_PLACEMENT">Exclude from stories</option><option value="PREVENT_CAROUSEL_PLACEMENT">Exclude from carousels</option><option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option><option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option><option value="BADGE">Show badge</option><option value="WARNING">Show warning</option></select><button type="button" disabled={editingRule.actions.length===1} onClick={()=>setEditingRule({...editingRule,actions:editingRule.actions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></div>
@@ -940,7 +979,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <button data-admin-ai-target="product-rule-save"
                   type="submit"
                   disabled={saving}
                   className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-xs"

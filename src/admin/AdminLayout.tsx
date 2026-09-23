@@ -22,7 +22,7 @@ import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
-import { AdminWorkspaceProvider } from './AdminWorkspaceContext';
+import { AdminWorkspaceProvider, type AdminGuideStep, type AdminNavigateOptions } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
 import {
   Palette,
@@ -124,6 +124,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const [tenantLoadError, setTenantLoadError] = useState<string>('');
   const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
+  const [assistantGuide, setAssistantGuide] = useState<{ steps: AdminGuideStep[]; index: number } | null>(null);
   const adminMainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -262,38 +263,78 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const handleSelectTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setIsMobileNavOpen(false);
+    setAssistantGuide(null);
   };
 
-  const handleAssistantNavigate = useCallback((tab: AdminTab, target?: string) => {
+  const showAssistantDestination = useCallback((
+    tab: AdminTab,
+    target?: string,
+    prefill?: Record<string, unknown>
+  ) => {
     setActiveTab(tab);
     setIsMobileNavOpen(false);
     setIsAssistantOpen(false);
 
-    // Wait for the destination screen to mount, then bring the requested control
-    // into view and briefly highlight it so the assistant can visually guide the user.
+    // Wait for the screen to mount, then let that screen consume safe draft values.
+    // Prefills only update React form state; they never call a save API.
     window.setTimeout(() => {
-      const selector = target ? `[data-admin-ai-target="${target}"]` : null;
-      const element = selector ? document.querySelector<HTMLElement>(selector) : null;
-      const destination = element || adminMainRef.current;
-
-      destination?.scrollIntoView?.({ behavior: 'smooth', block: element ? 'center' : 'start' });
-
-      if (element) {
-        element.classList.remove('admin-ai-highlight');
-        void element.offsetWidth;
-        element.classList.add('admin-ai-highlight');
-
-        const focusable = (
-          element.matches('input, select, textarea, button, [tabindex]')
-            ? element
-            : element.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]')
-        );
-        focusable?.focus({ preventScroll: true });
-
-        window.setTimeout(() => element.classList.remove('admin-ai-highlight'), 3600);
+      if (prefill && Object.keys(prefill).length > 0) {
+        window.dispatchEvent(new CustomEvent('admin-ai-prefill', {
+          detail: { section: tab, target, prefill },
+        }));
       }
+
+      window.setTimeout(() => {
+        const selector = target ? `[data-admin-ai-target="${target}"]` : null;
+        const element = selector ? document.querySelector<HTMLElement>(selector) : null;
+        const destination = element || adminMainRef.current;
+
+        destination?.scrollIntoView?.({ behavior: 'smooth', block: element ? 'center' : 'start' });
+
+        if (element) {
+          element.classList.remove('admin-ai-highlight');
+          void element.offsetWidth;
+          element.classList.add('admin-ai-highlight');
+
+          const focusable = (
+            element.matches('input, select, textarea, button, [tabindex]')
+              ? element
+              : element.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]')
+          );
+          focusable?.focus({ preventScroll: true });
+
+          window.setTimeout(() => element.classList.remove('admin-ai-highlight'), 3600);
+        }
+      }, prefill ? 140 : 0);
     }, 180);
   }, []);
+
+  const handleAssistantNavigate = useCallback((
+    tab: AdminTab,
+    target?: string,
+    options?: AdminNavigateOptions
+  ) => {
+    const steps = options?.steps?.filter((step) => step?.section) || [];
+    if (steps.length > 0) {
+      setAssistantGuide({ steps, index: 0 });
+      const first = steps[0];
+      showAssistantDestination(first.section, first.target, first.prefill || options?.prefill);
+      return;
+    }
+
+    setAssistantGuide(null);
+    showAssistantDestination(tab, target, options?.prefill);
+  }, [showAssistantDestination]);
+
+  const goToGuideStep = useCallback((nextIndex: number) => {
+    setAssistantGuide((current) => {
+      if (!current) return current;
+      const boundedIndex = Math.max(0, Math.min(nextIndex, current.steps.length - 1));
+      const step = current.steps[boundedIndex];
+      showAssistantDestination(step.section, step.target, step.prefill);
+      return { ...current, index: boundedIndex };
+    });
+  }, [showAssistantDestination]);
 
   return (
     <AdminWorkspaceProvider
@@ -504,7 +545,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           </div>
         </main>
 
-      {showBackToTop && !isAssistantOpen && (
+      {showBackToTop && !isAssistantOpen && !assistantGuide && (
         <button
           type="button"
           onClick={() => adminMainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -516,7 +557,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         </button>
       )}
 
-      {!isAssistantOpen && (
+      {!isAssistantOpen && !assistantGuide && (
         <button
           type="button"
           onClick={() => setIsAssistantOpen(true)}
@@ -528,6 +569,57 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           <span className="hidden sm:inline">Ask Admin AI</span>
         </button>
       )}
+
+      {assistantGuide && (() => {
+        const step = assistantGuide.steps[assistantGuide.index];
+        const isFirst = assistantGuide.index === 0;
+        const isLast = assistantGuide.index === assistantGuide.steps.length - 1;
+        return (
+          <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-[360px] z-[65] rounded-2xl border border-indigo-200 bg-white p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <BotMessageSquare className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">
+                    Guided setup · {assistantGuide.index + 1} of {assistantGuide.steps.length}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs font-extrabold text-gray-950">{step.label}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{step.instruction}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssistantGuide(null)}
+                className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Exit guided setup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
+              <button
+                type="button"
+                disabled={isFirst}
+                onClick={() => goToGuideStep(assistantGuide.index - 1)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-[10px] font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-35"
+              >
+                Back
+              </button>
+              <span className="text-[9px] font-semibold text-gray-400">Prefills are drafts only</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isLast) setAssistantGuide(null);
+                  else goToGuideStep(assistantGuide.index + 1);
+                }}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-extrabold text-white hover:bg-indigo-700"
+              >
+                {isLast ? 'Done' : 'Next'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <AdminAssistantDrawer open={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
     </div>

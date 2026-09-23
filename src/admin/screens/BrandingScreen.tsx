@@ -13,6 +13,7 @@ import { GoogleFontFamily } from '../../commerce/googleFonts';
 import { FontPicker } from '../components/FontPicker';
 import { SUPPORTED_LOCALES } from '../../i18n/locales';
 import { StorefrontCopyOverrides } from '../../i18n/copy';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import {
   Palette,
   Check,
@@ -93,6 +94,30 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   useEffect(() => {
     loadData();
   }, [tenantId]);
+
+  useEffect(() =>
+    onAdminAiPrefill('branding', ({ prefill }) => {
+      if (!prefill) return;
+      if (typeof prefill.brandName === 'string') setBrandName(prefill.brandName);
+      if (typeof prefill.tagline === 'string') setTagline(prefill.tagline);
+      if (typeof prefill.logoUrl === 'string') setLogoUrl(prefill.logoUrl);
+      if (typeof prefill.iconUrl === 'string') setFaviconUrl(prefill.iconUrl);
+      if (typeof prefill.primaryColour === 'string') setPrimaryColour(prefill.primaryColour);
+      if (typeof prefill.secondaryColour === 'string') setSecondaryColour(prefill.secondaryColour);
+      if (typeof prefill.backgroundColour === 'string') setBackgroundColour(prefill.backgroundColour);
+      if (typeof prefill.surfaceColour === 'string') setSurfaceColour(prefill.surfaceColour);
+      if (typeof prefill.textColour === 'string') setTextColour(prefill.textColour);
+      if (typeof prefill.mutedTextColour === 'string') setMutedTextColour(prefill.mutedTextColour);
+      if (typeof prefill.borderColour === 'string') setBorderColour(prefill.borderColour);
+      if (typeof prefill.successColour === 'string') setSuccessColour(prefill.successColour);
+      if (typeof prefill.warningColour === 'string') setWarningColour(prefill.warningColour);
+      if (typeof prefill.errorColour === 'string') setErrorColour(prefill.errorColour);
+      if (typeof prefill.headingFontFamily === 'string') setHeadingFamily(prefill.headingFontFamily);
+      if (typeof prefill.bodyFontFamily === 'string') setBodyFamily(prefill.bodyFontFamily);
+      if (typeof prefill.carouselTitleFontFamily === 'string') setCarouselTitleFamily(prefill.carouselTitleFontFamily);
+      if (typeof prefill.borderRadius === 'string') setBorderRadius(prefill.borderRadius);
+    }),
+  []);
 
   useEffect(() => {
     fetch('/api/v1/admin/fonts/catalog')
@@ -505,7 +530,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-              <div data-admin-ai-target="branding-colours">
+              <div data-admin-ai-target="branding-primary-colour">
                 <label className="block text-xs font-bold text-gray-700 mb-1">Primary Brand Colour</label>
                 <div className="flex items-center gap-2">
                   <input
@@ -523,7 +548,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 </div>
               </div>
 
-              <div>
+              <div data-admin-ai-target="branding-secondary-colour">
                 <label className="block text-xs font-bold text-gray-700 mb-1">Secondary Accent Colour</label>
                 <div className="flex items-center gap-2">
                   <input
@@ -656,6 +681,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
             <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
+                data-admin-ai-target="branding-save"
                 type="submit"
                 disabled={saving}
                 className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5"

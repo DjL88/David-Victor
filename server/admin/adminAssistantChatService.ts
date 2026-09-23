@@ -5,7 +5,7 @@ import { AdminAssistantActionService } from './adminAssistantActionService';
 import type { AdminRole } from '../../src/commerce/models';
 
 export type AdminAssistantChatRole = 'user' | 'assistant';
-export type AdminAssistantProvider = 'google-ai' | 'vertex-ai' | 'local-fallback';
+export type AdminAssistantProvider = 'google-ai' | 'vertex-ai' | 'local-agent' | 'local-fallback';
 
 export interface AdminAssistantAttachment {
   name: string;
@@ -21,10 +21,20 @@ export interface AdminAssistantChatMessage {
   attachments?: AdminAssistantAttachment[];
 }
 
+export interface AdminAssistantGuideStep {
+  section: string;
+  target?: string;
+  label: string;
+  instruction: string;
+  prefill?: Record<string, unknown>;
+}
+
 export interface AdminAssistantNavigationHint {
   section: string;
   target?: string;
   label: string;
+  prefill?: Record<string, unknown>;
+  steps?: AdminAssistantGuideStep[];
 }
 
 export interface AdminAssistantChatContext {
@@ -50,7 +60,7 @@ interface ChatArgs {
 }
 
 interface ChatClient {
-  provider: Exclude<AdminAssistantProvider, 'local-fallback'>;
+  provider: Exclude<AdminAssistantProvider, 'local-fallback' | 'local-agent'>;
   preferredModel: string;
   ai: GoogleGenAI;
 }
@@ -166,6 +176,98 @@ export function getAdminAssistantSuggestions(section?: string): string[] {
 }
 
 
+function extractHexColours(message: string): string[] {
+  return Array.from(new Set((message.match(/#[0-9a-f]{6}\b/gi) || []).map((value) => value.toUpperCase())));
+}
+
+function extractQuotedLabel(message: string): string | null {
+  const match = message.match(/(?:titled|called|named)\s+["“']([^"”']{2,120})["”']/i);
+  if (match?.[1]) return match[1].trim();
+  const plain = message.match(/(?:titled|called|named)\s+([^,.!?]{2,80})/i);
+  return plain?.[1]?.trim() || null;
+}
+
+function extractMoneyAmount(message: string): number | null {
+  const match = message.match(/£\s*(\d+(?:\.\d{1,2})?)/i);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function extractRadiusKm(message: string): number | null {
+  const match = message.match(/(\d+(?:\.\d+)?)\s*(?:km|kilomet(?:re|er)s?)\b/i);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function wordingPrefill(message: string): { key: string; value: string; locale?: string } | null {
+  const locale =
+    /\b(us|usa|american|en-us)\b/i.test(message) ? 'en-US' :
+    /\b(uk|british|en-gb)\b/i.test(message) ? 'en-GB' :
+    undefined;
+
+  const replacements: Array<{ pattern: RegExp; key: string; value: string }> = [
+    { pattern: /\bbasket\b\s*(?:to|as|into|→)\s*\bcart\b/i, key: 'header.basket', value: 'Cart' },
+    { pattern: /\bcart\b\s*(?:to|as|into|→)\s*\bbasket\b/i, key: 'header.basket', value: 'Basket' },
+    { pattern: /\bcollect(?:ion)?\b\s*(?:to|as|into|→)\s*\bpickup\b/i, key: 'header.collect', value: 'Pickup' },
+    { pattern: /\bpickup\b\s*(?:to|as|into|→)\s*\bcollect\b/i, key: 'header.collect', value: 'Collect' },
+    { pattern: /\baisles?\b\s*(?:to|as|into|→)\s*\bdepartments?\b/i, key: 'nav.aisles', value: 'Departments' },
+    { pattern: /\bdepartments?\b\s*(?:to|as|into|→)\s*\baisles?\b/i, key: 'nav.aisles', value: 'Aisles' },
+    { pattern: /\bfavourites?\b\s*(?:to|as|into|→)\s*\bfavorites?\b/i, key: 'nav.favourites', value: 'Favorites' },
+    { pattern: /\bfavorites?\b\s*(?:to|as|into|→)\s*\bfavourites?\b/i, key: 'nav.favourites', value: 'Favourites' },
+  ];
+
+  const direct = replacements.find((candidate) => candidate.pattern.test(message));
+  if (direct) return { key: direct.key, value: direct.value, locale };
+
+  // Common "use X instead of Y" phrasing.
+  if (/\buse\s+cart\b.*\binstead of\s+basket\b/i.test(message)) return { key: 'header.basket', value: 'Cart', locale };
+  if (/\buse\s+basket\b.*\binstead of\s+cart\b/i.test(message)) return { key: 'header.basket', value: 'Basket', locale };
+  if (/\buse\s+pickup\b.*\binstead of\s+collect/i.test(message)) return { key: 'header.collect', value: 'Pickup', locale };
+  if (/\buse\s+departments?\b.*\binstead of\s+aisles?/i.test(message)) return { key: 'nav.aisles', value: 'Departments', locale };
+
+  return null;
+}
+
+function buildRuleDraft(message: string): Record<string, unknown> | null {
+  const text = message.toLowerCase();
+  const wantsCreate = /\b(create|add|new|draft|build|prepare)\b.*\brule\b|\brule\b.*\b(create|add|new|draft|build|prepare)\b/i.test(message);
+  if (!wantsCreate) return null;
+
+  const hasUnsupportedTimeWindow = /\b(after|before|between|from)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(message);
+  if (hasUnsupportedTimeWindow) {
+    return {
+      unsupportedTimeWindow: true,
+      name: 'New rule',
+    };
+  }
+
+  let matchConditions: any[] = [{ field: 'productTag', operator: 'equals', value: '' }];
+  if (/\balcohol\b/i.test(text)) {
+    matchConditions = [{ field: 'isAlcohol', operator: 'equals', value: 'true' }];
+  } else {
+    const plu = message.match(/\b(?:plu|sku)\s*[:#-]?\s*([a-z0-9._/#-]{2,})\b/i)?.[1];
+    if (plu) matchConditions = [{ field: 'plu', operator: 'equals', value: plu }];
+  }
+
+  let actions: any[] = [{ type: 'HIDE_PRODUCT' }];
+  const quantity = message.match(/\b(?:limit|cap|max(?:imum)?)\D{0,12}(\d+)\b/i)?.[1];
+  if (quantity) actions = [{ type: 'MAX_QUANTITY_PER_ORDER', maximum: Math.max(1, Number(quantity)) }];
+  else if (/\b(no discounts?|exclude.*discount)/i.test(text)) actions = [{ type: 'EXCLUDE_FROM_DISCOUNTS' }];
+  else if (/\b(no recommendations?|exclude.*recommend)/i.test(text)) actions = [{ type: 'PREVENT_RECOMMENDATION' }];
+  else if (/\bprevent purchase|block purchase/i.test(text)) actions = [{ type: 'PREVENT_PURCHASE', reason: 'Unavailable' }];
+  else if (/\b18\+|age restrict|minimum age/i.test(text)) actions = [{ type: 'MINIMUM_AGE', minimumAge: 18 }];
+  else if (/\bhide|hidden|remove from storefront/i.test(text)) actions = [{ type: 'HIDE_PRODUCT' }];
+
+  const name =
+    /\balcohol\b/i.test(text) ? 'Alcohol controls' :
+    quantity ? `Quantity cap ${quantity}` :
+    'New product rule';
+
+  return { name, enabled: true, countries: ['GB'], priority: 50, matchConditions, actions };
+}
+
 export function resolveAdminAssistantNavigationHint(
   message: string,
   currentSection?: string
@@ -173,59 +275,302 @@ export function resolveAdminAssistantNavigationHint(
   const text = String(message || '').trim().toLowerCase();
   if (!text) return null;
 
-  const choose = (section: string, target: string | undefined, label: string): AdminAssistantNavigationHint => ({
+  const choose = (
+    section: string,
+    target: string | undefined,
+    label: string,
+    extras: Partial<Pick<AdminAssistantNavigationHint, 'prefill' | 'steps'>> = {}
+  ): AdminAssistantNavigationHint => ({
     section,
     target,
     label,
+    ...extras,
   });
 
   if (/(colour|color|colour scheme|color scheme|palette|theme)/i.test(text)) {
-    return choose('branding', 'branding-colours', 'Open Branding · Colours');
+    const colours = extractHexColours(message);
+    const primary = colours[0];
+    const secondary = colours[1];
+    const prefill: Record<string, unknown> = {};
+    if (primary) prefill.primaryColour = primary;
+    if (secondary) prefill.secondaryColour = secondary;
+
+    const steps: AdminAssistantGuideStep[] = [
+      {
+        section: 'branding',
+        target: 'branding-primary-colour',
+        label: 'Primary colour',
+        instruction: primary
+          ? `I prefilled the primary brand colour with ${primary}. Review it against the live preview.`
+          : 'Start with the primary brand colour. This drives the main storefront accent.',
+        prefill: primary ? { primaryColour: primary } : undefined,
+      },
+      {
+        section: 'branding',
+        target: 'branding-secondary-colour',
+        label: 'Secondary colour',
+        instruction: secondary
+          ? `I prefilled the secondary accent with ${secondary}. Adjust it if the contrast is not right.`
+          : 'Set the secondary accent used for supporting highlights.',
+        prefill: secondary ? { secondaryColour: secondary } : undefined,
+      },
+      {
+        section: 'branding',
+        target: 'branding-save',
+        label: 'Review & save',
+        instruction: 'Check the storefront preview. Nothing is written until you press Save.',
+      },
+    ];
+
+    return choose('branding', 'branding-primary-colour', 'Open Branding · Colours', {
+      prefill: Object.keys(prefill).length ? prefill : undefined,
+      steps,
+    });
   }
+
   if (/(logo|favicon|brand icon|icon asset)/i.test(text)) {
-    return choose('branding', 'branding-logo', 'Open Branding · Logo');
+    return choose('branding', 'branding-logo', 'Open Branding · Logo', {
+      steps: [
+        {
+          section: 'branding',
+          target: 'branding-logo',
+          label: 'Logo',
+          instruction: 'Upload the logo file or paste its asset URL here.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-primary-colour',
+          label: 'Colours',
+          instruction: 'Next, review the primary colour so the storefront follows the logo.',
+        },
+        {
+          section: 'branding',
+          target: 'branding-typography',
+          label: 'Typography',
+          instruction: 'Then review typography and upload a licensed font if the brand requires one.',
+        },
+      ],
+    });
   }
+
   if (/(font|typography|typeface)/i.test(text)) {
     return choose('branding', 'branding-typography', 'Open Branding · Typography');
   }
+
+  const wording = wordingPrefill(message);
+  if (wording || /(wording|terminology|basket|cart|collect|pickup|aisles|departments)/i.test(text)) {
+    const target = wording ? `language-copy-${wording.key}` : 'languages-terminology';
+    const prefill = wording
+      ? {
+          copyLocale: wording.locale,
+          copyKey: wording.key,
+          copyValue: wording.value,
+        }
+      : undefined;
+    return choose('languages', target, 'Open Languages · Wording', {
+      prefill,
+      steps: wording ? [
+        {
+          section: 'languages',
+          target,
+          label: 'Storefront wording',
+          instruction: `I prefilled “${wording.value}”. Review the wording for the selected language.`,
+          prefill,
+        },
+        {
+          section: 'languages',
+          target: 'languages-save',
+          label: 'Review & save',
+          instruction: 'Check the other related terms, then save when you are happy.',
+        },
+      ] : undefined,
+    });
+  }
+
   if (/(language|locale|dialect|british english|us english)/i.test(text)) {
-    return choose('languages', 'languages-default', 'Open Languages');
+    const locale = /\b(us|usa|american|en-us)\b/i.test(message)
+      ? 'en-US'
+      : /\b(uk|british|en-gb)\b/i.test(message)
+        ? 'en-GB'
+        : undefined;
+    return choose('languages', 'languages-default', 'Open Languages', {
+      prefill: locale ? { defaultLocale: locale } : undefined,
+    });
   }
-  if (/(wording|terminology|basket|cart|collect|pickup|aisles|departments)/i.test(text)) {
-    return choose('languages', 'languages-terminology', 'Open Languages · Wording');
-  }
+
   if (/(product rule|new rule|create a rule|add a rule|where.*action|rule conflict|rules? currently active)/i.test(text)) {
-    const createIntent = /(new|create|add|build|draft)/i.test(text);
+    const createIntent = /(new|create|add|build|draft|prepare)/i.test(text);
+    const ruleDraft = createIntent ? buildRuleDraft(message) : null;
+
+    if (ruleDraft?.unsupportedTimeWindow) {
+      return choose('product_rules', 'product-rules-new', 'Open Product rules · New rule', {
+        prefill: { openNew: true },
+        steps: [
+          {
+            section: 'product_rules',
+            target: 'product-rules-new',
+            label: 'Create rule',
+            instruction: 'Open a new rule. Product rules do not yet support time-of-day conditions, so I have not invented one.',
+            prefill: { openNew: true },
+          },
+          {
+            section: 'product_rules',
+            target: 'product-rule-conditions',
+            label: 'Where',
+            instruction: 'Choose the supported product conditions here. A separate scheduling condition will need adding to the rule engine before a 10pm restriction can be represented safely.',
+          },
+        ],
+      });
+    }
+
     return choose(
       'product_rules',
-      createIntent ? 'product-rules-new' : 'product-rules-list',
-      createIntent ? 'Open Product rules · New rule' : 'Open Product rules'
+      createIntent ? 'product-rule-name' : 'product-rules-list',
+      createIntent ? 'Open Product rules · Prepared draft' : 'Open Product rules',
+      ruleDraft ? {
+        prefill: { rule: ruleDraft, openNew: true },
+        steps: [
+          {
+            section: 'product_rules',
+            target: 'product-rule-name',
+            label: 'Rule name',
+            instruction: 'I prepared a draft rule. Start by checking the name.',
+            prefill: { rule: ruleDraft, openNew: true },
+          },
+          {
+            section: 'product_rules',
+            target: 'product-rule-conditions',
+            label: 'Where',
+            instruction: 'Review which products the rule matches.',
+          },
+          {
+            section: 'product_rules',
+            target: 'product-rule-actions',
+            label: 'Action',
+            instruction: 'Review what the rule does when the conditions match.',
+          },
+          {
+            section: 'product_rules',
+            target: 'product-rule-save',
+            label: 'Save',
+            instruction: 'Nothing has been saved yet. Press Save only when the draft is correct.',
+          },
+        ],
+      } : {}
     );
   }
+
   if (/(banner|hero banner|category banner|sponsor.*category|sponsor.*aisle)/i.test(text)) {
-    return choose('hero_banners', 'hero-banners-add', 'Open Banners');
+    const title = extractQuotedLabel(message);
+    const createIntent = /\b(create|add|new|build|draft|prepare)\b/i.test(text);
+    return choose('hero_banners', createIntent ? 'hero-banner-title' : 'hero-banners-add', 'Open Banners', createIntent ? {
+      prefill: { openNew: true, ...(title ? { title } : {}) },
+      steps: [
+        {
+          section: 'hero_banners',
+          target: 'hero-banner-title',
+          label: 'Headline',
+          instruction: title ? `I prefilled the headline “${title}”. Review it here.` : 'Enter the banner headline here.',
+          prefill: { openNew: true, ...(title ? { title } : {}) },
+        },
+        {
+          section: 'hero_banners',
+          target: 'hero-banner-placement',
+          label: 'Placement',
+          instruction: 'Choose Home or a category/subcategory to sponsor.',
+        },
+        {
+          section: 'hero_banners',
+          target: 'hero-banner-image',
+          label: 'Image',
+          instruction: 'Upload or choose the banner artwork.',
+        },
+        {
+          section: 'hero_banners',
+          target: 'hero-banner-save',
+          label: 'Save',
+          instruction: 'Review the live preview before saving.',
+        },
+      ],
+    } : {});
   }
+
   if (/(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)/i.test(text)) {
     return choose('insights', undefined, 'Open Insights');
   }
-  if (/(product|plu|sku|barcode|gtin|stock|snooz|catalogue|catalog)/i.test(text)) {
-    return choose('catalog', 'catalog-search', 'Open Products & Stock');
+
+  if (/(fee|delivery fee|service fee)/i.test(text)) {
+    const amount = extractMoneyAmount(message);
+    if (amount != null && /delivery fee/i.test(text)) {
+      const prefill = { deliveryFeeMode: 'FIXED', fixedDeliveryFeeMajor: amount };
+      return choose('fees', 'fees-fixed-delivery', 'Open Fees · Delivery fee', {
+        prefill,
+        steps: [
+          {
+            section: 'fees',
+            target: 'fees-delivery-mode',
+            label: 'Calculation mode',
+            instruction: 'I set the delivery fee mode to Fixed. Review that choice first.',
+            prefill,
+          },
+          {
+            section: 'fees',
+            target: 'fees-fixed-delivery',
+            label: 'Delivery fee',
+            instruction: `I prefilled £${amount.toFixed(2)}. Check the amount.`,
+          },
+          {
+            section: 'fees',
+            target: 'fees-save',
+            label: 'Save',
+            instruction: 'Nothing is saved until you press Save fee settings.',
+          },
+        ],
+      });
+    }
+    return choose('fees', 'fees-delivery-mode', 'Open Fees');
   }
+
   if (/(location|store|opening hours|delivery radius|collection)/i.test(text)) {
+    const radius = extractRadiusKm(message);
+    if (radius != null && /delivery radius/i.test(text) && /\b(all|every)\b/i.test(text)) {
+      const prefill = { selectAllFiltered: true, openBatchRadius: true, batchRadius: String(radius) };
+      return choose('stores', 'stores-batch-radius', 'Open Locations · Delivery radius', {
+        prefill,
+        steps: [
+          {
+            section: 'stores',
+            target: 'stores-batch-radius',
+            label: 'Delivery radius',
+            instruction: `I selected the visible locations and prefilled ${radius} km. Review the selection and radius.`,
+            prefill,
+          },
+          {
+            section: 'stores',
+            target: 'stores-batch-save',
+            label: 'Save',
+            instruction: 'Press Save only when you are happy to apply this radius to the selected locations.',
+          },
+        ],
+      });
+    }
     return choose('stores', 'stores-list', 'Open Locations');
   }
+
+  if (/(product|plu|sku|barcode|gtin|stock|snooz|catalogue|catalog)/i.test(text)) {
+    const query = extractCatalogLookupQuery(message);
+    return choose('catalog', 'catalog-search', 'Open Products & Stock', {
+      prefill: query ? { searchQuery: query } : undefined,
+    });
+  }
+
   if (/(feature switch|feature flag|features?)/i.test(text)) {
     return choose('features', undefined, 'Open Feature switches');
-  }
-  if (/(fee|delivery fee|service fee)/i.test(text)) {
-    return choose('fees', undefined, 'Open Fees');
   }
   if (/(media health|missing image|broken image|image health)/i.test(text)) {
     return choose('media_health', undefined, 'Open Media Health');
   }
 
-  // If the user explicitly asks to be shown the current area, still provide a
-  // navigation affordance even when no more specific field is known.
   if (/(show me|take me|take me there|open (?:the )?page|where is)/i.test(text) && currentSection) {
     return choose(currentSection, undefined, 'Show this page');
   }
@@ -382,6 +727,32 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
     }
   }
 
+  if (
+    available.has('rules.inspect') &&
+    /\b(what|which|list|show|active|enabled|disabled|current|currently)\b.*\brules?\b|\brules?\b.*\b(active|enabled|disabled|current|currently)\b/i.test(args.message)
+  ) {
+    try {
+      const execution = await AdminAssistantActionService.executeReadOnly({
+        actor: {
+          uid: args.actorId,
+          role: args.actorRole as AdminRole,
+          tenantId: args.tenantId,
+        },
+        tenantId: args.tenantId,
+        actionName: 'rules.inspect',
+        input: {},
+      });
+      return {
+        actionName: execution.plan.actionName,
+        result: execution.result,
+        evidence: execution.evidence,
+        generatedAt: execution.generatedAt,
+      };
+    } catch (err: any) {
+      console.warn('[AdminAssistantChat] Automatic rules read failed:', err?.message || err);
+    }
+  }
+
   return null;
 }
 
@@ -439,10 +810,59 @@ function summariseReadContext(readContext: AssistantReadContext | null): string 
 
   if (readContext.actionName === 'stores.inspect') {
     const count = Number(readContext.result?.storeCount || 0);
-    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.`;
+    const stores = Array.isArray(readContext.result?.stores) ? readContext.result.stores : [];
+    const names = stores.map((store: any) => store.name || store.id).filter(Boolean);
+    const detail = names.length > 0 ? ` They are: ${names.join(', ')}.` : '';
+    return `I checked the live location configuration. There ${count === 1 ? 'is' : 'are'} ${count} configured location${count === 1 ? '' : 's'} for this brand.${detail}`;
+  }
+
+  if (readContext.actionName === 'rules.inspect') {
+    const rules = Array.isArray(readContext.result?.rules) ? readContext.result.rules : [];
+    const active = rules.filter((rule: any) => rule.enabled !== false);
+    if (rules.length === 0) {
+      return 'I checked the live product rules. There are no configured product rules for this brand.';
+    }
+    const activeNames = active.map((rule: any) => rule.name || rule.id).filter(Boolean);
+    const disabledCount = Number(readContext.result?.disabledCount || 0);
+    const disabledText = disabledCount > 0 ? ` ${disabledCount} disabled rule${disabledCount === 1 ? '' : 's'} also exist.` : '';
+    return `I checked the live product rules. ${active.length} of ${rules.length} are active: ${activeNames.join(', ') || 'none'}.${disabledText}`;
   }
 
   return null;
+}
+
+function buildLocalGuidedReply(
+  message: string,
+  navigation: AdminAssistantNavigationHint | null,
+  readContext: AssistantReadContext | null
+): string | null {
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+
+  const liveSummary = summariseReadContext(readContext);
+  const simpleLiveRead =
+    Boolean(readContext) &&
+    !/\b(why|explain|diagnose|reason|cause|wrong|issue|problem)\b/i.test(lower);
+
+  if (liveSummary && simpleLiveRead) return liveSummary;
+
+  if (!navigation) return null;
+
+  const hasPreparedFields = Boolean(navigation.prefill && Object.keys(navigation.prefill).length > 0);
+  const explicitlyGuided =
+    /\b(show me|take me|open|where do i|where is|guide me|walk me through|help me set|help me change|set |change |create |add |prepare |draft )\b/i.test(text);
+
+  if (!hasPreparedFields && !explicitlyGuided) return null;
+
+  if (navigation.steps?.length) {
+    return hasPreparedFields
+      ? `I can prepare that locally without an AI model call. I’ll prefill the supported fields and guide you through ${navigation.steps.length} review steps. Nothing is saved until you press Save.`
+      : `I can guide you through that on screen. I’ll take you to the right controls step by step; nothing changes unless you choose to save it.`;
+  }
+
+  return hasPreparedFields
+    ? 'I can prepare those fields locally and take you straight to them. Nothing is saved until you review and press Save.'
+    : 'I can take you to the relevant Admin control and highlight it.';
 }
 
 export function buildDegradedAssistantReply(
@@ -653,6 +1073,20 @@ export class AdminAssistantChatService {
     const attachments = normaliseAttachments(args.attachments);
     const readContext = await resolveReadContext(args);
     const navigation = resolveAdminAssistantNavigationHint(args.message, args.context?.section);
+    const localReply = attachments.length === 0
+      ? buildLocalGuidedReply(args.message, navigation, readContext)
+      : null;
+
+    if (localReply) {
+      return {
+        message: localReply,
+        suggestions: getAdminAssistantSuggestions(navigation?.section || args.context?.section),
+        provider: 'local-agent',
+        model: readContext ? 'deterministic-read-router' : 'deterministic-guide-router',
+        readAction: readContext?.actionName,
+        navigation,
+      };
+    }
 
     const contents = [
       ...history.map((message) => ({
