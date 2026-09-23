@@ -2851,6 +2851,7 @@ v1Router.post(
       const tenantId = (req as AuthenticatedRequest).resolvedTenantId || authAdmin.tenantId;
       const response = await AdminAssistantChatService.chat({
         tenantId,
+        actorId: authAdmin.uid,
         actorRole: authAdmin.role,
         actorName: authAdmin.name || authAdmin.email,
         message: req.body.message,
