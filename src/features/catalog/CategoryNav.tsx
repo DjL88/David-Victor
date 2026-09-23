@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Category, Store } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { CatalogFilterState } from './DietaryPreferencesModal';
@@ -64,6 +64,29 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   const { primaryBtnStyle, primaryColour } = useTenantStyles();
   const { t } = useI18n();
+  const navRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+
+    const updateHeight = () => {
+      document.documentElement.style.setProperty(
+        '--category-nav-height',
+        `${Math.ceil(nav.getBoundingClientRect().height)}px`
+      );
+    };
+
+    updateHeight();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateHeight) : null;
+    observer?.observe(nav);
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
 
   // Hide bundle category under aisles
   const visibleCategories = useMemo(() => {
@@ -145,8 +168,10 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
   return (
     <div
+      ref={navRef}
       id="category-nav-section"
-      className="sticky top-[82px] md:top-[54px] z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-3 sm:px-6 py-2 transition-all w-full max-w-full space-y-1.5"
+      style={{ top: 'var(--storefront-header-height, 104px)' }}
+      className="sticky z-30 bg-white/95 backdrop-blur-md border-y border-gray-200/80 shadow-xs px-3 sm:px-6 py-2 transition-all w-full max-w-full space-y-1.5"
     >
       {/* ROW 1: AISLE CATEGORIES & NAVIGATION */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 w-full max-w-full">
