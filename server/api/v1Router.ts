@@ -2415,7 +2415,9 @@ async function resolveDeliverectWebhookTenant(
   if (!tenantId) {
     const bodyIdentifier = String(
       req.body?.accountId ||
-      req.body?.account ||
+      req.body?.account?._id ||
+      req.body?.account?.id ||
+      (typeof req.body?.account === 'string' ? req.body.account : '') ||
       req.body?.channelLinkId ||
       req.body?.storeId ||
       ''
