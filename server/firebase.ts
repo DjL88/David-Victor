@@ -413,7 +413,6 @@ export async function verifyAdminSessionWithStatus(
         process.env.PLATFORM_SUPERADMIN_EMAILS,
         secretSuperadminEmails,
         process.env.PLATFORM_SUPERADMIN_EMAIL,
-        'dleitch22@gmail.com', // Project owner Platform Super Admin bootstrap
         demoActive ? 'sarah.chen@platform.internal' : null,
       ]
         .filter(Boolean)
@@ -424,32 +423,18 @@ export async function verifyAdminSessionWithStatus(
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean);
 
-      // Initial bootstrap: Check if tenantMemberships has any documents.
-      // If Firestore has NO active memberships at all, the first authenticated user is bootstrapped as platformSuperAdmin.
-      let isFirstAdmin = false;
       const db = isFirestorePermissionDenied() ? null : getFirestoreDb();
-      if (db && email) {
-        try {
-          const snapshot = await db.collection('tenantMemberships').limit(1).get();
-          if (snapshot.empty) {
-            isFirstAdmin = true;
-            console.log(`[RBAC Bootstrap] Empty tenantMemberships detected. First authenticated user ${email} bootstrapped as platformSuperAdmin.`);
-          }
-        } catch (dbErr: any) {
-          if (isFirestorePermissionDeniedError(dbErr)) {
-            markFirestorePermissionDenied(dbErr);
-            console.info('[RBAC Bootstrap] Firestore IAM permission unavailable, proceeding with bootstrap allowlist.');
-          } else {
-            console.warn('[RBAC Bootstrap] Could not check memberships count:', dbErr?.message || dbErr);
-          }
-        }
-      }
+      const emailVerified = decoded.email_verified === true;
 
+      // Bootstrap is explicit only: a verified email must be present in the
+      // configured allowlist. An empty memberships collection never grants
+      // platformSuperAdmin to the first person who happens to sign in.
       const isBootstrapSuperAdmin = Boolean(
-        email && (
+        email &&
+        emailVerified &&
+        (
           superAdminAllowlist.includes(email) ||
-          (demoActive && (email.endsWith('@platform.internal') || email.includes('admin'))) ||
-          isFirstAdmin
+          (demoActive && (email.endsWith('@platform.internal') || email.includes('admin')))
         )
       );
 

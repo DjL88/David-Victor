@@ -1757,7 +1757,10 @@ v1Router.post(
           });
         }
 
-        const approvedMaximum = checkoutOptions.authorizationMaximum || basket.total;
+        // Security boundary: the browser cannot choose the amount we authorise.
+        // Until substitute/catch-weight uplifts are derived from server-side consent records,
+        // the reconciled server basket total is the only approved ceiling.
+        const approvedMaximum = PaymentService.calculateApprovedAuthorizationCeiling(basket.total);
         const payment = await PaymentService.requestPayment(
           {
             channelLinkId,
@@ -1806,6 +1809,39 @@ v1Router.post(
         const localPayment = await FirestorePlatformService.getPaymentProjection(
           checkoutOptions.paymentId
         );
+
+        if (!localPayment && !isDemoMode() && process.env.NODE_ENV !== 'test') {
+          return res.status(422).json({
+            error: 'Payment cannot be attached because its tenant/basket binding is unavailable.',
+            code: 'PAYMENT_BINDING_REQUIRED',
+          });
+        }
+
+        if (localPayment) {
+          if (localPayment.tenantId !== resolvedTenant) {
+            return res.status(403).json({
+              error: 'Payment belongs to a different tenant.',
+              code: 'TENANT_ISOLATION_ERROR',
+            });
+          }
+          if (!localPayment.basketId || localPayment.basketId !== basketId) {
+            return res.status(409).json({
+              error: 'Payment is not bound to this basket.',
+              code: 'PAYMENT_BASKET_MISMATCH',
+            });
+          }
+          if (
+            checkoutOptions.channelOrderReference &&
+            localPayment.orderReference &&
+            localPayment.orderReference !== checkoutOptions.channelOrderReference
+          ) {
+            return res.status(409).json({
+              error: 'Payment is bound to a different order reference.',
+              code: 'PAYMENT_ORDER_REFERENCE_MISMATCH',
+            });
+          }
+        }
+
         const payment =
           localPayment ||
           (await PaymentService.getPayment(checkoutOptions.paymentId, resolvedTenant));

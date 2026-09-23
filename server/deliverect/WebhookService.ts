@@ -63,6 +63,35 @@ export const ORDER_STATE_RANKING: Record<string, number> = {
   ORDER_CANCELLED_UNAVAILABLE_ITEM: 99,
 };
 
+const DELIVERECT_NUMERIC_ORDER_STATUS: Record<number, string> = {
+  0: 'UNKNOWN',
+  10: 'ORDER_CONFIRMED',
+  20: 'ACCEPTED',
+  40: 'PREPARING',
+  50: 'PREPARING',
+  60: 'READY',
+  70: 'READY',
+  90: 'FINALIZED',
+  95: 'FINALIZED',
+  100: 'ORDER_CANCELLED',
+  110: 'ORDER_CANCELLED',
+  120: 'ORDER_FAILED',
+};
+
+export function normalizeDeliverectOrderStatus(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return DELIVERECT_NUMERIC_ORDER_STATUS[value] || String(value);
+  }
+
+  const text = String(value ?? '').trim();
+  if (/^\d+$/.test(text)) {
+    const numeric = Number(text);
+    return DELIVERECT_NUMERIC_ORDER_STATUS[numeric] || text;
+  }
+
+  return text.toUpperCase();
+}
+
 export class WebhookService {
   /**
    * Constant-time HMAC SHA-256 verification (WH-01).
@@ -302,81 +331,9 @@ export class WebhookService {
         return { tenantId: candidateTenantId, secret };
       }
 
-      // Deliverect staging signs partner webhooks with the channelLinkId until a
-      // dedicated HMAC secret is configured/certified. Do not use this fallback
-      // in production.
-      try {
-        const integration =
-          await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
-        const isStaging =
-          integration?.environment !== 'production' &&
-          process.env.DELIVERECT_ENV !== 'production';
-
-        if (isStaging) {
-          const bodyText = Buffer.isBuffer(rawBody)
-            ? rawBody.toString('utf8')
-            : String(rawBody || '');
-          let parsed: any = {};
-          try {
-            parsed = bodyText ? JSON.parse(bodyText) : {};
-          } catch {
-            parsed = {};
-          }
-
-          const correlationId = String(
-            parsed.channelOrderId ||
-              parsed.order?.channelOrderId ||
-              parsed.orderId ||
-              parsed.order?.id ||
-              parsed.data?.orderId ||
-              ''
-          ).trim();
-
-          const projectedOrder = correlationId
-            ? await FirestorePlatformService.getOrderProjectionByExternalIdentifier(
-                correlationId
-              )
-            : null;
-
-          const stagingSecrets = Array.from(
-            new Set(
-              [
-                parsed.channelLinkId,
-                parsed.channelLink,
-                parsed.channelLink?._id,
-                parsed.data?.channelLinkId,
-                parsed.order?.channelLinkId,
-                projectedOrder?.channelLinkId,
-              ]
-                .map((value) => String(value || '').trim())
-                .filter(Boolean)
-            )
-          );
-
-          for (const stagingSecret of stagingSecrets) {
-            if (
-              this.verifyDeliverectHmac(
-                rawBody,
-                signatureHeader,
-                stagingSecret
-              )
-            ) {
-              console.log(
-                '[WebhookService] Verified Deliverect staging webhook using channelLinkId HMAC fallback.'
-              );
-              return {
-                tenantId: candidateTenantId,
-                secret: stagingSecret,
-              };
-            }
-          }
-        }
-      } catch (stagingVerifyError) {
-        console.warn(
-          '[WebhookService] Staging channelLinkId HMAC fallback could not be evaluated:',
-          stagingVerifyError
-        );
-      }
+      // Never derive an HMAC secret from webhook payload fields (including
+      // channelLinkId). Staging must use an explicitly configured webhook secret
+      // just like production; otherwise a caller could sign its own payload.
     }
 
     // 2. Query known tenants from Firestore to find the matching secret
@@ -397,10 +354,12 @@ export class WebhookService {
       }
     }
 
-    // 3. Fallback to global DELIVERECT_WEBHOOK_SECRET if configured
-    if (process.env.DELIVERECT_WEBHOOK_SECRET) {
+    // 3. Legacy shared secret is accepted only when routing has already
+    // resolved a concrete tenant from a registered integration/host. Never let
+    // a shared signature implicitly select brand-alpha or another tenant.
+    if (candidateTenantId && process.env.DELIVERECT_WEBHOOK_SECRET) {
       if (this.verifyDeliverectHmac(rawBody, signatureHeader, process.env.DELIVERECT_WEBHOOK_SECRET)) {
-        return { tenantId: candidateTenantId || 'brand-alpha', secret: process.env.DELIVERECT_WEBHOOK_SECRET };
+        return { tenantId: candidateTenantId, secret: process.env.DELIVERECT_WEBHOOK_SECRET };
       }
     }
 
@@ -462,6 +421,7 @@ export class WebhookService {
       };
     }
 
+    try {
     const existing = await FirestorePlatformService.getWebhookEvent(externalEventKey);
     if (existing && existing.processingStatus === 'PROCESSED') {
       console.log(`[WebhookService] Deduplicated event ${externalEventKey} - already processed.`);
@@ -502,14 +462,14 @@ export class WebhookService {
       payload.pickingStatus ||
       payload.data?.status;
 
-    const rawStatus = (
-      explicitStatus ||
-      payload.event ||
-      payload.eventType ||
-      payload.type ||
-      payload.action ||
+    const rawStatus = normalizeDeliverectOrderStatus(
+      explicitStatus ??
+      payload.event ??
+      payload.eventType ??
+      payload.type ??
+      payload.action ??
       ''
-    ).toUpperCase();
+    );
 
     const correlationCandidates = [
       payload.orderId,
@@ -534,6 +494,13 @@ export class WebhookService {
     for (const candidate of correlationCandidates) {
       targetOrder = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(candidate);
       if (targetOrder) break;
+    }
+
+    if (targetOrder?.tenantId && targetOrder.tenantId !== tenantId) {
+      const err: any = new Error('Webhook order correlation resolved to a different tenant.');
+      err.statusCode = 403;
+      err.code = 'WEBHOOK_TENANT_MISMATCH';
+      throw err;
     }
 
     // Backward-compatible checkout-only recovery for pending checkouts created before
@@ -1074,7 +1041,14 @@ export class WebhookService {
         canonicalState = 'ACCEPTED';
       } else if (rawStatus === 'CONFIRMED' || rawStatus === 'ORDER_CONFIRMED') {
         canonicalState = 'ORDER_CONFIRMED';
-      } else if (rawStatus === 'READY' || rawStatus === 'READY_FOR_PICKUP' || rawStatus === 'READY_FOR_COURIER') {
+      } else if (
+        rawStatus === 'READY' ||
+        rawStatus === 'READY_FOR_PICKUP' ||
+        rawStatus === 'READY_FOR_COURIER' ||
+        rawStatus === 'FINALIZED'
+      ) {
+        // Deliverect POS status 90/95 means the POS workflow is finalized; it
+        // does not prove the order was delivered to the customer.
         canonicalState = 'READY';
       } else if (rawStatus === 'OUT_FOR_DELIVERY' || rawStatus === 'DISPATCHING' || rawStatus === 'COURIER_ASSIGNED') {
         canonicalState = 'OUT_FOR_DELIVERY';
@@ -1192,13 +1166,37 @@ export class WebhookService {
       };
     }
 
-    // If order was not found in projections, still mark event processed to avoid infinite retries
+    // Do not acknowledge an order-correlated event that arrived before its
+    // local projection. Keep the journal entry as FAILED and release the claim
+    // so Deliverect retry or an operator replay can process it later.
+    if (correlationCandidates.length > 0) {
+      const unmatched: any = new Error('Webhook is valid but no local order projection is available yet.');
+      unmatched.statusCode = 503;
+      unmatched.code = 'WEBHOOK_ORDER_NOT_FOUND_RETRYABLE';
+      throw unmatched;
+    }
+
+    // Non-order events can be safely journaled without a local order projection.
     await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
     return {
       success: true,
       eventId: webhookEventId,
       status: 'PROCESSED',
-      message: 'Webhook processed; no local order projection was matched.',
+      message: 'Webhook processed; no order correlation was supplied.',
     };
+    } catch (err: any) {
+      const errorCode = err?.code || 'WEBHOOK_PROCESSING_ERROR';
+      await FirestorePlatformService.updateWebhookEventStatus(
+        webhookEventId,
+        'FAILED',
+        errorCode
+      ).catch(() => {});
+      await FirestorePlatformService.releaseWebhookIdempotency(
+        'deliverect',
+        externalEventKey,
+        webhookEventId
+      ).catch(() => {});
+      throw err;
+    }
   }
 }

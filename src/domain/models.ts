@@ -350,6 +350,7 @@ export interface DomainPaymentProjection {
   residualHoldAmount?: Money;
   reauthorizationCount?: number;
   orderReference?: string;
+  basketId?: string;
   checkoutId?: string;
   createdAt: string;
   updatedAt: string;
