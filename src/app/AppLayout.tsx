@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { defaultRuleEngine } from '../rules/RuleEngine';
 import { visualRulesToRetailRules } from '../rules/visualRuleAdapter';
 import { useTenant } from '../tenant/TenantContext';
@@ -326,6 +326,158 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     summaries: searchSummaries,
     loading: searchLoading,
   } = useProductSearch(selectedStore?.id);
+
+  const resolvingRouteRef = useRef<string | null>(null);
+
+  const routeToProduct = useCallback((product: Product) => {
+    setSelectedProduct(product);
+    const path = pathForProduct(product);
+    pushStorefrontUrl(path);
+    setActiveRoute({ kind: 'product', plu: product.plu });
+  }, []);
+
+  const routeToCategory = useCallback((categoryId: string | null) => {
+    navigateToCategory(categoryId);
+    setActiveTab('home');
+
+    if (!categoryId) {
+      pushStorefrontUrl('/');
+      setActiveRoute({ kind: 'home' });
+      return;
+    }
+
+    const category = flattenCategories(catalog?.categories || []).find((item) => item.id === categoryId);
+    if (category) {
+      const path = pathForCategory(category);
+      pushStorefrontUrl(path);
+      setActiveRoute({ kind: 'aisle', slug: path.split('/').filter(Boolean)[1] || categoryId });
+    }
+  }, [catalog?.categories, navigateToCategory]);
+
+  const routeToBasket = useCallback(() => {
+    pushStorefrontUrl('/basket');
+    setActiveRoute({ kind: 'basket' });
+    setIsCartOpen(true);
+  }, [setIsCartOpen]);
+
+  const routeToCheckout = useCallback(() => {
+    pushStorefrontUrl('/checkout');
+    setActiveRoute({ kind: 'checkout' });
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
+  }, [setIsCartOpen]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = parseStorefrontRoute();
+      setActiveRoute(route);
+
+      if (route.kind === 'search') {
+        setActiveTab('search');
+        setSearchQuery(route.query);
+      } else if (route.kind === 'orders') {
+        setActiveTab('orders');
+      } else if (route.kind === 'account') {
+        setActiveTab('account');
+      } else {
+        setActiveTab('home');
+      }
+
+      setIsCartOpen(route.kind === 'basket');
+      setIsCheckoutOpen(route.kind === 'checkout');
+      if (route.kind !== 'product') setSelectedProduct(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [setIsCartOpen, setSearchQuery]);
+
+  useEffect(() => {
+    if (activeRoute.kind === 'search') {
+      setActiveTab('search');
+      if (searchQuery !== activeRoute.query) setSearchQuery(activeRoute.query);
+      return;
+    }
+
+    if (activeRoute.kind === 'orders') {
+      setActiveTab('orders');
+      return;
+    }
+
+    if (activeRoute.kind === 'account') {
+      setActiveTab('account');
+      return;
+    }
+
+    if (activeRoute.kind === 'basket') {
+      setActiveTab('home');
+      setIsCartOpen(true);
+      return;
+    }
+
+    if (activeRoute.kind === 'checkout') {
+      setActiveTab('home');
+      setIsCartOpen(false);
+      setIsCheckoutOpen(true);
+      return;
+    }
+
+    if (activeRoute.kind === 'aisle') {
+      setActiveTab('home');
+      const category = findCategoryByRouteSlug(catalog?.categories || [], activeRoute.slug);
+      if (category && selectedCategoryId !== category.id) {
+        navigateToCategory(category.id);
+      }
+      return;
+    }
+
+    if (activeRoute.kind === 'product') {
+      setActiveTab('home');
+      if (selectedProduct?.plu === activeRoute.plu) return;
+
+      const localMatch = [...products, ...searchResults, ...(catalog?.products || [])]
+        .find((product) => product.plu === activeRoute.plu || product.canonicalPlu === activeRoute.plu);
+      if (localMatch) {
+        setSelectedProduct(localMatch);
+        return;
+      }
+
+      if (resolvingRouteRef.current === activeRoute.plu) return;
+      resolvingRouteRef.current = activeRoute.plu;
+
+      void client
+        .searchProducts(activeRoute.plu, selectedStore?.id, { limit: 20 })
+        .then((result) => {
+          const match = result.products.find(
+            (product) => product.plu === activeRoute.plu || product.canonicalPlu === activeRoute.plu
+          );
+          if (match) setSelectedProduct(match);
+        })
+        .catch((err) => console.warn('[StorefrontRouter] Could not resolve product route:', err))
+        .finally(() => {
+          if (resolvingRouteRef.current === activeRoute.plu) resolvingRouteRef.current = null;
+        });
+      return;
+    }
+
+    if (activeRoute.kind === 'home') {
+      setActiveTab('home');
+    }
+  }, [
+    activeRoute,
+    catalog?.categories,
+    catalog?.products,
+    client,
+    navigateToCategory,
+    products,
+    searchQuery,
+    searchResults,
+    selectedCategoryId,
+    selectedProduct?.plu,
+    selectedStore?.id,
+    setIsCartOpen,
+    setSearchQuery,
+  ]);
 
   // Handle adding all items for an 'AND' deal or meal deal
   const handleAddAllToBasket = async (plus: string[], dealTitle?: string) => {
