@@ -155,8 +155,13 @@ export type PickingItemState =
   | 'SUBSTITUTED'
   | 'REMOVED';
 
+export type SubstitutionDecisionStatus = 'NOT_REQUIRED' | 'PENDING_CUSTOMER' | 'ACCEPTED' | 'REJECTED' | 'AUTO_APPROVED';
+
 export interface PickingSubstitution {
   type: 'BEST_MATCH' | 'CUSTOMER_SELECTED';
+  decisionStatus?: SubstitutionDecisionStatus;
+  proposedAt?: string;
+  decidedAt?: string;
   originalPlu: string;
   originalName: string;
   originalPrice: Money;
@@ -165,6 +170,22 @@ export interface PickingSubstitution {
   substitutePrice: Money;
   chargedPrice: Money; // calculated via tenant substitution pricing policy
   reason?: string;
+}
+
+export interface OrderRefund {
+  id: string;
+  scope: 'ITEM' | 'ORDER' | 'CHARGE';
+  status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+  amount: Money;
+  reason: string;
+  itemPlu?: string;
+  itemName?: string;
+  quantity?: number;
+  paymentId?: string;
+  providerRefundId?: string;
+  customerMessage?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PickingAmendment {
@@ -452,6 +473,7 @@ export interface Order {
   currentOrder: OrderSnapshot;
   finalOrder?: OrderSnapshot;
   payment: OrderPaymentInfo;
+  refunds?: OrderRefund[];
   receipt?: {
     available: boolean;
     isVatReceipt: boolean;
