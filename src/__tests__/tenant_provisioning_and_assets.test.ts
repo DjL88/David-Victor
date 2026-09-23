@@ -10,6 +10,7 @@ import {
   validateFileMagicBytes,
 } from '../../server/assetService';
 import { BFFError } from '../../server/errors';
+import { BrandProfileService } from '../../server/brandProfileService';
 
 describe('Phase 4: Tenant Provisioning Engine', () => {
   beforeEach(() => {
@@ -205,6 +206,35 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
 
     const stored = await AssetService.getAssetBinary(asset.id);
     expect(stored?.toString('utf8')).toContain('#112233');
+
+    await AssetService.deleteAsset(testTenant, asset.id);
+  });
+
+  it('extracts an exact reusable Brand Profile locally when the source is structured text', async () => {
+    const payload = Buffer.from([
+      'Primary #112233',
+      'Secondary #445566',
+      'Heading font: Example Sans',
+      'Body font: Example Text',
+    ].join('\n'));
+
+    const asset = await AssetService.saveAsset({
+      tenantId: testTenant,
+      type: 'BRAND_GUIDELINES',
+      fileName: 'style-guide.txt',
+      contentType: 'text/plain',
+      fileData: payload.toString('base64'),
+      byteSize: payload.length,
+    });
+
+    const analysis = await BrandProfileService.analyse(testTenant, asset.id);
+    expect(analysis.analysisMode).toBe('DETERMINISTIC');
+    expect(analysis.profile.primaryColour).toBe('#112233');
+    expect(analysis.profile.secondaryColour).toBe('#445566');
+    expect(analysis.profile.headingFontFamily).toBe('Example Sans');
+    expect(analysis.profile.bodyFontFamily).toBe('Example Text');
+    expect(analysis.evidence.some((item) => item.field === 'colours')).toBe(true);
+    expect(analysis.evidence.some((item) => item.field === 'fonts')).toBe(true);
 
     await AssetService.deleteAsset(testTenant, asset.id);
   });
