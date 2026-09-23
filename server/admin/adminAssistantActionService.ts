@@ -68,7 +68,7 @@ function productMatches(product: any, query: string): boolean {
 function isStoreProductInStock(product: any): boolean {
   if (!product || product.active === false || product.snoozed === true || product.isSnoozed === true) return false;
   if (product.stockStatus === 'OUT_OF_STOCK' || product.inStock === false || product.stockQuantity === 0) return false;
-  return product.stockStatus === 'IN_STOCK' || product.inStock === true || product.stockQuantity == null || product.stockQuantity > 0;
+  return product.stockStatus === 'IN_STOCK' || product.inStock === true || Number(product.stockQuantity) > 0;
 }
 
 async function mapWithConcurrency<T, R>(
