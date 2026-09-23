@@ -67,15 +67,19 @@ const DELIVERECT_NUMERIC_ORDER_STATUS: Record<number, string> = {
   0: 'UNKNOWN',
   10: 'ORDER_CONFIRMED',
   20: 'ACCEPTED',
+  30: 'DUPLICATE',
   40: 'PREPARING',
   50: 'PREPARING',
   60: 'READY',
   70: 'READY',
+  80: 'OUT_FOR_DELIVERY',
   90: 'FINALIZED',
   95: 'FINALIZED',
   100: 'ORDER_CANCELLED',
   110: 'ORDER_CANCELLED',
   120: 'ORDER_FAILED',
+  121: 'ORDER_FAILED',
+  124: 'ORDER_FAILED',
 };
 
 export function normalizeDeliverectOrderStatus(value: unknown): string {
@@ -561,6 +565,22 @@ export class WebhookService {
 
     if (targetOrder) {
       const currentState = (targetOrder.status || 'SUBMITTED').toUpperCase();
+
+      // Deliverect status 30 means its upstream system detected a duplicate
+      // insertion. This is diagnostic, not a new customer lifecycle state, so
+      // acknowledge it without replacing the real order state with "DUPLICATE".
+      if (rawStatus === 'DUPLICATE') {
+        await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+        return {
+          success: true,
+          eventId: webhookEventId,
+          status: 'IGNORED',
+          message: 'Deliverect reported a duplicate order insertion; existing order state was preserved.',
+          orderId: targetOrder.orderId,
+          newState: currentState,
+        };
+      }
+
       const currentRank = ORDER_STATE_RANKING[currentState] || 0;
       const incomingRank = ORDER_STATE_RANKING[rawStatus] || 0;
 

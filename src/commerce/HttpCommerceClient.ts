@@ -651,7 +651,10 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getOrder(orderId: string): Promise<Order | null> {
-    return this.request<Order>(`/orders/${encodeURIComponent(orderId)}`);
+    const token = await getCurrentIdToken().catch(() => null);
+    return this.request<Order>(`/orders/${encodeURIComponent(orderId)}`, token
+      ? { headers: { Authorization: `Bearer ${token}` } }
+      : undefined);
   }
 
   async getUserOrders(): Promise<Order[]> {

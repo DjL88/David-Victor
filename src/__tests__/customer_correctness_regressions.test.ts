@@ -63,4 +63,23 @@ describe('customer correctness regressions', () => {
     expect(favouritesSource).not.toContain('Simulate authoritative BFF re-validation');
     expect(favouritesSource).not.toContain('setTimeout(r, 450)');
   });
+  it('authenticates signed-in single-order tracking just like order history', () => {
+    expect(clientSource).toContain('async getOrder(orderId: string)');
+    expect(clientSource).toContain('const token = await getCurrentIdToken().catch(() => null)');
+    expect(clientSource).toContain('Authorization: `Bearer ${token}`');
+  });
+
+  it('does not let a signed-in user claim an existing guest checkout', () => {
+    expect(routerSource).toContain('assertCheckoutRecoveryOwnership(existingBasketCheckout, callerUid)');
+    expect(routerSource).toContain('An existing guest checkout cannot be attached to a signed-in account.');
+    expect(routerSource).not.toContain('attachCustomerUidToOrderProjection(\n          existingBasketCheckout.orderId');
+    expect(routerSource).toContain('customerUid: callerUid || checkoutResult.customerUid');
+  });
+
+  it('keeps checkout order route and existing payment amount server-authoritative', () => {
+    expect(routerSource).toContain('const configuredOrderRoute');
+    expect(routerSource).toContain('isDemoMode() && checkoutOptions.orderRoute');
+    expect(routerSource).toContain('Payment authorization does not match the current server-authoritative basket total.');
+    expect(routerSource).toContain("code: 'PAYMENT_AMOUNT_MISMATCH'");
+  });
 });
