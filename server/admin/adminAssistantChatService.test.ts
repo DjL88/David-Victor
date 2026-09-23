@@ -6,6 +6,7 @@ import {
   getAdminAssistantSuggestions,
   normaliseAssistantReply,
   normaliseChatHistory,
+  resolveAdminAssistantNavigationHint,
 } from './adminAssistantChatService';
 
 describe('AdminAssistantChatService foundations', () => {
@@ -65,6 +66,29 @@ describe('AdminAssistantChatService foundations', () => {
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
   });
 
+  it('maps natural Admin questions to page and field navigation hints', () => {
+    expect(resolveAdminAssistantNavigationHint('Change my colour scheme to match the logo', 'languages')).toEqual({
+      section: 'branding',
+      target: 'branding-colours',
+      label: 'Open Branding · Colours',
+    });
+    expect(resolveAdminAssistantNavigationHint("Create a product rule for chilled beer", 'catalog')).toEqual({
+      section: 'product_rules',
+      target: 'product-rules-new',
+      label: 'Open Product rules · New rule',
+    });
+    expect(resolveAdminAssistantNavigationHint('Where do I change Basket to Cart?', 'branding')).toEqual({
+      section: 'languages',
+      target: 'languages-terminology',
+      label: 'Open Languages · Wording',
+    });
+    expect(resolveAdminAssistantNavigationHint("What is Dave's Delicatessen top selling item?", 'catalog')).toEqual({
+      section: 'insights',
+      target: undefined,
+      label: 'Open Insights',
+    });
+  });
+
   it('extracts a product term or explicit identifier from live stock questions', () => {
     expect(extractCatalogLookupQuery('Are bananas in stock?')).toBe('bananas');
     expect(extractCatalogLookupQuery("Why is Dave's Salted Potato Crisps 150g not showing?")).toBe(
@@ -73,6 +97,8 @@ describe('AdminAssistantChatService foundations', () => {
     expect(extractCatalogLookupQuery('How about plu DAV001')).toBe('DAV001');
     expect(extractCatalogLookupQuery('DLV1006 How many stores in stock')).toBe('DLV1006');
     expect(extractCatalogLookupQuery('How many locations have barcode 5012345678901?')).toBe('5012345678901');
+    expect(extractCatalogLookupQuery('How many locations have stock (unsnooze) of Bananas?')).toBe('Bananas');
+    expect(extractCatalogLookupQuery('Can you list all locations with bananas?')).toBe('bananas');
     expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
   });
 

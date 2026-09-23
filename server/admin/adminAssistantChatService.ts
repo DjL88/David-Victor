@@ -21,6 +21,12 @@ export interface AdminAssistantChatMessage {
   attachments?: AdminAssistantAttachment[];
 }
 
+export interface AdminAssistantNavigationHint {
+  section: string;
+  target?: string;
+  label: string;
+}
+
 export interface AdminAssistantChatContext {
   section?: string;
   resourceType?: string;
@@ -59,7 +65,7 @@ interface AssistantReadContext {
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MODEL_FALLBACKS = ['gemini-3.8-flash', 'gemini-2.5-flash'];
 const MAX_HISTORY_MESSAGES = 12;
-const MAX_REPLY_CHARS = 720;
+const MAX_REPLY_CHARS = 1100;
 
 const SECTION_SUGGESTIONS: Record<string, string[]> = {
   catalog: [
@@ -159,6 +165,74 @@ export function getAdminAssistantSuggestions(section?: string): string[] {
       ]).slice(0, 3);
 }
 
+
+export function resolveAdminAssistantNavigationHint(
+  message: string,
+  currentSection?: string
+): AdminAssistantNavigationHint | null {
+  const text = String(message || '').trim().toLowerCase();
+  if (!text) return null;
+
+  const choose = (section: string, target: string | undefined, label: string): AdminAssistantNavigationHint => ({
+    section,
+    target,
+    label,
+  });
+
+  if (/(colour|color|colour scheme|color scheme|palette|theme)/i.test(text)) {
+    return choose('branding', 'branding-colours', 'Open Branding · Colours');
+  }
+  if (/(logo|favicon|brand icon|icon asset)/i.test(text)) {
+    return choose('branding', 'branding-logo', 'Open Branding · Logo');
+  }
+  if (/(font|typography|typeface)/i.test(text)) {
+    return choose('branding', 'branding-typography', 'Open Branding · Typography');
+  }
+  if (/(language|locale|dialect|british english|us english)/i.test(text)) {
+    return choose('languages', 'languages-default', 'Open Languages');
+  }
+  if (/(wording|terminology|basket|cart|collect|pickup|aisles|departments)/i.test(text)) {
+    return choose('languages', 'languages-terminology', 'Open Languages · Wording');
+  }
+  if (/(product rule|new rule|create a rule|add a rule|where.*action|rule conflict|rules? currently active)/i.test(text)) {
+    const createIntent = /(new|create|add|build|draft)/i.test(text);
+    return choose(
+      'product_rules',
+      createIntent ? 'product-rules-new' : 'product-rules-list',
+      createIntent ? 'Open Product rules · New rule' : 'Open Product rules'
+    );
+  }
+  if (/(banner|hero banner|category banner|sponsor.*category|sponsor.*aisle)/i.test(text)) {
+    return choose('hero_banners', 'hero-banners-add', 'Open Banners');
+  }
+  if (/(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)/i.test(text)) {
+    return choose('insights', undefined, 'Open Insights');
+  }
+  if (/(product|plu|sku|barcode|gtin|stock|snooz|catalogue|catalog)/i.test(text)) {
+    return choose('catalog', 'catalog-search', 'Open Products & Stock');
+  }
+  if (/(location|store|opening hours|delivery radius|collection)/i.test(text)) {
+    return choose('stores', 'stores-list', 'Open Locations');
+  }
+  if (/(feature switch|feature flag|features?)/i.test(text)) {
+    return choose('features', undefined, 'Open Feature switches');
+  }
+  if (/(fee|delivery fee|service fee)/i.test(text)) {
+    return choose('fees', undefined, 'Open Fees');
+  }
+  if (/(media health|missing image|broken image|image health)/i.test(text)) {
+    return choose('media_health', undefined, 'Open Media Health');
+  }
+
+  // If the user explicitly asks to be shown the current area, still provide a
+  // navigation affordance even when no more specific field is known.
+  if (/(show me|take me|take me there|open (?:the )?page|where is)/i.test(text) && currentSection) {
+    return choose(currentSection, undefined, 'Show this page');
+  }
+
+  return null;
+}
+
 export function normaliseAssistantReply(raw: unknown): string {
   let text = String(raw || '').trim();
   if (!text) return '';
@@ -205,8 +279,6 @@ export function extractCatalogLookupQuery(message: string): string | null {
     return null;
   }
 
-  // Prefer explicit identifiers before natural-language cleanup. This avoids
-  // turning "DLV1006 how many stores in stock?" into "DLV1006 how many stores".
   const labelledIdentifier = raw.match(
     /\b(?:plu|sku|barcode|gtin|product\s*id)\s*[:#-]?\s*([a-z0-9][a-z0-9._/#-]{2,})\b/i
   );
@@ -224,10 +296,10 @@ export function extractCatalogLookupQuery(message: string): string | null {
   const cleaned = raw
     .replace(/\b(in stock|out of stock)\b/gi, ' ')
     .replace(
-      /\b(are|is|was|were|do|does|did|can|could|would|will|please|check|tell|me|whether|if|the|a|an|product|item|stock|available|availability|price|visible|appearing|showing|snoozed|snooze|why|not|on|this|storefront|catalogue|catalog|have|has|we|you|how|many|stores?|locations?|branches?|about|across|at|in)\b/gi,
+      /\b(are|is|was|were|do|does|did|can|could|would|will|please|check|tell|me|whether|if|the|a|an|product|item|stock|available|availability|price|visible|appearing|showing|snoozed|snooze|unsnoozed|unsnooze|why|not|on|this|storefront|catalogue|catalog|have|has|we|you|how|many|stores?|locations?|branches?|about|across|at|in|of|with|list|all|currently|sell|sells|selling|return|returns|eligible)\b/gi,
       ' '
     )
-    .replace(/[?.,!]+/g, ' ')
+    .replace(/[?.,!()[\]{}]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -242,7 +314,19 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
       .map((action) => action.name)
   );
 
-  if (section === 'catalog' && available.has('catalog.diagnoseVisibility')) {
+  const analyticsIntent =
+    /\b(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)\b/i.test(args.message);
+  const explicitProductIntent =
+    /\b(stock|snooz|product|item|plu|sku|barcode|gtin|price|visible|appearing|showing|catalogue|catalog)\b/i.test(args.message);
+  const locationProductIntent =
+    /\b(locations?|stores?|branches?)\b.*\b(with|stock|sell|selling|have|has)\b/i.test(args.message) ||
+    /\b(which|what|how many|list all)\b.*\b(locations?|stores?|branches?)\b/i.test(args.message);
+
+  if (
+    available.has('catalog.diagnoseVisibility') &&
+    !analyticsIntent &&
+    (explicitProductIntent || locationProductIntent)
+  ) {
     const query = extractCatalogLookupQuery(args.message);
     if (query) {
       try {
@@ -272,9 +356,9 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
   }
 
   if (
-    section === 'stores' &&
     available.has('stores.inspect') &&
-    /(how many|list|which|store|stores|location|locations|opening|radius)/i.test(args.message)
+    !explicitProductIntent &&
+    /(how many|list|which|store|stores|location|locations|opening|radius|duplicate|eligible)/i.test(args.message)
   ) {
     try {
       const execution = await AdminAssistantActionService.executeReadOnly({
@@ -563,10 +647,12 @@ export class AdminAssistantChatService {
     model: string;
     degraded?: boolean;
     readAction?: string;
+    navigation?: AdminAssistantNavigationHint | null;
   }> {
     const history = normaliseChatHistory(args.history);
     const attachments = normaliseAttachments(args.attachments);
     const readContext = await resolveReadContext(args);
+    const navigation = resolveAdminAssistantNavigationHint(args.message, args.context?.section);
 
     const contents = [
       ...history.map((message) => ({
@@ -602,7 +688,7 @@ export class AdminAssistantChatService {
                   readContext,
                 }),
                 temperature: 0.2,
-                maxOutputTokens: 320,
+                maxOutputTokens: 480,
               },
             });
 
@@ -622,6 +708,7 @@ export class AdminAssistantChatService {
               provider: client.provider,
               model,
               readAction: readContext?.actionName,
+              navigation,
             };
           } catch (err: any) {
             lastError = err;
@@ -650,6 +737,7 @@ export class AdminAssistantChatService {
       model: 'guided-admin-fallback',
       degraded: true,
       readAction: readContext?.actionName,
+      navigation,
     };
   }
 }

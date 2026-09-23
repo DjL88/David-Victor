@@ -442,7 +442,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
           Loading locations...
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+        <div data-admin-ai-target="stores-list" className="overflow-x-auto rounded-xl border bg-white shadow-sm">
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 border-b">
               <tr>

@@ -275,6 +275,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
         {activeTab === 'product' && (
           <button
+            data-admin-ai-target="product-rules-new"
             type="button"
             onClick={handleCreateNew}
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs"
@@ -725,7 +726,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       )}
 
       {activeTab === 'product' && (
-      <div className="grid grid-cols-1 gap-4">
+      <div data-admin-ai-target="product-rules-list" className="grid grid-cols-1 gap-4">
         {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{ruleError}</div>}
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">

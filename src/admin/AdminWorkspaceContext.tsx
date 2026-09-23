@@ -42,6 +42,7 @@ interface AdminWorkspaceContextValue extends AdminWorkspaceSnapshot {
   setScope: (scope: AdminWorkspaceScope) => void;
   setResource: (resource?: AdminResourceSelection) => void;
   setFilters: (filters?: Record<string, string | number | boolean | null>) => void;
+  navigateTo: (section: AdminTab, target?: string) => void;
 }
 
 const AdminWorkspaceContext = createContext<AdminWorkspaceContextValue | null>(null);
@@ -50,8 +51,9 @@ export const AdminWorkspaceProvider: React.FC<{
   tenantId: string;
   section: AdminTab;
   actor: AdminUser;
+  onNavigate?: (section: AdminTab, target?: string) => void;
   children: React.ReactNode;
-}> = ({ tenantId, section, actor, children }) => {
+}> = ({ tenantId, section, actor, onNavigate, children }) => {
   const [scope, setScope] = useState<AdminWorkspaceScope>({});
   const [resource, setResource] = useState<AdminResourceSelection | undefined>();
   const [filters, setFilters] = useState<Record<string, string | number | boolean | null> | undefined>();
@@ -72,8 +74,9 @@ export const AdminWorkspaceProvider: React.FC<{
       setScope,
       setResource,
       setFilters,
+      navigateTo: (nextSection, target) => onNavigate?.(nextSection, target),
     }),
-    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, scope, resource, filters]
+    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, scope, resource, filters, onNavigate]
   );
 
   return <AdminWorkspaceContext.Provider value={value}>{children}</AdminWorkspaceContext.Provider>;

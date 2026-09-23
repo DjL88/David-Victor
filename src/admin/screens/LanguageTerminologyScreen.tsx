@@ -144,7 +144,7 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
         </div>
       )}
 
-      <section className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
+      <section data-admin-ai-target="languages-default" className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
         <div>
           <h2 className="text-sm font-bold text-gray-900">Storefront languages</h2>
           <p className="text-xs text-gray-500 mt-1">
@@ -207,7 +207,7 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
         </div>
       </section>
 
-      <section className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
+      <section data-admin-ai-target="languages-terminology" className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-gray-900">Storefront terminology</h2>

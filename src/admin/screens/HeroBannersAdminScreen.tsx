@@ -300,6 +300,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
           </button>
 
           <button
+            data-admin-ai-target="hero-banners-add"
             type="button"
             id="add-promo-banner-btn"
             onClick={handleOpenNew}
