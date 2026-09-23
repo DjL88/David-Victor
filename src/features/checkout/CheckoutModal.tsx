@@ -420,12 +420,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       // For Collection, the chosen slot is a real basket property on Deliverect's side
       // (fulfillment.time), not a checkout-time option — update it on the basket first.
-      if (
-        isCollection &&
-        schedulingType === 'SCHEDULED' &&
-        selectedSlot &&
-        defaultCommerceClient.updateBasketFulfillment
-      ) {
+      // Never silently fall back to ASAP if the customer explicitly chose Scheduled.
+      if (isCollection && schedulingType === 'SCHEDULED') {
+        if (!selectedSlot) {
+          setRevalidationError('Please choose a collection time before placing your order.');
+          return;
+        }
+        if (!defaultCommerceClient.updateBasketFulfillment) {
+          setRevalidationError('Scheduled collection is not available on the current integration.');
+          return;
+        }
+
         checkoutBasket = await defaultCommerceClient.updateBasketFulfillment(
           checkoutBasket.id,
           { type: 'pickup', slot: selectedSlot }
