@@ -32,6 +32,17 @@ import { BundleProduct } from '../commerce/bundleModels';
 import { Product, StoryAction } from '../commerce/models';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../analytics';
 import { Loader2, BadgePercent, X, Store as StoreIcon, AlertTriangle } from 'lucide-react';
+import {
+  findCategoryByRouteSlug,
+  flattenCategories,
+  parseStorefrontRoute,
+  pathForCategory,
+  pathForProduct,
+  pathForSearch,
+  pathForTab,
+  pushStorefrontUrl,
+  type StorefrontRoute,
+} from '../navigation/storefrontRouter';
 
 interface AppLayoutProps {
   onOpenAdmin?: () => void;
@@ -43,10 +54,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   // Branded initial splash screen state
   const [showSplash, setShowSplash] = useState<boolean>(true);
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<MobileTab>('home');
+  // URL-backed storefront navigation. Route state is intentionally dependency-free
+  // so branded web, Capacitor and notification deep links share the same URL contract.
+  const initialRoute = parseStorefrontRoute();
+  const initialTab: MobileTab =
+    initialRoute.kind === 'search' ? 'search' :
+    initialRoute.kind === 'orders' ? 'orders' :
+    initialRoute.kind === 'account' ? 'account' :
+    'home';
+
+  const [activeRoute, setActiveRoute] = useState<StorefrontRoute>(initialRoute);
+  const [activeTab, setActiveTab] = useState<MobileTab>(initialTab);
 
   const navigateToTab = useCallback((tab: MobileTab) => {
+    const nextPath = pathForTab(tab);
+    pushStorefrontUrl(nextPath);
+    setActiveRoute(parseStorefrontRoute(new URL(nextPath, window.location.origin).pathname));
     if (tab === activeTab) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
