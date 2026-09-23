@@ -293,6 +293,49 @@ export class WebhookService {
   }
 
   /**
+   * Deliverect staging may sign Channel callbacks with the channelLinkId.
+   * Never derive an HMAC secret from arbitrary webhook payload fields: the
+   * candidate channelLinkId must already be mapped to the resolved tenant
+   * through its allowlist or discovered store projection.
+   */
+  static async getMappedStagingChannelLinkSecrets(
+    tenantId: string,
+    payload: any
+  ): Promise<string[]> {
+    const candidate = String(
+      payload?.channelLinkId ||
+      payload?.channelLink?._id ||
+      payload?.channelLink?.id ||
+      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
+      ''
+    ).trim();
+    if (!candidate) return [];
+
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const isProductionWebhook =
+      integration?.environment === 'production' ||
+      process.env.DELIVERECT_ENV === 'production';
+    if (isProductionWebhook) return [];
+
+    const allowed = new Set(
+      (integration?.allowedChannelLinkIds || [])
+        .map((value: unknown) => String(value || '').trim())
+        .filter(Boolean)
+    );
+    if (allowed.has(candidate)) {
+      return [candidate];
+    }
+
+    const stores = await FirestorePlatformService.getTenantStores(tenantId);
+    const mapped = stores.some((store: any) =>
+      String(store?.channelLinkId || store?.id || '').trim() === candidate &&
+      store?.lifecycleStatus !== 'ORPHANED'
+    );
+
+    return mapped ? [candidate] : [];
+  }
+
+  /**
    * Section 24 & Item 16:
    * Resolves the webhook tenant authoritatively. Never trusts blind query or header parameters.
    * Tests HMAC verification across configured tenant secrets.
@@ -300,7 +343,16 @@ export class WebhookService {
   static async resolveTenantForWebhook(
     rawBody: Buffer | string,
     signatureHeader?: string,
-    candidateTenantId?: string
+    candidateTenantId?: string,
+    options?: {
+      /**
+       * Deliverect staging signs Channel partner webhooks with a temporary
+       * channelLink value prior to certification. These candidates are only
+       * accepted for a tenant already resolved from a trusted route/account
+       * mapping and never in production.
+       */
+      stagingTemporarySecrets?: string[];
+    }
   ): Promise<{ tenantId: string; secret: string }> {
     if (!signatureHeader) {
       const err: any = new Error('Missing webhook signature header');
@@ -334,9 +386,29 @@ export class WebhookService {
         return { tenantId: candidateTenantId, secret };
       }
 
-      // Never derive an HMAC secret from webhook payload fields (including
-      // channelLinkId). Staging must use an explicitly configured webhook secret
-      // just like production; otherwise a caller could sign its own payload.
+      const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+      const isProductionWebhook =
+        integration?.environment === 'production' ||
+        process.env.DELIVERECT_ENV === 'production';
+
+      if (!isProductionWebhook) {
+        const candidates = Array.from(
+          new Set(
+            (options?.stagingTemporarySecrets || [])
+              .map((value) => String(value || '').trim())
+              .filter(Boolean)
+          )
+        );
+
+        for (const temporarySecret of candidates) {
+          if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
+            console.info(
+              `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using documented temporary channelLink HMAC.`
+            );
+            return { tenantId: candidateTenantId, secret: temporarySecret };
+          }
+        }
+      }
     }
 
     // 2. Query known tenants from Firestore to find the matching secret
@@ -384,10 +456,14 @@ export class WebhookService {
       (headers['x-deliverect-hmac-sha256'] as string);
 
     // 1. Authoritatively resolve tenant & verify HMAC signature
+    const stagingTemporarySecrets =
+      await this.getMappedStagingChannelLinkSecrets(tenantId, payload);
+
     const { tenantId: resolvedTenantId } = await this.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
-      tenantId
+      tenantId,
+      { stagingTemporarySecrets }
     );
     tenantId = resolvedTenantId;
 

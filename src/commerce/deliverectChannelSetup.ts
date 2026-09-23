@@ -15,7 +15,13 @@ export function buildDeliverectChannelEndpoints(origin: string, tenantId: string
 
   return [
     { key: 'storeProvisioning', label: 'Store provisioning URL', url: join(origin, `${base}/channel/provision`), readiness: 'READY' },
-    { key: 'channelRegistration', label: 'Channel registration webhook URL', url: join(origin, `${base}/channel/register`), readiness: 'READY' },
+    {
+      key: 'channelRegistration',
+      label: 'Channel registration webhook URL',
+      url: join(origin, '/api/v1/webhooks/deliverect/channel/register'),
+      readiness: 'READY',
+      note: 'Use this same standardized URL for every Deliverect customer install. We resolve the tenant from the mapped accountId in the registration payload and return the location-specific callback URLs in the 200 response.',
+    },
     { key: 'menuUpdate', label: 'Menu update webhook URL', url: join(origin, `${base}/channel/menu_update`), readiness: 'READY', note: 'Current endpoint accepts operational menu metadata; full hosted-catalog payload processing is being moved to the durable bulk queue.' },
     { key: 'snooze', label: 'Snooze/Unsnooze URL', url: join(origin, `${base}/channel/snooze`), readiness: 'READY' },
     { key: 'promotions', label: 'Promotions webhook URL', url: join(origin, `${base}/channel/promotions`), readiness: 'PENDING_CONTRACT', note: 'Waiting for the exact Deliverect Channel promotions payload before enabling.' },

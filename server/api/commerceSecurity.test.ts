@@ -18,10 +18,12 @@ describe('commerce P0 security boundaries', () => {
     expect(routerSource).toContain("code: 'PAYMENT_BINDING_REQUIRED'");
   });
 
-  it('does not accept channelLinkId or other payload values as webhook HMAC secrets', () => {
-    expect(webhookSource).not.toContain('Verified Deliverect staging webhook using channelLinkId HMAC fallback');
-    expect(webhookSource).not.toContain('for (const stagingSecret of stagingSecrets)');
-    expect(webhookSource).toContain('Never derive an HMAC secret from webhook payload fields');
+  it('only accepts Deliverect staging channelLink HMAC after the channel link is already tenant-mapped', () => {
+    expect(webhookSource).toContain('Never derive an HMAC secret from arbitrary webhook payload fields');
+    expect(webhookSource).toContain('getMappedStagingChannelLinkSecrets');
+    expect(webhookSource).toContain('integration?.allowedChannelLinkIds');
+    expect(webhookSource).toContain("store?.lifecycleStatus !== 'ORPHANED'");
+    expect(webhookSource).toContain("integration?.environment === 'production'");
   });
 
   it('does not bootstrap the first signed-in user or a hard-coded owner email as superadmin', () => {

@@ -15,7 +15,9 @@ describe('Deliverect Channel setup', () => {
     expect(byKey.storeProvisioning.url).toBe(
       'https://example.test/api/v1/webhooks/deliverect/brand%20alpha/channel/provision'
     );
-    expect(byKey.channelRegistration.url).toContain('/brand%20alpha/channel/register');
+    expect(byKey.channelRegistration.url).toBe(
+      'https://example.test/api/v1/webhooks/deliverect/channel/register'
+    );
     expect(byKey.snooze.readiness).toBe('READY');
     expect(byKey.busyMode.readiness).toBe('READY');
     expect(byKey.substitutions.url).toBe(
@@ -69,4 +71,62 @@ describe('Deliverect Channel setup', () => {
     expect(result.warnings).toContain('CHANNEL_LINK_ID_MISSING');
     expect(result.warnings).toContain('LOCATION_ID_MISSING');
   });
+  it('tracks Deliverect register, activate and disable lifecycle events', async () => {
+    const tenantId = `tenant-channel-lifecycle-${Date.now()}`;
+    const channelLinkId = 'channel-life-123';
+
+    const registered = await ChannelProvisioningService.process(
+      tenantId,
+      'CHANNEL_REGISTRATION',
+      {
+        accountId: 'account-123',
+        channelLinkId,
+        locationId: 'location-456',
+        channelLocationId: 'external-789',
+        status: 'register',
+      }
+    );
+    expect(registered.channelStatus).toBe('REGISTERED');
+
+    let stores = await FirestorePlatformService.getTenantStores(tenantId);
+    expect(stores.find((store) => store.channelLinkId === channelLinkId)).toMatchObject({
+      lifecycleStatus: 'INACTIVE',
+      provisioningState: 'REGISTERED',
+      externalLocationId: 'external-789',
+    });
+
+    await ChannelProvisioningService.process(
+      tenantId,
+      'CHANNEL_REGISTRATION',
+      {
+        channelLinkId,
+        locationId: 'location-456',
+        channelLocationId: 'external-789',
+        status: 'active',
+      }
+    );
+    stores = await FirestorePlatformService.getTenantStores(tenantId);
+    expect(stores.find((store) => store.channelLinkId === channelLinkId)).toMatchObject({
+      lifecycleStatus: 'ACTIVE',
+      provisioningState: 'ACTIVE',
+    });
+
+    await ChannelProvisioningService.process(
+      tenantId,
+      'CHANNEL_REGISTRATION',
+      {
+        channelLinkId,
+        locationId: 'location-456',
+        channelLocationId: 'external-789',
+        status: 'inactive',
+      }
+    );
+    stores = await FirestorePlatformService.getTenantStores(tenantId);
+    expect(stores.find((store) => store.channelLinkId === channelLinkId)).toMatchObject({
+      lifecycleStatus: 'INACTIVE',
+      provisioningState: 'INACTIVE',
+      assigned: false,
+    });
+  });
+
 });

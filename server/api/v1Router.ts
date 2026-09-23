@@ -2384,7 +2384,13 @@ v1Router.post('/checkouts/:checkoutId/confirm-demo', requireAdminAuth('tenantAdm
 async function resolveDeliverectWebhookTenant(
   req: Request
 ): Promise<string> {
-  const identifier = req.params.identifier;
+  const identifier = String(req.params.identifier || '').trim();
+  const payloadAccountId = String(
+    req.body?.accountId ||
+    req.body?.account ||
+    req.body?.account?._id ||
+    ''
+  ).trim();
   let tenantId: string | undefined;
 
   if (identifier) {
@@ -2393,24 +2399,36 @@ async function resolveDeliverectWebhookTenant(
     if (resolved) {
       tenantId = resolved;
     } else {
-      // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
-      // rather than the opaque integrationId. This is safe because routing only
-      // selects the candidate tenant; the callback must still pass HMAC
-      // verification before any order state is mutated.
-      const directIntegration =
-        await FirestorePlatformService.getIntegrationConfig(identifier);
-      if (directIntegration?.tenantId === identifier) {
-        tenantId = identifier;
-      } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
-        tenantId = identifier;
+      // Deliverect Channel staging screens commonly use the account id in a
+      // callback URL. Treat it as a routing identifier only when exactly one
+      // tenant has explicitly mapped that Deliverect account.
+      const accountTenant =
+        await FirestorePlatformService.resolveTenantByDeliverectAccountId(identifier);
+      if (accountTenant) {
+        tenantId = accountTenant;
       } else {
-        throw new BFFError(
-          'INTEGRATION_NOT_CONFIGURED',
-          `No registered integration found for identifier "${identifier}".`,
-          404
-        );
+        // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
+        // rather than the opaque integrationId. This is safe because routing only
+        // selects the candidate tenant; the callback must still pass HMAC
+        // verification before any state is mutated.
+        const directIntegration =
+          await FirestorePlatformService.getIntegrationConfig(identifier);
+        if (directIntegration?.tenantId === identifier) {
+          tenantId = identifier;
+        } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
+          tenantId = identifier;
+        }
       }
     }
+  }
+
+  // Channel registration is documented as a standardized URL. When the URL
+  // carries no tenant identifier, use the accountId Deliverect sends in the
+  // payload to resolve the already-mapped tenant.
+  if (!tenantId && payloadAccountId) {
+    tenantId =
+      (await FirestorePlatformService.resolveTenantByDeliverectAccountId(payloadAccountId)) ||
+      undefined;
   }
 
   if (!tenantId) {
@@ -2434,9 +2452,9 @@ async function resolveDeliverectWebhookTenant(
     if (resolvedFromDb) return resolvedFromDb;
 
     throw new BFFError(
-      'INVALID_INPUT',
-      'Inbound webhook cannot be routed: integrationId or registered domain required.',
-      400
+      'INTEGRATION_NOT_CONFIGURED',
+      `Inbound Deliverect webhook cannot be routed. identifier="${identifier || 'none'}", accountId="${payloadAccountId || 'none'}". Map the Deliverect account to a tenant first.`,
+      404
     );
   }
 
@@ -2696,10 +2714,17 @@ async function handleDeliverectOperationalWebhook(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
+
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
-      candidateTenantId
+      candidateTenantId,
+      { stagingTemporarySecrets }
     );
 
     const result = await DeliverectOperationalWebhookService.process(
@@ -2794,10 +2819,17 @@ async function handleDeliverectChannelProvisioning(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
+
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
-      candidateTenantId
+      candidateTenantId,
+      { stagingTemporarySecrets }
     );
 
     const result = await ChannelProvisioningService.process(
@@ -2805,6 +2837,36 @@ async function handleDeliverectChannelProvisioning(
       type,
       req.body
     );
+
+    if (type === 'CHANNEL_REGISTRATION') {
+      const configuredOrigin =
+        process.env.CHANNEL_PUBLIC_BASE_URL ||
+        process.env.PUBLIC_BASE_URL ||
+        '';
+      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+        .split(',')[0]
+        .trim();
+      const forwardedHost = String(req.headers['x-forwarded-host'] || '')
+        .split(',')[0]
+        .trim();
+      const origin =
+        configuredOrigin.replace(/\/$/, '') ||
+        `${forwardedProto || req.protocol || 'https'}://${forwardedHost || req.get('host')}`;
+      const id = encodeURIComponent(tenantId);
+      const webhookBase = `${origin}/api/v1/webhooks/deliverect/${id}`;
+
+      // Deliverect Channel registration expects the callback URLs in the 200
+      // response. Later Activate/Disable calls reuse the same registration URL.
+      res.status(200).json({
+        statusUpdateURL: webhookBase,
+        menuUpdateURL: `${webhookBase}/channel/menu_update`,
+        snoozeUnsnoozeURL: `${webhookBase}/channel/snooze`,
+        busyModeURL: `${webhookBase}/channel/busy_mode`,
+        updatePrepTimeURL: `${webhookBase}/channel/prep_time`,
+        registration: result,
+      });
+      return;
+    }
 
     res.status(result.quarantined ? 202 : 200).json(result);
   } catch (err: any) {

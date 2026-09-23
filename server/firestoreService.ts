@@ -955,6 +955,50 @@ export class FirestoreService {
   }
 
   /**
+   * Resolves a tenant by its mapped Deliverect account id.
+   * Channel registration is documented as a standardized webhook, so inbound
+   * events may only give us accountId/locationId/channelLinkId rather than our
+   * internal tenant slug.
+   */
+  static async resolveTenantByDeliverectAccountId(accountId: string): Promise<string | null> {
+    const cleanAccountId = String(accountId || '').trim();
+    if (!cleanAccountId) return null;
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        const snap = await db
+          .collection('integrations')
+          .where('deliverectAccountId', '==', cleanAccountId)
+          .limit(2)
+          .get();
+
+        if (snap.size === 1) {
+          const doc = snap.docs[0];
+          return (doc.data()?.tenantId as string) || doc.id;
+        }
+        if (snap.size > 1) {
+          console.warn(
+            `[FirestoreService] Deliverect account "${cleanAccountId}" is mapped to more than one tenant; refusing ambiguous webhook routing.`
+          );
+          return null;
+        }
+      } catch (err) {
+        console.warn(
+          `[FirestoreService] Failed to resolve tenant for Deliverect accountId "${cleanAccountId}":`,
+          err
+        );
+      }
+    }
+
+    const matches = Object.entries(inMemoryIntegrations)
+      .filter(([, cfg]) => String((cfg as any).deliverectAccountId || '') === cleanAccountId)
+      .map(([tenantId]) => tenantId);
+
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  /**
    * Creates a new brand / tenant directly in Firestore (Super Admin Provisioning).
    * Generates default domains, integration in UNCONFIGURED state, RBAC membership, fee & scheduling policies, and audit logs.
    */
