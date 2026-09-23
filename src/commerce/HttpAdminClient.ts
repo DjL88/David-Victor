@@ -241,14 +241,31 @@ export class HttpAdminClient implements AdminClient {
     adminName?: string;
   } | Partial<TenantConfig>): Promise<TenantConfig> {
     const headers = await this.getHeadersAsync();
+    const payload: Record<string, unknown> = { ...(brandData as any) };
+    for (const key of ['domain', 'adminEmail', 'initialAdminEmail', 'adminName', 'tagline']) {
+      if (typeof payload[key] === 'string') {
+        const trimmed = String(payload[key]).trim();
+        payload[key] = trimmed || undefined;
+      }
+    }
+
     const res = await fetch(`${this.baseUrl}/admin/tenants`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(brandData),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to provision brand: ${res.statusText}`);
+      const message =
+        err.safeMessage ||
+        err.message ||
+        err.error ||
+        `Failed to provision brand: ${res.statusText || `HTTP ${res.status}`}`;
+      const error: any = new Error(message);
+      error.code = err.code;
+      error.status = res.status;
+      error.details = err.details;
+      throw error;
     }
     const result = await res.json();
     return result.tenant || result;
