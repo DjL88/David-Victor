@@ -14,7 +14,8 @@ import {
 import { DeliverectDeal, getProductsForDeal } from '../../commerce/dealModels';
 import { Product, Store, moneyToMinor } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
-import { formatCurrency } from '../../utils/formatters';
+import { useTenant } from '../../tenant/TenantContext';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 
 interface MealDealDialogProps {
   deal: DeliverectDeal | null;
@@ -42,6 +43,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
   onUpdateQuantity,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { tenant } = useTenant();
 
   // Close on Escape
   useEffect(() => {
@@ -159,11 +161,11 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
                 </span>
                 <div className="flex items-baseline gap-2 mt-0.5">
                   <span className="text-2xl font-black text-gray-950 tracking-tight">
-                    {formatCurrency(deal.dealPrice)}
+                    {formatStorefrontCurrency(deal.dealPrice, tenant)}
                   </span>
                   {(deal.originalPrice ?? 0) > (deal.dealPrice ?? 0) && (
                     <span className="text-sm font-semibold text-gray-400 line-through">
-                      {formatCurrency(deal.originalPrice)}
+                      {formatStorefrontCurrency(deal.originalPrice, tenant)}
                     </span>
                   )}
                 </div>
@@ -176,7 +178,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-white text-xs font-black shadow-2xs"
                   >
                     <BadgePercent className="w-3.5 h-3.5" />
-                    Save {formatCurrency(rawSavingsMinor)}
+                    Save {formatStorefrontCurrency(rawSavingsMinor, tenant)}
                   </span>
                   <span className="text-[10px] text-gray-500 font-medium block mt-1">
                     Deliverect POS combo discount
@@ -261,7 +263,7 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
                             </p>
                           )}
                           <span className="text-xs font-bold text-gray-700">
-                            {formatCurrency(product.price)}
+                            {formatStorefrontCurrency(product.price, tenant)}
                           </span>
                         </div>
                       </div>
@@ -305,8 +307,8 @@ export const MealDealDialog: React.FC<MealDealDialogProps> = ({
               <ShoppingBag className="w-4 h-4" />
               <span>
                 {isAndMode
-                  ? `Add All ${dealProducts.length} Items • ${formatCurrency(deal.dealPrice)}`
-                  : `Add Deal Items • From ${formatCurrency(deal.dealPrice)}`}
+                  ? `Add All ${dealProducts.length} Items • ${formatStorefrontCurrency(deal.dealPrice, tenant)}`
+                  : `Add Deal Items • From ${formatStorefrontCurrency(deal.dealPrice, tenant)}`}
               </span>
             </button>
 
