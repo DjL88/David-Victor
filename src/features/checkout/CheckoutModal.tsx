@@ -1200,6 +1200,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         className="p-3 rounded-2xl bg-white border border-gray-200/80 shadow-2xs space-y-2 text-xs"
                       >
                         <div className="flex items-center justify-between gap-2">
+                          <div className="w-12 h-12 rounded-xl bg-gray-50 overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center">
+                            {item.imageUrl ? (
+                              <img src={item.imageUrl} alt={item?.name || item?.plu || 'Item'} className="w-full h-full object-cover" />
+                            ) : (
+                              <Package className="w-5 h-5 text-gray-300" />
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-gray-900 block truncate">{item?.name || item?.plu || 'Item'}</span>
