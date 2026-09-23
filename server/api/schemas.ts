@@ -597,12 +597,24 @@ export const AssetFinalizeSchema = z.object({
 });
 
 
+const AdminAssistantAttachmentSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().min(1).max(100).optional(),
+  content: z.string().max(24000),
+  byteSize: z.number().nonnegative().max(5_000_000).optional(),
+  truncated: z.boolean().optional(),
+}).strict();
+
 export const AdminAssistantChatSchema = z.object({
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().trim().max(4000).default(''),
+  attachments: z.array(AdminAssistantAttachmentSchema).max(3).optional().default([]),
   history: z.array(z.object({
     role: z.enum(['user', 'assistant']),
-    content: z.string().trim().min(1).max(4000),
-  }).strict()).max(12).optional().default([]),
+    content: z.string().trim().max(4000).default(''),
+    attachments: z.array(AdminAssistantAttachmentSchema).max(3).optional().default([]),
+  }).strict().refine((value) => Boolean(value.content || value.attachments.length), {
+    message: 'Chat history messages require text or an attachment.',
+  })).max(12).optional().default([]),
   context: z.object({
     section: z.string().min(1).max(100).optional(),
     resourceType: z.string().min(1).max(100).optional(),
@@ -613,7 +625,9 @@ export const AdminAssistantChatSchema = z.object({
     locationGroupId: z.string().min(1).max(200).optional(),
     locationId: z.string().min(1).max(200).optional(),
   }).strict().optional(),
-}).strict();
+}).strict().refine((value) => Boolean(value.message || value.attachments.length), {
+  message: 'A message or attachment is required.',
+});
 
 export const AdminAssistantPlanSchema = z.object({
   actionName: z.string().min(1).max(100),
