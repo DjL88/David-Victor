@@ -174,6 +174,18 @@ export class MediaHealthService {
             referenceId: product.plu || product.id,
           });
         }
+
+        // Missing product images are a media-health failure too. Deliverect bundle
+        // component rows use "#" PLUs and are intentionally excluded because they
+        // are not standalone storefront products.
+        if (urlsToTest.length === 0 && !String(product.plu || '').includes('#')) {
+          rawAssets.push({
+            url: '',
+            assetType: 'product',
+            referenceName: product.name || product.plu || product.id,
+            referenceId: product.plu || product.id,
+          });
+        }
       }
 
       // Categories
@@ -236,11 +248,13 @@ export class MediaHealthService {
       console.warn(`[MediaHealthService] Could not load uploaded assets for ${tenantId}:`, e);
     }
 
-    // Deduplicate items by URL
+    // Deduplicate real assets by URL, but keep every missing-image record because
+    // an empty URL would otherwise collapse all affected products into one row.
     const uniqueMap = new Map<string, typeof rawAssets[0]>();
     for (const item of rawAssets) {
-      if (!uniqueMap.has(item.url)) {
-        uniqueMap.set(item.url, item);
+      const key = item.url || `missing:${item.assetType}:${item.referenceId}`;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
       }
     }
     const assetList = Array.from(uniqueMap.values());
@@ -271,6 +285,19 @@ export class MediaHealthService {
     now: string
   ): Promise<MediaHealth> {
     const { url, assetType, referenceName, referenceId } = item;
+
+    if (!url) {
+      return {
+        id,
+        url: '',
+        assetType,
+        referenceName,
+        referenceId,
+        status: 'failing',
+        failureReason: 'No image supplied',
+        lastCheckedAt: now,
+      };
+    }
 
     if (url.startsWith('data:')) {
       return {
