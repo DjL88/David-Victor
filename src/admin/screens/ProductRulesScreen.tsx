@@ -25,6 +25,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [dispatchSuccessMsg, setDispatchSuccessMsg] = useState<string | null>(null);
   const [schedulingSaving, setSchedulingSaving] = useState<boolean>(false);
   const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
+  const [operationsError, setOperationsError] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [tenantStores, setTenantStores] = useState<Store[]>([]);
@@ -121,13 +122,14 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     e.preventDefault();
     setSchedulingSaving(true);
     setSchedulingSuccessMsg(null);
+    setOperationsError(null);
     try {
       const updated = await defaultAdminClient.updateSchedulingPolicy?.(tenantId, schedulingPolicy);
       if (updated) setSchedulingPolicy(updated);
       setSchedulingSuccessMsg('Scheduling policy saved and active.');
       setTimeout(() => setSchedulingSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(err.message || 'Failed to save scheduling policy');
+      setOperationsError(err.message || 'Failed to save scheduling policy.');
     } finally {
       setSchedulingSaving(false);
     }
@@ -137,13 +139,14 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     e.preventDefault();
     setDispatchSaving(true);
     setDispatchSuccessMsg(null);
+    setOperationsError(null);
     try {
       const updated = await defaultAdminClient.saveDispatchRules(tenantId, dispatchRules, currentUser);
       setDispatchRules(updated);
       setDispatchSuccessMsg('Dispatch orchestration rules saved and active.');
       setTimeout(() => setDispatchSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(err.message || 'Failed to save dispatch rules');
+      setOperationsError(err.message || 'Failed to save courier settings.');
     } finally {
       setDispatchSaving(false);
     }
@@ -241,10 +244,10 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-600" />
-            <span>Rules</span>
+            <span>Product Rules</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Create simple conditions and actions that control how products behave in the storefront.
+            Build product controls with clear Where → Action logic. Courier and order scheduling settings are available in the tabs alongside product rules.
           </p>
         </div>
 
@@ -312,6 +315,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           )}
         </button>
       </div>
+
+      {operationsError && (
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">
+          {operationsError}
+        </div>
+      )}
 
       {activeTab === 'dispatch' && (
         <form onSubmit={handleSaveDispatchRules} className="space-y-6">

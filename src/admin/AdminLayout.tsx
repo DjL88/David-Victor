@@ -8,18 +8,14 @@ import { BrandingScreen } from './screens/BrandingScreen';
 import { StoriesAdminScreen } from './screens/StoriesAdminScreen';
 import { HeroBannersAdminScreen } from './screens/HeroBannersAdminScreen';
 import { FeesAdminScreen } from './screens/FeesAdminScreen';
-import { CountryRulesScreen } from './screens/CountryRulesScreen';
 import { ProductRulesScreen } from './screens/ProductRulesScreen';
-import { FeaturesScreen } from './screens/FeaturesScreen';
 import { StoreConfigScreen } from './screens/StoreConfigScreen';
-import { PreviewScreen } from './screens/PreviewScreen';
 import { AuditHistoryScreen } from './screens/AuditHistoryScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { SearchMerchScreen } from './screens/SearchMerchScreen';
 import { MediaHealthScreen } from './screens/MediaHealthScreen';
 import { PagesAdminScreen } from './screens/PagesAdminScreen';
 import { DomainsScreen } from './screens/DomainsScreen';
-import { NotificationsAdminScreen } from './screens/NotificationsAdminScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
@@ -32,16 +28,13 @@ import {
   Coins,
   Globe,
   ShieldCheck,
-  Sliders,
   Store,
-  Eye,
   History,
   Users,
   BarChart3,
   Search,
   Image as ImageIcon,
   FileText,
-  Bell,
   Package,
   Link2,
   Menu,
@@ -64,15 +57,11 @@ export type AdminTab =
   | 'search_merch'
   | 'pages'
   | 'domains'
-  | 'notifications'
   | 'media_health'
   | 'stories'
   | 'fees'
-  | 'country_rules'
   | 'product_rules'
-  | 'features'
   | 'stores'
-  | 'preview'
   | 'audit';
 
 interface AdminLayoutProps {
@@ -99,7 +88,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     initialUser || demoFallbackUser
   );
   const [currentTenantId, setCurrentTenantId] = useState<string>(currentUser.tenantId);
-  const [activeTab, setActiveTab] = useState<AdminTab>('insights');
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => currentUser.role === 'platformSuperAdmin' ? 'brands' : 'catalog');
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
   const [allTenants, setAllTenants] = useState<TenantConfig[]>([]);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
@@ -160,60 +149,56 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   const navSections: NavSection[] = [];
 
-  if (currentUser.role === 'platformSuperAdmin') {
-    navSections.push({
-      title: 'Platform Architecture',
-      items: [
-        { id: 'brands', label: 'Brands & Provisioning', icon: Building2 },
-        { id: 'memberships', label: 'Team & RBAC', icon: Users },
-      ],
-    });
-  } else {
-    navSections.push({
-      title: 'Team & Access',
-      items: [
-        { id: 'memberships', label: 'Team Members', icon: Users },
-      ],
-    });
-  }
+  navSections.push({
+    title: 'Platform',
+    items: currentUser.role === 'platformSuperAdmin'
+      ? [
+          { id: 'brands', label: 'Brands', icon: Building2 },
+          { id: 'memberships', label: 'Team & Access', icon: Users },
+        ]
+      : [
+          { id: 'memberships', label: 'Team & Access', icon: Users },
+        ],
+  });
 
   navSections.push(
     {
-      title: 'Storefront Settings',
+      title: 'Shop',
       items: [
-        { id: 'catalog', label: 'Catalog & Stock', icon: Package },
         { id: 'stores', label: 'Locations', icon: Store },
-        { id: 'fees', label: 'Fee Policies', icon: Coins },
+        { id: 'catalog', label: 'Products & Stock', icon: Package },
+        { id: 'fees', label: 'Fees', icon: Coins },
+      ],
+    },
+    {
+      title: 'Rules',
+      items: [
+        { id: 'product_rules', label: 'Rules & Fulfilment', icon: ShieldCheck },
+      ],
+    },
+    {
+      title: 'Marketing',
+      items: [
+        { id: 'branding', label: 'Branding', icon: Palette },
+        { id: 'hero_banners', label: 'Banners', icon: Sparkles },
+        { id: 'stories', label: 'Stories', icon: Film },
+        { id: 'search_merch', label: 'Search & Recommendations', icon: Search },
+        { id: 'pages', label: 'Pages', icon: FileText },
+      ],
+    },
+    {
+      title: 'Connections',
+      items: [
+        { id: 'integrations', label: 'Deliverect Setup', icon: Link2 },
+        { id: 'connection_health', label: 'Connection Status', icon: Activity },
+        { id: 'domains', label: 'Domains', icon: Globe },
         { id: 'media_health', label: 'Media Health', icon: ImageIcon },
-        { id: 'country_rules', label: 'Country Rules', icon: Globe },
-        { id: 'product_rules', label: 'Product Rules', icon: ShieldCheck },
-        { id: 'preview', label: 'Live Preview', icon: Eye },
       ],
     },
     {
-      title: 'Marketing Settings',
+      title: 'Reports',
       items: [
-        { id: 'branding', label: 'Branding & Fonts', icon: Palette },
-        { id: 'hero_banners', label: 'Hero Banners & Content', icon: Sparkles },
-        { id: 'stories', label: 'Stories Drops', icon: Film },
-        { id: 'pages', label: 'Pages (CMS)', icon: FileText },
-        { id: 'search_merch', label: 'Search Merchandising', icon: Search },
-        { id: 'insights', label: 'Insights & Funnel', icon: BarChart3 },
-      ],
-    },
-    {
-      title: 'Technical Settings',
-      items: [
-        { id: 'connection_health', label: 'Connection Health', icon: Activity },
-        { id: 'integrations', label: 'POS & API Sync', icon: Link2 },
-        { id: 'domains', label: 'Domains & Routing', icon: Globe },
-        { id: 'notifications', label: 'Notifications & Live', icon: Bell },
-        { id: 'features', label: 'Feature Flags', icon: Sliders },
-      ],
-    },
-    {
-      title: 'Analytics & Governance',
-      items: [
+        { id: 'insights', label: 'Insights', icon: BarChart3 },
         { id: 'audit', label: 'Audit History', icon: History },
       ],
     }
@@ -399,7 +384,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'search_merch' && <SearchMerchScreen tenantId={currentTenantId} />}
             {activeTab === 'pages' && <PagesAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'domains' && <DomainsScreen tenantId={currentTenantId} allTenants={allTenants} />}
-            {activeTab === 'notifications' && <NotificationsAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'media_health' && <MediaHealthScreen tenantId={currentTenantId} />}
             {activeTab === 'stories' && (
               <StoriesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
@@ -407,19 +391,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             {activeTab === 'fees' && (
               <FeesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
-            {activeTab === 'country_rules' && (
-              <CountryRulesScreen tenantId={currentTenantId} currentUser={currentUser} />
-            )}
             {activeTab === 'product_rules' && (
               <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} />
-            )}
-            {activeTab === 'features' && (
-              <FeaturesScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'stores' && (
               <StoreConfigScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
-            {activeTab === 'preview' && <PreviewScreen tenantId={currentTenantId} />}
             {activeTab === 'audit' && <AuditHistoryScreen tenantId={currentTenantId} />}
           </div>
         </main>

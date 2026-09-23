@@ -1091,18 +1091,12 @@ export class FirestoreService {
    * Saves or updates a story in Firestore and memory.
    */
   static async saveTenantStory(tenantId: string, story: Story): Promise<Story> {
-    if (!inMemoryStories[tenantId]) {
-      inMemoryStories[tenantId] = [];
-    }
-    const existingIndex = inMemoryStories[tenantId].findIndex((s) => s.id === story.id);
-    if (existingIndex >= 0) {
-      inMemoryStories[tenantId][existingIndex] = { ...inMemoryStories[tenantId][existingIndex], ...story };
-    } else {
-      inMemoryStories[tenantId].push(story);
-    }
-    inMemoryStoriesPurged[tenantId] = false;
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Story was not saved because durable storage is unavailable.', 503);
+    }
+
     if (db) {
       try {
         await db
@@ -1113,8 +1107,18 @@ export class FirestoreService {
           .set(story, { merge: true });
       } catch (err) {
         console.error(`[Firestore Admin] Failed to save story:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+
+    if (!inMemoryStories[tenantId]) inMemoryStories[tenantId] = [];
+    const existingIndex = inMemoryStories[tenantId].findIndex((s) => s.id === story.id);
+    if (existingIndex >= 0) {
+      inMemoryStories[tenantId][existingIndex] = { ...inMemoryStories[tenantId][existingIndex], ...story };
+    } else {
+      inMemoryStories[tenantId].push(story);
+    }
+    inMemoryStoriesPurged[tenantId] = false;
     return story;
   }
 
@@ -1122,22 +1126,21 @@ export class FirestoreService {
    * Deletes a story from Firestore and memory.
    */
   static async deleteTenantStory(tenantId: string, storyId: string): Promise<boolean> {
-    if (inMemoryStories[tenantId]) {
-      inMemoryStories[tenantId] = inMemoryStories[tenantId].filter((s) => s.id !== storyId);
-    }
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Story was not deleted because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
-        await db
-          .collection('tenants')
-          .doc(tenantId)
-          .collection('stories')
-          .doc(storyId)
-          .delete();
+        await db.collection('tenants').doc(tenantId).collection('stories').doc(storyId).delete();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to delete story:`, err);
+        if (!fallbackAllowed) throw err;
       }
+    }
+    if (inMemoryStories[tenantId]) {
+      inMemoryStories[tenantId] = inMemoryStories[tenantId].filter((s) => s.id !== storyId);
     }
     return true;
   }
@@ -1146,10 +1149,11 @@ export class FirestoreService {
    * Purges all stories for a tenant (both mock and saved).
    */
   static async purgeTenantStories(tenantId: string = 'brand-alpha'): Promise<boolean> {
-    inMemoryStories[tenantId] = [];
-    inMemoryStoriesPurged[tenantId] = true;
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Stories were not deleted because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         const snap = await db.collection('tenants').doc(tenantId).collection('stories').get();
@@ -1158,8 +1162,11 @@ export class FirestoreService {
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to purge stories from Firestore:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryStories[tenantId] = [];
+    inMemoryStoriesPurged[tenantId] = true;
     return true;
   }
 
@@ -1215,6 +1222,20 @@ export class FirestoreService {
    * Saves or updates a promotional hero banner in Firestore, disk, and memory per tenant.
    */
   static async saveTenantHeroBanner(tenantId: string, banner: CategoryPromoBanner): Promise<CategoryPromoBanner> {
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
+    const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Banner was not saved because durable storage is unavailable.', 503);
+    }
+    if (db) {
+      try {
+        await db.collection('tenants').doc(tenantId).collection('heroBanners').doc(banner.id).set(cleanUndefined(banner), { merge: true });
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to save hero banner:`, err);
+        if (!fallbackAllowed) throw err;
+      }
+    }
+
     if (!inMemoryHeroBanners[tenantId]) {
       inMemoryHeroBanners[tenantId] = (await this.getTenantHeroBanners(tenantId)) || [];
     }
@@ -1225,26 +1246,9 @@ export class FirestoreService {
       inMemoryHeroBanners[tenantId].push(banner);
     }
     inMemoryHeroBannersPurged[tenantId] = false;
-
-    // Persist to disk
     const diskMap = loadPersistedHeroBanners();
     diskMap[tenantId] = inMemoryHeroBanners[tenantId];
     savePersistedHeroBanners(diskMap);
-
-    // Persist to Firestore
-    const db = getFirestoreDb();
-    if (db) {
-      try {
-        await db
-          .collection('tenants')
-          .doc(tenantId)
-          .collection('heroBanners')
-          .doc(banner.id)
-          .set(cleanUndefined(banner), { merge: true });
-      } catch (err) {
-        console.error(`[Firestore Admin] Failed to save hero banner:`, err);
-      }
-    }
     return banner;
   }
 
@@ -1252,16 +1256,11 @@ export class FirestoreService {
    * Saves / reorders a batch of promotional hero banners for a tenant.
    */
   static async saveTenantHeroBannersBatch(tenantId: string, banners: CategoryPromoBanner[]): Promise<CategoryPromoBanner[]> {
-    inMemoryHeroBanners[tenantId] = [...banners];
-    inMemoryHeroBannersPurged[tenantId] = false;
-
-    // Persist to disk
-    const diskMap = loadPersistedHeroBanners();
-    diskMap[tenantId] = banners;
-    savePersistedHeroBanners(diskMap);
-
-    // Persist to Firestore
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Banners were not saved because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         const batch = db.batch();
@@ -1269,9 +1268,7 @@ export class FirestoreService {
         const existingDocs = await collRef.get();
         const newIds = new Set(banners.map((b) => b.id));
         existingDocs.forEach((doc) => {
-          if (!newIds.has(doc.id)) {
-            batch.delete(doc.ref);
-          }
+          if (!newIds.has(doc.id)) batch.delete(doc.ref);
         });
         for (const banner of banners) {
           batch.set(collRef.doc(banner.id), cleanUndefined(banner), { merge: true });
@@ -1279,8 +1276,14 @@ export class FirestoreService {
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to save hero banners batch:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryHeroBanners[tenantId] = [...banners];
+    inMemoryHeroBannersPurged[tenantId] = false;
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = banners;
+    savePersistedHeroBanners(diskMap);
     return banners;
   }
 
@@ -1288,28 +1291,26 @@ export class FirestoreService {
    * Deletes a promotional hero banner for a tenant.
    */
   static async deleteTenantHeroBanner(tenantId: string, bannerId: string): Promise<boolean> {
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
+    const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Banner was not deleted because durable storage is unavailable.', 503);
+    }
+    if (db) {
+      try {
+        await db.collection('tenants').doc(tenantId).collection('heroBanners').doc(bannerId).delete();
+      } catch (err) {
+        console.error(`[Firestore Admin] Failed to delete hero banner:`, err);
+        if (!fallbackAllowed) throw err;
+      }
+    }
     if (inMemoryHeroBanners[tenantId]) {
       inMemoryHeroBanners[tenantId] = inMemoryHeroBanners[tenantId].filter((b) => b.id !== bannerId);
     }
-
     const diskMap = loadPersistedHeroBanners();
     if (diskMap[tenantId]) {
       diskMap[tenantId] = diskMap[tenantId].filter((b) => b.id !== bannerId);
       savePersistedHeroBanners(diskMap);
-    }
-
-    const db = getFirestoreDb();
-    if (db) {
-      try {
-        await db
-          .collection('tenants')
-          .doc(tenantId)
-          .collection('heroBanners')
-          .doc(bannerId)
-          .delete();
-      } catch (err) {
-        console.error(`[Firestore Admin] Failed to delete hero banner:`, err);
-      }
     }
     return true;
   }
@@ -1319,14 +1320,11 @@ export class FirestoreService {
    */
   static async resetTenantHeroBanners(tenantId: string): Promise<CategoryPromoBanner[]> {
     const defaults = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
-    inMemoryHeroBanners[tenantId] = defaults;
-    inMemoryHeroBannersPurged[tenantId] = false;
-
-    const diskMap = loadPersistedHeroBanners();
-    diskMap[tenantId] = defaults;
-    savePersistedHeroBanners(diskMap);
-
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Banners were not reset because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         const snap = await db.collection('tenants').doc(tenantId).collection('heroBanners').get();
@@ -1338,8 +1336,14 @@ export class FirestoreService {
         await batch.commit();
       } catch (err) {
         console.error(`[Firestore Admin] Failed to reset hero banners in Firestore:`, err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryHeroBanners[tenantId] = defaults;
+    inMemoryHeroBannersPurged[tenantId] = false;
+    const diskMap = loadPersistedHeroBanners();
+    diskMap[tenantId] = defaults;
+    savePersistedHeroBanners(diskMap);
     return defaults;
   }
 
@@ -3230,15 +3234,20 @@ export class FirestoreService {
       tenantId,
       updatedAt: new Date().toISOString(),
     };
-    inMemorySearchConfigs[tenantId] = item;
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Search configuration was not saved because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         await db.collection('tenants').doc(tenantId).collection('searchConfig').doc('default').set(item, { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save search config to Firestore:', err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemorySearchConfigs[tenantId] = item;
     return item;
   }
 
@@ -3271,15 +3280,20 @@ export class FirestoreService {
       ...existing,
       ...rules,
     };
-    inMemoryDispatchRules[tenantId] = updated;
+    const fallbackAllowed = isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test';
     const db = getFirestoreDb();
+    if (!db && !fallbackAllowed) {
+      throw new BFFError('DATABASE_UNAVAILABLE', 'Dispatch rules were not saved because durable storage is unavailable.', 503);
+    }
     if (db) {
       try {
         await db.collection('tenants').doc(tenantId).collection('dispatchRules').doc('default').set(cleanUndefined(updated), { merge: true });
       } catch (err) {
         console.warn('[Firestore Admin] Failed to save tenant dispatch rules to Firestore:', err);
+        if (!fallbackAllowed) throw err;
       }
     }
+    inMemoryDispatchRules[tenantId] = updated;
     return updated;
   }
 }

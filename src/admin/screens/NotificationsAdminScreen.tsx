@@ -67,6 +67,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
   const brandDisplayName = tenant?.brandName || (tenantId === 'default' ? 'White-Label Commerce' : tenantId);
 
   const handleSave = () => {
+    // Preview-only until notification settings have a durable BFF persistence adapter.
     defaultNotificationService.saveSettings({
       tenantId,
       senderName: `${brandDisplayName} Updates`,
@@ -182,7 +183,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* SIMULATED DEVICE NOTIFICATION TOAST POPUP */}
+      {/* PREVIEW DEVICE NOTIFICATION TOAST */}
       {testNotificationToast && (
         <div className="fixed top-4 right-4 z-50 max-w-md w-full animate-in slide-in-from-top-4 duration-300">
           <div className="bg-gray-950/95 text-white rounded-2xl p-4 shadow-2xl border border-gray-800 backdrop-blur-md flex items-start gap-3">
@@ -192,7 +193,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-indigo-400">
-                  {testNotificationToast.channel} DISPATCH SIMULATION
+                  {testNotificationToast.channel} PREVIEW
                 </span>
                 <span className="text-[10px] text-gray-400 font-mono">Just Now</span>
               </div>
@@ -210,10 +211,10 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Bell className="w-5 h-5 text-indigo-600" />
-            <span>Order notifications</span>
+            <span>Notifications</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Configure customer notification triggers and preview how live order updates will appear across supported channels.
+            Design notification triggers and preview customer messaging. Provider delivery and durable settings are not connected yet.
           </p>
         </div>
 
@@ -221,7 +222,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
           {saveSuccess && (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
               <Check className="w-3.5 h-3.5" />
-              Notification rules saved
+              Preview updated for this session
             </span>
           )}
           <button
@@ -230,8 +231,18 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5"
           >
             <Check className="w-4 h-4" />
-            <span>{isDirty ? 'Save changes' : 'Save notification rules'}</span>
+            <span>{isDirty ? 'Update preview' : 'Preview settings'}</span>
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 flex items-start gap-3">
+        <Activity className="w-4 h-4 mt-0.5 shrink-0" />
+        <div>
+          <p className="font-bold">Preview only — delivery is not connected</p>
+          <p className="mt-1 leading-relaxed">
+            Notification rules currently live in browser/server memory for this session. They are not stored durably and this page does not send SMS, email, WhatsApp or push notifications. Use it to design the experience only.
+          </p>
         </div>
       </div>
 
@@ -239,7 +250,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
         {/* LEFT COLUMN: EVENT TRIGGERS LIST (4 COLS) */}
         <div className="lg:col-span-4 space-y-3">
           <span className="text-xs font-bold text-gray-700 block px-1">
-            Order Lifecycle Triggers ({rules.length})
+            Order lifecycle triggers ({rules.length})
           </span>
           <div className="space-y-2">
             {rules.map((rule) => {
@@ -312,7 +323,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
             {/* CHANNEL TOGGLES */}
             <div>
               <span className="text-[11px] font-bold text-gray-700 block mb-2">
-                Active Channels
+                Preview channels
               </span>
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -345,7 +356,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
             {/* TEMPLATE EDITORS */}
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                Notification Headline
+                Notification headline
               </label>
               <input
                 type="text"
@@ -365,7 +376,7 @@ export const NotificationsAdminScreen: React.FC<NotificationsAdminScreenProps> =
 
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                Message Body
+                Message body
               </label>
               <textarea
                 rows={3}

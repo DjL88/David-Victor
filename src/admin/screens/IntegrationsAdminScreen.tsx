@@ -325,7 +325,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   };
 
   /**
-   * STEP 3: Discover Linked Accounts from Deliverect Commerce API
+   * STEP 3: Find accounts from Deliverect Commerce API
    */
   const handleDiscoverAccounts = async () => {
     setSyncingAccounts(true);
@@ -401,7 +401,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   };
 
   /**
-   * STEP 4: Discover Commerce Stores for Selected Account
+   * STEP 4: Import locations for Selected Account
    */
   const handleDiscoverStores = async (accId?: string) => {
     const targetAccount = accId || selectedAccountId || config.deliverectAccountId;
@@ -519,7 +519,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
           <div>
             <div className="flex items-center gap-2">
               <Link2 className="w-6 h-6 text-emerald-400" />
-              <h2 className="text-xl font-bold text-white">Deliverect Commerce Integration</h2>
+              <h2 className="text-xl font-bold text-white">Deliverect Setup</h2>
             </div>
             <p className="text-sm text-gray-400 mt-1">
               Multi-tenant live staging orchestration: Credentials → OAuth Token → Linked Account → Commerce Stores.
@@ -660,7 +660,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <Key className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Step 1: Environment & Credentials</h3>
+                  <h3 className="text-base font-bold text-white">1. Connection details</h3>
                   <p className="text-xs text-gray-400">Server-side credentials managed securely in Secret Manager</p>
                 </div>
               </div>
@@ -702,7 +702,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
             </div>
           </div>
 
-          {/* STEP 2: Test Deliverect OAuth */}
+          {/* STEP 2: Test connection */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -710,7 +710,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <ShieldCheck className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Step 2: Test Deliverect OAuth</h3>
+                  <h3 className="text-base font-bold text-white">2. Test connection</h3>
                   <p className="text-xs text-gray-400">Requests OAuth token using client credentials grant & caches it</p>
                 </div>
               </div>
@@ -764,7 +764,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50 transition shadow-xs"
               >
                 <RefreshCw className={`w-4 h-4 ${testingOAuth ? 'animate-spin' : ''}`} />
-                <span>{testingOAuth ? 'Acquiring Token...' : 'Test Deliverect OAuth'}</span>
+                <span>{testingOAuth ? 'Acquiring Token...' : 'Test connection'}</span>
               </button>
             </div>
           </div>
@@ -777,7 +777,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <Building2 className="w-5 h-5 text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Step 3: Discover & Select Linked Account</h3>
+                  <h3 className="text-base font-bold text-white">3. Choose Deliverect account</h3>
                   <p className="text-xs text-gray-400">Query Deliverect Commerce Get Linked Accounts</p>
                 </div>
               </div>
@@ -804,7 +804,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700 cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncingAccounts ? 'animate-spin' : ''}`} />
-                <span>{syncingAccounts ? 'Querying Upstream Accounts...' : 'Discover Linked Accounts'}</span>
+                <span>{syncingAccounts ? 'Querying Upstream Accounts...' : 'Find accounts'}</span>
               </button>
               {linkedAccounts.length > 0 && (
                 <span className="text-xs text-emerald-400 font-medium">
@@ -895,12 +895,12 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               </div>
             ) : (
               <div className="p-4 bg-gray-950 border border-gray-800/80 rounded-xl text-xs text-gray-400 text-center">
-                Click &quot;Discover Linked Accounts&quot; above to query Deliverect staging with your verified OAuth credentials.
+                Click &quot;Find accounts&quot; above to query Deliverect staging with your verified OAuth credentials.
               </div>
             )}
           </div>
 
-          {/* STEP 4: Discover Commerce Stores */}
+          {/* STEP 4: Import locations */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -908,7 +908,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   <Store className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Step 4: Discover Commerce Stores</h3>
+                  <h3 className="text-base font-bold text-white">4. Import locations</h3>
                   <p className="text-xs text-gray-400">Fetch real stores, channel links, and physical locations</p>
                 </div>
               </div>
@@ -933,7 +933,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50 transition shadow-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${discoveringStores ? 'animate-spin' : ''}`} />
-                <span>{discoveringStores ? 'Discovering Stores...' : 'Discover Commerce Stores'}</span>
+                <span>{discoveringStores ? 'Discovering Stores...' : 'Import locations'}</span>
               </button>
               {discoveredStores.length > 0 && (
                 <span className="text-xs text-emerald-400 font-semibold">
@@ -1004,7 +1004,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               </div>
             ) : (
               <div className="p-4 bg-gray-950 border border-gray-800/80 rounded-xl text-xs text-gray-400 text-center">
-                Once a Deliverect Account is selected in Step 3, click &quot;Discover Commerce Stores&quot; to fetch and map live stores.
+                Once a Deliverect Account is selected in Step 3, click &quot;Import locations&quot; to fetch and map live stores.
               </div>
             )}
           </div>
@@ -1294,7 +1294,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 <Database className="w-5 h-5 text-blue-400" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Firestore State Isolation</h3>
+                <h3 className="text-sm font-bold text-white">Data isolation</h3>
                 <p className="text-xs text-gray-400">Tenant-Scoped Persistence</p>
               </div>
             </div>
@@ -1344,7 +1344,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                 <Radio className="w-5 h-5 text-cyan-400" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Quest Retail Webhooks</h3>
+                <h3 className="text-sm font-bold text-white">Quest order webhooks</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
                   Copy these exact URLs into Deliverect Partner Integration → Order info.
                 </p>

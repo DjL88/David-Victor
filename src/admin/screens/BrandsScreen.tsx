@@ -161,13 +161,13 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
         <div>
           <div className="flex items-center gap-3">
             <BwydiLogo variant="icon" color="aubergine" size="sm" />
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Brands & Tenants</h1>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Brands</h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
               Platform SuperAdmin
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            bwydi Multi-Tenant Provisioning • Configure merchant brands, domains, and Deliverect channel links.
+            Create and manage white-label brands, domains and commerce connections.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-sm font-semibold rounded-xl shadow-xs transition-all"
         >
           <Plus className="w-4 h-4" />
-          <span>Provision New Brand</span>
+          <span>New brand</span>
         </button>
       </div>
 
@@ -347,7 +347,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                     }}
                     className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl"
                   >
-                    Open Brand Admin
+                    Open brand
                   </button>
                   <button
                     type="button"

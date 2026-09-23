@@ -102,7 +102,7 @@ export class MediaHealthService {
 
     // 4. CMS Pages
     try {
-      const pages = CmsService.list(tenantId);
+      const pages = await CmsService.list(tenantId);
       for (const page of pages) {
         for (const block of page.blocks || []) {
           if ((block as any).imageUrl) {

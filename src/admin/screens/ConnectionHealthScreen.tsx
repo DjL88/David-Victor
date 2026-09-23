@@ -92,7 +92,7 @@ export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ 
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-extrabold text-gray-900 tracking-tight">
-                  Connection Health & Request Trace
+                  Connection Status
                 </h1>
                 {health && (
                   <span
@@ -109,7 +109,7 @@ export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ 
                 )}
               </div>
               <p className="text-xs text-gray-500">
-                Authoritative multi-stage diagnostics and telemetry across Upstream, BFF, HTTP client, and UI cards.
+                See whether storefront data is flowing correctly from Deliverect through the BFF to the customer UI, with request tracing available for deeper diagnosis.
               </p>
             </div>
           </div>

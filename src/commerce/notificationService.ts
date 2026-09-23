@@ -216,12 +216,16 @@ export class NotificationService {
 
   getSettings(tenantId: string): TenantNotificationSettings {
     return (
-      this.settings[tenantId] ||
-      this.settings['brand-alpha'] || {
+      this.settings[tenantId] || {
         tenantId,
-        senderName: 'Grocery Platform',
-        replyToEmail: 'support@platform.example',
-        eventRules: DEFAULT_NOTIFICATION_RULES,
+        senderName: 'Store updates',
+        replyToEmail: '',
+        eventRules: DEFAULT_NOTIFICATION_RULES.map((rule) => ({
+          ...rule,
+          channels: [...rule.channels],
+          retryPolicy: { ...rule.retryPolicy },
+          template: { ...rule.template },
+        })),
         updatedAt: new Date().toISOString(),
       }
     );

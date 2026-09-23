@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TenantConfig } from '../../commerce/models';
 import { getAdminClient } from '../../commerce/AdminClient';
-import { MOCK_TENANTS } from '../../commerce/mockData';
 import {
   Globe,
   CheckCircle2,
@@ -35,9 +34,7 @@ interface DomainsScreenProps {
 
 export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenants = [] }) => {
   const [domains, setDomains] = useState<DomainMapping[]>([]);
-  const [tenantsList, setTenantsList] = useState<TenantConfig[]>(
-    allTenants.length > 0 ? allTenants : Object.values(MOCK_TENANTS)
-  );
+  const [tenantsList, setTenantsList] = useState<TenantConfig[]>(allTenants);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -62,6 +59,8 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     } else {
       loadTenants();
     }
+    setSelectedTenantId(tenantId);
+
     loadDomains();
   }, [tenantId]);
 
@@ -88,16 +87,11 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     setErrorMessage(null);
     try {
       const client = getAdminClient();
-      if (client.listAllDomains) {
-        const data = await client.listAllDomains();
-        setDomains(data || []);
-      } else {
-        const res = await fetch('/api/v1/admin/domains');
-        if (res.ok) {
-          const data = await res.json();
-          setDomains(data || []);
-        }
+      if (!client.listAllDomains) {
+        throw new Error('Domain management is not available in this Admin client.');
       }
+      const data = await client.listAllDomains();
+      setDomains(data || []);
     } catch (e: any) {
       console.error('Failed to load domains:', e);
       setErrorMessage(e.message || 'Failed to load domain mappings.');
@@ -120,27 +114,14 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
     try {
       const client = getAdminClient();
-      if (client.addOrUpdateDomain) {
-        await client.addOrUpdateDomain({
-          hostname: cleanHost,
-          tenantId: selectedTenantId,
-          isPrimary,
-        });
-      } else {
-        const res = await fetch('/api/v1/admin/domains', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            hostname: cleanHost,
-            tenantId: selectedTenantId,
-            isPrimary,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Failed to map domain.');
-        }
+      if (!client.addOrUpdateDomain) {
+        throw new Error('Domain management is not available in this Admin client.');
       }
+      await client.addOrUpdateDomain({
+        hostname: cleanHost,
+        tenantId: selectedTenantId,
+        isPrimary,
+      });
 
       setSuccessMessage(`Domain "${cleanHost}" successfully mapped to ${getTenantName(selectedTenantId)}!`);
       setNewHostname('');
@@ -165,17 +146,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
     try {
       const client = getAdminClient();
-      if (client.deleteDomain) {
-        await client.deleteDomain(domainId);
-      } else {
-        const res = await fetch(`/api/v1/admin/domains/${encodeURIComponent(domainId)}`, {
-          method: 'DELETE',
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Failed to delete domain.');
-        }
+      if (!client.deleteDomain) {
+        throw new Error('Domain management is not available in this Admin client.');
       }
+      await client.deleteDomain(domainId);
 
       setSuccessMessage(`Domain "${hostname}" removed.`);
       await loadDomains();
@@ -208,10 +182,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-gray-900">Domains & brand routing</h1>
+                <h1 className="text-xl font-bold text-gray-900">Domains</h1>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Associate published hostnames and custom domains with the correct storefront brand.
+                Route each published hostname or custom domain to the correct storefront brand.
               </p>
             </div>
           </div>
@@ -293,7 +267,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                   <tr>
                     <td className="p-2 text-indigo-600 font-bold">CNAME</td>
                     <td className="p-2">www (or subdomain)</td>
-                    <td className="p-2">1bwydi.ai.studio (or your published app URL)</td>
+                    <td className="p-2">Your published storefront hostname</td>
                   </tr>
                   <tr>
                     <td className="p-2 text-indigo-600 font-bold">A</td>
@@ -313,7 +287,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             </label>
             <input
               type="text"
-              placeholder="e.g. 1bwydi.ai.studio, www.shop1.com, shop2.com"
+              placeholder="e.g. shop.example.com or www.example.com"
               value={newHostname}
               onChange={(e) => setNewHostname(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono bg-white focus:outline-indigo-600 focus:border-indigo-600"
@@ -390,7 +364,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             <div className="space-y-1">
               <p className="text-sm font-bold text-gray-800">No Custom Domains Configured</p>
               <p className="text-xs text-gray-500 max-w-md mx-auto">
-                Add your published AI Studio hostname (e.g. <code>1bwydi.ai.studio</code>) or custom brand domains above to automatically route shoppers to their respective stores.
+                Add a published hostname or custom domain above to route shoppers to the correct brand.
               </p>
             </div>
           </div>
