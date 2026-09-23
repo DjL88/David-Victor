@@ -60,7 +60,7 @@ interface ChatArgs {
 }
 
 interface ChatClient {
-  provider: Exclude<AdminAssistantProvider, 'local-fallback'>;
+  provider: Exclude<AdminAssistantProvider, 'local-fallback' | 'local-agent'>;
   preferredModel: string;
   ai: GoogleGenAI;
 }
