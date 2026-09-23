@@ -27,6 +27,14 @@ interface BrandsScreenProps {
   onSelectTenant: (tenantId: string) => void;
 }
 
+const deriveOrderPrefix = (name: string): string => {
+  const words = name.match(/[A-Z]+(?=[A-Z][a-z]|\b)|[A-Z]?[a-z]+|\d+/g) || [];
+  const raw = words.length >= 2
+    ? words.slice(0, 4).map((word) => word.charAt(0)).join('')
+    : name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2);
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+};
+
 export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelectTenant }) => {
   const [tenants, setTenants] = useState<TenantConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +49,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
   // Wizard form state
   const [brandName, setBrandName] = useState('');
   const [tenantId, setTenantId] = useState('');
+  const [orderCodePrefix, setOrderCodePrefix] = useState('');
   const [primaryColour, setPrimaryColour] = useState('#059669');
   const [secondaryColour, setSecondaryColour] = useState('#10B981');
   const [fontFamily, setFontFamily] = useState('Plus Jakarta Sans');
@@ -81,9 +90,13 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
   }, []);
 
   const handleNameChange = (val: string) => {
+    const previousDerived = deriveOrderPrefix(brandName);
     setBrandName(val);
     if (!tenantId || tenantId === brandName.toLowerCase().replace(/[^a-z0-9]/g, '-')) {
       setTenantId(val.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'));
+    }
+    if (!orderCodePrefix || orderCodePrefix === previousDerived) {
+      setOrderCodePrefix(deriveOrderPrefix(val));
     }
     if (!defaultDomain) {
       setDefaultDomain(`${val.toLowerCase().replace(/[^a-z0-9]/g, '')}.retail.platform`);
@@ -97,6 +110,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       const newTenant = await defaultAdminClient.provisionBrand({
         tenantId,
         brandName,
+        orderCodePrefix: orderCodePrefix || undefined,
         primaryColour,
         secondaryColour,
         fontFamily,
@@ -138,6 +152,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
     setProvisionSuccess(null);
     setBrandName('');
     setTenantId('');
+    setOrderCodePrefix('');
     setPrimaryColour('#059669');
     setSecondaryColour('#10B981');
     setCurrency('GBP');
@@ -392,6 +407,20 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                         className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-600"
                       />
                       <p className="text-[11px] text-gray-400 mt-1">Unique identifier used to keep this brand's configuration separate.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Order reference prefix</label>
+                      <input
+                        type="text"
+                        value={orderCodePrefix}
+                        maxLength={4}
+                        onChange={(e) => setOrderCodePrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
+                        placeholder="e.g. LT"
+                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono uppercase focus:ring-2 focus:ring-indigo-600"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        2–4 letters/numbers. Used for short picker-friendly order IDs, e.g. {orderCodePrefix || 'LT'}26390001.
+                      </p>
                     </div>
                   </div>
                 )}
