@@ -89,7 +89,7 @@ const CatalogueDiagnosticInputSchema = z.object({
   query: z.string().trim().min(1).optional(),
   plu: z.string().trim().min(1).optional(),
   productId: z.string().trim().min(1).optional(),
-  includeLocations: z.boolean().optional().default(false),
+  includeLocations: z.boolean().optional(),
 }).refine((value) => Boolean(value.query || value.plu || value.productId), {
   message: 'A product name, PLU, barcode or product ID is required.',
 });
