@@ -129,7 +129,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   useEffect(() => {
     defaultAdminClient.setActiveAdminUser?.(currentUser);
-  }, [currentUser]);
+    if (currentUser.role === 'platformSuperAdmin' && currentTenantId) {
+      void defaultAdminClient.switchTenantAsSuperAdmin(currentTenantId);
+    }
+  }, [currentUser, currentTenantId]);
 
   useEffect(() => {
     loadTenant();
@@ -164,6 +167,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         return true;
       });
       setAllTenants(deduped);
+
+      // A Platform SuperAdmin identity may still carry an old tenantId after
+      // that brand has been deleted. Never keep the workspace pinned to a tenant
+      // that no longer exists; select the first live tenant instead.
+      if (
+        currentUser.role === 'platformSuperAdmin' &&
+        deduped.length > 0 &&
+        !deduped.some((tenant) => tenant.tenantId === currentTenantId)
+      ) {
+        const nextTenantId = deduped[0].tenantId;
+        setCurrentTenantId(nextTenantId);
+        void defaultAdminClient.switchTenantAsSuperAdmin(nextTenantId);
+      }
     } catch (e) {
       console.warn('Failed to load dynamic tenants list:', e);
     }
@@ -188,7 +204,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     setCurrentUser(user);
     defaultAdminClient.setActiveAdminUser?.(user);
     if (user.role === 'platformSuperAdmin') {
-      setCurrentTenantId(user.tenantId || 'brand-alpha');
+      const liveTenantId =
+        allTenants.find((tenant) => tenant.tenantId === currentTenantId)?.tenantId ||
+        allTenants[0]?.tenantId ||
+        user.tenantId;
+      if (liveTenantId) setCurrentTenantId(liveTenantId);
     } else {
       setCurrentTenantId(user.tenantId);
     }
