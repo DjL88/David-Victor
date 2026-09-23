@@ -205,6 +205,9 @@ export function resolveAdminAssistantNavigationHint(
   if (/(banner|hero banner|category banner|sponsor.*category|sponsor.*aisle)/i.test(text)) {
     return choose('hero_banners', 'hero-banners-add', 'Open Banners');
   }
+  if (/(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)/i.test(text)) {
+    return choose('insights', undefined, 'Open Insights');
+  }
   if (/(product|plu|sku|barcode|gtin|stock|snooz|catalogue|catalog)/i.test(text)) {
     return choose('catalog', 'catalog-search', 'Open Products & Stock');
   }
@@ -313,7 +316,19 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
       .map((action) => action.name)
   );
 
-  if (section === 'catalog' && available.has('catalog.diagnoseVisibility')) {
+  const analyticsIntent =
+    /(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)/i.test(args.message);
+  const explicitProductIntent =
+    /(stock|snooz|product|item|plu|sku|barcode|gtin|price|visible|appearing|showing|catalogue|catalog)/i.test(args.message);
+  const locationProductIntent =
+    /(locations?|stores?|branches?).*(with|stock|sell|selling|have|has)/i.test(args.message) ||
+    /(which|what|how many|list all).*(locations?|stores?|branches?)/i.test(args.message);
+
+  if (
+    available.has('catalog.diagnoseVisibility') &&
+    !analyticsIntent &&
+    (explicitProductIntent || locationProductIntent)
+  ) {
     const query = extractCatalogLookupQuery(args.message);
     if (query) {
       try {
@@ -343,9 +358,9 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
   }
 
   if (
-    section === 'stores' &&
     available.has('stores.inspect') &&
-    /(how many|list|which|store|stores|location|locations|opening|radius)/i.test(args.message)
+    !explicitProductIntent &&
+    /(how many|list|which|store|stores|location|locations|opening|radius|duplicate|eligible)/i.test(args.message)
   ) {
     try {
       const execution = await AdminAssistantActionService.executeReadOnly({
