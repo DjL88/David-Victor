@@ -66,26 +66,86 @@ describe('AdminAssistantChatService foundations', () => {
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
   });
 
-  it('maps natural Admin questions to page and field navigation hints', () => {
-    expect(resolveAdminAssistantNavigationHint('Change my colour scheme to match the logo', 'languages')).toEqual({
+  it('maps natural Admin questions to page, field and safe draft guidance', () => {
+    const colour = resolveAdminAssistantNavigationHint(
+      'Change my colour scheme to #112233 and #445566',
+      'languages'
+    );
+    expect(colour).toMatchObject({
       section: 'branding',
-      target: 'branding-colours',
+      target: 'branding-primary-colour',
       label: 'Open Branding · Colours',
+      prefill: {
+        primaryColour: '#112233',
+        secondaryColour: '#445566',
+      },
     });
-    expect(resolveAdminAssistantNavigationHint("Create a product rule for chilled beer", 'catalog')).toEqual({
+    expect(colour?.steps).toHaveLength(3);
+
+    const rule = resolveAdminAssistantNavigationHint('Create a product rule to hide alcohol', 'catalog');
+    expect(rule).toMatchObject({
       section: 'product_rules',
-      target: 'product-rules-new',
-      label: 'Open Product rules · New rule',
+      target: 'product-rule-name',
+      label: 'Open Product rules · Prepared draft',
+      prefill: {
+        openNew: true,
+        rule: {
+          name: 'Alcohol controls',
+          matchConditions: [{ field: 'isAlcohol', operator: 'equals', value: 'true' }],
+          actions: [{ type: 'HIDE_PRODUCT' }],
+        },
+      },
     });
-    expect(resolveAdminAssistantNavigationHint('Where do I change Basket to Cart?', 'branding')).toEqual({
+    expect(rule?.steps).toHaveLength(4);
+
+    expect(resolveAdminAssistantNavigationHint('Where do I change Basket to Cart?', 'branding')).toMatchObject({
       section: 'languages',
-      target: 'languages-terminology',
+      target: 'language-copy-header.basket',
       label: 'Open Languages · Wording',
+      prefill: {
+        copyKey: 'header.basket',
+        copyValue: 'Cart',
+      },
     });
+
     expect(resolveAdminAssistantNavigationHint("What is Dave's Delicatessen top selling item?", 'catalog')).toEqual({
       section: 'insights',
       target: undefined,
       label: 'Open Insights',
+    });
+  });
+
+  it('does not invent unsupported time-of-day product rule conditions', () => {
+    const result = resolveAdminAssistantNavigationHint(
+      'Create a product rule to hide alcohol after 10pm',
+      'product_rules'
+    );
+    expect(result).toMatchObject({
+      section: 'product_rules',
+      target: 'product-rules-new',
+      prefill: { openNew: true },
+    });
+    expect(result?.steps?.[0].instruction).toContain('do not yet support time-of-day conditions');
+  });
+
+  it('prepares deterministic fee and location drafts without saving', () => {
+    expect(resolveAdminAssistantNavigationHint('Set delivery fee to £1.99', 'fees')).toMatchObject({
+      section: 'fees',
+      target: 'fees-fixed-delivery',
+      prefill: {
+        deliveryFeeMode: 'FIXED',
+        fixedDeliveryFeeMajor: 1.99,
+      },
+    });
+
+    expect(resolveAdminAssistantNavigationHint('Set all delivery radius to 5 km', 'stores')).toMatchObject({
+      section: 'stores',
+      target: 'stores-batch-radius',
+      prefill: {
+        selectAllFiltered: true,
+        openBatchRadius: true,
+        batchRadius: '5',
+      },
     });
   });
 
