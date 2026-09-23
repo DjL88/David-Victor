@@ -643,7 +643,7 @@ export function extractCatalogLookupQuery(message: string): string | null {
     /(stock|in stock|out of stock|available|availability|price|visible|appearing|showing|snooz|find|lookup|check|product|item|plu|barcode|gtin|stores?|locations?)/i.test(raw);
 
   if (!hasLookupIntent) {
-    if (words.length <= 4 && !/^(what|why|how|can|could|would|should|where)\b/i.test(raw)) {
+    if (words.length <= 4 && !/^(what|which|why|how|can|could|would|should|where|who|tell|help|show|explain|them|those|these)\b/i.test(raw)) {
       return raw.replace(/[?.!,]+$/g, '').trim();
     }
     return null;
@@ -676,13 +676,46 @@ export function extractCatalogLookupQuery(message: string): string | null {
   return cleaned.length >= 2 ? cleaned : null;
 }
 
-async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext | null> {
+export function resolveContextualCatalogLookupQuery(
+  message: string,
+  history: AdminAssistantChatMessage[] = []
+): string | null {
+  const direct = extractCatalogLookupQuery(message);
+  if (direct) return direct;
+
+  const text = String(message || '').trim();
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const looksLikeFollowUp =
+    /^(which ones?|where|list them|show them|what about|how about|and |why only|what about the others?|the others?|those|them)\b/i.test(text) ||
+    (wordCount <= 7 && /\b(which|ones|them|those|these|other|others|where|why)\b/i.test(text));
+
+  if (!looksLikeFollowUp) return null;
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const previous = history[index];
+    if (previous.role !== 'user') continue;
+    const inherited = extractCatalogLookupQuery(previous.content);
+    if (inherited) return inherited;
+  }
+
+  return null;
+}
+
+
+async function resolveReadContext(
+  args: ChatArgs,
+  history: AdminAssistantChatMessage[] = []
+): Promise<AssistantReadContext | null> {
   const section = args.context?.section;
   const available = new Set(
     listAssistantActionsForRole(args.actorRole as AdminRole)
       .filter((action) => action.assistantMode === 'EXECUTE_READ')
       .map((action) => action.name)
   );
+
+  const directCatalogQuery = extractCatalogLookupQuery(args.message);
+  const contextualCatalogQuery = resolveContextualCatalogLookupQuery(args.message, history);
+  const inheritedCatalogContext = Boolean(contextualCatalogQuery && !directCatalogQuery);
 
   const analyticsIntent =
     /\b(top selling|best selling|sales|revenue|most sold|least sold|rank|ranking|most snoozed|snoozed most|frequency|historical)\b/i.test(args.message);
@@ -695,9 +728,9 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
   if (
     available.has('catalog.diagnoseVisibility') &&
     !analyticsIntent &&
-    (explicitProductIntent || locationProductIntent)
+    (explicitProductIntent || locationProductIntent || inheritedCatalogContext)
   ) {
-    const query = extractCatalogLookupQuery(args.message);
+    const query = contextualCatalogQuery;
     if (query) {
       try {
         const execution = await AdminAssistantActionService.executeReadOnly({
@@ -710,7 +743,9 @@ async function resolveReadContext(args: ChatArgs): Promise<AssistantReadContext 
           actionName: 'catalog.diagnoseVisibility',
           input: {
             query,
-            includeLocations: /\b(which|what|where|how many|stores?|locations?|branches?)\b/i.test(args.message),
+            includeLocations:
+              /\b(which|what|where|how many|stores?|locations?|branches?|ones|others?|them|why only)\b/i.test(args.message) ||
+              inheritedCatalogContext,
           },
         });
         return {
@@ -1096,7 +1131,7 @@ export class AdminAssistantChatService {
   }> {
     const history = normaliseChatHistory(args.history);
     const attachments = normaliseAttachments(args.attachments);
-    const readContext = await resolveReadContext(args);
+    const readContext = await resolveReadContext(args, history);
     const navigation = resolveAdminAssistantNavigationHint(args.message, args.context?.section);
     const localReply = attachments.length === 0
       ? buildLocalGuidedReply(args.message, navigation, readContext)

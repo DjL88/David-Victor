@@ -7,6 +7,7 @@ import {
   normaliseAssistantReply,
   normaliseChatHistory,
   resolveAdminAssistantNavigationHint,
+  resolveContextualCatalogLookupQuery,
 } from './adminAssistantChatService';
 
 describe('AdminAssistantChatService foundations', () => {
@@ -166,6 +167,18 @@ describe('AdminAssistantChatService foundations', () => {
     expect(extractCatalogLookupQuery('How many locations have stock (unsnooze) of Bananas?')).toBe('Bananas');
     expect(extractCatalogLookupQuery('Can you list all locations with bananas?')).toBe('bananas');
     expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
+  });
+
+  it('inherits the previous product for short conversational follow-ups', () => {
+    const history = [
+      { role: 'user' as const, content: 'How many locations stock bananas?' },
+      { role: 'assistant' as const, content: 'Bananas are in stock at 4 locations.' },
+    ];
+
+    expect(resolveContextualCatalogLookupQuery('Which ones?', history)).toBe('bananas');
+    expect(resolveContextualCatalogLookupQuery('What about the others?', history)).toBe('bananas');
+    expect(resolveContextualCatalogLookupQuery('Why only 3?', history)).toBe('bananas');
+    expect(resolveContextualCatalogLookupQuery('Tell me about fees', history)).toBeNull();
   });
 
   it('retains safe text attachments in chat history', () => {
