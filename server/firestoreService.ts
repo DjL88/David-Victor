@@ -502,6 +502,19 @@ export class FirestoreService {
     const seenHostnames = new Set<string>();
 
     const db = getFirestoreDb();
+    if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
+      const permission = getFirestorePermissionStatus();
+      throw new BFFError(
+        permission.denied ? 'DATABASE_PERMISSION_DENIED' : 'DATABASE_UNAVAILABLE',
+        permission.denied
+          ? 'Platform database access is temporarily denied for this runtime.'
+          : 'Platform database is unavailable for this runtime.',
+        503,
+        true,
+        permission.denied ? { retryInMs: permission.retryInMs } : undefined
+      );
+    }
+
     if (db && !isFirestorePermissionDenied()) {
       try {
         const snap = await db.collection('domains').get();
@@ -514,7 +527,7 @@ export class FirestoreService {
               hostname: host,
               tenantId: data.tenantId,
               isPrimary: data.isPrimary ?? false,
-              status: data.status || 'active',
+              status: data.status || 'pending',
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
             });
@@ -524,15 +537,33 @@ export class FirestoreService {
       } catch (err: any) {
         if (isFirestorePermissionDeniedError(err)) {
           markFirestorePermissionDenied(err);
+          if (!useLocalRuntimeData) {
+            const permission = getFirestorePermissionStatus();
+            throw new BFFError(
+              'DATABASE_PERMISSION_DENIED',
+              'Platform database access is temporarily denied for this runtime.',
+              503,
+              true,
+              { retryInMs: permission.retryInMs }
+            );
+          }
+        } else if (!useLocalRuntimeData) {
+          throw new BFFError(
+            'DATABASE_UNAVAILABLE',
+            'Platform domain registry could not be read.',
+            503,
+            true
+          );
         }
       }
     }
 
-    // Merge in-memory and disk-persisted domains
-    for (const [host, rec] of Object.entries(inMemoryDomains)) {
-      if (!seenHostnames.has(host.toLowerCase())) {
-        list.push(rec);
-        seenHostnames.add(host.toLowerCase());
+    if (useLocalRuntimeData) {
+      for (const [host, rec] of Object.entries(inMemoryDomains)) {
+        if (!seenHostnames.has(host.toLowerCase())) {
+          list.push(rec);
+          seenHostnames.add(host.toLowerCase());
+        }
       }
     }
 
@@ -575,12 +606,20 @@ export class FirestoreService {
       updatedAt: now,
     };
 
-    // 1. Update in-memory & disk persistence
-    inMemoryDomains[cleanHost] = record;
-    savePersistedDomains(inMemoryDomains);
-
-    // 2. Persist to Firestore if available
     const db = getFirestoreDb();
+    if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
+      const permission = getFirestorePermissionStatus();
+      throw new BFFError(
+        permission.denied ? 'DATABASE_PERMISSION_DENIED' : 'DATABASE_UNAVAILABLE',
+        permission.denied
+          ? 'Platform database access is temporarily denied for this runtime.'
+          : 'Platform database is unavailable for this runtime.',
+        503,
+        true,
+        permission.denied ? { retryInMs: permission.retryInMs } : undefined
+      );
+    }
+
     if (db && !isFirestorePermissionDenied()) {
       try {
         const topDomainRef = db.collection('domains').doc(domainSlug);
@@ -591,12 +630,12 @@ export class FirestoreService {
             tenantId,
             isPrimary: record.isPrimary,
             status: record.status,
+            createdAt: record.createdAt,
             updatedAt: now,
           },
           { merge: true }
         );
 
-        // Also record under tenant subcollection
         const tenantDomainRef = db.collection('tenants').doc(tenantId).collection('domains').doc(domainSlug);
         await tenantDomainRef.set(
           {
@@ -605,6 +644,7 @@ export class FirestoreService {
             tenantId,
             isPrimary: record.isPrimary,
             status: record.status,
+            createdAt: record.createdAt,
             updatedAt: now,
           },
           { merge: true }
@@ -612,11 +652,30 @@ export class FirestoreService {
       } catch (err: any) {
         if (isFirestorePermissionDeniedError(err)) {
           markFirestorePermissionDenied(err);
-        } else {
-          console.warn('[FirestoreService] Could not persist domain to Firestore:', err.message);
+          if (!useLocalRuntimeData) {
+            const permission = getFirestorePermissionStatus();
+            throw new BFFError(
+              'DATABASE_PERMISSION_DENIED',
+              'Platform database access is temporarily denied for this runtime.',
+              503,
+              true,
+              { retryInMs: permission.retryInMs }
+            );
+          }
+        } else if (!useLocalRuntimeData) {
+          throw new BFFError(
+            'DATABASE_UNAVAILABLE',
+            'Domain mapping could not be persisted.',
+            503,
+            true
+          );
         }
       }
     }
+
+    // Local state is a cache after authoritative persistence, and a primary store only in demo/test.
+    inMemoryDomains[cleanHost] = record;
+    if (useLocalRuntimeData) savePersistedDomains(inMemoryDomains);
 
     return record;
   }
@@ -631,16 +690,24 @@ export class FirestoreService {
     for (const [host, rec] of Object.entries(inMemoryDomains)) {
       if (host === target || rec.domainId === target) {
         foundHostname = host;
-        delete inMemoryDomains[host];
         break;
       }
     }
 
-    if (foundHostname) {
-      savePersistedDomains(inMemoryDomains);
+    const db = getFirestoreDb();
+    if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
+      const permission = getFirestorePermissionStatus();
+      throw new BFFError(
+        permission.denied ? 'DATABASE_PERMISSION_DENIED' : 'DATABASE_UNAVAILABLE',
+        permission.denied
+          ? 'Platform database access is temporarily denied for this runtime.'
+          : 'Platform database is unavailable for this runtime.',
+        503,
+        true,
+        permission.denied ? { retryInMs: permission.retryInMs } : undefined
+      );
     }
 
-    const db = getFirestoreDb();
     if (db && !isFirestorePermissionDenied()) {
       try {
         const slug = (foundHostname || target).replace(/^dom_/, '').replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
@@ -648,10 +715,29 @@ export class FirestoreService {
       } catch (err: any) {
         if (isFirestorePermissionDeniedError(err)) {
           markFirestorePermissionDenied(err);
+          if (!useLocalRuntimeData) {
+            const permission = getFirestorePermissionStatus();
+            throw new BFFError(
+              'DATABASE_PERMISSION_DENIED',
+              'Platform database access is temporarily denied for this runtime.',
+              503,
+              true,
+              { retryInMs: permission.retryInMs }
+            );
+          }
+        } else if (!useLocalRuntimeData) {
+          throw new BFFError(
+            'DATABASE_UNAVAILABLE',
+            'Domain mapping could not be deleted.',
+            503,
+            true
+          );
         }
       }
     }
 
+    if (foundHostname) delete inMemoryDomains[foundHostname];
+    if (useLocalRuntimeData) savePersistedDomains(inMemoryDomains);
     return true;
   }
 
