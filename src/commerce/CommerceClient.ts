@@ -1,4 +1,5 @@
 import { CheckoutResult } from '../domain/models';
+import type { CmsPage } from './cmsModels';
 import {
   BootstrapResponse,
   Store,
@@ -107,6 +108,9 @@ export interface CommerceClient {
    * Fetches stories targeted to the current context (country, store, availability).
    */
   getStories(context?: { storeId?: string; coordinates?: Coordinates }): Promise<Story[]>;
+
+  /** Retrieves published CMS pages for the current tenant. */
+  getCmsPages?(): Promise<CmsPage[]>;
 
   /**
    * Searches the catalog.
