@@ -1,4 +1,5 @@
 /**
+import type { CmsPage } from './cmsModels';
  * Production HttpCommerceClient
  *
  * Implements the CommerceClient interface by dispatching all operations
@@ -211,6 +212,11 @@ export class HttpCommerceClient implements CommerceClient {
     return this.request<Story[]>(
       `/stories?tenantId=${encodeURIComponent(this.currentTenantId)}`
     );
+  }
+
+  async getCmsPages(): Promise<CmsPage[]> {
+    const result = await this.request<{ pages: CmsPage[] }>('/cms/pages');
+    return Array.isArray(result?.pages) ? result.pages : [];
   }
 
   async searchProducts(
