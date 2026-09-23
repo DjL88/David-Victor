@@ -15,7 +15,13 @@ export function buildDeliverectChannelEndpoints(origin: string, tenantId: string
 
   return [
     { key: 'storeProvisioning', label: 'Store provisioning URL', url: join(origin, `${base}/channel/provision`), readiness: 'READY' },
-    { key: 'channelRegistration', label: 'Channel registration webhook URL', url: join(origin, `${base}/channel/register`), readiness: 'READY' },
+    {
+      key: 'channelRegistration',
+      label: 'Channel registration webhook URL',
+      url: join(origin, '/api/v1/webhooks/deliverect/channel/register'),
+      readiness: 'READY',
+      note: 'Standardised registration URL. Deliverect sends accountId/channelLinkId in the request; our 200 response supplies the tenant-specific status, menu, snooze, busy-mode and prep-time callback URLs automatically.',
+    },
     { key: 'menuUpdate', label: 'Menu update webhook URL', url: join(origin, `${base}/channel/menu_update`), readiness: 'READY', note: 'Current endpoint accepts operational menu metadata; full hosted-catalog payload processing is being moved to the durable bulk queue.' },
     { key: 'snooze', label: 'Snooze/Unsnooze URL', url: join(origin, `${base}/channel/snooze`), readiness: 'READY' },
     { key: 'promotions', label: 'Promotions webhook URL', url: join(origin, `${base}/channel/promotions`), readiness: 'PENDING_CONTRACT', note: 'Waiting for the exact Deliverect Channel promotions payload before enabling.' },
@@ -39,7 +45,7 @@ export function buildDeliverectChannelEndpoints(origin: string, tenantId: string
 export const DELIVERECT_CHANNEL_SETUP_STEPS = [
   'Create or edit the Deliverect channel link and select this channel/integration.',
   'Set the External location id to the location identifier used by this tenant.',
-  'Paste the Store provisioning URL and Channel registration webhook URL.',
+  'Paste the Store provisioning URL. The Channel registration webhook URL is standardised and can be configured once in Deliverect Partner Integration settings.',
   'Configure Catalog callbacks: Menu update, Snooze/Unsnooze, then Promotions when its contract is enabled.',
   'Configure operational callbacks: Busy mode and Update prep time.',
   'Configure order callbacks: Order status, Picking status, Amendments and Substitutions; add Courier/Payment when enabled.',
