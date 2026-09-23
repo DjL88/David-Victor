@@ -2924,11 +2924,14 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const tenantId = resolveTenant(req);
-    const adapter = await getDeliverectAdapterAsync(tenantId);
-    let order = await adapter.getOrder(orderId);
 
-    // Merge or fall back to Firestore order projection for authoritative picking updates
+    // Resolve the durable projection before calling upstream. This lets us
+    // reject cross-tenant/unauthorised reads without leaking existence or
+    // spending an upstream Deliverect request.
     const proj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
+    if (proj && proj.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    }
 
     // Customer Access Control: signed-in orders require the owning Firebase
     // identity. Guest orders require the unguessable credential issued at
@@ -2960,6 +2963,9 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
         });
       }
     }
+
+    const adapter = await getDeliverectAdapterAsync(tenantId);
+    let order = await adapter.getOrder(orderId);
 
     if (!order && proj) {
       const tenant = await FirestorePlatformService.getTenantConfig(proj.tenantId || 'brand-alpha');
