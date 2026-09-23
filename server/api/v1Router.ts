@@ -25,6 +25,10 @@ import { BrandProfileService } from '../brandProfileService';
 import { MediaHealthService } from '../mediaHealthService';
 import { LocationService } from '../locationService';
 import { WebhookService, WebhookProcessingResult } from '../deliverect/WebhookService';
+import {
+  DeliverectOperationalWebhookService,
+  type DeliverectOperationalWebhookType,
+} from '../deliverect/DeliverectOperationalWebhookService';
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
@@ -2580,6 +2584,93 @@ v1Router.post(
   '/webhooks/deliverect/:identifier/picking/amendments',
   (req: Request, res: Response) =>
     handleQuestRetailCallback(req, res, 'amendments')
+);
+
+async function handleDeliverectOperationalWebhook(
+  req: Request,
+  res: Response,
+  type: DeliverectOperationalWebhookType
+): Promise<void> {
+  try {
+    const candidateTenantId = await resolveDeliverectWebhookTenant(req);
+    const rawBody =
+      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const signatureHeader =
+      (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+      (req.headers['x-deliverect-signature'] as string) ||
+      (req.headers['x-signature'] as string) ||
+      (req.headers['x-deliverect-hmac-sha256'] as string);
+
+    const { tenantId } = await WebhookService.resolveTenantForWebhook(
+      rawBody,
+      signatureHeader,
+      candidateTenantId
+    );
+
+    const result = await DeliverectOperationalWebhookService.process(
+      tenantId,
+      type,
+      req.body,
+      rawBody
+    );
+
+    if (type === 'busy_mode') {
+      res.status(200).json({ status: result.status });
+      return;
+    }
+
+    res.status(200).json(result);
+  } catch (err: any) {
+    const status = err.status || err.statusCode || 500;
+    const code = err.code || 'OPERATIONAL_WEBHOOK_PROCESSING_ERROR';
+    console.error(
+      `[Deliverect Operational Webhook Error] (${status} ${code}):`,
+      err.message
+    );
+    res.status(status).json({ error: err.message, code });
+  }
+}
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/busy_mode',
+    '/webhooks/deliverect/:identifier/channel/busy-mode',
+    '/webhooks/deliverect/channel/busy_mode',
+    '/webhooks/deliverect/channel/busy-mode',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'busy_mode')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/store_status',
+    '/webhooks/deliverect/:identifier/channel/store-status',
+    '/webhooks/deliverect/channel/store_status',
+    '/webhooks/deliverect/channel/store-status',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'store_status')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/snooze',
+    '/webhooks/deliverect/channel/snooze',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'snooze')
+);
+
+v1Router.post(
+  [
+    '/webhooks/deliverect/:identifier/channel/menu_update',
+    '/webhooks/deliverect/:identifier/channel/menu-update',
+    '/webhooks/deliverect/channel/menu_update',
+    '/webhooks/deliverect/channel/menu-update',
+  ],
+  (req: Request, res: Response) =>
+    void handleDeliverectOperationalWebhook(req, res, 'menu_update')
 );
 
 /**
