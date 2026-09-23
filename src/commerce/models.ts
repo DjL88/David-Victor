@@ -181,6 +181,11 @@ export interface TenantConfig {
   currency: string; // e.g. 'GBP'
   currencySymbol: string; // e.g. '£'
   locale: string; // e.g. 'en-GB'
+  /** Optional legal identity used on customer receipts. */
+  legalName?: string;
+  legalAddress?: string;
+  /** VAT registration number. VAT-labelled receipts are only shown when this and tax data exist. */
+  vatRegistrationNumber?: string;
   /** 2-4 character human-facing prefix used for short order references, e.g. LT. */
   orderCodePrefix?: string;
   /** Storefront languages enabled for this tenant. Defaults to all supported locales when omitted. */
