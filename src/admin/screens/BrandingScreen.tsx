@@ -82,6 +82,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   // Form states
   const [brandName, setBrandName] = useState<string>('');
   const [tagline, setTagline] = useState<string>('');
+  const [orderCodePrefix, setOrderCodePrefix] = useState<string>('');
   const [logoUrl, setLogoUrl] = useState<string>('');
   const [faviconUrl, setFaviconUrl] = useState<string>('');
   const [headerLogoMode, setHeaderLogoMode] = useState<'ICON_WITH_TEXT' | 'WIDE_LOGO' | 'LOGO_ONLY'>('ICON_WITH_TEXT');
@@ -177,6 +178,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
       setConfig(data);
       setBrandName(data.brandName);
       setTagline(data.tagline || '');
+      setOrderCodePrefix(data.orderCodePrefix || '');
       setLogoUrl(data.logoUrl || '');
       setFaviconUrl(data.faviconUrl || '');
       setHeaderLogoMode(data.headerLogoMode || 'ICON_WITH_TEXT');
@@ -359,6 +361,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         {
           brandName,
           tagline,
+          orderCodePrefix: orderCodePrefix.trim().toUpperCase() || undefined,
           logoUrl,
           faviconUrl,
           iconUrl: faviconUrl || logoUrl,
@@ -743,6 +746,18 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-indigo-600"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Order reference prefix</label>
+                <input
+                  type="text"
+                  value={orderCodePrefix}
+                  maxLength={4}
+                  onChange={(e) => setOrderCodePrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
+                  placeholder="LT"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono font-semibold uppercase focus:outline-indigo-600"
+                />
+                <p className="mt-1 text-[10px] text-gray-400">2–4 characters. Leave blank to derive it from the brand name.</p>
               </div>
             </div>
 

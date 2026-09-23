@@ -437,6 +437,15 @@ const optionalEmail = z.preprocess(
   z.string().trim().email('Enter a valid administrator email address').optional()
 );
 
+const optionalOrderCodePrefix = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string()
+    .trim()
+    .transform((value) => value.toUpperCase())
+    .refine((value) => /^[A-Z0-9]{2,4}$/.test(value), 'Order prefix must be 2-4 letters or numbers')
+    .optional()
+);
+
 export const CreateTenantSchema = z.object({
   brandName: z.string().trim().min(1, 'brandName is required'),
   tenantId: z.string().trim().min(1, 'tenantId is required').optional(),
@@ -458,6 +467,7 @@ export const CreateTenantSchema = z.object({
   currency: optionalTrimmedText,
   currencySymbol: optionalTrimmedText,
   locale: optionalTrimmedText,
+  orderCodePrefix: optionalOrderCodePrefix,
   supportDetails: z.record(z.string(), z.any()).optional(),
   featureFlags: z.record(z.string(), z.any()).optional(),
 });

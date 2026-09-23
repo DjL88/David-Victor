@@ -33,5 +33,25 @@ describe('Brand provisioning request validation', () => {
       expect(result.error.issues[0]?.path).toEqual(['adminEmail']);
       expect(result.error.issues[0]?.message).toContain('valid administrator email');
     }
+  });  it('normalizes a valid short order prefix', () => {
+    const parsed = CreateTenantSchema.parse({
+      tenantId: 'brand-order-prefix',
+      brandName: 'LeitchTech',
+      orderCodePrefix: 'lt',
+    });
+
+    expect(parsed.orderCodePrefix).toBe('LT');
   });
+
+  it('rejects an order prefix outside 2-4 alphanumeric characters', () => {
+    const parsed = CreateTenantSchema.safeParse({
+      tenantId: 'brand-order-prefix',
+      brandName: 'LeitchTech',
+      orderCodePrefix: 'L',
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+
 });
