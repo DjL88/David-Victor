@@ -166,8 +166,8 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
             onClick={handleDeleteItem}
             id="modal-delete-item-btn"
             className="w-9 h-9 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50 flex items-center justify-center transition-colors"
-            title="Remove item from basket"
-            aria-label="Remove item from basket"
+            title={t('basket.removeItem')}
+            aria-label={t('basket.removeItem')}
           >
             <Trash2 className="w-5 h-5 stroke-[2.2]" />
           </button>
@@ -520,7 +520,7 @@ export const ItemUnavailablePreferenceModal: React.FC<ItemUnavailablePreferenceM
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                  {t('basket.ifItemUnavailable')}, do not deliver. Your entire order will be cancelled with no charge.
+                  {t('basket.cancelUnavailableHelp')}
                 </p>
               </div>
             </label>
