@@ -33,7 +33,7 @@ export function deriveOrderCodePrefix(brandName: string): string {
   }
 
   const compact = normalizeOrderCodePrefix(name);
-  if (compact.length >= 2) return compact.slice(0, Math.min(4, compact.length));
+  if (compact.length >= 2) return compact.slice(0, 2);
   return (compact + 'R').slice(0, 2);
 }
 
