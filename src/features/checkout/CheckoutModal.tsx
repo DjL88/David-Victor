@@ -88,7 +88,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onOpenDealPopup,
 }) => {
   const { primaryBtnStyle, currencySymbol, brandName } = useTenantStyles();
-  const { t } = useI18n();
+  const { t, formatDateTime } = useI18n();
 
   // Local authoritative basket & store state
   const [basket, setBasket] = useState<Basket | null>(initialBasket);
@@ -123,7 +123,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [sessionId, setSessionId] = useState<string>('');
   const [hostedRedirectUrl, setHostedRedirectUrl] = useState<string>('');
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus>('preparing_payment');
-  const [statusMessage, setStatusMessage] = useState<string>('Initializing payment session...');
+  const [statusMessage, setStatusMessage] = useState<string>(() => t('checkout.initializingPayment'));
   const [failureReason, setFailureReason] = useState<string>('');
 
   // QA Simulation Drawer Toggle
@@ -512,7 +512,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         if (resolvedOrderId) {
           onOrderSuccess(resolvedOrderId);
         }
-        setStatusMessage('Order confirmed!');
+        setStatusMessage(t('checkout.orderConfirmed'));
         setPhase('tracking');
       } else if (checkoutId) {
         setSessionId(checkoutId);
@@ -733,7 +733,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Simulate Hosted Payment Completion
   const handleCompleteHostedPayment = async () => {
     setPhase('polling_status');
-    setStatusMessage('Preparing payment...');
+    setStatusMessage(t('checkout.preparingPayment'));
 
     // Asynchronous polling loop matching Deliverect Pay webhook pattern
     const pollInterval = setInterval(async () => {
@@ -742,11 +742,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         setCheckoutStatus(res.status);
 
         if (res.status === 'preparing_payment') {
-          setStatusMessage('Communicating with payment gateway...');
+          setStatusMessage(t('checkout.paymentGateway'));
         } else if (res.status === 'payment_authorised') {
-          setStatusMessage('Payment authorised by bank. Securing dispatch slot...');
+          setStatusMessage(t('checkout.paymentAuthorised'));
         } else if (res.status === 'placing_order') {
-          setStatusMessage('Placing order with store & dispatching courier...');
+          setStatusMessage(t('checkout.placingOrder'));
         } else if (res.status === 'order_confirmed') {
           clearInterval(pollInterval);
           setStatusMessage('Order confirmed!');
@@ -986,7 +986,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <span className="font-bold text-gray-900 block">{aff.name}</span>
                             <span className="text-[11px] text-amber-700 font-medium">
                               {aff.reason === 'snoozed' ? t('checkout.temporarilySnoozed') : t('checkout.outOfStock')}
-                              {aff.snoozedUntil ? ` (until ${new Date(aff.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}
+                              {aff.snoozedUntil ? ` (until ${formatDateTime(aff.snoozedUntil, { hour: '2-digit', minute: '2-digit' })})` : ''}
                             </span>
                           </div>
 
@@ -1036,7 +1036,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               }}
                               className="px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-[11px] transition-colors cursor-pointer"
                             >
-                              Choose Substitute
+                              {t('checkout.chooseSubstitute')}
                             </button>
                           </div>
                         )}
@@ -1217,7 +1217,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             onClick={() => setEditingSubstitutionItem({ item, storeId: basket.storeId })}
                             className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition-colors shrink-0 cursor-pointer"
                           >
-                            Choose options
+                            {t('checkout.chooseOptions')}
                           </button>
                         </div>
 
@@ -1225,12 +1225,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 text-[11px]">
                           <span className="text-gray-600 font-medium truncate">
                             {item.substitutionPreference === 'CUSTOMER_SELECTED'
-                              ? `Pre-chosen: ${item.preferredSubstituteName || item.preferredSubstitutePlu || 'Alternative'}`
+                              ? `${t('checkout.preChosen')}: ${item.preferredSubstituteName || item.preferredSubstitutePlu || 'Alternative'}`
                               : item.substitutionPreference === 'REMOVE_IF_UNAVAILABLE'
-                              ? 'Remove & refund item'
+                              ? t('checkout.removeRefundItem')
                               : item.substitutionPreference === 'CANCEL_ORDER_IF_UNAVAILABLE'
-                              ? 'Cancel entire order'
-                              : 'Best match (Same or lower price guarantee)'}
+                              ? t('checkout.cancelEntireOrder')
+                              : t('checkout.bestMatchGuarantee')}
                           </span>
 
                           {priceDiff > 0 && (
@@ -1262,13 +1262,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div>
                     <span className="font-bold block">
                       {secondsRemaining > 0
-                        ? `Dispatch quote guaranteed: ${Math.floor(secondsRemaining / 60)}m ${
+                        ? `${t('checkout.dispatchQuoteGuaranteed')}: ${Math.floor(secondsRemaining / 60)}m ${
                             secondsRemaining % 60
                           }s`
-                        : 'Dispatch quote expired'}
+                        : t('checkout.dispatchQuoteExpired')}
                     </span>
                     <span className="text-[10px] opacity-80">
-                      Authoritative Deliverect Dispatch slot confirmation
+                      {t('checkout.dispatchConfirmation')}
                     </span>
                   </div>
                 </div>
@@ -1280,7 +1280,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   className="px-2.5 py-1.5 rounded-xl bg-white text-gray-800 font-bold text-[11px] shadow-xs hover:bg-gray-50 flex items-center gap-1 shrink-0 border border-gray-200"
                 >
                   <RefreshCw className={`w-3 h-3 ${isRevalidating ? 'animate-spin' : ''}`} />
-                  <span>{isRevalidating ? 'Checking...' : 'Recheck'}</span>
+                  <span>{isRevalidating ? t('checkout.checking') : t('checkout.recheck')}</span>
                 </button>
               </div>
             )}
@@ -1292,7 +1292,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold block">
-                      {isCollectionBasket ? 'Collection Order Issue' : 'Dispatch Unavailable'}
+                      {isCollectionBasket ? t('checkout.collectionIssue') : t('checkout.dispatchUnavailable')}
                     </span>
                     <span className="text-red-700">{revalidationError}</span>
                   </div>
@@ -1325,11 +1325,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>
                       {isCollectionBasket
                         ? isAuthorizingDirect
-                          ? 'Recovering Order...'
-                          : 'Retry Collection Order'
+                          ? t('checkout.recoveringOrder')
+                          : t('checkout.retryCollectionOrder')
                         : isRevalidating
-                          ? 'Checking Availability...'
-                          : 'Retry Availability Check'}
+                          ? t('checkout.checkingAvailability')
+                          : t('checkout.retryAvailabilityCheck')}
                     </span>
                   </button>
 
@@ -1339,7 +1339,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       onClick={handleSwitchToCollection}
                       className="flex-1 py-2 rounded-xl bg-gray-900 text-white font-bold text-xs shadow-xs hover:bg-gray-800 cursor-pointer"
                     >
-                      Switch to Pickup
+                      {t('checkout.switchToPickup')}
                     </button>
                   )}
                 </div>
@@ -1347,7 +1347,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {!isCollectionBasket && alternativeStores.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-red-200/70 space-y-1">
                     <span className="font-semibold text-red-900 block text-[11px]">
-                      Available stores with couriers:
+                      {t('checkout.availableStoresCouriers')}:
                     </span>
                     {alternativeStores.map((alt) => (
                       <button
@@ -1356,8 +1356,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         onClick={() => handleSwitchStore(alt.id)}
                         className="w-full text-left p-2 rounded-xl bg-white border border-red-200 hover:bg-red-50/50 flex justify-between items-center text-xs text-gray-800 font-medium cursor-pointer"
                       >
-                        <span>{alt?.name || 'Partner Store'}</span>
-                        <span className="text-emerald-700 font-bold text-[11px]">Switch & Order</span>
+                        <span>{alt?.name || t('checkout.partnerStore')}</span>
+                        <span className="text-emerald-700 font-bold text-[11px]">{t('checkout.switchAndOrder')}</span>
                       </button>
                     ))}
                   </div>
@@ -1370,7 +1370,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
                 <span className="font-bold text-gray-900 block mb-2 flex items-center gap-1.5">
                   <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-                  <span>Tip your courier (100% goes to driver)</span>
+                  <span>{t('checkout.tipCourier')}</span>
                 </span>
                 <div className="grid grid-cols-4 gap-1.5">
                   {[0, 1.0, 2.0, 3.0].map((amt) => (
@@ -1384,7 +1384,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
                       }`}
                     >
-                      {amt === 0 ? 'None' : `+£${amt.toFixed(2)}`}
+                      {amt === 0 ? t('checkout.none') : `+£${amt.toFixed(2)}`}
                     </button>
                   ))}
                 </div>
@@ -1395,7 +1395,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
               <span className="font-bold text-gray-900 block mb-1.5 flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-gray-600" />
-                <span>Promo or Gift Code</span>
+                <span>{t('checkout.promoGiftCode')}</span>
               </span>
               <div className="flex gap-2">
                 <input
@@ -1411,7 +1411,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   disabled={isApplyingPromo || !promoCode.trim()}
                   className="px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-xs disabled:opacity-50 hover:bg-gray-800 shrink-0"
                 >
-                  {isApplyingPromo ? 'Applying...' : 'Apply'}
+                  {isApplyingPromo ? t('checkout.applying') : t('checkout.apply')}
                 </button>
               </div>
               {promoSuccess && <span className="text-emerald-700 font-bold block mt-1">{promoSuccess}</span>}
@@ -1530,7 +1530,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
               {(basket.discounts || []).map((d) => (
                 <div key={d.id} className="flex justify-between text-emerald-700 font-medium">
-                  <span>Discount ({d.title})</span>
+                  <span>{t('basket.discount')} ({d.title})</span>
                   <span>-{formatCurrency(d.amount, currencySymbol)}</span>
                 </div>
               ))}
@@ -1582,7 +1582,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span>{t('checkout.paymentModel')}</span>
                 </div>
                 <p className="text-[11px] text-emerald-900 leading-relaxed">
-                  You are <strong>not charged immediately</strong>. We pre-authorize up to{' '}
+                  {t('checkout.paymentNoticeStart')}{' '}
                   <strong>
                     {formatCurrency(
                       calculateAuthorizationMaximum(
@@ -1595,11 +1595,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       currencySymbol
                     )}
                   </strong>{' '}
-                  (estimated total
+                  ({t('checkout.paymentNoticeEstimated')}
                   {preChosenBufferInfo.extraBufferMajor > 0 ? (
-                    <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} pre-chosen alternative buffer</>
+                    <> + £{preChosenBufferInfo.extraBufferMajor.toFixed(2)} {t('checkout.paymentNoticeBuffer')}</>
                   ) : null}
-                  ). The final amount will only be captured when store picking completes.
+                  ). {t('checkout.paymentNoticeEnd')}
                 </p>
               </div>
             )}
@@ -1625,7 +1625,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>
-                      {isCollectionBasket ? 'Placing Collection Order...' : 'Authorizing & Submitting...'}
+                      {isCollectionBasket ? t('checkout.placingCollectionOrder') : t('checkout.authorizingSubmitting')}
                     </span>
                   </>
                 ) : (
@@ -1637,14 +1637,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     )}
                     <span>
                       {snoozeAudit.hasSnoozedOrUnavailableItems
-                        ? 'Resolve Out of Stock Items Above'
+                        ? t('checkout.resolveOutOfStock')
                         : revalidationError && isCollectionBasket
-                        ? 'Collection Order Issue - Retry Above'
+                        ? t('checkout.collectionIssueRetry')
                         : revalidationError || (basket.fulfillmentType !== 'pickup' && secondsRemaining <= 0)
-                        ? 'Courier Dispatch Unavailable - Retry Above'
+                        ? t('checkout.dispatchUnavailableRetry')
                         : isCollectionBasket
-                        ? 'Place Collection Order'
-                        : `Authorize & Place Order (up to ${formatCurrency(
+                        ? t('checkout.placeCollectionOrder')
+                        : `${t('checkout.authorizeUpTo')} ${formatCurrency(
                             calculateAuthorizationMaximum(
                               basket.total,
                               true,
@@ -1683,8 +1683,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 <span>
                   {isCollectionBasket
-                    ? 'No payment authorisation or courier dispatch for Collection'
-                    : 'Zero raw card exposure • PCI Tokenized Pre-Authorization'}
+                    ? t('checkout.collectionNoPayment')
+                    : t('checkout.noRawCardExposure')}
                 </span>
               </div>
             </div>
@@ -1761,13 +1761,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="max-w-xs mx-auto text-left space-y-2 text-xs">
               {(isCollectionBasket
                 ? [
-                    { key: 'placing_order', label: 'Placing collection order with store' },
-                    { key: 'order_confirmed', label: 'Order confirmed' },
+                    { key: 'placing_order', label: t('checkout.stepPlacingCollection') },
+                    { key: 'order_confirmed', label: t('checkout.stepOrderConfirmed') },
                   ]
                 : [
-                    { key: 'preparing_payment', label: 'Preparing payment' },
-                    { key: 'payment_authorised', label: 'Payment authorised' },
-                    { key: 'placing_order', label: 'Placing order with store' },
+                    { key: 'preparing_payment', label: t('checkout.stepPreparingPayment') },
+                    { key: 'payment_authorised', label: t('checkout.stepPaymentAuthorised') },
+                    { key: 'placing_order', label: t('checkout.stepPlacingOrder') },
                     { key: 'order_confirmed', label: 'Order confirmed' },
                   ]
               ).map((step, idx, steps) => {
