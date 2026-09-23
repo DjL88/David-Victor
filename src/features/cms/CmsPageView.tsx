@@ -138,7 +138,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                       </h4>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
                         <span className="font-mono font-bold text-xs text-gray-800">
-                          {formatCurrency(prod.price, '£')}
+                          {formatCurrency(prod.price, tenant?.currencySymbol || '£')}
                         </span>
                         <button
                           type="button"
