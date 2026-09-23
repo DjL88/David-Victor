@@ -3298,7 +3298,7 @@ export class FirestoreService {
   static async upsertStoreProductOperationalState(
     tenantId: string,
     channelLinkId: string,
-    update: Omit<StoreProductOperationalState, 'tenantId' | 'channelLinkId' | 'updatedAt' | 'source'> & Partial<Pick<StoreProductOperationalState, 'updatedAt' | 'source'>>
+    update: Omit<StoreProductOperationalState, 'tenantId' | 'channelLinkId' | 'updatedAt' | 'source' | 'snoozed'> & Partial<Pick<StoreProductOperationalState, 'updatedAt' | 'source'>>
   ): Promise<StoreProductOperationalState> {
     const cleanTenantId = String(tenantId || '').trim();
     const cleanChannelLinkId = String(channelLinkId || '').trim();
