@@ -53,6 +53,15 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
 
 
   // Load store locations for dropdown
+  useEffect(() =>
+    onAdminAiPrefill('catalog', ({ prefill }) => {
+      if (typeof prefill?.searchQuery === 'string') {
+        setSearchQuery(prefill.searchQuery);
+        setPage(1);
+      }
+    }),
+  []);
+
   useEffect(() => {
     let isMounted = true;
     commerceClient.getStores()
