@@ -4944,8 +4944,20 @@ v1Router.post(
 // 9.8 Integrations & Deliverect Channel Mapping
 v1Router.get('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
-    const config = await FirestorePlatformService.getIntegrationConfig(req.params.id);
-    res.json(config);
+    const tenantId = req.params.id;
+    const config = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const context = await IntegrationContext.getContext(tenantId);
+    res.json({
+      ...config,
+      credentialMode: context.credentialMode,
+      credentials: {
+        configured: context.isConfigured,
+        mode: context.credentialMode,
+        maskedClientId: context.clientId ? `${context.clientId.slice(0, 4)}...${context.clientId.slice(-4)}` : null,
+        hasClientSecret: Boolean(context.clientSecret),
+        hasWebhookSecret: Boolean(context.webhookSecret),
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -5514,17 +5526,16 @@ v1Router.get('/admin/tenants/:id/integration', requireAdminAuth(), async (req: R
   try {
     const tenantId = req.params.id;
     const integration = await FirestorePlatformService.getTenantIntegration(tenantId);
-    const clientId = (await SecretManager.getSecret(`DELIVERECT_CLIENT_ID_${tenantId}`)) || process.env.DELIVERECT_CLIENT_ID || '';
-    const hasSecret = Boolean(
-      (await SecretManager.getSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`)) || process.env.DELIVERECT_CLIENT_SECRET
-    );
+    const context = await IntegrationContext.getContext(tenantId);
 
     res.json({
       integration,
       credentials: {
-        configured: Boolean(clientId && hasSecret),
-        maskedClientId: clientId ? `${clientId.slice(0, 4)}...${clientId.slice(-4)}` : null,
-        hasClientSecret: hasSecret,
+        configured: context.isConfigured,
+        mode: context.credentialMode,
+        maskedClientId: context.clientId ? `${context.clientId.slice(0, 4)}...${context.clientId.slice(-4)}` : null,
+        hasClientSecret: Boolean(context.clientSecret),
+        hasWebhookSecret: Boolean(context.webhookSecret),
         environment: integration.environment || 'staging',
       },
     });
@@ -5543,26 +5554,35 @@ v1Router.post(
   async (req: Request, res: Response) => {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
-    const { clientId, clientSecret, environment, deliverectAccountId, channelLinkId } = req.body;
+    const { credentialMode, clientId, clientSecret, webhookSecret, environment, deliverectAccountId, channelLinkId } = req.body;
 
-    // Securely persist credentials in server-side SecretManager
-    const savedId = await SecretManager.setSecret(`DELIVERECT_CLIENT_ID_${tenantId}`, clientId, true);
-    const savedSecret = await SecretManager.setSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`, clientSecret, true);
-    if ((!savedId || !savedSecret) && isLiveMode()) {
-      return res.status(500).json({
-        error: 'Failed to persist credentials in Google Cloud Secret Manager.',
-        code: 'SECRET_PERSISTENCE_FAILED',
-      });
+    // Secrets are written only to server-side Secret Manager. Firestore receives
+    // mode/status metadata, never credential values.
+    if (credentialMode === 'dedicated') {
+      const savedId = await SecretManager.setSecret(`DELIVERECT_CLIENT_ID_${tenantId}`, clientId, true);
+      const savedSecret = await SecretManager.setSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`, clientSecret, true);
+      const savedWebhook = webhookSecret
+        ? await SecretManager.setSecret(`DELIVERECT_WEBHOOK_SECRET_${tenantId}`, webhookSecret, true)
+        : true;
+      if ((!savedId || !savedSecret || !savedWebhook) && isLiveMode()) {
+        return res.status(500).json({
+          error: 'Failed to persist dedicated credentials in Google Cloud Secret Manager.',
+          code: 'SECRET_PERSISTENCE_FAILED',
+        });
+      }
     }
 
-    // Update integration metadata in Firestore/memory without fabricating prefixes
+    // Explicit platform mode ignores any historical tenant secret versions.
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
+      credentialMode,
+      credentialsConfigured: true,
       environment: environment || 'staging',
       deliverectAccountId: deliverectAccountId || undefined,
       channelLinkId: channelLinkId || undefined,
       status: 'standalone',
       lastSyncAt: new Date().toISOString(),
     });
+    IntegrationContext.invalidate(tenantId);
 
     await FirestorePlatformService.addAuditLog(tenantId, {
       userId: authAdmin.uid,
@@ -5571,7 +5591,9 @@ v1Router.post(
       tenantId,
       category: 'Integration',
       action: 'UPDATE_INTEGRATION_CREDENTIALS',
-      details: `Updated Deliverect OAuth client credentials for environment ${environment || 'staging'} (Client ID: ${clientId.slice(0, 4)}...).`,
+      details: credentialMode === 'dedicated'
+        ? `Updated dedicated Deliverect credentials for environment ${environment || 'staging'} (Client ID: ${clientId.slice(0, 4)}...).`
+        : `Switched Deliverect credential source to platform credentials for environment ${environment || 'staging'}.`,
     });
 
     res.json({

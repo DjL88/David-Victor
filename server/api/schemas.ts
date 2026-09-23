@@ -569,11 +569,18 @@ export const TestConnectionSchema = z.object({
 });
 
 export const UpdateIntegrationCredentialsSchema = z.object({
-  clientId: z.string().min(1, 'Client ID is required'),
-  clientSecret: z.string().min(1, 'Client Secret is required'),
+  credentialMode: z.enum(['platform', 'dedicated']).default('dedicated'),
+  clientId: z.string().trim().optional(),
+  clientSecret: z.string().trim().optional(),
+  webhookSecret: z.string().trim().optional(),
   environment: z.enum(['staging', 'production']).optional(),
   deliverectAccountId: z.string().optional(),
   channelLinkId: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.credentialMode === 'dedicated') {
+    if (!value.clientId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['clientId'], message: 'Client ID is required for dedicated credentials' });
+    if (!value.clientSecret) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['clientSecret'], message: 'Client Secret is required for dedicated credentials' });
+  }
 });
 
 export const AssetUploadSchema = z.object({

@@ -235,6 +235,13 @@ export interface AdminClient {
    * Update integration configuration for tenant.
    */
   updateIntegration?(tenantId: string, updates: any): Promise<any>;
+  updateIntegrationCredentials?(tenantId: string, credentials: {
+    credentialMode: 'platform' | 'dedicated';
+    clientId?: string;
+    clientSecret?: string;
+    webhookSecret?: string;
+    environment?: 'staging' | 'production';
+  }): Promise<any>;
 
   /**
    * Retrieves async headers with bearer token.

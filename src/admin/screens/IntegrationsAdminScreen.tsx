@@ -46,6 +46,11 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
 
   const [loading, setLoading] = useState(true);
   const [testingOAuth, setTestingOAuth] = useState(false);
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [credentialMode, setCredentialMode] = useState<'platform' | 'dedicated'>('platform');
+  const [clientIdInput, setClientIdInput] = useState('');
+  const [clientSecretInput, setClientSecretInput] = useState('');
+  const [webhookSecretInput, setWebhookSecretInput] = useState('');
   const [syncingAccounts, setSyncingAccounts] = useState(false);
   const [discoveringStores, setDiscoveringStores] = useState(false);
 
@@ -237,6 +242,10 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       const data = await defaultAdminClient.getIntegration(tenantId);
       if (data) {
         setConfig(data);
+        setCredentialMode(data.credentialMode === 'dedicated' ? 'dedicated' : 'platform');
+        setClientIdInput('');
+        setClientSecretInput('');
+        setWebhookSecretInput('');
         if (data.deliverectAccountId) {
           setSelectedAccountId(data.deliverectAccountId);
         }
@@ -281,6 +290,33 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     }
   };
 
+  const handleSaveCredentials = async () => {
+    if (credentialMode === 'dedicated' && (!clientIdInput.trim() || !clientSecretInput.trim())) {
+      setError('Client ID and Client Secret are required for dedicated tenant credentials.');
+      return;
+    }
+    setSavingCredentials(true);
+    setError(null);
+    try {
+      await defaultAdminClient.updateIntegrationCredentials!(tenantId, {
+        credentialMode,
+        clientId: credentialMode === 'dedicated' ? clientIdInput.trim() : undefined,
+        clientSecret: credentialMode === 'dedicated' ? clientSecretInput.trim() : undefined,
+        webhookSecret: credentialMode === 'dedicated' ? webhookSecretInput.trim() || undefined : undefined,
+        environment: config.environment || 'staging',
+      });
+      setClientSecretInput('');
+      setWebhookSecretInput('');
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+      await loadIntegration();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save Deliverect credentials.');
+    } finally {
+      setSavingCredentials(false);
+    }
+  };
+
   /**
    * STEP 2: Genuine Platform Deliverect OAuth Verification (Platform Scope)
    * Calls POST /api/v1/admin/platform/integrations/deliverect/test-oauth protected by platformSuperAdmin.
@@ -293,9 +329,13 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     setOauthResult(null);
 
     try {
-      const res = await defaultAdminClient.testPlatformDeliverectOAuth!({
-        environment: config.environment || 'staging',
-      });
+      const res = credentialMode === 'dedicated'
+        ? await defaultAdminClient.testDeliverectOAuth!(tenantId, {
+            environment: config.environment || 'staging',
+          })
+        : await defaultAdminClient.testPlatformDeliverectOAuth!({
+            environment: config.environment || 'staging',
+          });
 
       setOauthResult({
         success: res.success,
@@ -691,14 +731,55 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               </div>
             </div>
 
-            <div className="p-3.5 bg-gray-950 border border-gray-800 rounded-xl text-xs space-y-2">
+            <div className="p-4 bg-gray-950 border border-gray-800 rounded-xl text-xs space-y-4">
               <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                 <Lock className="w-4 h-4" />
-                <span>Zero-Trust Credential Security</span>
+                <span>Tenant credential source</span>
               </div>
-              <p className="text-gray-400 text-[11px] leading-relaxed">
-                Staging credentials (<code className="text-emerald-300">DELIVERECT_CLIENT_ID</code> and <code className="text-emerald-300">DELIVERECT_CLIENT_SECRET</code>) are configured in the BFF runtime and never exposed to client-side storage or browser DevTools.
-              </p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCredentialMode('platform')}
+                  className={`p-3 rounded-xl border text-left ${credentialMode === 'platform' ? 'border-emerald-600 bg-emerald-950/40 text-white' : 'border-gray-800 text-gray-400'}`}
+                >
+                  <span className="block font-semibold">Platform credentials</span>
+                  <span className="block text-[11px] mt-1 opacity-80">Use the shared Deliverect partner credentials.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCredentialMode('dedicated')}
+                  className={`p-3 rounded-xl border text-left ${credentialMode === 'dedicated' ? 'border-emerald-600 bg-emerald-950/40 text-white' : 'border-gray-800 text-gray-400'}`}
+                >
+                  <span className="block font-semibold">Dedicated credentials</span>
+                  <span className="block text-[11px] mt-1 opacity-80">Use credentials isolated to this tenant.</span>
+                </button>
+              </div>
+
+              {credentialMode === 'dedicated' && (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <label className="space-y-1">
+                    <span className="text-gray-400">Client ID</span>
+                    <input type="text" autoComplete="off" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)} placeholder={config.credentials?.maskedClientId || 'Deliverect Client ID'} className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-gray-400">Client Secret</span>
+                    <input type="password" autoComplete="new-password" value={clientSecretInput} onChange={(e) => setClientSecretInput(e.target.value)} placeholder={config.credentials?.hasClientSecret ? 'Configured — enter to replace' : 'Client Secret'} className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white" />
+                  </label>
+                  <label className="space-y-1 sm:col-span-2">
+                    <span className="text-gray-400">Webhook Secret <span className="text-gray-600">(optional until webhook provisioning)</span></span>
+                    <input type="password" autoComplete="new-password" value={webhookSecretInput} onChange={(e) => setWebhookSecretInput(e.target.value)} placeholder={config.credentials?.hasWebhookSecret ? 'Configured — enter to replace' : 'Webhook HMAC secret'} className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white" />
+                  </label>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-gray-400 text-[11px] leading-relaxed">
+                  Secrets are written server-side to Google Secret Manager and are never returned to the browser. Dedicated mode fails closed rather than falling back to platform credentials.
+                </p>
+                <button type="button" onClick={handleSaveCredentials} disabled={savingCredentials} className="shrink-0 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-50">
+                  {savingCredentials ? 'Saving…' : 'Save credentials'}
+                </button>
+              </div>
             </div>
           </div>
 

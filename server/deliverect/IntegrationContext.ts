@@ -18,6 +18,7 @@ import { linkedAccountsAdapter } from './LinkedAccountsAdapter';
 export interface TenantIntegrationConfig {
   tenantId: string;
   environment: DeliverectEnvironmentName;
+  credentialMode: 'platform' | 'dedicated';
   clientId: string;
   clientSecret: string;
   webhookSecret: string;
@@ -37,32 +38,41 @@ export class TenantSecretResolver {
    * Format: KEY_TENANTID (e.g. DELIVERECT_CLIENT_SECRET_brand_alpha)
    * Falls back to general environment key only if explicitly permitted (e.g. single-tenant staging).
    */
-  static async resolveTenantSecret(tenantId: string, secretKeyName: string): Promise<string | null> {
+  static async resolveTenantSecret(
+    tenantId: string,
+    secretKeyName: string,
+    mode: 'legacy' | 'platform' | 'dedicated' = 'legacy'
+  ): Promise<string | null> {
     const cleanTenant = tenantId.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
     const tenantSpecificKey = `${secretKeyName}_${cleanTenant}`;
     const directKey = `${secretKeyName}_${tenantId}`;
 
-    // 1. Check direct tenant key & normalized tenant-specific secret
-    const directSecret = await SecretManager.getSecret(directKey);
-    if (directSecret && directSecret.trim().length > 0) {
-      return directSecret.trim();
+    // 1. Dedicated/legacy modes may use tenant-specific credentials.
+    // Explicit platform mode intentionally ignores any old tenant secret versions.
+    if (mode !== 'platform') {
+      const directSecret = await SecretManager.getSecret(directKey);
+      if (directSecret && directSecret.trim().length > 0) {
+        return directSecret.trim();
+      }
+
+      const tenantSecret = await SecretManager.getSecret(tenantSpecificKey);
+      if (tenantSecret && tenantSecret.trim().length > 0) {
+        return tenantSecret.trim();
+      }
     }
 
-    const tenantSecret = await SecretManager.getSecret(tenantSpecificKey);
-    if (tenantSecret && tenantSecret.trim().length > 0) {
-      return tenantSecret.trim();
+    // 2. Dedicated tenants must never silently inherit platform credentials.
+    if (mode !== 'dedicated') {
+      const genericSecret = await SecretManager.getSecret(secretKeyName);
+      if (genericSecret && genericSecret.trim().length > 0) {
+        return genericSecret.trim();
+      }
     }
 
-    // 2. Check general secret
-    const genericSecret = await SecretManager.getSecret(secretKeyName);
-    if (genericSecret && genericSecret.trim().length > 0) {
-      return genericSecret.trim();
-    }
-
-    // 3. Fallback to process.env
-    if (process.env[directKey]) return process.env[directKey]!;
-    if (process.env[tenantSpecificKey]) return process.env[tenantSpecificKey]!;
-    if (process.env[secretKeyName]) return process.env[secretKeyName]!;
+    // 3. Environment fallback follows the same isolation rule.
+    if (mode !== 'platform' && process.env[directKey]) return process.env[directKey]!;
+    if (mode !== 'platform' && process.env[tenantSpecificKey]) return process.env[tenantSpecificKey]!;
+    if (mode !== 'dedicated' && process.env[secretKeyName]) return process.env[secretKeyName]!;
 
     return null;
   }
@@ -98,21 +108,38 @@ export class IntegrationContext {
       (process.env.DELIVERECT_ENV as DeliverectEnvironmentName) ||
       'staging';
 
-    // 2. Resolve tenant credentials via TenantSecretResolver
+    // 2. Resolve credentials according to the tenant's explicit credential mode.
+    // Existing tenants default to platform credentials for backwards compatibility.
+    const configuredCredentialMode = integrationRecord?.credentialMode;
+    const resolutionMode: 'legacy' | 'platform' | 'dedicated' =
+      configuredCredentialMode === 'dedicated'
+        ? 'dedicated'
+        : configuredCredentialMode === 'platform'
+          ? 'platform'
+          : 'legacy';
+
     const clientId =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_ID')) ||
-      process.env.DELIVERECT_CLIENT_ID ||
-      '';
+      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_ID', resolutionMode)) || '';
 
     const clientSecret =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_SECRET')) ||
-      process.env.DELIVERECT_CLIENT_SECRET ||
-      '';
+      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_SECRET', resolutionMode)) || '';
 
     const webhookSecret =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_WEBHOOK_SECRET')) ||
-      process.env.DELIVERECT_WEBHOOK_SECRET ||
-      '';
+      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_WEBHOOK_SECRET', resolutionMode)) || '';
+
+    // Legacy records preserve their old resolution behaviour, but expose which
+    // source won so Admin can migrate them explicitly on the next save.
+    const credentialMode: 'platform' | 'dedicated' =
+      configuredCredentialMode === 'dedicated'
+        ? 'dedicated'
+        : configuredCredentialMode === 'platform'
+          ? 'platform'
+          : Boolean(
+              await SecretManager.getSecret(`DELIVERECT_CLIENT_ID_${tenantId}`) ||
+              await SecretManager.getSecret(`DELIVERECT_CLIENT_ID_${tenantId.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`)
+            )
+            ? 'dedicated'
+            : 'platform';
 
     const isConfigured = Boolean(clientId && clientSecret);
 
@@ -151,6 +178,7 @@ export class IntegrationContext {
     const context: TenantIntegrationConfig = {
       tenantId,
       environment,
+      credentialMode,
       clientId,
       clientSecret,
       webhookSecret,
