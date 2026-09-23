@@ -2856,6 +2856,7 @@ v1Router.post(
         actorName: authAdmin.name || authAdmin.email,
         message: req.body.message,
         history: req.body.history,
+        attachments: req.body.attachments,
         context: req.body.context,
       });
 
