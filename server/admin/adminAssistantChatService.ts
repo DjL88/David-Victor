@@ -1016,7 +1016,7 @@ export function buildDegradedAssistantReply(
   message: string,
   readContext: AssistantReadContext | null = null
 ): string {
-  const liveSummary = summariseReadContext(readContext);
+  const liveSummary = summariseReadContext(readContext, message);
   if (liveSummary) return liveSummary;
 
   const text = String(message || '').trim().toLowerCase();
