@@ -41,6 +41,7 @@ import {
   pathForSearch,
   pathForTab,
   pushStorefrontUrl,
+  replaceStorefrontUrl,
   type StorefrontRoute,
 } from '../navigation/storefrontRouter';
 
@@ -330,9 +331,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const resolvingRouteRef = useRef<string | null>(null);
 
   const routeToProduct = useCallback((product: Product) => {
+    const returnPath = window.location.pathname + window.location.search;
     setSelectedProduct(product);
     const path = pathForProduct(product);
-    pushStorefrontUrl(path);
+    pushStorefrontUrl(path, { returnPath });
     setActiveRoute({ kind: 'product', plu: product.plu });
   }, []);
 
@@ -355,17 +357,52 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   }, [catalog?.categories, navigateToCategory]);
 
   const routeToBasket = useCallback(() => {
-    pushStorefrontUrl('/basket');
+    const returnPath = window.location.pathname + window.location.search;
+    pushStorefrontUrl('/basket', { returnPath });
     setActiveRoute({ kind: 'basket' });
     setIsCartOpen(true);
   }, [setIsCartOpen]);
 
   const routeToCheckout = useCallback(() => {
-    pushStorefrontUrl('/checkout');
+    const returnPath = window.location.pathname + window.location.search;
+    pushStorefrontUrl('/checkout', { returnPath });
     setActiveRoute({ kind: 'checkout' });
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
   }, [setIsCartOpen]);
+
+  const closeRoutedOverlay = useCallback((kind: 'product' | 'basket' | 'checkout') => {
+    if (activeRoute.kind !== kind) return;
+    const returnPath =
+      typeof window.history.state?.returnPath === 'string'
+        ? window.history.state.returnPath
+        : '/';
+
+    setSelectedProduct(null);
+    setIsCartOpen(false);
+    setIsCheckoutOpen(false);
+    replaceStorefrontUrl(returnPath);
+    const returnRoute = parseStorefrontRoute(
+      new URL(returnPath, window.location.origin).pathname,
+      new URL(returnPath, window.location.origin).search
+    );
+    setActiveRoute(returnRoute);
+    setActiveTab(
+      returnRoute.kind === 'search' ? 'search' :
+      returnRoute.kind === 'orders' ? 'orders' :
+      returnRoute.kind === 'account' ? 'account' :
+      'home'
+    );
+  }, [activeRoute.kind, setIsCartOpen]);
+
+  const updateSearchQueryRoute = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (activeRoute.kind === 'search' || activeTab === 'search') {
+      const path = pathForSearch(query);
+      replaceStorefrontUrl(path);
+      setActiveRoute({ kind: 'search', query });
+    }
+  }, [activeRoute.kind, activeTab, setSearchQuery]);
 
   useEffect(() => {
     const handlePopState = () => {
