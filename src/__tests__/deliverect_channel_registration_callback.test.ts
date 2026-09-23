@@ -33,6 +33,10 @@ describe('Deliverect Channel registration callback', () => {
       .mockImplementation(async (_tenantId: string, store: any) => store);
     vi.spyOn(FirestorePlatformService, 'addAuditLog')
       .mockResolvedValue({} as any);
+    vi.spyOn(FirestorePlatformService, 'saveStoreOperationalState')
+      .mockResolvedValue({} as any);
+    vi.spyOn(FirestorePlatformService, 'claimWebhookIdempotency')
+      .mockResolvedValue({ claimed: true } as any);
 
     const app = express();
     app.use(express.json({
@@ -111,4 +115,44 @@ describe('Deliverect Channel registration callback', () => {
     const body = await res.json();
     expect(body.registration.tenantId).toBe('brand-alpha');
   });
+  it('accepts a staging menu push signed with its channelLinkId', async () => {
+    const menuPayload = {
+      accountId: 'account-123',
+      locationId: 'location-456',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-abc',
+      menu: 'Internal Test',
+      products: {},
+      categories: [],
+      modifiers: {},
+      modifierGroups: {},
+    };
+    const rawBody = JSON.stringify(menuPayload);
+    const signature = WebhookService.computeHmacSignature(
+      rawBody,
+      menuPayload.channelLinkId
+    );
+
+    const res = await fetch(
+      `${baseUrl}/webhooks/deliverect/brand-alpha/channel/menu_update`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-server-authorization-hmac-sha256': signature,
+        },
+        body: rawBody,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      type: 'menu_update',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-abc',
+    });
+  });
+
 });
