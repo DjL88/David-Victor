@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
 import { AssetService, type AssetMetadata } from './assetService';
-import { getFirestoreDb, getFirebaseStorage } from './firebase';
+import { getFirestoreDb } from './firebase';
 import { SecretManager } from './secrets';
 
 export interface BrandProfileEvidence {
@@ -206,17 +206,11 @@ function deterministicTextProfile(text: string, asset: AssetMetadata): {
 }
 
 async function readAssetBytes(asset: AssetMetadata): Promise<Buffer> {
-  const storage = getFirebaseStorage();
-  if (storage && asset.storagePath) {
-    const file = storage.bucket().file(asset.storagePath);
-    const [exists] = await file.exists();
-    if (exists) {
-      const [buffer] = await file.download();
-      return buffer;
-    }
-  }
+  const stored = await AssetService.getAssetBinary(asset.id);
+  if (stored) return stored;
 
-  if (asset.publicUrl?.startsWith('https://')) {
+  // Public storefront logo assets may still be retrievable from their published URL.
+  if (asset.type === 'LOGO' && asset.publicUrl?.startsWith('https://')) {
     const response = await fetch(asset.publicUrl);
     if (!response.ok) throw new Error(`Unable to read uploaded brand material (HTTP ${response.status}).`);
     return Buffer.from(await response.arrayBuffer());
