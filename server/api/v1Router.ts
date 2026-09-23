@@ -3999,23 +3999,23 @@ v1Router.get('/admin/tenants', requireAdminAuth('platformSuperAdmin'), async (_r
 v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validateBody(CreateTenantSchema), async (req: Request, res: Response) => {
   try {
     const newTenant = req.body;
-    let provisioned = await FirestorePlatformService.createTenant(newTenant);
-    if (newTenant.domain) {
-      provisioned = await FirestorePlatformService.updateTenantConfig(provisioned.tenantId, {
-        defaultDomain: newTenant.domain,
-      });
-    }
+    const provisioned = await FirestorePlatformService.createTenant(newTenant);
 
-    // Audit log
-    await FirestorePlatformService.addAuditLog(provisioned.tenantId, {
-      userId: (req as AuthenticatedRequest).adminUser?.uid || 'superadmin',
-      userName: (req as AuthenticatedRequest).adminUser?.name || 'Platform SuperAdmin',
-      userRole: 'platformSuperAdmin',
-      tenantId: provisioned.tenantId,
-      category: 'Branding',
-      action: 'PROVISION_TENANT',
-      details: `Provisioned new multi-tenant brand: ${provisioned.brandName} (${provisioned.tenantId})`,
-    });
+    // The tenant commit is authoritative. A secondary audit write must never
+    // turn a successfully-created brand into a misleading provisioning error.
+    try {
+      await FirestorePlatformService.addAuditLog(provisioned.tenantId, {
+        userId: (req as AuthenticatedRequest).adminUser?.uid || 'superadmin',
+        userName: (req as AuthenticatedRequest).adminUser?.name || 'Platform SuperAdmin',
+        userRole: 'platformSuperAdmin',
+        tenantId: provisioned.tenantId,
+        category: 'Branding',
+        action: 'PROVISION_TENANT_REQUEST',
+        details: `Provisioned new multi-tenant brand: ${provisioned.brandName} (${provisioned.tenantId})`,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Tenant Provisioning] Tenant committed but request audit failed:', auditErr?.message || auditErr);
+    }
 
     res.status(201).json({
       success: true,
