@@ -84,7 +84,7 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Check product, category, story and CMS media so broken assets can be fixed before shoppers encounter them.
+            Check product, category, story and CMS media so broken or missing assets can be fixed before shoppers encounter them.
           </p>
         </div>
 
@@ -136,7 +136,7 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
             Failing or Expired
           </span>
           <p className="text-2xl font-black text-rose-600 mt-1">{summary.failingCount}</p>
-          <span className="text-[10px] text-rose-700 mt-1 block">Branded fallback active</span>
+          <span className="text-[10px] text-rose-700 mt-1 block">Broken, unreachable or missing</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs">
@@ -209,15 +209,19 @@ export const MediaHealthScreen: React.FC<MediaHealthScreenProps> = ({ tenantId }
                   </td>
 
                   <td className="py-3 px-4 max-w-xs truncate font-mono text-[11px] text-gray-600">
-                    <a
-                      href={asset.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hover:underline flex items-center gap-1"
-                    >
-                      <span className="truncate">{asset.url}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 text-gray-400" />
-                    </a>
+                    {asset.url ? (
+                      <a
+                        href={asset.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline flex items-center gap-1"
+                      >
+                        <span className="truncate">{asset.url}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 text-gray-400" />
+                      </a>
+                    ) : (
+                      <span className="font-sans font-bold text-rose-700">No image supplied</span>
+                    )}
                   </td>
 
                   <td className="py-3 px-4">
