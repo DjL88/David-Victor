@@ -219,7 +219,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             id="close-product-detail-btn"
             onClick={onClose}
             className="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-white/80 hover:bg-white text-gray-700 flex items-center justify-center shadow-md backdrop-blur-xs transition-colors"
-            aria-label="Close product details"
+            aria-label={t('product.closeDetails')}
           >
             <X className="w-5 h-5" />
           </button>
@@ -314,7 +314,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
               {hasDeposit && (
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Includes £{(depositAmount || 0).toFixed(2)} DRS returnable deposit
+                  {t('product.includesDeposit').replace('{amount}', `${currencySymbol}${(depositAmount || 0).toFixed(2)}`)}
                 </span>
               )}
             </div>
