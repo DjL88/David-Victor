@@ -41,6 +41,8 @@ const inMemoryStories: Record<string, Story[]> = {};
 const inMemoryStoriesPurged: Record<string, boolean> = {};
 const inMemoryHeroBanners: Record<string, CategoryPromoBanner[]> = {};
 const inMemoryHeroBannersPurged: Record<string, boolean> = {};
+const inMemoryStoreOperationalStates: Record<string, Record<string, StoreOperationalState>> = {};
+const inMemoryStoreSnoozes: Record<string, Record<string, Record<string, StoreProductSnoozeState>>> = {};
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -62,6 +64,30 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     console.error('[Firestore Admin Error]:', JSON.stringify(errInfo));
   }
   return errInfo;
+}
+
+export interface StoreOperationalState {
+  tenantId: string;
+  channelLinkId: string;
+  status?: 'ONLINE' | 'BUSY' | 'PAUSED' | 'CLOSED' | 'OPEN';
+  preparationTimeDelay?: number;
+  locationId?: string;
+  accountId?: string;
+  lastMenuId?: string;
+  menuUpdatedAt?: string;
+  updatedAt: string;
+  source: 'DELIVERECT_WEBHOOK';
+}
+
+export interface StoreProductSnoozeState {
+  tenantId: string;
+  channelLinkId: string;
+  plu: string;
+  snoozed: boolean;
+  snoozeStart?: string;
+  snoozeEnd?: string;
+  updatedAt: string;
+  source: 'DELIVERECT_WEBHOOK';
 }
 
 export interface IntegrationConfig {
@@ -3130,6 +3156,168 @@ export class FirestoreService {
       }
     }
     return updated;
+  }
+
+  // ==========================================
+  // DELIVERECT REAL-TIME OPERATIONAL STATE
+  // ==========================================
+  static async saveStoreOperationalState(
+    tenantId: string,
+    channelLinkId: string,
+    updates: Partial<Omit<StoreOperationalState, 'tenantId' | 'channelLinkId' | 'updatedAt' | 'source'>>
+  ): Promise<StoreOperationalState> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    if (!cleanTenantId || !cleanChannelLinkId) {
+      throw BFFError.invalidInput('tenantId and channelLinkId are required for store operational state.');
+    }
+
+    const existing =
+      inMemoryStoreOperationalStates[cleanTenantId]?.[cleanChannelLinkId];
+    const state: StoreOperationalState = {
+      ...(existing || {}),
+      ...updates,
+      tenantId: cleanTenantId,
+      channelLinkId: cleanChannelLinkId,
+      updatedAt: new Date().toISOString(),
+      source: 'DELIVERECT_WEBHOOK',
+    };
+
+    if (!inMemoryStoreOperationalStates[cleanTenantId]) {
+      inMemoryStoreOperationalStates[cleanTenantId] = {};
+    }
+    inMemoryStoreOperationalStates[cleanTenantId][cleanChannelLinkId] = state;
+
+    const db = getFirestoreDb();
+    if (db) {
+      try {
+        await db
+          .collection('tenants')
+          .doc(cleanTenantId)
+          .collection('operationalStores')
+          .doc(cleanChannelLinkId)
+          .set(cleanUndefined(state), { merge: true });
+      } catch (err: any) {
+        if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+        throw err;
+      }
+    }
+
+    return state;
+  }
+
+  static async getStoreOperationalStates(
+    tenantId: string
+  ): Promise<Record<string, StoreOperationalState>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const fallback = {
+      ...(inMemoryStoreOperationalStates[cleanTenantId] || {}),
+    };
+
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) return fallback;
+
+    try {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('operationalStores')
+        .get();
+      const result: Record<string, StoreOperationalState> = { ...fallback };
+      snap.forEach((doc: any) => {
+        const data = doc.data() as StoreOperationalState;
+        if (data?.channelLinkId) result[data.channelLinkId] = data;
+      });
+      return result;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      return fallback;
+    }
+  }
+
+  static async replaceStoreProductSnoozes(
+    tenantId: string,
+    channelLinkId: string,
+    snoozes: StoreProductSnoozeState[]
+  ): Promise<void> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    if (!cleanTenantId || !cleanChannelLinkId) {
+      throw BFFError.invalidInput('tenantId and channelLinkId are required for product snooze state.');
+    }
+
+    if (!inMemoryStoreSnoozes[cleanTenantId]) inMemoryStoreSnoozes[cleanTenantId] = {};
+    const next: Record<string, StoreProductSnoozeState> = {};
+    for (const snooze of snoozes) {
+      const plu = String(snooze?.plu || '').trim();
+      if (!plu || snooze.snoozed !== true) continue;
+      next[plu] = {
+        ...snooze,
+        tenantId: cleanTenantId,
+        channelLinkId: cleanChannelLinkId,
+        plu,
+        snoozed: true,
+        updatedAt: snooze.updatedAt || new Date().toISOString(),
+        source: 'DELIVERECT_WEBHOOK',
+      };
+    }
+    inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
+
+    const db = getFirestoreDb();
+    if (!db) return;
+
+    const collection = db
+      .collection('tenants')
+      .doc(cleanTenantId)
+      .collection('operationalStores')
+      .doc(cleanChannelLinkId)
+      .collection('snoozes');
+
+    try {
+      const existing = await collection.get();
+      const batch = db.batch();
+      existing.docs.forEach((doc: any) => batch.delete(doc.ref));
+      Object.values(next).forEach((state) => {
+        batch.set(collection.doc(state.plu.replace(/\//g, '_')), cleanUndefined(state));
+      });
+      await batch.commit();
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      throw err;
+    }
+  }
+
+  static async getStoreProductSnoozes(
+    tenantId: string,
+    channelLinkId: string
+  ): Promise<Record<string, StoreProductSnoozeState>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const fallback = {
+      ...(inMemoryStoreSnoozes[cleanTenantId]?.[cleanChannelLinkId] || {}),
+    };
+
+    const db = getFirestoreDb();
+    if (!db || isFirestorePermissionDenied()) return fallback;
+
+    try {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('operationalStores')
+        .doc(cleanChannelLinkId)
+        .collection('snoozes')
+        .get();
+      const result: Record<string, StoreProductSnoozeState> = { ...fallback };
+      snap.forEach((doc: any) => {
+        const data = doc.data() as StoreProductSnoozeState;
+        if (data?.plu) result[data.plu] = data;
+      });
+      return result;
+    } catch (err: any) {
+      if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
+      return fallback;
+    }
   }
 
   // ==========================================
