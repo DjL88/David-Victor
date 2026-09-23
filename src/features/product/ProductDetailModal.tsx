@@ -247,7 +247,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
               {hasDiscount && (
                 <span className="absolute top-3 left-3 bg-amber-500 text-white font-extrabold text-xs px-2.5 py-1 rounded-full shadow-md">
-                  Special Offer
+                  {t('product.specialOffer')}
                 </span>
               )}
             </div>
@@ -345,7 +345,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </span>
                 </div>
                 <span className="text-[11px] font-bold text-emerald-700 underline shrink-0">
-                  Compare Stores
+                  {t('product.compareStores')}
                 </span>
               </button>
             )}
@@ -384,7 +384,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {product.description && (
               <div className="mb-5">
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                  Description
+                  {t('product.description')}
                 </h2>
                 <p className="text-sm text-gray-700 leading-relaxed">{product.description}</p>
               </div>
@@ -575,7 +575,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {hasTags && (
               <div className="mb-5">
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Dietary & Lifestyle
+                  {t('product.dietaryLifestyle')}
                 </h2>
                 <div className="flex flex-wrap gap-1.5">
                   {friendlyProductTags.map((tag, idx) => (
@@ -633,7 +633,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   disabled
                   className="py-3 px-6 rounded-2xl bg-gray-100 text-gray-400 font-bold text-sm cursor-not-allowed"
                 >
-                  Out of Stock
+                  {t('product.outOfStock')}
                 </button>
               ) : !isStoreSelected ? (
                 <button
