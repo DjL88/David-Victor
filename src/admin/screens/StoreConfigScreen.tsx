@@ -441,6 +441,7 @@ export const StoreConfigScreen: React.FC<StoreConfigScreenProps> = ({
             Locations CSV
           </button>
           <button
+            data-admin-ai-target="stores-opening-hours"
             type="button"
             disabled={loading || !filtered.length}
             onClick={() => exportCsv(true)}
