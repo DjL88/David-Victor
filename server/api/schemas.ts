@@ -597,6 +597,24 @@ export const AssetFinalizeSchema = z.object({
 });
 
 
+export const AdminAssistantChatSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().trim().min(1).max(4000),
+  }).strict()).max(12).optional().default([]),
+  context: z.object({
+    section: z.string().min(1).max(100).optional(),
+    resourceType: z.string().min(1).max(100).optional(),
+    resourceId: z.string().min(1).max(500).optional(),
+    organizationId: z.string().min(1).max(200).optional(),
+    market: z.string().min(1).max(200).optional(),
+    region: z.string().min(1).max(200).optional(),
+    locationGroupId: z.string().min(1).max(200).optional(),
+    locationId: z.string().min(1).max(200).optional(),
+  }).strict().optional(),
+}).strict();
+
 export const AdminAssistantPlanSchema = z.object({
   actionName: z.string().min(1).max(100),
   input: z.record(z.string(), z.unknown()).optional().default({}),
