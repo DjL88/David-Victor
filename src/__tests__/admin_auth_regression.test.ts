@@ -11,6 +11,7 @@ import { setRuntimeMode } from '../domain/runtime';
 describe('Admin Authentication & RBAC Regression Tests', () => {
   const originalAppMode = process.env.APP_MODE;
   const originalDeliverectEnv = process.env.DELIVERECT_ENV;
+  const originalSuperAdminEmails = process.env.PLATFORM_SUPERADMIN_EMAILS;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -19,6 +20,9 @@ describe('Admin Authentication & RBAC Regression Tests', () => {
   afterEach(() => {
     process.env.APP_MODE = originalAppMode;
     process.env.DELIVERECT_ENV = originalDeliverectEnv;
+    if (originalSuperAdminEmails === undefined) delete process.env.PLATFORM_SUPERADMIN_EMAILS;
+    else process.env.PLATFORM_SUPERADMIN_EMAILS = originalSuperAdminEmails;
+    setMockAdminAuthForTest(null);
     setServerRuntimeMode((originalAppMode as any) || 'demo');
     setRuntimeMode('UNKNOWN');
     vi.restoreAllMocks();
@@ -135,6 +139,37 @@ describe('Admin Authentication & RBAC Regression Tests', () => {
 
       const session = await verifyAdminSession(undefined, 'brand-alpha');
       expect(session).toBeNull();
+    });
+
+    it('requires verified email for explicit superadmin bootstrap allowlist', async () => {
+      process.env.APP_MODE = 'staging';
+      process.env.PLATFORM_SUPERADMIN_EMAILS = 'bootstrap@example.com';
+      setServerRuntimeMode('staging');
+
+      const mockAdminAuth = {
+        verifyIdToken: vi.fn()
+          .mockResolvedValueOnce({
+            uid: 'bootstrap-unverified',
+            email: 'bootstrap@example.com',
+            email_verified: false,
+          })
+          .mockResolvedValueOnce({
+            uid: 'bootstrap-verified',
+            email: 'bootstrap@example.com',
+            email_verified: true,
+          }),
+        setCustomUserClaims: vi.fn().mockResolvedValue(undefined),
+      };
+
+      setMockAdminAuthForTest(mockAdminAuth as any);
+
+      const unverified = await verifyAdminSession('Bearer unverified-bootstrap-jwt', 'brand-alpha');
+      expect(unverified?.role).not.toBe('platformSuperAdmin');
+
+      const verified = await verifyAdminSession('Bearer verified-bootstrap-jwt', 'brand-alpha');
+      expect(verified).not.toBeNull();
+      expect(verified?.role).toBe('platformSuperAdmin');
+      expect(verified?.isSuperAdmin).toBe(true);
     });
 
     it('Staging mode authorizes real Firebase token with platformSuperAdmin custom claim', async () => {
