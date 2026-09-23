@@ -172,6 +172,12 @@ export interface AdminClient {
   ): Promise<Store>;
 
   /**
+   * Permanently deletes the local store/channel projection. This never deletes
+   * the upstream Deliverect location and is restricted server-side.
+   */
+  deleteStore?(tenantId: string, storeId: string): Promise<boolean>;
+
+  /**
    * Retrieves audit log entries for policy & config changes.
    */
   getAuditLogs(tenantId?: string): Promise<AuditLogEntry[]>;
