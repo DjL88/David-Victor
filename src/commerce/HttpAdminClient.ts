@@ -475,6 +475,24 @@ export class HttpAdminClient implements AdminClient {
     return { ...updated, id: updated.tenantId };
   }
 
+  async analyseBrandProfile(tenantId: string, assetId: string): Promise<any> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/brand-profile/analyse`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tenantId: tId, assetId }),
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || `Brand profile analysis failed (HTTP ${res.status})`);
+    }
+
+    const payload = await res.json();
+    return payload.analysis;
+  }
+
   async listAssets(tenantId?: string, type?: string): Promise<any[]> {
     const tId = tenantId || this.currentTenantId;
     const url = type
