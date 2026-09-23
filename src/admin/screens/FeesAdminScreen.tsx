@@ -6,6 +6,7 @@ import {
   policyFeeToMinor,
 } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import { Coins, Check, RefreshCw, AlertCircle, Info } from 'lucide-react';
 
 interface FeesAdminScreenProps {
@@ -41,6 +42,43 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() =>
+    onAdminAiPrefill('fees', ({ prefill }) => {
+      if (!prefill) return;
+      setPolicy((current) => {
+        if (!current) return current;
+        const next = { ...current };
+        if (typeof prefill.deliveryFeeMode === 'string') {
+          next.deliveryFeeMode = prefill.deliveryFeeMode as TenantFeePolicy['deliveryFeeMode'];
+        }
+        if (typeof prefill.fixedDeliveryFeeMajor === 'number') {
+          next.fixedDeliveryFee = Math.round(prefill.fixedDeliveryFeeMajor * 100);
+        }
+        if (typeof prefill.freeDeliveryThresholdMajor === 'number') {
+          next.freeDeliveryThreshold = Math.round(prefill.freeDeliveryThresholdMajor * 100);
+        }
+        if (typeof prefill.serviceFeeMode === 'string') {
+          next.serviceFeeMode = prefill.serviceFeeMode as TenantFeePolicy['serviceFeeMode'];
+        }
+        if (typeof prefill.serviceFeeAmount === 'number') {
+          next.serviceFeeAmount = next.serviceFeeMode === 'PERCENT'
+            ? prefill.serviceFeeAmount
+            : Math.round(prefill.serviceFeeAmount * 100);
+        }
+        if (typeof prefill.bagFeeMajor === 'number') {
+          next.bagFee = Math.round(prefill.bagFeeMajor * 100);
+        }
+        if (typeof prefill.minimumBasketThresholdMajor === 'number') {
+          next.minimumBasketThreshold = Math.round(prefill.minimumBasketThresholdMajor * 100);
+        }
+        if (typeof prefill.smallOrderFeeMajor === 'number') {
+          next.smallOrderFee = Math.round(prefill.smallOrderFeeMajor * 100);
+        }
+        return next;
+      });
+    }),
+  []);
 
   const handleServiceFeeModeChange = (newMode: 'FIXED' | 'PERCENT' | 'NONE') => {
     if (!policy) return;
@@ -146,6 +184,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             <div>
               <label className="block font-bold text-gray-700 mb-1">Calculation Mode</label>
               <select
+                data-admin-ai-target="fees-delivery-mode"
                 value={policy.deliveryFeeMode}
                 onChange={(e) =>
                   setPolicy({ ...policy, deliveryFeeMode: e.target.value as any })
@@ -164,6 +203,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Fixed Delivery Fee (£)</label>
                 <input
+                  data-admin-ai-target="fees-fixed-delivery"
                   type="number"
                   step="0.01"
                   value={policyFeeToMajor(policy.fixedDeliveryFee, 199)}
@@ -439,7 +479,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
           >
             Reset
           </button>
-          <button
+          <button data-admin-ai-target="fees-save"
             type="submit"
             disabled={saving}
             className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5"
