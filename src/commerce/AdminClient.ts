@@ -379,6 +379,9 @@ export interface AdminClient {
    */
   deleteDomain?(domainId: string): Promise<any>;
 
+  /** Checks the tenant-bound DNS TXT ownership challenge for a custom domain. */
+  verifyDomainOwnership?(domainId: string): Promise<any>;
+
   /**
    * Compact, admin-only Connection Health reporting.
    */
