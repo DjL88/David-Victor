@@ -140,6 +140,31 @@ export interface LocaleTranslations {
   'basket.goCheckout': string;
   'basket.hfssTitle': string;
   'basket.hfssNotice': string;
+  'basket.item': string;
+  'basket.ifItemUnavailable': string;
+  'basket.unavailablePreferenceHelp': string;
+  'basket.substituteBestMatch': string;
+  'basket.cheapestOption': string;
+  'basket.bestMatchHelp': string;
+  'basket.preChooseSubstitute': string;
+  'basket.bufferAdjusted': string;
+  'basket.preChooseHelp': string;
+  'basket.sameOrCheaper': string;
+  'basket.change': string;
+  'basket.selectAlternative': string;
+  'basket.preAuthBufferUpdate': string;
+  'basket.extra': string;
+  'basket.bufferNoticeSuffix': string;
+  'basket.chooseAlternativeProduct': string;
+  'basket.searchAlternatives': string;
+  'basket.noPriceDifference': string;
+  'basket.removeIfUnavailable': string;
+  'basket.autoRefund': string;
+  'basket.removeUnavailableHelp': string;
+  'basket.cancelIfUnavailable': string;
+  'basket.essentialItem': string;
+  'basket.cancelUnavailableHelp': string;
+  'basket.update': string;
 
   // Checkout & Pre-Authorization
   'checkout.title': string;
@@ -511,6 +536,31 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.goCheckout': 'Go to Checkout',
     'basket.hfssTitle': 'UK Food Promotion Compliance (HFSS Protected)',
     'basket.hfssNotice': 'bundle opportunity suppressed from upsell prompts under UK Food Promotion and Placement rules because the candidate item is high in fat, sugar or salt.',
+    'basket.item': 'Basket Item',
+    'basket.ifItemUnavailable': 'If this item is unavailable',
+    'basket.unavailablePreferenceHelp': 'Choose how your store picker should handle this item during picking.',
+    'basket.substituteBestMatch': 'Substitute if unavailable (Best match)',
+    'basket.cheapestOption': 'Cheapest Option',
+    'basket.bestMatchHelp': 'The picker in shop will only swap with the same value or lower. You are guaranteed the lowest price.',
+    'basket.preChooseSubstitute': 'Pre-choose substitute',
+    'basket.bufferAdjusted': 'Buffer Adjusted',
+    'basket.preChooseHelp': 'Select 1 alternative option. If it costs more, the higher value is calculated into the pre-authorisation buffer on your card payment.',
+    'basket.sameOrCheaper': 'Same or cheaper',
+    'basket.change': 'Change',
+    'basket.selectAlternative': 'Select 1 alternative option',
+    'basket.preAuthBufferUpdate': 'Pre-auth buffer update',
+    'basket.extra': 'Extra',
+    'basket.bufferNoticeSuffix': 'will be reserved on your card. If picked, you only pay this higher price; if the original item is available, you pay the original price.',
+    'basket.chooseAlternativeProduct': 'Choose Alternative Product',
+    'basket.searchAlternatives': 'Search alternatives...',
+    'basket.noPriceDifference': 'no price difference',
+    'basket.removeIfUnavailable': 'Remove if unavailable',
+    'basket.autoRefund': 'Auto Refund',
+    'basket.removeUnavailableHelp': 'The picker can only remove this item if unavailable. You will be refunded the full amount.',
+    'basket.cancelIfUnavailable': 'Cancel entire order if unavailable',
+    'basket.essentialItem': 'Essential Item',
+    'basket.cancelUnavailableHelp': 'If this item is unavailable, do not deliver. Your entire order will be cancelled with no charge.',
+    'basket.update': 'Update',
 
     'checkout.title': 'Grocery Checkout & Authorization',
     'checkout.scheduling': 'Fulfillment Timing',
@@ -871,6 +921,31 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.goCheckout': 'Ir al pago',
     'basket.hfssTitle': 'Cumplimiento de promociones alimentarias del Reino Unido (HFSS)',
     'basket.hfssNotice': 'oportunidad de oferta suprimida de las recomendaciones por las normas británicas de promoción y colocación de alimentos al contener un artículo alto en grasa, azúcar o sal.',
+    'basket.item': 'Artículo de la cesta',
+    'basket.ifItemUnavailable': 'Si este artículo no está disponible',
+    'basket.unavailablePreferenceHelp': 'Elige qué debe hacer la tienda con este artículo durante la preparación.',
+    'basket.substituteBestMatch': 'Sustituir si no está disponible (mejor opción)',
+    'basket.cheapestOption': 'Opción más barata',
+    'basket.bestMatchHelp': 'La tienda solo podrá cambiarlo por un producto del mismo precio o más barato. Siempre pagarás el precio más bajo.',
+    'basket.preChooseSubstitute': 'Elegir sustituto previamente',
+    'basket.bufferAdjusted': 'Margen ajustado',
+    'basket.preChooseHelp': 'Elige 1 alternativa. Si cuesta más, ese valor se incluye en el margen de preautorización de tu tarjeta.',
+    'basket.sameOrCheaper': 'Igual o más barato',
+    'basket.change': 'Cambiar',
+    'basket.selectAlternative': 'Seleccionar 1 alternativa',
+    'basket.preAuthBufferUpdate': 'Actualización del margen de preautorización',
+    'basket.extra': 'Extra',
+    'basket.bufferNoticeSuffix': 'se reservará en tu tarjeta. Si se prepara, pagarás ese precio; si el artículo original está disponible, pagarás el precio original.',
+    'basket.chooseAlternativeProduct': 'Elegir producto alternativo',
+    'basket.searchAlternatives': 'Buscar alternativas...',
+    'basket.noPriceDifference': 'sin diferencia de precio',
+    'basket.removeIfUnavailable': 'Eliminar si no está disponible',
+    'basket.autoRefund': 'Reembolso automático',
+    'basket.removeUnavailableHelp': 'La tienda solo eliminará este artículo si no está disponible. Se reembolsará el importe completo.',
+    'basket.cancelIfUnavailable': 'Cancelar todo el pedido si no está disponible',
+    'basket.essentialItem': 'Artículo esencial',
+    'basket.cancelUnavailableHelp': 'Si este artículo no está disponible, no se entregará el pedido. Se cancelará sin ningún cargo.',
+    'basket.update': 'Actualizar',
 
     'checkout.title': 'Pago y Preautorización',
     'checkout.scheduling': 'Horario de entrega',
@@ -1231,6 +1306,31 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.goCheckout': 'Passer au paiement',
     'basket.hfssTitle': 'Conformité britannique des promotions alimentaires (HFSS)',
     'basket.hfssNotice': 'opportunité d’offre supprimée des recommandations conformément aux règles britanniques sur la promotion et le placement des aliments, car l’article est riche en graisse, sucre ou sel.',
+    'basket.item': 'Article du panier',
+    'basket.ifItemUnavailable': 'Si cet article est indisponible',
+    'basket.unavailablePreferenceHelp': 'Choisissez ce que le magasin doit faire avec cet article pendant la préparation.',
+    'basket.substituteBestMatch': 'Remplacer si indisponible (meilleure correspondance)',
+    'basket.cheapestOption': 'Option la moins chère',
+    'basket.bestMatchHelp': 'Le magasin ne pourra le remplacer que par un article de même prix ou moins cher. Vous bénéficiez du prix le plus bas.',
+    'basket.preChooseSubstitute': 'Choisir un substitut à l’avance',
+    'basket.bufferAdjusted': 'Marge ajustée',
+    'basket.preChooseHelp': 'Choisissez 1 alternative. Si elle coûte plus cher, ce montant est inclus dans la marge de préautorisation de votre carte.',
+    'basket.sameOrCheaper': 'Même prix ou moins cher',
+    'basket.change': 'Modifier',
+    'basket.selectAlternative': 'Sélectionner 1 alternative',
+    'basket.preAuthBufferUpdate': 'Mise à jour de la marge de préautorisation',
+    'basket.extra': 'Supplément',
+    'basket.bufferNoticeSuffix': 'sera réservé sur votre carte. Si l’alternative est préparée, vous payez ce prix; si l’article original est disponible, vous payez le prix original.',
+    'basket.chooseAlternativeProduct': 'Choisir un produit alternatif',
+    'basket.searchAlternatives': 'Rechercher des alternatives...',
+    'basket.noPriceDifference': 'aucune différence de prix',
+    'basket.removeIfUnavailable': 'Supprimer si indisponible',
+    'basket.autoRefund': 'Remboursement automatique',
+    'basket.removeUnavailableHelp': 'Le magasin supprimera cet article uniquement s’il est indisponible. Le montant complet sera remboursé.',
+    'basket.cancelIfUnavailable': 'Annuler toute la commande si indisponible',
+    'basket.essentialItem': 'Article essentiel',
+    'basket.cancelUnavailableHelp': 'Si cet article est indisponible, la commande ne sera pas livrée. Elle sera annulée sans frais.',
+    'basket.update': 'Mettre à jour',
 
     'checkout.title': 'Commande & Autorisation',
     'checkout.scheduling': 'Créneau de livraison',
@@ -1591,6 +1691,31 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'basket.goCheckout': 'Zum Checkout',
     'basket.hfssTitle': 'Britische Lebensmittel-Promotionsregeln (HFSS)',
     'basket.hfssNotice': 'Angebotsmöglichkeit wurde gemäß den britischen Regeln zur Lebensmittelpromotion und -platzierung aus den Empfehlungen entfernt, da der Artikel viel Fett, Zucker oder Salz enthält.',
+    'basket.item': 'Warenkorbartikel',
+    'basket.ifItemUnavailable': 'Wenn dieser Artikel nicht verfügbar ist',
+    'basket.unavailablePreferenceHelp': 'Wähle, wie die Filiale während der Kommissionierung mit diesem Artikel umgehen soll.',
+    'basket.substituteBestMatch': 'Bei Nichtverfügbarkeit ersetzen (beste Übereinstimmung)',
+    'basket.cheapestOption': 'Günstigste Option',
+    'basket.bestMatchHelp': 'Die Filiale darf nur gegen einen gleich teuren oder günstigeren Artikel tauschen. Du erhältst garantiert den niedrigeren Preis.',
+    'basket.preChooseSubstitute': 'Ersatzartikel vorab wählen',
+    'basket.bufferAdjusted': 'Puffer angepasst',
+    'basket.preChooseHelp': 'Wähle 1 Alternative. Ist sie teurer, wird der höhere Betrag in den Vorautorisierungspuffer deiner Karte eingerechnet.',
+    'basket.sameOrCheaper': 'Gleich teuer oder günstiger',
+    'basket.change': 'Ändern',
+    'basket.selectAlternative': '1 Alternative auswählen',
+    'basket.preAuthBufferUpdate': 'Aktualisierung des Vorautorisierungspuffers',
+    'basket.extra': 'Zusätzlich',
+    'basket.bufferNoticeSuffix': 'wird auf deiner Karte reserviert. Wird die Alternative kommissioniert, zahlst du diesen Preis; ist der Originalartikel verfügbar, zahlst du den Originalpreis.',
+    'basket.chooseAlternativeProduct': 'Alternativprodukt wählen',
+    'basket.searchAlternatives': 'Alternativen suchen...',
+    'basket.noPriceDifference': 'kein Preisunterschied',
+    'basket.removeIfUnavailable': 'Bei Nichtverfügbarkeit entfernen',
+    'basket.autoRefund': 'Automatische Erstattung',
+    'basket.removeUnavailableHelp': 'Die Filiale entfernt den Artikel nur, wenn er nicht verfügbar ist. Der volle Betrag wird erstattet.',
+    'basket.cancelIfUnavailable': 'Gesamte Bestellung stornieren, wenn nicht verfügbar',
+    'basket.essentialItem': 'Wichtiger Artikel',
+    'basket.cancelUnavailableHelp': 'Ist dieser Artikel nicht verfügbar, wird die gesamte Bestellung ohne Belastung storniert.',
+    'basket.update': 'Aktualisieren',
 
     'checkout.title': 'Kasse & Autorisierung',
     'checkout.scheduling': 'Lieferzeitpunkt',
