@@ -75,7 +75,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
         group.find((page) => page.locale === 'en-GB') ||
         group[0]
       )
-      .filter(Boolean)
+      .filter((page): page is CmsPage => Boolean(page))
       .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999));
   }, [cmsPages, locale, tenant?.locale]);
 
