@@ -106,8 +106,8 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
           ({ GBP: '£', EUR: '€', USD: '$', CAD: 'CA$', AUD: 'A$', NZD: 'NZ$' } as Record<string, string>)[currency] || currency,
         country,
         domain: defaultDomain.trim() || undefined,
-        adminEmail,
-        adminName,
+        adminEmail: adminEmail.trim() || undefined,
+        adminName: adminName.trim() || undefined,
       });
 
       setProvisionSuccess(newTenant);
@@ -553,7 +553,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Admin Email *</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Admin Email</label>
                       <input
                         type="email"
                         value={adminEmail}
@@ -562,7 +562,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                         className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
                       />
                       <p className="text-[11px] text-gray-400 mt-1">
-                        Sets the initial administrator for this brand.
+                        Optional. If supplied, this becomes the initial administrator for the brand.
                       </p>
                     </div>
                   </div>
