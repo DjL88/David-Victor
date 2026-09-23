@@ -3449,11 +3449,13 @@ export class FirestoreService {
     });
 
     const db = getFirestoreDb();
-    if (!db) return list;
+    if (!db || (!customerUid && !sessionId)) return list;
     try {
       let query: any = db.collection('notificationSubscriptions').where('tenantId', '==', tenantId);
       if (customerUid) {
         query = query.where('customerUid', '==', customerUid);
+      } else if (sessionId) {
+        query = query.where('sessionId', '==', sessionId);
       }
       const snap = await query.get();
       if (!snap.empty) {
@@ -3489,11 +3491,15 @@ export class FirestoreService {
     });
 
     const db = getFirestoreDb();
-    if (!db) return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (!db || (!customerUid && !sessionId)) {
+      return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
     try {
       let query: any = db.collection('notifications').where('tenantId', '==', tenantId);
       if (customerUid) {
         query = query.where('recipientUid', '==', customerUid);
+      } else if (sessionId) {
+        query = query.where('recipientSessionId', '==', sessionId);
       }
       const snap = await query.get();
       if (!snap.empty) {
@@ -3505,6 +3511,26 @@ export class FirestoreService {
       console.warn('[Firestore Admin] Failed to query notifications from Firestore:', err);
     }
     return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  static async getNotificationById(notificationId: string): Promise<DomainNotification | null> {
+    if (inMemoryNotifications[notificationId]) {
+      return inMemoryNotifications[notificationId];
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return null;
+
+    try {
+      const doc = await db.collection('notifications').doc(notificationId).get();
+      if (!doc.exists) return null;
+      const notification = doc.data() as DomainNotification;
+      inMemoryNotifications[notificationId] = notification;
+      return notification;
+    } catch (err) {
+      console.warn('[Firestore Admin] Failed to retrieve notification from Firestore:', err);
+      return null;
+    }
   }
 
   static async markNotificationAsRead(notificationId: string): Promise<boolean> {

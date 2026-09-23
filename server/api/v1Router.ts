@@ -6037,20 +6037,44 @@ v1Router.get('/analytics/events', requireAdminAuth('operationsEditor'), async (r
 });
 
 /**
- * Subscribe to Web Push / In-App notifications
+ * Subscribe to Web Push / In-App notifications.
+ *
+ * Live customer identity is derived from the verified Firebase token. A caller
+ * cannot bind a push endpoint to another customer's UID by posting one.
  */
 v1Router.post('/notifications/subscribe', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const { endpoint, keys, customerUid, sessionId, channel } = req.body;
+    const { endpoint, keys, customerUid: claimedCustomerUid, sessionId, channel } = req.body;
     if (!endpoint) {
       return res.status(400).json({ error: 'Subscription endpoint is required', code: 'INVALID_SUBSCRIPTION' });
     }
+
+    const callerUid = await getCallerUid(req);
+    let customerUid = callerUid || undefined;
+
+    if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
+      if (claimedCustomerUid && claimedCustomerUid !== callerUid) {
+        return res.status(403).json({
+          error: 'Access denied: Cannot register notifications for another customer.',
+          code: 'FORBIDDEN',
+        });
+      }
+      if (!callerUid && !sessionId) {
+        return res.status(401).json({
+          error: 'Sign in or provide a guest session to register notifications.',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+    } else if (!customerUid && claimedCustomerUid) {
+      customerUid = claimedCustomerUid;
+    }
+
     const subscription = await NotificationService.subscribe(tenantId, {
       endpoint,
       keys,
       customerUid,
-      sessionId,
+      sessionId: customerUid ? undefined : sessionId,
       channel,
     });
     res.status(201).json({ success: true, subscription });
@@ -6060,27 +6084,41 @@ v1Router.post('/notifications/subscribe', async (req: Request, res: Response) =>
 });
 
 /**
- * Get customer notifications
+ * Get the current customer's notification inbox.
+ *
+ * Signed-in users are always scoped to the UID from their ID token. Guests
+ * must present their opaque session ID; a tenant-only query is never allowed.
  */
 v1Router.get('/notifications', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const customerUid = req.query.customerUid as string | undefined;
+    const claimedCustomerUid = req.query.customerUid as string | undefined;
     const sessionId = req.query.sessionId as string | undefined;
+    const callerUid = await getCallerUid(req);
+    let customerUid = callerUid || undefined;
 
-    // Privacy boundary: ensure customerUid query matches caller identity
-    if (customerUid && !isDemoMode() && process.env.NODE_ENV !== 'test') {
-      const callerUid = await getCallerUid(req);
-      const adminUser = (req as AuthenticatedRequest).adminUser;
-      if (!adminUser && callerUid !== customerUid) {
+    if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
+      if (claimedCustomerUid && claimedCustomerUid !== callerUid) {
         return res.status(403).json({
           error: 'Access denied: Cannot access notification stream for another customer.',
           code: 'FORBIDDEN',
         });
       }
+      if (!callerUid && !sessionId) {
+        return res.status(401).json({
+          error: 'Sign in or provide a guest session to view notifications.',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+    } else if (!customerUid && claimedCustomerUid) {
+      customerUid = claimedCustomerUid;
     }
 
-    const notifications = await NotificationService.getCustomerNotifications(tenantId, customerUid, sessionId);
+    const notifications = await NotificationService.getCustomerNotifications(
+      tenantId,
+      customerUid,
+      customerUid ? undefined : sessionId
+    );
     res.json({ success: true, notifications });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to retrieve notifications');
@@ -6088,11 +6126,33 @@ v1Router.get('/notifications', async (req: Request, res: Response) => {
 });
 
 /**
- * Mark notification as read
+ * Mark one owned notification as read.
  */
 v1Router.patch('/notifications/:id/read', async (req: Request, res: Response) => {
   try {
+    const tenantId = resolveTenant(req);
     const notificationId = req.params.id;
+    const sessionId = (req.body?.sessionId || req.query.sessionId) as string | undefined;
+    const callerUid = await getCallerUid(req);
+    const notification = await FirestorePlatformService.getNotificationById(notificationId);
+
+    if (!notification || notification.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Notification not found', code: 'NOTIFICATION_NOT_FOUND' });
+    }
+
+    if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
+      const ownsNotification = callerUid
+        ? notification.recipientUid === callerUid
+        : Boolean(sessionId && notification.recipientSessionId === sessionId);
+
+      if (!ownsNotification) {
+        return res.status(403).json({
+          error: 'Access denied: Notification does not belong to caller.',
+          code: 'FORBIDDEN',
+        });
+      }
+    }
+
     const updated = await NotificationService.markAsRead(notificationId);
     res.json({ success: true, updated });
   } catch (err: any) {

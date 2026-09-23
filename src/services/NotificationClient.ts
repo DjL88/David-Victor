@@ -1,4 +1,5 @@
 import { DomainNotification, NotificationSubscription } from '../domain/models';
+import { getCurrentIdToken } from '../firebase';
 
 export class NotificationClient {
   private tenantId: string;
@@ -42,16 +43,18 @@ export class NotificationClient {
         }
       }
 
+      const token = await getCurrentIdToken().catch(() => null);
       const res = await fetch('/api/v1/notifications/subscribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-tenant-id': this.tenantId,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           endpoint,
           keys,
-          customerUid,
+          customerUid: token ? undefined : customerUid,
           sessionId,
           channel: 'WEB_PUSH',
         }),
@@ -73,13 +76,15 @@ export class NotificationClient {
    * Fetches the customer's notification inbox.
    */
   async getNotifications(customerUid?: string, sessionId?: string): Promise<DomainNotification[]> {
+    const token = await getCurrentIdToken().catch(() => null);
     const params = new URLSearchParams();
-    if (customerUid) params.set('customerUid', customerUid);
+    if (!token && customerUid) params.set('customerUid', customerUid);
     if (sessionId) params.set('sessionId', sessionId);
 
     const res = await fetch(`/api/v1/notifications?${params.toString()}`, {
       headers: {
         'x-tenant-id': this.tenantId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
 
@@ -94,12 +99,16 @@ export class NotificationClient {
   /**
    * Marks a notification as read.
    */
-  async markAsRead(notificationId: string): Promise<boolean> {
+  async markAsRead(notificationId: string, sessionId?: string): Promise<boolean> {
+    const token = await getCurrentIdToken().catch(() => null);
     const res = await fetch(`/api/v1/notifications/${notificationId}/read`, {
       method: 'PATCH',
       headers: {
+        'Content-Type': 'application/json',
         'x-tenant-id': this.tenantId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
+      body: JSON.stringify(sessionId ? { sessionId } : {}),
     });
 
     return res.ok;
