@@ -9,6 +9,9 @@ export interface RawDeliverectOrderItem {
   price?: number | Money;
   unitPrice?: number | Money;
   subtotal?: number | Money;
+  imageUrl?: string;
+  image?: string;
+  images?: Array<string | { url?: string }>;
   substitutionPreference?: string;
   substituteCandidates?: Array<{ plu: string; name?: string; price?: number | Money }>;
   preferredSubstitutePlu?: string;
@@ -77,6 +80,16 @@ export interface RawDeliverectOrder {
   [key: string]: any;
 }
 
+function firstItemImage(item: RawDeliverectOrderItem): string | undefined {
+  const direct = [item.imageUrl, item.image].find((value) => typeof value === 'string' && value.trim());
+  if (direct) return direct.trim();
+  for (const candidate of item.images || []) {
+    const value = typeof candidate === 'string' ? candidate : candidate?.url;
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 /**
  * Convert Deliverect's fulfilment representation into Bwydi's canonical domain values.
  *
@@ -116,46 +129,27 @@ export function normalizeDeliverectFulfillmentType(
  */
 export class DeliverectOrderMapper {
   static normalizeOrder(raw: RawDeliverectOrder): Order {
-    // Prefer Deliverect IDs, then the channel order correlation ID. Avoid a
-    // timestamp-generated ID for real orders because Quest callbacks must resolve the
-    // same projection deterministically later.
     const id =
-      raw.id ||
-      raw._id ||
-      raw.orderId ||
-      raw.externalOrderId ||
-      raw.channelOrderRawId ||
-      raw.channelOrderId ||
-      `ord_${Date.now()}`;
+      raw.id || raw._id || raw.orderId || raw.externalOrderId || raw.channelOrderRawId || raw.channelOrderId || `ord_${Date.now()}`;
     const channelOrderId = raw.channelOrderId || raw.channelOrderDisplayId || raw.displayId || raw.orderReference;
     const basketId = raw.basketId || raw.originalBasket?.id;
-
-    // Items extraction: from top-level items or originalBasket.items
     const rawItems: RawDeliverectOrderItem[] = raw.items || raw.originalBasket?.items || [];
-    const currency =
-      typeof raw.currency === 'string'
-        ? raw.currency
-        : raw.pricing?.total?.currency || raw.originalBasket?.currency || 'GBP';
+    const currency = typeof raw.currency === 'string' ? raw.currency : raw.pricing?.total?.currency || raw.originalBasket?.currency || 'GBP';
 
     const normalizedItems = rawItems.map((item, idx) => {
       const rawPrice = item.price ?? item.unitPrice ?? item.subtotal ?? 0;
       let priceObj: Money;
-      if (typeof rawPrice === 'object' && rawPrice !== null && 'amount' in rawPrice) {
-        priceObj = rawPrice as Money;
-      } else if (typeof rawPrice === 'number') {
-        priceObj = { amount: Math.round(rawPrice), currency };
-      } else {
-        priceObj = { amount: 0, currency };
-      }
-
+      if (typeof rawPrice === 'object' && rawPrice !== null && 'amount' in rawPrice) priceObj = rawPrice as Money;
+      else if (typeof rawPrice === 'number') priceObj = { amount: Math.round(rawPrice), currency };
+      else priceObj = { amount: 0, currency };
       const qty = item.quantity ?? item.count ?? 1;
-
       return {
         id: item.id || `item_${item.plu || idx}`,
         plu: String(item.plu || `PLU_${idx}`),
         name: String(item.name || item.plu || `Item ${idx + 1}`),
         quantity: qty,
         price: priceObj,
+        imageUrl: firstItemImage(item),
         substitutionPreference: (item.substitutionPreference as any) || 'BEST_MATCH',
         substituteCandidates: item.substituteCandidates as any,
         preferredSubstitutePlu: item.preferredSubstitutePlu,
@@ -164,30 +158,19 @@ export class DeliverectOrderMapper {
       };
     });
 
-    // Calculate total amount in integer minor units
     let totalAmount = 0;
-    if (typeof raw.total === 'number') {
-      totalAmount = Math.round(raw.total);
-    } else if (typeof raw.total === 'object' && raw.total !== null && 'amount' in raw.total) {
-      totalAmount = raw.total.amount;
-    } else if (raw.currentOrder?.total?.amount) {
-      totalAmount = raw.currentOrder.total.amount;
-    } else if (raw.pricing?.total?.amount) {
-      totalAmount = raw.pricing.total.amount;
-    } else if (raw.originalBasket?.total?.amount) {
-      totalAmount = raw.originalBasket.total.amount;
-    } else {
-      totalAmount = normalizedItems.reduce((acc, item) => acc + item.price.amount * item.quantity, 0);
-    }
+    if (typeof raw.total === 'number') totalAmount = Math.round(raw.total);
+    else if (typeof raw.total === 'object' && raw.total !== null && 'amount' in raw.total) totalAmount = raw.total.amount;
+    else if (raw.currentOrder?.total?.amount) totalAmount = raw.currentOrder.total.amount;
+    else if (raw.pricing?.total?.amount) totalAmount = raw.pricing.total.amount;
+    else if (raw.originalBasket?.total?.amount) totalAmount = raw.originalBasket.total.amount;
+    else totalAmount = normalizedItems.reduce((acc, item) => acc + item.price.amount * item.quantity, 0);
 
-    // Status map
     let status = String(raw.status || 'ORDER_CONFIRMED');
     if (status === '10' || status === '1') status = 'STORE_ACCEPTED';
     if (status === '20' || status === '2') status = 'PREPARING';
     if (status === '50' || status === '5') status = 'DELIVERED';
     if (status === '110' || status === '11') status = 'CANCELLED';
-
-    // Fulfilment is canonicalized once. Never default an unknown Deliverect order to delivery.
     const fulfillmentType = normalizeDeliverectFulfillmentType(raw);
 
     return {
@@ -195,10 +178,7 @@ export class DeliverectOrderMapper {
       id,
       storeId: raw.channelLinkId || raw.deliverectLocationId || raw.locationId || 'store-alpha',
       status: status as any,
-      fulfillment: {
-        type: fulfillmentType,
-        address: raw.fulfillment?.address,
-      },
+      fulfillment: { type: fulfillmentType, address: raw.fulfillment?.address },
       originalBasket: {
         id: basketId || `basket_${id}`,
         storeId: raw.channelLinkId || 'store-alpha',
@@ -212,13 +192,7 @@ export class DeliverectOrderMapper {
         total: { amount: totalAmount, currency },
       },
       payment: {
-        // Real unpaid Collection orders use third_party/isPrepaid:false and have
-        // orderIsAlreadyPaid:false. They have nothing to capture after Quest picking.
-        // Never fabricate AUTHORIZED when Deliverect did not provide an authorization.
-        state:
-          raw.payment?.state ||
-          raw.paymentState ||
-          'NO_CAPTURE_REQUIRED',
+        state: raw.payment?.state || raw.paymentState || 'NO_CAPTURE_REQUIRED',
         paymentId: raw.payment?.paymentId || raw.paymentId,
         authorizationMaximum: raw.payment?.authorizationMaximum || { amount: totalAmount, currency },
       },
