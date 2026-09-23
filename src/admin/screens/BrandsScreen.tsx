@@ -101,6 +101,11 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
         secondaryColour,
         fontFamily,
         headingFontFamily,
+        currency,
+        currencySymbol:
+          ({ GBP: '£', EUR: '€', USD: '$', CAD: 'CA$', AUD: 'A$', NZD: 'NZ$' } as Record<string, string>)[currency] || currency,
+        country,
+        domain: defaultDomain.trim() || undefined,
         adminEmail,
         adminName,
       });
@@ -135,6 +140,8 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
     setTenantId('');
     setPrimaryColour('#059669');
     setSecondaryColour('#10B981');
+    setCurrency('GBP');
+    setCountry('GB');
     setDefaultDomain('');
     setAdminEmail('');
     setAdminName('');

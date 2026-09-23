@@ -559,6 +559,8 @@ v1Router.get('/bootstrap', async (req: Request, res: Response) => {
       defaultLocale: tenant.locale || 'en-GB',
     };
 
+    const searchConfig = await FirestorePlatformService.getTenantSearchConfig(tenantId);
+
     return sendConditionalJson(
       req,
       res,
@@ -574,6 +576,7 @@ v1Router.get('/bootstrap', async (req: Request, res: Response) => {
           borderRadius: tenant.borderRadius,
         },
         storeConfig,
+        searchConfig,
       },
       'public, max-age=30, stale-while-revalidate=120'
     );
@@ -3664,7 +3667,12 @@ v1Router.get('/admin/tenants', requireAdminAuth('platformSuperAdmin'), async (_r
 v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validateBody(CreateTenantSchema), async (req: Request, res: Response) => {
   try {
     const newTenant = req.body;
-    const provisioned = await FirestorePlatformService.createTenant(newTenant);
+    let provisioned = await FirestorePlatformService.createTenant(newTenant);
+    if (newTenant.domain) {
+      provisioned = await FirestorePlatformService.updateTenantConfig(provisioned.tenantId, {
+        defaultDomain: newTenant.domain,
+      });
+    }
 
     // Audit log
     await FirestorePlatformService.addAuditLog(provisioned.tenantId, {

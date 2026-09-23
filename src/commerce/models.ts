@@ -1042,11 +1042,20 @@ export interface CheckoutSummary {
 
 export interface BootstrapResponse {
   tenant: TenantConfig;
-  supportedCountries: string[];
-  defaultLocation: {
+  supportedCountries?: string[];
+  defaultLocation?: {
     address: string;
     coordinates: Coordinates;
   };
+  featureFlags?: TenantFeatureFlags;
+  theme?: Record<string, unknown>;
+  storeConfig?: {
+    defaultCountry?: string;
+    defaultCurrency?: string;
+    defaultCurrencySymbol?: string;
+    defaultLocale?: string;
+  };
+  searchConfig?: import('./searchMerchModels').SearchOptimisationConfig | null;
 }
 
 // ==========================================

@@ -256,7 +256,9 @@ export interface LocaleTranslations {
   'order.approveReauth': string;
 
   // Product detail
+  'product.closeDetails': string;
   'product.noImage': string;
+  'product.includesDeposit': string;
   'product.caloriesEnergy': string;
   'product.fat': string;
   'product.carbs': string;
@@ -649,7 +651,9 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'Picked basket exceeded initial authorization ceiling.',
     'order.approveReauth': 'Approve Updated Total',
 
+    'product.closeDetails': 'Close product details',
     'product.noImage': 'No image available',
+    'product.includesDeposit': 'Includes {amount} DRS returnable deposit',
     'product.caloriesEnergy': 'Calories / Energy',
     'product.fat': 'Fat',
     'product.carbs': 'Carbs',
@@ -1034,7 +1038,9 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'El total preparado superó el límite inicial autorizado.',
     'order.approveReauth': 'Aprobar Total Actualizado',
 
+    'product.closeDetails': 'Cerrar detalles del producto',
     'product.noImage': 'Imagen no disponible',
+    'product.includesDeposit': 'Incluye un depósito DRS reembolsable de {amount}',
     'product.caloriesEnergy': 'Calorías / Energía',
     'product.fat': 'Grasas',
     'product.carbs': 'Carbohidratos',
@@ -1419,7 +1425,9 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'Le montant final dépasse le plafond pré-autorisé.',
     'order.approveReauth': 'Approuver le nouveau total',
 
+    'product.closeDetails': 'Fermer les détails du produit',
     'product.noImage': 'Image indisponible',
+    'product.includesDeposit': 'Inclut une consigne DRS remboursable de {amount}',
     'product.caloriesEnergy': 'Calories / Énergie',
     'product.fat': 'Matières grasses',
     'product.carbs': 'Glucides',
@@ -1804,7 +1812,9 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'order.reauthorizeRequired': 'Endbetrag übersteigt vorautorisiertes Limit.',
     'order.approveReauth': 'Neuen Gesamtbetrag bestätigen',
 
+    'product.closeDetails': 'Produktdetails schließen',
     'product.noImage': 'Kein Bild verfügbar',
+    'product.includesDeposit': 'Enthält {amount} erstattungsfähiges DRS-Pfand',
     'product.caloriesEnergy': 'Kalorien / Energie',
     'product.fat': 'Fett',
     'product.carbs': 'Kohlenhydrate',
