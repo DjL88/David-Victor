@@ -37,11 +37,12 @@ Optional:
 
 - `GEMINI_MODEL`
 
-Default: `gemini-2.5-flash`.
+Default: `gemini-3.8-flash`, with `gemini-3.5-flash-lite` as a low-latency fallback if the preferred model is temporarily unavailable.
 
 ## What v1 conversation can do
 
 - hold a short multi-turn conversation
+- retry transient model failures and gracefully degrade without blocking normal Admin controls
 - understand the active tenant, Admin page, role and selected location/resource metadata
 - explain how Admin features work
 - explain safe next steps
