@@ -32,6 +32,17 @@ describe('Deliverect Channel registration callback', () => {
       } as any);
     vi.spyOn(FirestorePlatformService, 'saveTenantStore')
       .mockImplementation(async (_tenantId: string, store: any) => store);
+    vi.spyOn(FirestorePlatformService, 'getTenantStores')
+      .mockResolvedValue([
+        {
+          id: 'channel-link-789',
+          channelLinkId: 'channel-link-789',
+          deliverectLocationId: 'location-456',
+          physicalLocationId: 'loc_location-456',
+          externalLocationId: 'external-100',
+          lifecycleStatus: 'ACTIVE',
+        },
+      ] as any);
     vi.spyOn(FirestorePlatformService, 'addAuditLog')
       .mockResolvedValue({} as any);
     vi.spyOn(FirestorePlatformService, 'saveStoreOperationalState')
@@ -155,6 +166,76 @@ describe('Deliverect Channel registration callback', () => {
       menuId: 'menu-abc',
     });
   });
+  it('accepts a live staging menu push signed with the mapped location id fallback', async () => {
+    const menuPayload = {
+      accountId: 'account-123',
+      locationId: 'location-456',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-location-secret',
+      menu: 'Internal Test',
+      products: {},
+      categories: [],
+      modifiers: {},
+      modifierGroups: {},
+    };
+    const rawBody = JSON.stringify(menuPayload);
+    const signature = WebhookService.computeHmacSignature(
+      rawBody,
+      menuPayload.locationId
+    );
+
+    const res = await fetch(
+      `${baseUrl}/webhooks/deliverect/brand-alpha/channel/menu_update`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-server-authorization-hmac-sha256': signature,
+        },
+        body: rawBody,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      type: 'menu_update',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-location-secret',
+    });
+  });
+
+  it('can verify a staging callback against canonical JSON if a hosting hop reformatted the body', async () => {
+    const payload = {
+      accountId: 'account-123',
+      locationId: 'location-456',
+      channelLinkId: 'channel-link-789',
+      menuId: 'menu-canonical',
+    };
+    const canonicalBody = JSON.stringify(payload);
+    const reformattedBody = JSON.stringify(payload, null, 2);
+    const signature = WebhookService.computeHmacSignature(
+      canonicalBody,
+      payload.channelLinkId
+    );
+
+    const resolved = await WebhookService.resolveTenantForWebhook(
+      reformattedBody,
+      signature,
+      'brand-alpha',
+      {
+        stagingTemporarySecrets: ['channel-link-789'],
+        stagingAlternateBodies: [canonicalBody],
+      }
+    );
+
+    expect(resolved).toEqual({
+      tenantId: 'brand-alpha',
+      secret: 'channel-link-789',
+    });
+  });
+
   it('rejects an arbitrary payload channelLinkId even when the caller self-signs with it', async () => {
     const forgedPayload = {
       ...registerPayload,

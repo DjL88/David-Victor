@@ -302,14 +302,20 @@ export class WebhookService {
     tenantId: string,
     payload: any
   ): Promise<string[]> {
-    const candidate = String(
+    const candidateChannelLinkId = String(
       payload?.channelLinkId ||
       payload?.channelLink?._id ||
       payload?.channelLink?.id ||
       (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
       ''
     ).trim();
-    if (!candidate) return [];
+    const candidateLocationId = String(
+      payload?.locationId ||
+      payload?.location?._id ||
+      payload?.location?.id ||
+      (typeof payload?.location === 'string' ? payload.location : '') ||
+      ''
+    ).trim();
 
     const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
     const isProductionWebhook =
@@ -322,17 +328,75 @@ export class WebhookService {
         .map((value: unknown) => String(value || '').trim())
         .filter(Boolean)
     );
-    if (allowed.has(candidate)) {
-      return [candidate];
-    }
-
     const stores = await FirestorePlatformService.getTenantStores(tenantId);
-    const mapped = stores.some((store: any) =>
-      String(store?.channelLinkId || store?.id || '').trim() === candidate &&
-      store?.lifecycleStatus !== 'ORPHANED'
+    const activeStores = stores.filter((store: any) =>
+      store?.lifecycleStatus !== 'ORPHANED' &&
+      store?.lifecycleStatus !== 'ARCHIVED'
     );
 
-    return mapped ? [candidate] : [];
+    const secrets = new Set<string>();
+    const addMappedStoreSecrets = (store: any) => {
+      const channelLinkId = String(store?.channelLinkId || store?.id || '').trim();
+      const deliverectLocationId = String(store?.deliverectLocationId || '').trim();
+      const physicalLocationId = String(store?.physicalLocationId || '').trim();
+      const externalLocationId = String(store?.externalLocationId || '').trim();
+
+      if (channelLinkId) secrets.add(channelLinkId);
+
+      // Deliverect documents channelLink as the normal staging secret. Some
+      // partner callbacks may use a location identifier in staging. Only add
+      // location values already bound to this resolved tenant/store.
+      if (deliverectLocationId) secrets.add(deliverectLocationId);
+      if (physicalLocationId) {
+        secrets.add(physicalLocationId);
+        if (physicalLocationId.startsWith('loc_')) {
+          secrets.add(physicalLocationId.slice(4));
+        }
+      }
+      if (externalLocationId) secrets.add(externalLocationId);
+    };
+
+    if (candidateChannelLinkId) {
+      if (allowed.has(candidateChannelLinkId)) {
+        secrets.add(candidateChannelLinkId);
+      }
+      const matchedStore = activeStores.find((store: any) =>
+        String(store?.channelLinkId || store?.id || '').trim() === candidateChannelLinkId
+      );
+      if (matchedStore) addMappedStoreSecrets(matchedStore);
+    }
+
+    if (candidateLocationId) {
+      const matchedStore = activeStores.find((store: any) => {
+        const values = [
+          store?.deliverectLocationId,
+          store?.physicalLocationId,
+          typeof store?.physicalLocationId === 'string' && store.physicalLocationId.startsWith('loc_')
+            ? store.physicalLocationId.slice(4)
+            : undefined,
+          store?.externalLocationId,
+        ]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        return values.includes(candidateLocationId);
+      });
+      if (matchedStore) addMappedStoreSecrets(matchedStore);
+    }
+
+    // Defensive fallback for a single-store staging tenant. This avoids
+    // rejecting a genuine callback if Deliverect omits/moves the channelLinkId
+    // field while keeping the fallback bounded to one already-mapped store.
+    if (secrets.size === 0 && activeStores.length === 1) {
+      const onlyStore = activeStores[0];
+      const onlyChannelLinkId = String(
+        onlyStore?.channelLinkId || onlyStore?.id || ''
+      ).trim();
+      if (!allowed.size || allowed.has(onlyChannelLinkId)) {
+        addMappedStoreSecrets(onlyStore);
+      }
+    }
+
+    return Array.from(secrets);
   }
 
   /**
@@ -352,6 +416,12 @@ export class WebhookService {
        * mapping and never in production.
        */
       stagingTemporarySecrets?: string[];
+      /**
+       * Staging-only body variants. Raw request bytes remain authoritative, but
+       * this lets us survive a hosting proxy that reserializes JSON before the
+       * request reaches Express while preserving Deliverect's original HMAC.
+       */
+      stagingAlternateBodies?: Array<Buffer | string>;
     }
   ): Promise<{ tenantId: string; secret: string }> {
     if (!signatureHeader) {
@@ -400,12 +470,19 @@ export class WebhookService {
           )
         );
 
+        const candidateBodies: Array<Buffer | string> = [
+          rawBody,
+          ...(options?.stagingAlternateBodies || []),
+        ];
+
         for (const temporarySecret of candidates) {
-          if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
-            console.info(
-              `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using documented temporary channelLink HMAC.`
-            );
-            return { tenantId: candidateTenantId, secret: temporarySecret };
+          for (let bodyIndex = 0; bodyIndex < candidateBodies.length; bodyIndex += 1) {
+            if (this.verifyDeliverectHmac(candidateBodies[bodyIndex], signatureHeader, temporarySecret)) {
+              console.info(
+                `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using mapped temporary HMAC secret${bodyIndex === 0 ? '' : ' and canonical JSON fallback'}.`
+              );
+              return { tenantId: candidateTenantId, secret: temporarySecret };
+            }
           }
         }
       }

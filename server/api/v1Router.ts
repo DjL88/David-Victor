@@ -2720,11 +2720,20 @@ async function handleDeliverectOperationalWebhook(
         req.body
       );
 
+    const canonicalBody = JSON.stringify(req.body ?? {});
+    const rawBodyText = Buffer.isBuffer(rawBody)
+      ? rawBody.toString('utf8')
+      : String(rawBody);
+
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      { stagingTemporarySecrets }
+      {
+        stagingTemporarySecrets,
+        stagingAlternateBodies:
+          canonicalBody !== rawBodyText ? [canonicalBody] : [],
+      }
     );
 
     const result = await DeliverectOperationalWebhookService.process(
@@ -2825,11 +2834,20 @@ async function handleDeliverectChannelProvisioning(
         req.body
       );
 
+    const canonicalBody = JSON.stringify(req.body ?? {});
+    const rawBodyText = Buffer.isBuffer(rawBody)
+      ? rawBody.toString('utf8')
+      : String(rawBody);
+
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      { stagingTemporarySecrets }
+      {
+        stagingTemporarySecrets,
+        stagingAlternateBodies:
+          canonicalBody !== rawBodyText ? [canonicalBody] : [],
+      }
     );
 
     const result = await ChannelProvisioningService.process(
