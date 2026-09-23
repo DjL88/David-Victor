@@ -1253,6 +1253,24 @@ export class HttpAdminClient implements AdminClient {
     return this.safeJson(res, 'Failed to roll back assistant change set');
   }
 
+  async chatWithAssistant(
+    tenantId: string,
+    request: {
+      message: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+      context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string };
+    }
+  ): Promise<any> {
+    this.currentTenantId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/assistant/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+    });
+    return this.safeJson(res, 'Admin AI could not answer');
+  }
+
   async runAssistantAction(
     tenantId: string,
     actionName: string,
