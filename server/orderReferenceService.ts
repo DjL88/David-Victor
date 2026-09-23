@@ -37,6 +37,19 @@ export function deriveOrderCodePrefix(brandName: string): string {
   return (compact + 'R').slice(0, 2);
 }
 
+export function toDisplayOrderReference(reference: string): string {
+  const clean = String(reference || '').trim().toUpperCase();
+  // Compact references end with YYWW + four base36 sequence characters.
+  if (clean.length >= 10) {
+    const prefixLength = clean.length - 8;
+    const prefix = clean.slice(0, prefixLength);
+    const week = clean.slice(prefixLength + 2, prefixLength + 4);
+    const sequence = clean.slice(-4);
+    return `${prefix}${week}${sequence}`.slice(0, 12);
+  }
+  return clean.slice(0, 12);
+}
+
 export function isoWeekKey(date: Date = new Date()): string {
   const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = utc.getUTCDay() || 7;
