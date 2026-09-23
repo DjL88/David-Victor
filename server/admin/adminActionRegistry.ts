@@ -116,6 +116,18 @@ const BrandingProposalInputSchema = z.object({
   headingFontFamily: z.string().trim().min(1).max(200).optional(),
   carouselTitleFontFamily: z.string().trim().min(1).max(200).optional(),
   borderRadius: z.string().trim().min(1).max(100).optional(),
+  locale: z.string().trim().min(2).max(20).optional(),
+  enabledLocales: z.array(z.string().trim().min(2).max(20)).min(1).max(20).optional(),
+  copyOverrides: z.record(
+    z.string().trim().min(2).max(20),
+    z.record(z.string().trim().min(1).max(160), z.string().max(1000))
+  ).optional(),
+  supportDetails: z.object({
+    email: z.string().max(320).optional(),
+    phone: z.string().max(100).optional(),
+    openingHours: z.string().max(500).optional(),
+    helpCenterUrl: z.string().max(4000).optional(),
+  }).strict().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, {
   message: 'At least one branding field is required.',
 });
