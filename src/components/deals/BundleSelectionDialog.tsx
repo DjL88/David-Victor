@@ -20,8 +20,9 @@ import {
   validateBundleSelection,
   evaluateBundleStockStatus,
 } from '../../commerce/bundleModels';
-import { formatMoney } from '../../utils/formatters';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 import { useTenantStyles } from '../../tenant/useTenant';
+import { useTenant } from '../../tenant/TenantContext';
 
 interface BundleSelectionDialogProps {
   bundle: BundleProduct | null;
@@ -43,6 +44,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
   onAddBundleToBasket,
 }) => {
   const { primaryBtnStyle } = useTenantStyles();
+  const { tenant } = useTenant();
 
   // Map of modifierId -> quantity selected
   const [selections, setSelections] = useState<Record<string, number>>({});
@@ -148,7 +150,6 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
     return calculateBundlePrice(bundle, selectedModifiersList).totalPriceMinor;
   }, [bundle, selectedModifiersList]);
 
-  const currency = bundle?.currency || 'GBP';
   const totalPriceMinor = bundlePriceMinor * bundleQuantity;
 
   if (!isOpen || !bundle) return null;
@@ -229,7 +230,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-base font-bold text-neutral-900">
                   {bundle.price != null
-                    ? `${hasPricedUpsells ? 'From ' : ''}${formatMoney(bundle.price, currency)}`
+                    ? `${hasPricedUpsells ? 'From ' : ''}${formatStorefrontCurrency(bundle.price, tenant, bundle.currency || 'GBP')}`
                     : 'Price unavailable'}
                 </span>
               </div>
@@ -370,7 +371,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 {hasUplift && (
                                   <span className="text-xs font-semibold text-neutral-800 bg-neutral-100 px-1.5 py-0.5 rounded">
-                                    +{formatMoney(mod.price, currency)}
+                                    +{formatStorefrontCurrency(mod.price, tenant, bundle.currency || 'GBP')}
                                   </span>
                                 )}
                                 {mod.calories && (
@@ -493,7 +494,7 @@ export const BundleSelectionDialog: React.FC<BundleSelectionDialogProps> = ({
                   ? 'Currently Unavailable'
                   : !selectedStoreName
                   ? 'Select Store for Price'
-                  : `Add to Basket • ${formatMoney(totalPriceMinor, currency)}`}
+                  : `Add to Basket • ${formatStorefrontCurrency(totalPriceMinor, tenant, bundle.currency || 'GBP')}`}
               </span>
             </button>
           </div>
