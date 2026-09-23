@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
 import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock } from 'lucide-react';
@@ -123,6 +124,43 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() =>
+    onAdminAiPrefill('product_rules', ({ prefill }) => {
+      if (!prefill) return;
+
+      const suppliedRule = prefill.rule;
+      if (suppliedRule && typeof suppliedRule === 'object' && !Array.isArray(suppliedRule)) {
+        const partial = suppliedRule as Partial<VisualRule>;
+        setEditingRule({
+          id: `rule-${Date.now()}`,
+          name: partial.name || 'New product rule',
+          enabled: partial.enabled !== false,
+          countries: Array.isArray(partial.countries) && partial.countries.length ? partial.countries : ['GB'],
+          priority: typeof partial.priority === 'number' ? partial.priority : 50,
+          matchConditions: Array.isArray(partial.matchConditions) && partial.matchConditions.length
+            ? partial.matchConditions
+            : [{ field: 'productTag', operator: 'equals', value: '' }],
+          actions: Array.isArray(partial.actions) && partial.actions.length
+            ? partial.actions
+            : [{ type: 'HIDE_PRODUCT' }],
+        });
+        return;
+      }
+
+      if (prefill.openNew === true) {
+        setEditingRule({
+          id: `rule-${Date.now()}`,
+          name: 'New rule',
+          enabled: true,
+          countries: ['GB'],
+          priority: 50,
+          matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }],
+          actions: [{ type: 'HIDE_PRODUCT' }],
+        });
+      }
+    }),
+  []);
 
   const handleSaveSchedulingPolicy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -836,6 +874,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Rule name</label>
                 <input
+                  data-admin-ai-target="product-rule-name"
                   type="text"
                   value={editingRule.name}
                   onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
@@ -940,7 +979,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <button data-admin-ai-target="product-rule-save"
                   type="submit"
                   disabled={saving}
                   className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-xs"
