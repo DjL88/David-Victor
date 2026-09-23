@@ -35,6 +35,7 @@ import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionS
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
+import { OrderReferenceService } from '../orderReferenceService';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
@@ -1751,18 +1752,6 @@ v1Router.post(
         ? checkoutOptions.orderRoute
         : configuredOrderRoute;
 
-    // Retail/Quest uses one deterministic customer order reference across DPay,
-    // Channel API submission, Firestore projections and retry recovery.
-    if (orderRoute === 'retail_quest' && !checkoutOptions.channelOrderReference) {
-      const digest = crypto
-        .createHash('sha256')
-        .update(`${resolvedTenant}:${basketId}`)
-        .digest('hex')
-        .slice(0, 16)
-        .toUpperCase();
-      checkoutOptions.channelOrderReference = `BWYDI-${digest}`;
-    }
-
     // Basket identity is the strongest checkout idempotency boundary. If this
     // basket already produced a checkout, return it rather than POSTing another
     // session to Deliverect.
@@ -1777,6 +1766,19 @@ v1Router.post(
         `[v1Router] Recovering existing checkout ${existingBasketCheckout.checkoutId} for basket ${basketId}`
       );
       return res.status(200).json(existingBasketCheckout);
+    }
+
+    // Allocate a compact human-facing Retail/Quest reference only after we know
+    // this basket has not already produced a checkout. Reservations are durable
+    // and basket-idempotent, so browser retries reuse the same visible order ID.
+    if (orderRoute === 'retail_quest' && !checkoutOptions.channelOrderReference) {
+      const tenantConfig = await FirestorePlatformService.getTenantConfig(resolvedTenant);
+      checkoutOptions.channelOrderReference = await OrderReferenceService.reserve({
+        tenantId: resolvedTenant,
+        basketId,
+        brandName: tenantConfig.brandName,
+        configuredPrefix: tenantConfig.orderCodePrefix,
+      });
     }
 
     // Final server-side Product Rules gate before an order is actually
