@@ -33,6 +33,41 @@ interface BrandingScreenProps {
   onBrandingUpdated?: (updated: TenantConfig) => void;
 }
 
+interface BrandProfileAnalysis {
+  id: string;
+  assetId: string;
+  assetName: string;
+  contentType: string;
+  sourceHash: string;
+  profile: {
+    brandName?: string;
+    tagline?: string;
+    logoUrl?: string;
+    primaryColour?: string;
+    secondaryColour?: string;
+    backgroundColour?: string;
+    surfaceColour?: string;
+    textColour?: string;
+    headingFontFamily?: string;
+    bodyFontFamily?: string;
+    carouselTitleFontFamily?: string;
+    borderRadius?: string;
+    locale?: string;
+    tone?: string[];
+    copyOverrides?: Record<string, Record<string, string>>;
+  };
+  evidence: Array<{
+    field: string;
+    value: string;
+    source: string;
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  }>;
+  warnings: string[];
+  analysisMode: 'DETERMINISTIC' | 'AI_ASSISTED';
+  model?: string;
+  createdAt: string;
+}
+
 export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   tenantId,
   currentUser,
@@ -90,6 +125,14 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStateStatus, setUploadStateStatus] = useState<FontProcessingState | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Brand Profile / guidelines analysis
+  const [brandMaterialKind, setBrandMaterialKind] = useState<'guidelines' | 'logo'>('guidelines');
+  const [brandMaterialFile, setBrandMaterialFile] = useState<File | null>(null);
+  const [brandProfileAnalysis, setBrandProfileAnalysis] = useState<BrandProfileAnalysis | null>(null);
+  const [brandProfileBusy, setBrandProfileBusy] = useState(false);
+  const [brandProfileError, setBrandProfileError] = useState<string | null>(null);
+  const [brandProfileNotice, setBrandProfileNotice] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -197,6 +240,89 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAnalyseBrandMaterial = async () => {
+    if (!brandMaterialFile || !defaultAdminClient.analyseBrandProfile) {
+      setBrandProfileError('Choose a logo or brand-guidelines file first.');
+      return;
+    }
+
+    setBrandProfileBusy(true);
+    setBrandProfileError(null);
+    setBrandProfileNotice(null);
+
+    try {
+      const assetType = brandMaterialKind === 'logo' ? 'LOGO' : 'BRAND_GUIDELINES';
+      const uploaded = await defaultAdminClient.uploadAssetFile(brandMaterialFile, assetType, tenantId);
+      const analysis = await defaultAdminClient.analyseBrandProfile(tenantId, uploaded.id) as BrandProfileAnalysis;
+
+      // A logo asset is intentionally public because the storefront may use it.
+      // Brand-guideline documents remain private and therefore never leak a public URL.
+      if (brandMaterialKind === 'logo' && uploaded.publicUrl && !analysis.profile.logoUrl) {
+        analysis.profile.logoUrl = uploaded.publicUrl;
+      }
+
+      setBrandProfileAnalysis(analysis);
+      setBrandProfileNotice(
+        analysis.analysisMode === 'DETERMINISTIC'
+          ? 'Analysed locally from exact values in the file. No hosted model was needed.'
+          : 'Brand material analysed. The result is cached by file hash, so this source does not need repeated model analysis.'
+      );
+    } catch (err: any) {
+      setBrandProfileError(err?.message || 'Brand-profile analysis failed.');
+    } finally {
+      setBrandProfileBusy(false);
+    }
+  };
+
+  const applyBrandProfileDraft = () => {
+    const profile = brandProfileAnalysis?.profile;
+    if (!profile) return;
+
+    if (profile.brandName) setBrandName(profile.brandName);
+    if (profile.tagline) setTagline(profile.tagline);
+    if (profile.logoUrl) setLogoUrl(profile.logoUrl);
+    if (profile.primaryColour) setPrimaryColour(profile.primaryColour);
+    if (profile.secondaryColour) setSecondaryColour(profile.secondaryColour);
+    if (profile.backgroundColour) setBackgroundColour(profile.backgroundColour);
+    if (profile.surfaceColour) setSurfaceColour(profile.surfaceColour);
+    if (profile.textColour) setTextColour(profile.textColour);
+    if (profile.borderRadius) setBorderRadius(profile.borderRadius);
+
+    const availableFontNames = new Set([
+      ...googleFonts.map((font) => font.family.toLowerCase()),
+      ...fontsList.map((font) => font.family.toLowerCase()),
+    ]);
+
+    const unavailableFonts: string[] = [];
+    const applyFont = (
+      value: string | undefined,
+      setter: React.Dispatch<React.SetStateAction<string>>
+    ) => {
+      if (!value) return;
+      if (availableFontNames.has(value.toLowerCase())) {
+        setter(value);
+      } else {
+        unavailableFonts.push(value);
+      }
+    };
+
+    applyFont(profile.headingFontFamily, setHeadingFamily);
+    applyFont(profile.bodyFontFamily, setBodyFamily);
+    applyFont(profile.carouselTitleFontFamily, setCarouselTitleFamily);
+
+    const terminologyCount = Object.values(profile.copyOverrides || {})
+      .reduce((total, entries) => total + Object.keys(entries || {}).length, 0);
+
+    const notes = ['Visual suggestions have been prefilled as a draft. Nothing has been saved.'];
+    if (unavailableFonts.length) {
+      notes.push(`Upload/licence the identified font before applying it: ${Array.from(new Set(unavailableFonts)).join(', ')}.`);
+    }
+    if (profile.locale || terminologyCount > 0) {
+      notes.push('Language/terminology suggestions were detected but were not silently applied here; review those on Languages & wording.');
+    }
+    setBrandProfileNotice(notes.join(' '));
   };
 
   const handleUploadAsset = async (file: File, type: 'LOGO' | 'FAVICON') => {
@@ -379,6 +505,213 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           </div>
         )}
       </div>
+
+      <section
+        data-admin-ai-target="branding-brand-profile"
+        className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5 shadow-xs"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2">
+              <FileCode className="w-4 h-4 text-indigo-700" />
+              <h2 className="text-sm font-extrabold text-gray-950">Build a Brand Profile from source material</h2>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-gray-600">
+              Upload a logo or brand-guidelines document. Exact colours and explicitly named fonts are extracted locally first.
+              A hosted model is only used when visual/document interpretation is genuinely needed, and the analysis is cached by file hash.
+            </p>
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-semibold text-gray-500">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Brand-guideline documents stay private. Suggested settings only prefill this form; they are not saved automatically.</span>
+            </div>
+          </div>
+
+          <div className="flex rounded-xl border border-indigo-200 bg-white p-1 text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => {
+                setBrandMaterialKind('guidelines');
+                setBrandMaterialFile(null);
+                setBrandProfileAnalysis(null);
+                setBrandProfileError(null);
+              }}
+              className={`rounded-lg px-3 py-1.5 ${brandMaterialKind === 'guidelines' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              Brand guidelines
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBrandMaterialKind('logo');
+                setBrandMaterialFile(null);
+                setBrandProfileAnalysis(null);
+                setBrandProfileError(null);
+              }}
+              className={`rounded-lg px-3 py-1.5 ${brandMaterialKind === 'logo' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              Logo
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-bold text-gray-700">
+              {brandMaterialKind === 'logo' ? 'Logo file' : 'Brand guidelines / style source'}
+            </span>
+            <input
+              type="file"
+              accept={
+                brandMaterialKind === 'logo'
+                  ? 'image/png,image/jpeg,image/webp,image/svg+xml'
+                  : '.pdf,.png,.jpg,.jpeg,.webp,.svg,.txt,.md,.markdown,.json,application/pdf,image/png,image/jpeg,image/webp,image/svg+xml,text/plain,text/markdown,application/json'
+              }
+              onChange={(event) => {
+                setBrandMaterialFile(event.target.files?.[0] || null);
+                setBrandProfileAnalysis(null);
+                setBrandProfileError(null);
+                setBrandProfileNotice(null);
+              }}
+              className="block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-[10px] file:font-bold file:text-gray-700"
+            />
+          </label>
+
+          <button
+            type="button"
+            disabled={!brandMaterialFile || brandProfileBusy}
+            onClick={() => void handleAnalyseBrandMaterial()}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2 text-xs font-extrabold text-white hover:bg-gray-800 disabled:opacity-40"
+          >
+            {brandProfileBusy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+            {brandProfileBusy ? 'Analysing…' : 'Analyse brand'}
+          </button>
+        </div>
+
+        {brandProfileError && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-800">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{brandProfileError}</span>
+          </div>
+        )}
+
+        {brandProfileAnalysis && (
+          <div className="mt-4 space-y-4 rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+              <div>
+                <p className="text-xs font-extrabold text-gray-900">{brandProfileAnalysis.assetName}</p>
+                <p className="mt-0.5 text-[10px] text-gray-500">
+                  {brandProfileAnalysis.analysisMode === 'DETERMINISTIC' ? 'Local deterministic extraction' : 'AI-assisted extraction'}
+                  {brandProfileAnalysis.model ? ` · ${brandProfileAnalysis.model}` : ''}
+                  {' · '}cached source {brandProfileAnalysis.sourceHash.slice(0, 10)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={applyBrandProfileDraft}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-[11px] font-extrabold text-white hover:bg-indigo-700"
+              >
+                Prefill visual branding
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {[
+                ['Primary', brandProfileAnalysis.profile.primaryColour],
+                ['Secondary', brandProfileAnalysis.profile.secondaryColour],
+                ['Background', brandProfileAnalysis.profile.backgroundColour],
+                ['Text', brandProfileAnalysis.profile.textColour],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-xl border border-gray-200 p-3">
+                  <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">{label as string}</p>
+                  {value ? (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span
+                        className="h-6 w-6 rounded-lg border border-gray-200"
+                        style={{ backgroundColor: value as string }}
+                      />
+                      <span className="font-mono text-[10px] font-bold text-gray-700">{value as string}</span>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[10px] text-gray-400">Not identified</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl bg-gray-50 p-3">
+                <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">Brand</p>
+                <p className="mt-1 text-[11px] font-bold text-gray-800">
+                  {brandProfileAnalysis.profile.brandName || 'Not identified'}
+                </p>
+                {brandProfileAnalysis.profile.tagline && (
+                  <p className="mt-1 text-[10px] text-gray-500">{brandProfileAnalysis.profile.tagline}</p>
+                )}
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3">
+                <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">Typography</p>
+                <p className="mt-1 text-[11px] font-bold text-gray-800">
+                  {brandProfileAnalysis.profile.headingFontFamily || 'Heading font not identified'}
+                </p>
+                <p className="mt-1 text-[10px] text-gray-500">
+                  {brandProfileAnalysis.profile.bodyFontFamily || 'Body font not identified'}
+                </p>
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3">
+                <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">Locale / tone</p>
+                <p className="mt-1 text-[11px] font-bold text-gray-800">
+                  {brandProfileAnalysis.profile.locale || 'No locale specified'}
+                </p>
+                <p className="mt-1 text-[10px] text-gray-500">
+                  {(brandProfileAnalysis.profile.tone || []).join(' · ') || 'No explicit tone guidance identified'}
+                </p>
+              </div>
+            </div>
+
+            {brandProfileAnalysis.evidence.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-gray-500">Evidence</p>
+                <div className="space-y-1.5">
+                  {brandProfileAnalysis.evidence.slice(0, 6).map((item, index) => (
+                    <div key={`${item.field}-${index}`} className="flex items-start justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-gray-800">{item.field}: {item.value}</span>
+                        <span className="ml-2 text-[9px] text-gray-400">{item.source}</span>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-extrabold ${
+                        item.confidence === 'HIGH'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : item.confidence === 'MEDIUM'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {item.confidence}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {brandProfileAnalysis.warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-[10px] font-extrabold text-amber-900">Review before applying</p>
+                <ul className="mt-1 space-y-1 text-[10px] text-amber-800">
+                  {brandProfileAnalysis.warnings.map((warning, index) => (
+                    <li key={index}>• {warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {brandProfileNotice && (
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-semibold text-emerald-800">
+            {brandProfileNotice}
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT COLUMN: BRAND & THEME FORM */}
