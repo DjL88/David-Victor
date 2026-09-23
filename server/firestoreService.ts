@@ -2105,7 +2105,8 @@ export class FirestoreService {
     rawOrderInput: Order | any,
     tenantId: string = 'brand-alpha',
     checkoutId?: string,
-    customerUid?: string
+    customerUid?: string,
+    orderAccessTokenHash?: string
   ): Promise<OrderProjection> {
     const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
@@ -2264,6 +2265,7 @@ export class FirestoreService {
       orderId: resolvedOrderId,
       tenantId,
       customerUid: customerUid || (rawOrderInput as any)?.customerUid || undefined,
+      orderAccessTokenHash: orderAccessTokenHash || undefined,
       status: order.status,
       itemsCount: order.currentOrder?.itemCount || order.originalBasket?.items?.length || (order as any).itemsCount || 0,
       total: order.currentOrder ? order.currentOrder.total.amount : (order.originalBasket?.total?.amount ?? (order as any).total ?? 0),
