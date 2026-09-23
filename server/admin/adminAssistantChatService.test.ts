@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAdminAssistantSystemInstruction,
   buildDegradedAssistantReply,
+  extractCatalogLookupQuery,
   getAdminAssistantSuggestions,
   normaliseAssistantReply,
   normaliseChatHistory,
@@ -62,6 +63,14 @@ describe('AdminAssistantChatService foundations', () => {
       'What details do you need?',
     ]);
     expect(getAdminAssistantSuggestions('unknown')).toHaveLength(3);
+  });
+
+  it('extracts a product term from live stock questions without treating generic help as a lookup', () => {
+    expect(extractCatalogLookupQuery('Are bananas in stock?')).toBe('bananas');
+    expect(extractCatalogLookupQuery("Why is Dave's Salted Potato Crisps 150g not showing?")).toBe(
+      "Dave's Salted Potato Crisps 150g"
+    );
+    expect(extractCatalogLookupQuery('Explain stock and ranging')).toBeNull();
   });
 
   it('keeps guided fallback useful without claiming live catalogue data', () => {
