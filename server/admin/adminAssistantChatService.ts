@@ -36,7 +36,7 @@ interface ChatClient {
   ai: GoogleGenAI;
 }
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MAX_HISTORY_MESSAGES = 12;
 
 export function buildAdminAssistantSystemInstruction(args: {
@@ -103,7 +103,14 @@ async function createChatClient(): Promise<ChatClient> {
     return {
       provider: 'google-ai',
       model,
-      ai: new GoogleGenAI({ apiKey }),
+      ai: new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      }),
     };
   }
 
@@ -170,10 +177,7 @@ export class AdminAssistantChatService {
         },
       });
 
-      const text =
-        typeof response?.text === 'function'
-          ? response.text()
-          : response?.text;
+      const text = response?.text;
 
       if (!text || !String(text).trim()) {
         throw new Error('Model returned an empty response.');
