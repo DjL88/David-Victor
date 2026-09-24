@@ -5878,19 +5878,26 @@ v1Router.post(
     }
 
     // Secrets are written only to server-side Secret Manager. Firestore receives
-    // mode/status metadata, never credential values.
+    // mode/status metadata, never credential values. Webhook HMAC is always
+    // tenant-canonical even when OAuth credentials use platform mode.
+    const savedCanonicalWebhook = webhookSecret
+      ? await SecretManager.setSecret(`deliverect-webhook-${tenantId}`, webhookSecret, true)
+      : true;
+
     if (credentialMode === 'dedicated') {
       const savedId = await SecretManager.setSecret(`DELIVERECT_CLIENT_ID_${tenantId}`, clientId, true);
       const savedSecret = await SecretManager.setSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`, clientSecret, true);
-      const savedWebhook = webhookSecret
-        ? await SecretManager.setSecret(`DELIVERECT_WEBHOOK_SECRET_${tenantId}`, webhookSecret, true)
-        : true;
-      if ((!savedId || !savedSecret || !savedWebhook) && isLiveMode()) {
+      if ((!savedId || !savedSecret || !savedCanonicalWebhook) && isLiveMode()) {
         return res.status(500).json({
           error: 'Failed to persist dedicated credentials in Google Cloud Secret Manager.',
           code: 'SECRET_PERSISTENCE_FAILED',
         });
       }
+    } else if (!savedCanonicalWebhook && isLiveMode()) {
+      return res.status(500).json({
+        error: 'Failed to persist the tenant webhook secret in Google Cloud Secret Manager.',
+        code: 'SECRET_PERSISTENCE_FAILED',
+      });
     }
 
     // Explicit platform mode ignores any historical tenant secret versions.
