@@ -106,3 +106,4 @@ The following cannot be live-executed until Deliverect staging credentials (`cli
 ## Audit II work packages
 - SEC-00 — Express composition extracted to `server/app.ts`; Supertest behavioural harness covers health plus authenticated admin access. (2026-09-24)
 - TEN-00 — Public tenant resolution centralized: managed preview hosts are server-pinned, anonymous tenant overrides are ignored, forwarded hosts require edge proof, exact ACTIVE domains only, and tenant-varying responses emit Vary: Host. (2026-09-24)
+- SEC-01 — David-Victor media proxy now serves only the configured bucket's `tenant-assets-public/` image/video objects with MIME, size, rate-limit and sandbox controls; brand guidelines are admin-only and asset IDs are UUID-backed. The shared Hi-Domino Firebase project remains test-only and unrelated legacy app storage rules are intentionally untouched; production storage isolation moves with SEC-11 to a dedicated project/provider. (2026-09-24)
