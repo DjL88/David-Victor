@@ -201,9 +201,8 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           <p className="text-xl font-black text-gray-900 mt-1">
             £{data.totalGrossMerchandiseValue.toLocaleString()}
           </p>
-          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
-            <TrendingUp className="w-3 h-3" />
-            +14.2% vs prev
+          <span className="text-[10px] text-gray-500 mt-1 block">
+            Selected period: {timeframe}
           </span>
         </div>
 
