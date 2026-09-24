@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { BFFError } from '../errors';
+import { getFirestoreDb } from '../firebase';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { WebhookService } from './WebhookService';
 import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
@@ -16,7 +17,7 @@ export interface PickingStatusIngressJob {
 
 export interface PickingStatusIngressReceipt {
   accepted: true;
-  status: 'QUEUED';
+  status: 'QUEUED' | 'QUEUE_DEGRADED' | 'DUPLICATE';
   eventId: string;
   jobId: string;
 }
@@ -25,7 +26,22 @@ export interface PickingStatusQueueClient {
   enqueue(job: PickingStatusIngressJob): Promise<void>;
 }
 
+interface PickingStatusIngressRecord {
+  eventId: string;
+  jobId: string;
+  tenantId: string;
+  payload: any;
+  rawBodyBase64: string;
+  signature: string;
+  status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'QUEUE_FAILED' | 'FAILED';
+  receivedAt: string;
+  updatedAt: string;
+  processedAt?: string;
+  error?: string;
+}
+
 const pending = new Set<Promise<void>>();
+const memoryIngress = new Map<string, PickingStatusIngressRecord>();
 
 const liveEnvironment = () =>
   !isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test';
@@ -141,6 +157,60 @@ export class PickingStatusIngressService {
     return this.queueClient;
   }
 
+  private static ingressKey(tenantId: string, eventId: string): string {
+    return `${tenantId}:${eventId}`;
+  }
+
+  private static ingressDocId(eventId: string): string {
+    return crypto.createHash('sha256').update(eventId).digest('hex');
+  }
+
+  private static async getIngressRecord(
+    tenantId: string,
+    eventId: string
+  ): Promise<PickingStatusIngressRecord | null> {
+    const memory = memoryIngress.get(this.ingressKey(tenantId, eventId));
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) return memory || null;
+
+    try {
+      const doc = await db
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('pickingStatusIngress')
+        .doc(this.ingressDocId(eventId))
+        .get();
+      return doc.exists ? (doc.data() as PickingStatusIngressRecord) : memory || null;
+    } catch {
+      return memory || null;
+    }
+  }
+
+  private static async saveIngressRecord(
+    record: PickingStatusIngressRecord
+  ): Promise<void> {
+    memoryIngress.set(this.ingressKey(record.tenantId, record.eventId), record);
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) {
+      if (liveEnvironment()) {
+        throw new BFFError(
+          'DATABASE_UNAVAILABLE',
+          'Picking Status could not be durably journalled because Firestore is unavailable.',
+          503,
+          true
+        );
+      }
+      return;
+    }
+
+    await db
+      .collection('tenants')
+      .doc(record.tenantId)
+      .collection('pickingStatusIngress')
+      .doc(this.ingressDocId(record.eventId))
+      .set(record, { merge: true });
+  }
+
   static async acceptVerified(params: {
     tenantId: string;
     payload: any;
@@ -160,39 +230,133 @@ export class PickingStatusIngressService {
       contentHash
     ).trim();
     const jobId = `picking_${contentHash}`;
+    const existing = await this.getIngressRecord(params.tenantId, eventId);
+
+    if (
+      existing &&
+      ['QUEUED', 'PROCESSING', 'PROCESSED'].includes(existing.status)
+    ) {
+      return {
+        accepted: true,
+        status: 'DUPLICATE',
+        eventId,
+        jobId: existing.jobId,
+      };
+    }
+
+    const receivedAt = existing?.receivedAt || new Date().toISOString();
+    const rawBodyBase64 = raw.toString('base64');
+    const record: PickingStatusIngressRecord = {
+      eventId,
+      jobId,
+      tenantId: params.tenantId,
+      payload: params.payload,
+      rawBodyBase64,
+      signature: params.signature,
+      status: 'RECEIVED',
+      receivedAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Persist the verified callback before relying on Cloud Tasks. If the queue
+    // is unavailable, the webhook can still be acknowledged and a later
+    // redelivery can safely retry enqueue.
+    await this.saveIngressRecord(record);
 
     const job: PickingStatusIngressJob = {
       jobId,
       eventId,
       tenantId: params.tenantId,
       payload: params.payload,
-      rawBodyBase64: raw.toString('base64'),
+      rawBodyBase64,
       signature: params.signature,
-      receivedAt: new Date().toISOString(),
+      receivedAt,
     };
 
-    await this.getQueueClient().enqueue(job);
+    try {
+      await this.getQueueClient().enqueue(job);
+      await this.saveIngressRecord({
+        ...record,
+        status: 'QUEUED',
+        updatedAt: new Date().toISOString(),
+        error: undefined,
+      });
 
-    return {
-      accepted: true,
-      status: 'QUEUED',
-      eventId,
-      jobId,
-    };
+      return {
+        accepted: true,
+        status: 'QUEUED',
+        eventId,
+        jobId,
+      };
+    } catch (err: any) {
+      await this.saveIngressRecord({
+        ...record,
+        status: 'QUEUE_FAILED',
+        updatedAt: new Date().toISOString(),
+        error: String(err?.message || err),
+      });
+
+      return {
+        accepted: true,
+        status: 'QUEUE_DEGRADED',
+        eventId,
+        jobId,
+      };
+    }
   }
 
   static async processJob(job: PickingStatusIngressJob): Promise<any> {
-    const rawBody = Buffer.from(job.rawBodyBase64, 'base64');
-    return WebhookService.processWebhook(
-      job.payload,
-      rawBody,
-      {
-        'x-server-authorization-hmac-sha256': job.signature,
-        'x-deliverect-event-id': job.eventId,
-        'content-type': 'application/json',
-      },
-      job.tenantId
-    );
+    const existing = await this.getIngressRecord(job.tenantId, job.eventId);
+    const processing: PickingStatusIngressRecord = existing || {
+      eventId: job.eventId,
+      jobId: job.jobId,
+      tenantId: job.tenantId,
+      payload: job.payload,
+      rawBodyBase64: job.rawBodyBase64,
+      signature: job.signature,
+      status: 'PROCESSING',
+      receivedAt: job.receivedAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.saveIngressRecord({
+      ...processing,
+      status: 'PROCESSING',
+      updatedAt: new Date().toISOString(),
+      error: undefined,
+    });
+
+    try {
+      const rawBody = Buffer.from(job.rawBodyBase64, 'base64');
+      const result = await WebhookService.processWebhook(
+        job.payload,
+        rawBody,
+        {
+          'x-server-authorization-hmac-sha256': job.signature,
+          'x-deliverect-event-id': job.eventId,
+          'content-type': 'application/json',
+        },
+        job.tenantId
+      );
+
+      await this.saveIngressRecord({
+        ...processing,
+        status: 'PROCESSED',
+        processedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        error: undefined,
+      });
+
+      return result;
+    } catch (err: any) {
+      await this.saveIngressRecord({
+        ...processing,
+        status: 'FAILED',
+        updatedAt: new Date().toISOString(),
+        error: String(err?.message || err),
+      });
+      throw err;
+    }
   }
 
   static async waitForIdle(): Promise<void> {
