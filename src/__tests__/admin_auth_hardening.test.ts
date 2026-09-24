@@ -20,13 +20,14 @@ function installAuth(decoded: Record<string, any>) {
   return auth;
 }
 
-async function callAdmin() {
+async function callAdmin(expectedStatus: number) {
   const app = await createApp({ serveFrontend: false, initializeDependencies: false });
   return request(app)
     .get('/api/v1/admin/memberships')
     .set('Authorization', `Bearer ${token}`)
     .set('X-Tenant-ID', 'brand-alpha')
-    .set('Host', 'localhost');
+    .set('Host', 'localhost')
+    .expect(expectedStatus);
 }
 
 describe('SEC-02a admin authentication hardening', () => {
@@ -61,7 +62,7 @@ describe('SEC-02a admin authentication hardening', () => {
         : null
     );
 
-    const response = await callAdmin().expect(403);
+    const response = await callAdmin(403);
 
     expect(response.body.code).toBe('EMAIL_NOT_VERIFIED');
     expect(response.body).not.toHaveProperty('email');
@@ -87,7 +88,7 @@ describe('SEC-02a admin authentication hardening', () => {
         : null
     );
 
-    const response = await callAdmin().expect(403);
+    const response = await callAdmin(403);
     expect(response.body.code).toBe('MEMBERSHIP_INACTIVE');
   });
 
@@ -111,7 +112,7 @@ describe('SEC-02a admin authentication hardening', () => {
         : null
     );
 
-    const response = await callAdmin().expect(403);
+    const response = await callAdmin(403);
     expect(response.body.code).toBe('STALE_ADMIN_CLAIM');
   });
 
@@ -133,7 +134,7 @@ describe('SEC-02a admin authentication hardening', () => {
         : null
     );
 
-    const response = await callAdmin().expect(403);
+    const response = await callAdmin(403);
     expect(response.body.code).toBe('INVALID_MEMBERSHIP_ROLE');
   });
 
@@ -146,7 +147,7 @@ describe('SEC-02a admin authentication hardening', () => {
     setMockAdminAuthForTest(auth as any);
     setMockAdminMembershipResolverForTest(() => null);
 
-    const response = await callAdmin().expect(401);
+    const response = await callAdmin(401);
 
     expect(response.body.code).toBe('FIREBASE_TOKEN_REVOKED');
     expect(auth.verifyIdToken).toHaveBeenCalledWith(token, true);
@@ -170,7 +171,7 @@ describe('SEC-02a admin authentication hardening', () => {
         : null
     );
 
-    await callAdmin().expect(200);
+    await callAdmin(200);
 
     expect(auth.verifyIdToken).toHaveBeenCalledWith(token, true);
     expect(auth.setCustomUserClaims).toHaveBeenCalledWith('active-uid', {
@@ -188,7 +189,7 @@ describe('SEC-02a admin authentication hardening', () => {
     vi.spyOn(SecretManager, 'getSecret').mockResolvedValue('bootstrap@example.test');
     setMockAdminMembershipResolverForTest(() => null);
 
-    await callAdmin().expect(200);
+    await callAdmin(200);
 
     expect(auth.verifyIdToken).toHaveBeenCalledWith(token, true);
     expect(auth.setCustomUserClaims).not.toHaveBeenCalled();
