@@ -16,6 +16,7 @@ describe('AdminChangeSetService', () => {
 
     expect(changeSet.status).toBe('APPROVAL_REQUIRED');
     expect(changeSet.autonomousExecutionEnabled).toBe(false);
+    expect(changeSet.independentApprovalRequired).toBe(true);
     expect(changeSet.actions[0].risk).toBe('HIGH_WRITE');
     expect(changeSet.reversible).toBe(true);
   });
@@ -38,6 +39,57 @@ describe('AdminChangeSetService', () => {
         actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#ffffff' } }],
       })
     ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_IDEMPOTENCY_CONFLICT' });
+  });
+
+  it('requires a second administrator for high-risk assistant approval', async () => {
+    const changeSet = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-creator',
+      actorRole: 'tenantAdmin',
+      actions: [{ actionName: 'fees.proposeUpdate', input: { serviceFeeAmount: 249 } }],
+    });
+
+    await expect(
+      AdminChangeSetService.approveChangeSet({
+        tenantId: 'tenant-a',
+        changeSetId: changeSet.id,
+        actorId: 'admin-creator',
+        actorRole: 'tenantAdmin',
+      })
+    ).rejects.toMatchObject({
+      code: 'ADMIN_CHANGESET_SECOND_APPROVER_REQUIRED',
+      statusCode: 403,
+    });
+
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: changeSet.id,
+      actorId: 'admin-reviewer',
+      actorRole: 'tenantAdmin',
+    });
+
+    expect(approved.status).toBe('APPROVED');
+    expect(approved.approvedBy).toBe('admin-reviewer');
+  });
+
+  it('still permits same-admin approval for low-risk reviewable changes', async () => {
+    const changeSet = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'marketing-1',
+      actorRole: 'marketingEditor',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+    });
+
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: changeSet.id,
+      actorId: 'marketing-1',
+      actorRole: 'marketingEditor',
+    });
+
+    expect(changeSet.independentApprovalRequired).toBe(false);
+    expect(approved.status).toBe('APPROVED');
+    expect(approved.approvedBy).toBe('marketing-1');
   });
 
   it('requires a high-risk approval capability for fee/rule proposals', async () => {
