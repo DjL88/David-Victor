@@ -6,6 +6,7 @@ import {
   resolveStoreTimeZone,
   zonedLocalDateTimeToUtc,
 } from '../utils/zonedTime';
+import { projectRetailQuestOrder } from '../../server/deliverect/RetailQuestOrderContract';
 
 describe('collection scheduling timezone handling', () => {
   it('converts British Summer Time collection slots to the correct UTC instant', () => {
@@ -34,14 +35,26 @@ describe('collection scheduling timezone handling', () => {
   });
 
   it('projects scheduled retail orders instead of forcing every order to ASAP', () => {
-    const source = fs.readFileSync(
-      path.resolve(process.cwd(), 'server/deliverect/DeliverectApiClient.ts'),
-      'utf8'
-    );
+    const pickupTime = zonedLocalDateTimeToUtc(
+      '2026-07-01',
+      '15:00',
+      'Europe/London'
+    )?.toISOString();
 
-    expect(source).toContain('deliveryIsAsap: !isScheduledMoreThanThirtyMinutesAhead');
-    expect(source).toContain('{ pickupTime: scheduledFulfillmentTime }');
-    expect(source).not.toContain('deliveryIsAsap: true,\n      placedTime: now');
+    const payload = projectRetailQuestOrder({
+      channelOrderId: 'LT-TZ-001',
+      channelOrderDisplayId: 'LT-TZ-001',
+      placedTime: '2026-07-01T12:00:00.000Z',
+      fulfillmentType: 'pickup',
+      fulfillmentTime: pickupTime,
+      totalMinor: 100,
+      hasOnlineAuthorization: false,
+      items: [{ plu: 'TZ-ITEM', quantity: 1, unitPriceMinor: 100 }],
+    });
+
+    expect(payload.deliveryIsAsap).toBe(false);
+    expect(payload.pickupTime).toBe('2026-07-01T14:00:00.000Z');
+    expect(payload).not.toHaveProperty('deliveryTime');
   });
 
   it('fails closed when scheduled collection cannot persist its selected slot', () => {
