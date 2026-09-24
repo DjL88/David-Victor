@@ -5,7 +5,8 @@ import { PaymentService } from './PaymentService';
 import { NotificationService } from '../notificationService';
 import { AnalyticsService } from '../analyticsService';
 import { AsyncWorkerService } from '../asyncWorkerService';
-import { isDemoMode } from '../runtimeMode';
+import { isDemoMode, isProductionMode, isTestMode } from '../runtimeMode';
+import { SecretManager } from '../secrets';
 import { TenantSecretResolver } from './IntegrationContext';
 import { getFirestoreDb } from '../firebase';
 import { getDispatchAdapter } from './index';
@@ -96,7 +97,98 @@ export function normalizeDeliverectOrderStatus(value: unknown): string {
   return text.toUpperCase();
 }
 
+const stagingChannelHmacEnabled = () =>
+  String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').trim().toLowerCase() === 'true';
+
+function parseWebhookTimestamp(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 10_000_000_000 ? value * 1000 : value;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) {
+    const numeric = Number(text);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export class WebhookService {
+  static async assertStagingChannelHmacSafe(): Promise<void> {
+    if (!stagingChannelHmacEnabled()) return;
+
+    if (isProductionMode() || process.env.DELIVERECT_ENV === 'production') {
+      throw new Error(
+        'ALLOW_STAGING_CHANNEL_HMAC must never be enabled in production.'
+      );
+    }
+    if (isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test') return;
+
+    const db = getFirestoreDb();
+    if (!db) {
+      throw new Error(
+        'ALLOW_STAGING_CHANNEL_HMAC cannot be enabled when tenant lifecycle state cannot be verified.'
+      );
+    }
+
+    const snapshot = await db.collection('tenants').get();
+    const liveTenant = snapshot.docs.find((doc) => {
+      const data = doc.data() as any;
+      return String(data?.lifecycle?.state || data?.status || '').toLowerCase() === 'live';
+    });
+    if (liveTenant) {
+      throw new Error(
+        `ALLOW_STAGING_CHANNEL_HMAC cannot be enabled while tenant "${liveTenant.id}" is live.`
+      );
+    }
+  }
+
+  static async getCanonicalDeliverectWebhookSecret(tenantId: string): Promise<string> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return '';
+
+    const canonicalName = `deliverect-webhook-${cleanTenantId}`;
+    const secret = await SecretManager.getSecret(canonicalName);
+    if (secret) return secret.trim();
+
+    // Demo/test keeps a deterministic local fixture without weakening live
+    // dedicated-mode secret resolution.
+    if (isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test') {
+      return this.getWebhookSecret(cleanTenantId);
+    }
+
+    return '';
+  }
+
+  static assertFreshWebhookTimestamp(
+    payload: any,
+    headers: Record<string, string | string[] | undefined> = {}
+  ): void {
+    const headerTimestamp = Array.isArray(headers['x-deliverect-timestamp'])
+      ? headers['x-deliverect-timestamp'][0]
+      : headers['x-deliverect-timestamp'];
+    const candidate =
+      headerTimestamp ??
+      payload?.webhookTimestamp ??
+      payload?.eventTimestamp ??
+      payload?.eventTime ??
+      payload?.timestamp ??
+      payload?.data?.timestamp;
+
+    const parsed = parseWebhookTimestamp(candidate);
+    if (parsed === null) return;
+
+    const ageMs = Date.now() - parsed;
+    if (ageMs > 5 * 60 * 1000) {
+      const err: any = new Error('Webhook timestamp is outside the five-minute replay window.');
+      err.statusCode = 401;
+      err.code = 'WEBHOOK_TIMESTAMP_STALE';
+      throw err;
+    }
+  }
   /**
    * Constant-time HMAC SHA-256 verification (WH-01).
    * Prevents timing attacks and rejects any tampered bytes or modified signatures.
@@ -301,7 +393,9 @@ export class WebhookService {
   static async getMappedStagingChannelLinkSecrets(
     tenantId: string,
     payload: any
-  ): Promise<string[]> {
+  ): Promise<string[]> 
+    if (!stagingChannelHmacEnabled()) return [];
+{
     const candidateChannelLinkId = String(
       payload?.channelLinkId ||
       payload?.channelLink?._id ||
@@ -504,21 +598,15 @@ export class WebhookService {
     signatureHeader?: string,
     candidateTenantId?: string,
     options?: {
-      /**
-       * Deliverect staging signs Channel partner webhooks with a temporary
-       * channelLink value prior to certification. These candidates are only
-       * accepted for a tenant already resolved from a trusted route/account
-       * mapping and never in production.
-       */
       stagingTemporarySecrets?: string[];
-      /**
-       * Staging-only body variants. Raw request bytes remain authoritative, but
-       * this lets us survive a hosting proxy that reserializes JSON before the
-       * request reaches Express while preserving Deliverect's original HMAC.
-       */
-      stagingAlternateBodies?: Array<Buffer | string>;
     }
   ): Promise<{ tenantId: string; secret: string }> {
+    if (!candidateTenantId) {
+      const err: any = new Error('Webhook tenant identifier is required.');
+      err.statusCode = 404;
+      err.code = 'WEBHOOK_TENANT_NOT_FOUND';
+      throw err;
+    }
     if (!signatureHeader) {
       const err: any = new Error('Missing webhook signature header');
       err.statusCode = 401;
@@ -526,84 +614,44 @@ export class WebhookService {
       throw err;
     }
 
-    // In demo or test mode, check candidate or default secret
-    if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      const tId = candidateTenantId || 'brand-alpha';
-      const secret = this.getWebhookSecret(tId);
-      if (this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
-        return { tenantId: tId, secret };
-      }
+    const tenantId = String(candidateTenantId).trim();
+    const canonicalSecret = await this.getCanonicalDeliverectWebhookSecret(tenantId);
+    if (
+      canonicalSecret &&
+      this.verifyDeliverectHmac(rawBody, signatureHeader, canonicalSecret)
+    ) {
+      return { tenantId, secret: canonicalSecret };
     }
 
-    // In staging / production:
-    // 1. If candidateTenantId was provided, test its configured production/shared
-    // secret first.
-    if (candidateTenantId) {
-      const secret =
-        (await TenantSecretResolver.resolveTenantSecret(
-          candidateTenantId,
-          'DELIVERECT_WEBHOOK_SECRET'
-        )) || this.getWebhookSecret(candidateTenantId);
-      if (
-        secret &&
-        this.verifyDeliverectHmac(rawBody, signatureHeader, secret)
-      ) {
-        return { tenantId: candidateTenantId, secret };
-      }
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const isProductionWebhook =
+      integration?.environment === 'production' ||
+      process.env.DELIVERECT_ENV === 'production' ||
+      isProductionMode();
 
-      const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
-      const isProductionWebhook =
-        integration?.environment === 'production' ||
-        process.env.DELIVERECT_ENV === 'production';
-
-      if (!isProductionWebhook) {
-        const candidates = Array.from(
-          new Set(
-            (options?.stagingTemporarySecrets || [])
-              .map((value) => String(value || '').trim())
-              .filter(Boolean)
-          )
-        );
-
-        const candidateBodies: Array<Buffer | string> = [
-          rawBody,
-          ...(options?.stagingAlternateBodies || []),
-        ];
-
-        for (const temporarySecret of candidates) {
-          for (let bodyIndex = 0; bodyIndex < candidateBodies.length; bodyIndex += 1) {
-            if (this.verifyDeliverectHmac(candidateBodies[bodyIndex], signatureHeader, temporarySecret)) {
-              console.info(
-                `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using mapped temporary HMAC secret${bodyIndex === 0 ? '' : ' and canonical JSON fallback'}.`
-              );
-              return { tenantId: candidateTenantId, secret: temporarySecret };
-            }
-          }
+    if (!isProductionWebhook && stagingChannelHmacEnabled()) {
+      const candidates = Array.from(
+        new Set(
+          (options?.stagingTemporarySecrets || [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+        )
+      );
+      for (const temporarySecret of candidates) {
+        if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
+          console.warn(
+            `[WebhookService] Accepted explicitly-enabled staging Channel HMAC for tenant ${tenantId}.`
+          );
+          return { tenantId, secret: temporarySecret };
         }
       }
     }
 
-    // 2. Query known tenants from Firestore to find the matching secret
-    const db = getFirestoreDb();
-    if (db) {
-      try {
-        const tenantsSnap = await db.collection('tenants').get();
-        for (const doc of tenantsSnap.docs) {
-          const tId = doc.id;
-          if (tId === candidateTenantId) continue;
-          const secret = (await TenantSecretResolver.resolveTenantSecret(tId, 'DELIVERECT_WEBHOOK_SECRET')) || this.getWebhookSecret(tId);
-          if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
-            return { tenantId: tId, secret };
-          }
-        }
-      } catch (e) {
-        console.warn('[WebhookService] Failed scanning tenant webhook secrets:', e);
-      }
-    }
-
-    const err: any = new Error('Invalid webhook HMAC signature: No matching tenant found');
+    const err: any = new Error('Invalid webhook HMAC signature for resolved tenant.');
     err.statusCode = 401;
-    err.code = 'WEBHOOK_SIGNATURE_INVALID';
+    err.code = canonicalSecret
+      ? 'WEBHOOK_SIGNATURE_INVALID'
+      : 'WEBHOOK_SECRET_MISSING';
     throw err;
   }
 
@@ -638,16 +686,16 @@ export class WebhookService {
       { stagingTemporarySecrets }
     );
     tenantId = resolvedTenantId;
+    this.assertFreshWebhookTimestamp(payload, headers);
 
-    // 2. Identify external event key
+    // 2. Replay identity is derived only from the resolved tenant plus the exact
+    // provider bytes. Provider event IDs are metadata and cannot bypass dedupe.
     const rawBuffer = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody, 'utf8');
-    const contentHash = crypto.createHash('sha256').update(rawBuffer).digest('hex');
-    const externalEventKey =
-      (headers['x-deliverect-event-id'] as string) ||
-      payload.eventId ||
-      payload.id ||
-      payload._id ||
-      contentHash;
+    const externalEventKey = crypto
+      .createHash('sha256')
+      .update(tenantId)
+      .update(rawBuffer)
+      .digest('hex');
 
     const webhookEventId = `wh_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
