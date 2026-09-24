@@ -47,6 +47,38 @@ describe('Channel catalogue projection', () => {
     );
   });
 
+  it('stores only location deltas and never duplicates unchanged canonical products', () => {
+    const result = projectChannelCatalogs('loc-master', [
+      {
+        locationId: 'loc-master',
+        channelLinkId: 'ch-master',
+        catalogId: 'catalog-master',
+        items: [
+          { plu: 'A', gtin: '5000000000001', name: 'Cola', imageUrl: 'https://img/cola', price: 200, stock: true },
+        ],
+      },
+      ...Array.from({ length: 799 }, (_, index) => ({
+        locationId: `loc-${index + 2}`,
+        channelLinkId: `ch-${index + 2}`,
+        catalogId: 'catalog-master',
+        items: [
+          { plu: `LOCAL-${index + 2}`, gtin: '5000000000001', name: 'Cola', imageUrl: 'https://img/cola', price: index === 0 ? 225 : 200, stock: true },
+        ],
+      })),
+    ]);
+
+    expect(Object.keys(result.products)).toEqual(['gtin:5000000000001']);
+    expect(result.inventoryOverrides).toHaveLength(1);
+    expect(result.inventoryOverrides[0]).toMatchObject({
+      locationId: 'loc-2',
+      identityKey: 'gtin:5000000000001',
+      price: 225,
+    });
+    expect(result.inventoryOverrides[0]).not.toHaveProperty('name');
+    expect(result.inventoryOverrides[0]).not.toHaveProperty('imageUrl');
+    expect(result.inventoryOverrides[0]).not.toHaveProperty('stock');
+  });
+
   it('flags a rogue location catalogue ID while ignoring its structure', () => {
     const result = projectChannelCatalogs('loc-master', [
       {
