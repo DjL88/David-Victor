@@ -8,7 +8,7 @@ describe('WP-06 combined storefront menu round-trip', () => {
       categories: [{ id: 'drinks', name: 'Drinks' }],
       products: [
         { plu: 'COLA', gtin: '5000000000001', name: 'Cola', priceMinor: 200, stock: true },
-        { plu: 'WATER', gtin: '5000000000002', name: 'Water', priceMinor: 100, stock: true },
+        { plu: 'WATER', gtin: '5000000000002', name: 'Water', priceMinor: 100, stock: true, type: 'merchandise' },
       ],
     },
     {
@@ -26,6 +26,7 @@ describe('WP-06 combined storefront menu round-trip', () => {
     expect(Object.keys(projection.products)).toHaveLength(2);
     expect(projection.structure).toEqual({ categories: menus[0].categories });
     expect(projection.inventoryOverrides).toHaveLength(2);
+    expect(projection.products['gtin:5000000000002'].type).toBe('merchandise');
     expect(projection.inventoryOverrides).toEqual(expect.arrayContaining([
       expect.objectContaining({ locationId: 'store-2', identityKey: 'gtin:5000000000001', price: 225 }),
       expect.objectContaining({ locationId: 'store-2', identityKey: 'gtin:5000000000002', stock: false }),
