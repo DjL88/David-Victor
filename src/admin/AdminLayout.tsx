@@ -113,9 +113,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   // Demo identities are a sandbox convenience only. Live admin entry should provide the authenticated user.
   const demoFallbackUser = ALL_MOCK_ADMIN_USERS[0];
-  const [currentUser, setCurrentUser] = useState<AdminUser>(
-    initialUser || demoFallbackUser
-  );
+  const resolvedUser = initialUser || (isDemo ? demoFallbackUser : undefined);
+
+  // Never manufacture an administrator identity outside Demo. Authentication
+  // must supply the resolved AdminUser before the privileged workspace mounts.
+  if (!resolvedUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md rounded-2xl bg-white border border-slate-200 p-6 shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">Admin sign-in required</h1>
+          <p className="mt-2 text-sm text-slate-600">No authenticated administrator identity is available for this environment.</p>
+          <button type="button" onClick={onExitAdmin} className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Return to storefront</button>
+        </div>
+      </div>
+    );
+  }
+
+  const [currentUser, setCurrentUser] = useState<AdminUser>(resolvedUser);
   const [currentTenantId, setCurrentTenantId] = useState<string>(currentUser.tenantId);
   const [activeTab, setActiveTab] = useState<AdminTab>(() => currentUser.role === 'platformSuperAdmin' ? 'brands' : 'catalog');
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
