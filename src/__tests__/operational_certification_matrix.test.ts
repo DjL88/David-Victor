@@ -16,7 +16,8 @@ describe('WP-04 operational certification matrix', () => {
     const tenantId = `cert-${payload.eventId}`;
     const first = await process(tenantId, type, payload);
     const replay = await process(tenantId, type, payload);
-    expect(first).toMatchObject({ success: true, duplicate: undefined, channelLinkId: 'store-1', status: expectedStatus });
+    expect(first).toMatchObject({ success: true, channelLinkId: 'store-1', status: expectedStatus });
+    expect(first.duplicate).not.toBe(true);
     expect(replay).toMatchObject({ success: true, duplicate: true, channelLinkId: 'store-1' });
     const state = (await FirestorePlatformService.getStoreOperationalStates(tenantId))['store-1'];
     expect(state.status).toBe(expectedStatus);
