@@ -16,7 +16,7 @@ export interface ChannelMenuIngressJob {
 
 export interface ChannelMenuIngressReceipt {
   accepted: true;
-  status: 'QUEUED' | 'DUPLICATE';
+  status: 'QUEUED' | 'QUEUE_DEGRADED' | 'DUPLICATE';
   eventId: string;
   jobId: string;
   byteSize: number;
@@ -373,7 +373,19 @@ export class ChannelMenuIngestionService {
         updatedAt: new Date().toISOString(),
         error: String(err?.message || err),
       });
-      throw err;
+      // The verified payload is already durably buffered and journalled. Treat
+      // queue delivery as degraded infrastructure rather than failing the
+      // Deliverect webhook; a redelivery will retry because QUEUE_FAILED is not
+      // considered a completed duplicate above.
+      return {
+        accepted: true,
+        status: 'QUEUE_DEGRADED',
+        eventId,
+        jobId,
+        byteSize: raw.length,
+        menuIds,
+        channelLinkIds,
+      };
     }
 
     return {
