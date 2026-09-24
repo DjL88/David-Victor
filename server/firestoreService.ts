@@ -946,6 +946,44 @@ export class FirestoreService {
   }
 
   /**
+   * Strict webhook resolver: the path identifier must map through Firestore.
+   * No hostname, request-body, in-memory or tenant-slug fallback is permitted.
+   */
+  static async resolveTenantByWebhookIdentifier(identifier: string): Promise<string | null> {
+    const clean = String(identifier || '').trim();
+    if (!clean) return null;
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || isTestMode() || process.env.NODE_ENV === 'test') {
+        const cfg = inMemoryIntegrations[clean] as any;
+        return cfg?.tenantId || (cfg ? clean : null);
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Webhook tenant routing requires Firestore.',
+        503
+      );
+    }
+
+    const direct = await db.collection('integrations').doc(clean).get();
+    if (direct.exists) {
+      const data = direct.data() || {};
+      return String(data.tenantId || direct.id).trim() || null;
+    }
+
+    const byIntegrationId = await db
+      .collection('integrations')
+      .where('integrationId', '==', clean)
+      .limit(2)
+      .get();
+
+    if (byIntegrationId.size !== 1) return null;
+    const doc = byIntegrationId.docs[0];
+    return String(doc.data()?.tenantId || doc.id).trim() || null;
+  }
+
+  /**
    * Resolves tenant ID by integration identifier (for tenant/integration-specific webhook routes).
    */
   static async resolveTenantByIntegrationId(integrationId: string): Promise<string | null> {
