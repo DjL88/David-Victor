@@ -4694,6 +4694,236 @@ v1Router.delete('/admin/domains/:domainId', requireAdminAuth('tenantAdmin'), asy
   }
 });
 
+// 9.4g Commercial billing control plane
+v1Router.get(
+  '/admin/tenants/:id/billing/profile',
+  requireAdminAuth(),
+  requireAdminCapability('billing.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const profile = await getTenantBillingProfile(req.params.id);
+      res.json(profile);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to load billing profile');
+    }
+  }
+);
+
+v1Router.put(
+  '/admin/tenants/:id/billing/profile',
+  requireAdminAuth(),
+  requireAdminCapability('billing.manage'),
+  validateBody(SaveBillingProfileSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const now = new Date().toISOString();
+      const profile = await saveTenantBillingProfile({
+        ...req.body,
+        tenantId: req.params.id,
+        agreedBy: req.body.agreedAt ? authAdmin.uid : undefined,
+        updatedAt: now,
+      });
+
+      await FirestorePlatformService.addAuditLog(req.params.id, {
+        userId: authAdmin.uid || 'admin',
+        userName: authAdmin.name || 'Admin',
+        userRole: authAdmin.role || 'platformSuperAdmin',
+        tenantId: req.params.id,
+        category: 'Billing',
+        action: 'UPDATE_BILLING_PROFILE',
+        details: `Saved billing contract version ${profile.contractVersion} with status ${profile.status}`,
+      });
+
+      res.json(profile);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to save billing profile');
+    }
+  }
+);
+
+v1Router.get(
+  '/admin/tenants/:id/billing/insights',
+  requireAdminAuth(),
+  requireAdminCapability('billing.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const profile = await getTenantBillingProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({
+          error: 'Billing profile is not configured for this tenant.',
+          code: 'BILLING_PROFILE_NOT_FOUND',
+        });
+      }
+      const atTime =
+        typeof req.query.atTime === 'string' && req.query.atTime
+          ? new Date(req.query.atTime)
+          : new Date();
+      if (!Number.isFinite(atTime.getTime())) {
+        return res.status(400).json({
+          error: 'atTime must be a valid ISO date.',
+          code: 'INVALID_BILLING_TIME',
+        });
+      }
+      res.json(await buildBillingInsightsSnapshot(profile, atTime));
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to build billing insights');
+    }
+  }
+);
+
+v1Router.get(
+  '/admin/tenants/:id/billing/invoices',
+  requireAdminAuth(),
+  requireAdminCapability('billing.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const limit = Math.max(1, Math.min(Number(req.query.limit) || 24, 100));
+      res.json(await listBillingDrafts(req.params.id, limit));
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to list billing invoices');
+    }
+  }
+);
+
+v1Router.post(
+  '/admin/tenants/:id/billing/invoices/draft',
+  requireAdminAuth(),
+  requireAdminCapability('billing.manage'),
+  validateBody(GenerateBillingDraftSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const profile = await getTenantBillingProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({
+          error: 'Billing profile is not configured for this tenant.',
+          code: 'BILLING_PROFILE_NOT_FOUND',
+        });
+      }
+      if (profile.status !== 'ACTIVE') {
+        return res.status(409).json({
+          error: 'Only an active agreed billing profile can generate a durable invoice draft.',
+          code: 'BILLING_PROFILE_NOT_ACTIVE',
+        });
+      }
+
+      const atTime = req.body.atTime ? new Date(req.body.atTime) : new Date();
+      const period = resolveBillingPeriod(profile, atTime);
+      const [events, adjustments] = await Promise.all([
+        listBillingMeterEvents({
+          tenantId: req.params.id,
+          startsAt: period.startsAt,
+          endsAt: period.endsAt,
+        }),
+        listBillingAdjustments({
+          tenantId: req.params.id,
+          periodId: period.id,
+        }),
+      ]);
+      const draft = buildDraftInvoice({
+        profile,
+        periodId: period.id,
+        startsAt: period.startsAt,
+        endsAt: period.endsAt,
+        events,
+        adjustments,
+      });
+      const stored = await saveBillingDraft(draft);
+
+      await FirestorePlatformService.addAuditLog(req.params.id, {
+        userId: authAdmin.uid || 'admin',
+        userName: authAdmin.name || 'Admin',
+        userRole: authAdmin.role || 'platformSuperAdmin',
+        tenantId: req.params.id,
+        category: 'Billing',
+        action: 'GENERATE_BILLING_DRAFT',
+        details: `Generated billing draft for period ${period.id} with ${stored.lines.length} line items`,
+      });
+
+      res.status(201).json(stored);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to generate billing draft');
+    }
+  }
+);
+
+v1Router.post(
+  '/admin/tenants/:id/billing/adjustments',
+  requireAdminAuth(),
+  requireAdminCapability('billing.manage'),
+  validateBody(CreateBillingAdjustmentSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const profile = await getTenantBillingProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({
+          error: 'Billing profile is not configured for this tenant.',
+          code: 'BILLING_PROFILE_NOT_FOUND',
+        });
+      }
+      if (req.body.amount.currency !== profile.currency) {
+        return res.status(400).json({
+          error: 'Adjustment currency must match the tenant billing currency.',
+          code: 'BILLING_CURRENCY_MISMATCH',
+        });
+      }
+
+      const adjustment = await recordBillingAdjustment({
+        ...req.body,
+        tenantId: req.params.id,
+        createdAt: new Date().toISOString(),
+        createdBy: authAdmin.uid,
+      });
+
+      await FirestorePlatformService.addAuditLog(req.params.id, {
+        userId: authAdmin.uid || 'admin',
+        userName: authAdmin.name || 'Admin',
+        userRole: authAdmin.role || 'platformSuperAdmin',
+        tenantId: req.params.id,
+        category: 'Billing',
+        action: 'CREATE_BILLING_ADJUSTMENT',
+        details: `Recorded ${adjustment.kind.toLowerCase()} ${adjustment.id} for period ${adjustment.periodId}`,
+      });
+
+      res.status(201).json(adjustment);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to record billing adjustment');
+    }
+  }
+);
+
+v1Router.post(
+  '/admin/tenants/:id/billing/invoices/:periodId/finalize',
+  requireAdminAuth(),
+  requireAdminCapability('billing.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const invoice = await finalizeBillingInvoice({
+        tenantId: req.params.id,
+        periodId: req.params.periodId,
+        actorId: authAdmin.uid,
+      });
+
+      await FirestorePlatformService.addAuditLog(req.params.id, {
+        userId: authAdmin.uid || 'admin',
+        userName: authAdmin.name || 'Admin',
+        userRole: authAdmin.role || 'platformSuperAdmin',
+        tenantId: req.params.id,
+        category: 'Billing',
+        action: 'FINALIZE_BILLING_INVOICE',
+        details: `Finalized immutable billing invoice for period ${req.params.periodId}`,
+      });
+
+      res.json(invoice);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to finalize billing invoice');
+    }
+  }
+);
+
 // 9.5 Fee Policies
 v1Router.get('/admin/tenants/:id/fee-policy', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
