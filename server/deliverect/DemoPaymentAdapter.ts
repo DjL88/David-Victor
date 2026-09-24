@@ -39,7 +39,7 @@ export class DemoPaymentAdapter implements DPayAdapter {
     last4: string;
     cardholderName?: string;
   }> {
-    const last4 = cardDetails?.last4 || (cardDetails?.cardNumberMasked ? cardDetails.cardNumberMasked.slice(-4) : '4242');
+    const last4 = cardDetails?.last4 || cardDetails?.cardNumberMasked?.slice(-4) || '';
     const brand = cardDetails?.brand || 'Visa';
     const tokenId = `tok_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     return {
