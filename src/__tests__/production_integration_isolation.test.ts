@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertProductionFirebaseIsolation,
   resolveFirebaseRuntimeTarget,
@@ -11,8 +11,14 @@ import {
   type TenantIntegrationProfile,
 } from '../../server/integrationProfile';
 import { resolveClientFirebaseConfig } from '../firebaseClientConfig';
+import { DeliverectDPayAdapter } from '../../server/deliverect/DeliverectDPayAdapter';
+import { FirestorePlatformService } from '../../server/firestoreService';
 
 describe('WP-10/11 production isolation foundations', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.INTEGRATION_PROFILE_REQUIRED;
+  });
   it('prefers deployment Firebase targets over the legacy AI Studio file', () => {
     const target = resolveFirebaseRuntimeTarget(
       {
@@ -68,6 +74,21 @@ describe('WP-10/11 production isolation foundations', () => {
       appId: 'prod-app-id',
       messagingSenderId: '123',
     });
+  });
+
+  it('fails closed when a production browser build would fall back to preview Firebase', () => {
+    expect(() =>
+      resolveClientFirebaseConfig({
+        VITE_APP_MODE: 'production',
+      })
+    ).toThrow(/must be supplied by deployment configuration/i);
+
+    expect(() =>
+      resolveClientFirebaseConfig({
+        VITE_APP_MODE: 'production',
+        VITE_FIREBASE_PROJECT_ID: 'hi-domino-d0abb',
+      })
+    ).toThrow(/refuses legacy Firebase project/i);
   });
 
   it('uses tenant plus environment as the integration profile identity and deployment guard', () => {
@@ -126,5 +147,88 @@ describe('WP-10/11 production isolation foundations', () => {
     expect(() =>
       validateIntegrationProfile(profile, 'brand-alpha', 'staging')
     ).toThrow(/environment/i);
+  });
+
+  it('rejects cross-environment secret references and DPay environment drift', () => {
+    const base: TenantIntegrationProfile = {
+      id: 'brand-alpha__production',
+      tenantId: 'brand-alpha',
+      environment: 'production',
+      status: 'ACTIVE',
+      version: 1,
+      credentialMode: 'dedicated',
+      allowedChannelLinkIds: [],
+      deliverect: {},
+      secretRefs: {
+        deliverectClientId: 'lt--brand-alpha--production--client-id',
+      },
+    };
+
+    expect(() =>
+      validateIntegrationProfile({
+        ...base,
+        secretRefs: {
+          deliverectClientId: 'lt--brand-alpha--staging--client-id',
+        },
+      })
+    ).toThrow(/must be scoped/i);
+
+    expect(() =>
+      validateIntegrationProfile({
+        ...base,
+        dpay: {
+          enabled: true,
+          environment: 'staging',
+          baseUrl: 'https://api.staging.deliverect.com',
+        },
+      })
+    ).toThrow(/DPay environment must match/i);
+  });
+
+  it('resolves DPay host from the active tenant profile instead of APP_MODE', async () => {
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'brand-alpha',
+      environment: 'production',
+      activeEnv: 'production',
+      status: 'CONNECTED',
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue({
+      id: 'brand-alpha__production',
+      tenantId: 'brand-alpha',
+      environment: 'production',
+      status: 'ACTIVE',
+      version: 1,
+      credentialMode: 'dedicated',
+      allowedChannelLinkIds: [],
+      deliverect: {},
+      dpay: {
+        enabled: true,
+        environment: 'production',
+        baseUrl: 'https://pay.example.test/custom',
+      },
+      secretRefs: {},
+    } as any);
+
+    const adapter = new DeliverectDPayAdapter('brand-alpha', 'staging');
+    await expect((adapter as any).getBaseUrl()).resolves.toBe(
+      'https://pay.example.test/custom'
+    );
+  });
+
+  it('fails DPay closed when production requires an active tenant profile', async () => {
+    process.env.INTEGRATION_PROFILE_REQUIRED = 'true';
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'brand-alpha',
+      environment: 'production',
+      activeEnv: 'production',
+      status: 'CONNECTED',
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue(null);
+
+    const adapter = new DeliverectDPayAdapter('brand-alpha', 'production');
+    await expect((adapter as any).getBaseUrl()).rejects.toMatchObject({
+      code: 'INTEGRATION_NOT_CONFIGURED',
+      statusCode: 503,
+    });
   });
 });
