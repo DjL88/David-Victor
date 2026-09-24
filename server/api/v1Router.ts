@@ -2554,6 +2554,10 @@ async function processQuestAmendments(
   const parentChannelOrderId =
     payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
   const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
+  const parentLocationId =
+    payload?.locationId || payload?.order?.locationId || payload?.data?.locationId;
+  const parentChannelLinkId =
+    payload?.channelLinkId || payload?.order?.channelLinkId || payload?.data?.channelLinkId;
   const baseEventId =
     (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
 
@@ -2567,6 +2571,8 @@ async function processQuestAmendments(
       eventType: status,
       channelOrderId: item?.channelOrderId || parentChannelOrderId,
       orderId: item?.orderId || parentOrderId,
+      locationId: item?.locationId || parentLocationId,
+      channelLinkId: item?.channelLinkId || parentChannelLinkId,
     };
 
     // Every item in a batch must get its own idempotency key. WebhookService
@@ -2584,6 +2590,54 @@ async function processQuestAmendments(
   }
 
   return results;
+}
+
+async function queueQuestAmendments(
+  payload: any,
+  rawBody: Buffer | string,
+  signature: string,
+  headers: Record<string, string | string[] | undefined>,
+  tenantId: string
+): Promise<PickingStatusIngressReceipt[]> {
+  const items = extractQuestAmendmentItems(payload);
+  const parentChannelOrderId =
+    payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
+  const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
+  const parentLocationId =
+    payload?.locationId || payload?.order?.locationId || payload?.data?.locationId;
+  const parentChannelLinkId =
+    payload?.channelLinkId || payload?.order?.channelLinkId || payload?.data?.channelLinkId;
+  const baseEventId =
+    (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
+
+  const receipts: PickingStatusIngressReceipt[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const status = classifyQuestAmendment(item);
+    const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
+    // The per-item key is stable across retries even when Deliverect sends one
+    // amendment in the callback. This prevents one line replay from suppressing
+    // another line while keeping each individual amendment idempotent.
+    const itemEventId = `${baseEventId || 'amendment'}_${i}_${plu}`;
+    receipts.push(
+      await PickingStatusIngressService.acceptVerified({
+        tenantId,
+        payload: {
+          ...item,
+          status,
+          eventType: status,
+          channelOrderId: item?.channelOrderId || parentChannelOrderId,
+          orderId: item?.orderId || parentOrderId,
+          locationId: item?.locationId || parentLocationId,
+          channelLinkId: item?.channelLinkId || parentChannelLinkId,
+        },
+        rawBody,
+        signature,
+        externalEventId: itemEventId,
+      })
+    );
+  }
+  return receipts;
 }
 
 async function handleQuestRetailCallback(
@@ -2634,11 +2688,34 @@ async function handleQuestRetailCallback(
       return res.status(200).type('text/plain').send('OK');
     }
 
-    const results = await processQuestAmendments(req.body, rawBody, req.headers, tenantId);
-    const last = results[results.length - 1];
+    const signatureHeader =
+      (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+      (req.headers['x-deliverect-signature'] as string) ||
+      (req.headers['x-signature'] as string) ||
+      (req.headers['x-deliverect-hmac-sha256'] as string);
+
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(tenantId, req.body);
+    const verified = await WebhookService.resolveTenantForWebhook(
+      rawBody,
+      signatureHeader,
+      tenantId,
+      { stagingTemporarySecrets }
+    );
+    const receipts = await queueQuestAmendments(
+      req.body,
+      rawBody,
+      signatureHeader,
+      req.headers,
+      verified.tenantId
+    );
+
+    // Match the Picking Status callback's fast durable acknowledgement. The
+    // amendment effects are applied by the same replay-safe worker queue.
     return res.status(200).json({
-      ...last,
-      results,
+      success: true,
+      accepted: true,
+      receipts,
       callbackType: 'PICKING_AMENDMENTS',
     });
   } catch (err: any) {
