@@ -41,6 +41,14 @@ export class IntegrationUnavailableDPayAdapter implements DPayAdapter {
     );
   }
 
+  async voidAuthorization(_paymentId: string, _reason?: string): Promise<DPayPaymentResponse> {
+    throw new CommerceError(
+      ErrorCode.INTEGRATION_NOT_CONFIGURED,
+      'Deliverect Pay integration is not configured for this staging/production environment.',
+      503
+    );
+  }
+
   async refund(_paymentId: string, _refundAmountMinor: number, _reason?: string): Promise<DPayPaymentResponse> {
     throw new CommerceError(
       ErrorCode.INTEGRATION_NOT_CONFIGURED,
