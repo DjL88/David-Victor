@@ -13,6 +13,19 @@ class CapturingMenuQueue implements ChannelMenuQueueClient {
   }
 }
 
+class FailOnceMenuQueue implements ChannelMenuQueueClient {
+  attempts = 0;
+  jobs: ChannelMenuIngressJob[] = [];
+
+  async enqueue(job: ChannelMenuIngressJob): Promise<void> {
+    this.attempts += 1;
+    if (this.attempts === 1) {
+      throw new Error('queue unavailable');
+    }
+    this.jobs.push(job);
+  }
+}
+
 const sampleMenu = (overrides: Record<string, unknown> = {}) => ({
   menu: 'Main Menu',
   menuId: 'menu-1',
@@ -118,6 +131,36 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     expect(second.status).toBe('DUPLICATE');
     expect(second.eventId).toBe(first.eventId);
     expect(queue.jobs).toHaveLength(1);
+  });
+
+  it('acknowledges durable ingress when the queue is degraded and retries on redelivery', async () => {
+    const tenantId = `tenant-queue-degraded-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+    const failOnceQueue = new FailOnceMenuQueue();
+    ChannelMenuIngestionService.setQueueClient(failOnceQueue);
+
+    const first = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+
+    expect(first.status).toBe('QUEUE_DEGRADED');
+    expect(failOnceQueue.attempts).toBe(1);
+    expect(failOnceQueue.jobs).toHaveLength(0);
+
+    const second = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+
+    expect(second.status).toBe('QUEUED');
+    expect(second.eventId).toBe(first.eventId);
+    expect(failOnceQueue.attempts).toBe(2);
+    expect(failOnceQueue.jobs).toHaveLength(1);
+    expect(failOnceQueue.jobs[0].eventId).toBe(first.eventId);
   });
 
   it('keeps very large menu content out of the Cloud Task body', async () => {
