@@ -50,6 +50,8 @@ interface ChannelMenuIngressRecord {
   receivedAt: string;
   updatedAt: string;
   processedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
   error?: string;
 }
 
@@ -330,7 +332,7 @@ export class ChannelMenuIngestionService {
     );
 
     const existing = await this.getIngressRecord(params.tenantId, eventId);
-    if (existing && ['QUEUED', 'PROCESSING', 'PROCESSED'].includes(existing.status)) {
+    if (existing && ['QUEUED', 'PROCESSING', 'PROCESSED', 'REVIEW_REQUIRED'].includes(existing.status)) {
       return {
         accepted: true,
         status: 'DUPLICATE',
@@ -419,7 +421,7 @@ export class ChannelMenuIngestionService {
     return String(product?.plu || product?.id || product?._id || product?.productId || '').trim();
   }
 
-  private static async destructiveDeltaReview(params: {
+  static async destructiveDeltaReview(params: {
     tenantId: string;
     channelLinkId: string;
     menuId: string;
@@ -457,7 +459,10 @@ export class ChannelMenuIngestionService {
     };
   }
 
-  static async processJob(job: ChannelMenuIngressJob): Promise<{ processed: number; reviewRequired?: boolean }> {
+  static async processJob(
+    job: ChannelMenuIngressJob,
+    options: { approvedReviewEventId?: string } = {}
+  ): Promise<{ processed: number; reviewRequired?: boolean }> {
     const existing = await this.getIngressRecord(job.tenantId, job.eventId);
     if (existing?.status === 'PROCESSED') return { processed: existing.menuIds.length };
 
@@ -516,12 +521,14 @@ export class ChannelMenuIngestionService {
           receivedAt: job.receivedAt,
           processedAt: new Date().toISOString(),
         };
-        const review = await this.destructiveDeltaReview({
-          tenantId: job.tenantId,
-          channelLinkId,
-          menuId,
-          nextProducts: parsed.products,
-        });
+        const review = options.approvedReviewEventId === job.eventId
+          ? undefined
+          : await this.destructiveDeltaReview({
+              tenantId: job.tenantId,
+              channelLinkId,
+              menuId,
+              nextProducts: parsed.products,
+            });
         if (review) {
           await this.saveIngressRecord({
             ...processing,
@@ -626,6 +633,60 @@ export class ChannelMenuIngestionService {
       });
       throw err;
     }
+  }
+
+  static async inspectDestructiveMenuPush(params: {
+    tenantId: string;
+    payload: any;
+    resolvedChannelLinkId?: string;
+  }): Promise<ChannelMenuIngressRecord['review'] | undefined> {
+    for (const menu of menuArray(params.payload)) {
+      const menuId = menuIdOf(menu);
+      const channelLinkId =
+        channelLinkIdOf(menu) || String(params.resolvedChannelLinkId || '').trim();
+      if (!menuId || !channelLinkId) continue;
+      const parsed = DeliverectApiClient.parseDeliverectMenu(menu, true, []);
+      const review = await this.destructiveDeltaReview({
+        tenantId: params.tenantId,
+        channelLinkId,
+        menuId,
+        nextProducts: parsed.products,
+      });
+      if (review) return review;
+    }
+    return undefined;
+  }
+
+  static async approveReview(params: {
+    tenantId: string;
+    eventId: string;
+    approvedBy: string;
+  }): Promise<{ processed: number; reviewRequired?: boolean }> {
+    const record = await this.getIngressRecord(params.tenantId, params.eventId);
+    if (!record || record.status !== 'REVIEW_REQUIRED') {
+      throw new BFFError(
+        'REVIEW_NOT_FOUND',
+        'No held catalogue change was found for this tenant and event.',
+        404
+      );
+    }
+    const approvedAt = new Date().toISOString();
+    await this.saveIngressRecord({
+      ...record,
+      approvedAt,
+      approvedBy: params.approvedBy,
+      updatedAt: approvedAt,
+    });
+    return this.processJob(
+      {
+        jobId: record.jobId,
+        eventId: record.eventId,
+        tenantId: record.tenantId,
+        storagePath: record.storagePath,
+        receivedAt: record.receivedAt,
+      },
+      { approvedReviewEventId: record.eventId }
+    );
   }
 
   static async getLatestNormalizedMenu(
