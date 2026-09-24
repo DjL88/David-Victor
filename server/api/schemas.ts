@@ -177,6 +177,15 @@ export const DeliverySlotsSchema = z.object({
   fulfillmentType: z.string().optional(),
 });
 
+export const PaymentTokenSchema = z.object({
+  gatewayProfileId: z.string().min(1),
+  channelLinkId: z.string().min(1),
+  customerId: z.string().min(1),
+  // Deliverect owns the nested Basis Theory payment_method contract. Keep this
+  // opaque here so the BFF forwards it once and never stores/logs card data.
+  payment_method: z.record(z.string(), z.any()),
+}).strict();
+
 export const PaymentSessionSchema = z.object({
   basketId: z.string().min(1, 'basketId is required'),
   returnUrl: z.string().optional(),
