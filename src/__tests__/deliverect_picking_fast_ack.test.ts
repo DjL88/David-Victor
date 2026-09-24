@@ -169,6 +169,97 @@ describe('Deliverect picker status fast acknowledgement', () => {
     expect(queued.payload.channelOrderId).toBe('LT2639000C');
   });
 
+  it('durably splits amendment batches with stable per-item replay keys and parent correlation', async () => {
+    const payload = {
+      eventId: 'amend-batch-1',
+      orderId: 'order-amend-1',
+      channelOrderId: 'LT-AMEND-1',
+      locationId: 'location-1',
+      channelLinkId: 'store-1',
+      amendments: [
+        {
+          type: 'ITEM_AMENDMENT',
+          plu: 'PLU-A',
+          amendedQuantity: 2,
+        },
+        {
+          type: 'ITEM_SUBSTITUTION_CATALOG',
+          plu: 'PLU-B',
+          substitutePlu: 'PLU-B-SUB',
+        },
+      ],
+    };
+    const raw = JSON.stringify(payload);
+    const signature = crypto
+      .createHmac('sha256', 'demo_deliverect_webhook_secret_key_123')
+      .update(raw)
+      .digest('hex');
+
+    const post = () =>
+      fetch(`${baseUrl}/webhooks/deliverect/brand-alpha/picking/amendments`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-deliverect-signature': signature,
+        },
+        body: raw,
+      });
+
+    const first = await post();
+    expect(first.status).toBe(200);
+    const firstBody = await first.json();
+    expect(firstBody).toMatchObject({
+      success: true,
+      accepted: true,
+      callbackType: 'PICKING_AMENDMENTS',
+    });
+    expect(firstBody.receipts).toHaveLength(2);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+
+    expect(enqueue.mock.calls[0][0]).toMatchObject({
+      tenantId: 'brand-alpha',
+      eventId: 'amend-batch-1_0_PLU-A',
+      payload: {
+        status: 'ITEM_QUANTITY_AMENDED',
+        eventType: 'ITEM_QUANTITY_AMENDED',
+        plu: 'PLU-A',
+        orderId: 'order-amend-1',
+        channelOrderId: 'LT-AMEND-1',
+        locationId: 'location-1',
+        channelLinkId: 'store-1',
+      },
+    });
+    expect(enqueue.mock.calls[1][0]).toMatchObject({
+      tenantId: 'brand-alpha',
+      eventId: 'amend-batch-1_1_PLU-B',
+      payload: {
+        status: 'BEST_MATCH_SUBSTITUTION',
+        eventType: 'BEST_MATCH_SUBSTITUTION',
+        plu: 'PLU-B',
+        substitutePlu: 'PLU-B-SUB',
+        orderId: 'order-amend-1',
+        channelOrderId: 'LT-AMEND-1',
+        locationId: 'location-1',
+        channelLinkId: 'store-1',
+      },
+    });
+
+    const replay = await post();
+    expect(replay.status).toBe(200);
+    const replayBody = await replay.json();
+    expect(replayBody.receipts).toEqual([
+      expect.objectContaining({
+        eventId: 'amend-batch-1_0_PLU-A',
+        status: 'DUPLICATE',
+      }),
+      expect.objectContaining({
+        eventId: 'amend-batch-1_1_PLU-B',
+        status: 'DUPLICATE',
+      }),
+    ]);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects a bad signature before queueing or acknowledging', async () => {
     const res = await fetch(
       `${baseUrl}/webhooks/deliverect/brand-alpha/picking/status`,
