@@ -1218,7 +1218,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 ))}
               </div>
             </div>
-            </div>
+          </div>
           </details>
 
         </div>
