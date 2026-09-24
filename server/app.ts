@@ -18,11 +18,16 @@ import { proxyFirebaseMedia } from './mediaProxy';
 import { adminSecurityMiddleware } from './adminSecurity';
 import { buildStorefrontManifest, buildStorefrontMetadata, injectStorefrontMetadata } from './storefrontMetadataService';
 import { requireExactWebhookRawBody } from './webhookRawBodyGuard';
+import {
+  assertWebhookSecurityStartupConfig,
+  deliverectWebhookPayloadLimit,
+} from './webhookSecurity';
 
 export interface AppRequest extends Request { requestId?: string; startTime?: number; }
 export interface CreateAppOptions { serveFrontend?: boolean; initializeDependencies?: boolean; }
 
 export async function createApp(options: CreateAppOptions = {}) {
+  assertWebhookSecurityStartupConfig();
   const app = express();
   const serveFrontend = options.serveFrontend !== false;
   const initializeDependencies = options.initializeDependencies !== false;
@@ -48,9 +53,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   // SEC-04b: every Deliverect POST webhook must reach HMAC verification with
   // the exact bytes captured by express.json's verify hook. Never allow a
   // handler to reconstruct JSON and authenticate different bytes.
-  app.use('/api/v1/webhooks/deliverect', requireExactWebhookRawBody);
-  app.use('/api/commerce/webhooks/deliverect', requireExactWebhookRawBody);
-  app.use('/integrations/deliverect/webhooks/deliverect', requireExactWebhookRawBody);
+  app.use('/api/v1/webhooks/deliverect', deliverectWebhookPayloadLimit, requireExactWebhookRawBody);
+  app.use('/api/commerce/webhooks/deliverect', deliverectWebhookPayloadLimit, requireExactWebhookRawBody);
+  app.use('/integrations/deliverect/webhooks/deliverect', deliverectWebhookPayloadLimit, requireExactWebhookRawBody);
   app.use('/api',standardApiRateLimiter.middleware());
   app.use('/api/v1',aiStudioPreviewBffProxy);
   // SEC-02b: privileged Admin endpoints may require Firebase App Check and MFA.
