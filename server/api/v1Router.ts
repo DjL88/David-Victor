@@ -1305,7 +1305,7 @@ v1Router.post('/dispatch/cancel', requireAdminAuth('operationsEditor'), validate
 v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
     await WebhookService.verifyDispatchWebhookAuth(rawBody, req.headers, tenantId);
 
     const eventId =
@@ -2319,75 +2319,21 @@ async function resolveDeliverectWebhookTenant(
   req: Request
 ): Promise<string> {
   const identifier = String(req.params.identifier || '').trim();
-  const payloadAccountId = String(
-    req.body?.accountId ||
-    req.body?.account ||
-    req.body?.account?._id ||
-    ''
-  ).trim();
-  let tenantId: string | undefined;
-
-  if (identifier) {
-    const resolved =
-      await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
-    if (resolved) {
-      tenantId = resolved;
-    } else {
-      // Deliverect Channel staging screens commonly use the account id in a
-      // callback URL. Treat it as a routing identifier only when exactly one
-      // tenant has explicitly mapped that Deliverect account.
-      const accountTenant =
-        await FirestorePlatformService.resolveTenantByDeliverectAccountId(identifier);
-      if (accountTenant) {
-        tenantId = accountTenant;
-      } else {
-        // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
-        // rather than the opaque integrationId. This is safe because routing only
-        // selects the candidate tenant; the callback must still pass HMAC
-        // verification before any state is mutated.
-        const directIntegration =
-          await FirestorePlatformService.getIntegrationConfig(identifier);
-        if (directIntegration?.tenantId === identifier) {
-          tenantId = identifier;
-        } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
-          tenantId = identifier;
-        }
-      }
-    }
+  if (!identifier) {
+    throw new BFFError(
+      'WEBHOOK_TENANT_NOT_FOUND',
+      'Inbound Deliverect webhook requires a provisioned route identifier.',
+      404
+    );
   }
 
-  // Channel registration is documented as a standardized URL. When the URL
-  // carries no tenant identifier, use the accountId Deliverect sends in the
-  // payload to resolve the already-mapped tenant.
-  if (!tenantId && payloadAccountId) {
-    tenantId =
-      (await FirestorePlatformService.resolveTenantByDeliverectAccountId(payloadAccountId)) ||
-      undefined;
-  }
+  const tenantId =
+    await FirestorePlatformService.resolveTenantByWebhookIdentifier(identifier);
 
   if (!tenantId) {
-    if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      return (
-        (req.query.tenantId as string) ||
-        (req.headers['x-tenant-id'] as string) ||
-        'brand-alpha'
-      );
-    }
-
-    const host = (
-      (req.headers['x-forwarded-host'] as string) ||
-      req.hostname ||
-      ''
-    )
-      .toLowerCase()
-      .split(':')[0];
-    const resolvedFromDb =
-      await FirestorePlatformService.resolveTenantByHostname(host);
-    if (resolvedFromDb) return resolvedFromDb;
-
     throw new BFFError(
-      'INTEGRATION_NOT_CONFIGURED',
-      `Inbound Deliverect webhook cannot be routed. identifier="${identifier || 'none'}", accountId="${payloadAccountId || 'none'}". Map the Deliverect account to a tenant first.`,
+      'WEBHOOK_TENANT_NOT_FOUND',
+      'Inbound Deliverect webhook route identifier is not provisioned.',
       404
     );
   }
@@ -2585,9 +2531,7 @@ async function handleQuestRetailCallback(
 ) {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody ||
-      Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
 
     if (kind === 'status') {
       const signatureHeader =
@@ -2596,25 +2540,20 @@ async function handleQuestRetailCallback(
         (req.headers['x-signature'] as string) ||
         (req.headers['x-deliverect-hmac-sha256'] as string);
 
-      const stagingTemporarySecrets =
-        await WebhookService.getMappedStagingChannelLinkSecrets(
-          tenantId,
-          req.body
-        );
-      const canonicalBody = JSON.stringify(req.body ?? {});
-      const rawBodyText = Buffer.isBuffer(rawBody)
-        ? rawBody.toString('utf8')
-        : String(rawBody);
+      const allowStagingChannelHmac =
+        String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
+      const stagingTemporarySecrets = allowStagingChannelHmac
+        ? await WebhookService.getMappedStagingChannelLinkSecrets(
+            tenantId,
+            req.body
+          )
+        : [];
 
       const verified = await WebhookService.resolveTenantForWebhook(
         rawBody,
         signatureHeader,
         tenantId,
-        {
-          stagingTemporarySecrets,
-          stagingAlternateBodies:
-            canonicalBody !== rawBodyText ? [canonicalBody] : [],
-        }
+        { stagingTemporarySecrets }
       );
 
       const payload = normalizeQuestPickingStatusPayload(req.body);
@@ -2681,34 +2620,27 @@ async function handleDeliverectOperationalWebhook(
 ): Promise<void> {
   try {
     const candidateTenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
     const signatureHeader =
       (req.headers['x-server-authorization-hmac-sha256'] as string) ||
       (req.headers['x-deliverect-signature'] as string) ||
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const stagingTemporarySecrets =
-      await WebhookService.getMappedStagingChannelLinkSecrets(
-        candidateTenantId,
-        req.body
-      );
-
-    const canonicalBody = JSON.stringify(req.body ?? {});
-    const rawBodyText = Buffer.isBuffer(rawBody)
-      ? rawBody.toString('utf8')
-      : String(rawBody);
+    const allowStagingChannelHmac =
+      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
+    const stagingTemporarySecrets = allowStagingChannelHmac
+      ? await WebhookService.getMappedStagingChannelLinkSecrets(
+          candidateTenantId,
+          req.body
+        )
+      : [];
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets,
-        stagingAlternateBodies:
-          canonicalBody !== rawBodyText ? [canonicalBody] : [],
-      }
+      { stagingTemporarySecrets }
     );
 
     const mappedChannelLinkId =
@@ -2777,8 +2709,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/busy_mode',
     '/webhooks/deliverect/:identifier/channel/busy-mode',
-    '/webhooks/deliverect/channel/busy_mode',
-    '/webhooks/deliverect/channel/busy-mode',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'busy_mode')
@@ -2788,8 +2718,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/store_status',
     '/webhooks/deliverect/:identifier/channel/store-status',
-    '/webhooks/deliverect/channel/store_status',
-    '/webhooks/deliverect/channel/store-status',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'store_status')
@@ -2798,7 +2726,6 @@ v1Router.post(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/snooze',
-    '/webhooks/deliverect/channel/snooze',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'snooze')
@@ -2808,8 +2735,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/menu_update',
     '/webhooks/deliverect/:identifier/channel/menu-update',
-    '/webhooks/deliverect/channel/menu_update',
-    '/webhooks/deliverect/channel/menu-update',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'menu_update')
@@ -2819,8 +2744,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/prep_time',
     '/webhooks/deliverect/:identifier/channel/prep-time',
-    '/webhooks/deliverect/channel/prep_time',
-    '/webhooks/deliverect/channel/prep-time',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'prep_time')
@@ -2833,34 +2756,27 @@ async function handleDeliverectChannelProvisioning(
 ): Promise<void> {
   try {
     const candidateTenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
     const signatureHeader =
       (req.headers['x-server-authorization-hmac-sha256'] as string) ||
       (req.headers['x-deliverect-signature'] as string) ||
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const stagingTemporarySecrets =
-      await WebhookService.getMappedStagingChannelLinkSecrets(
-        candidateTenantId,
-        req.body
-      );
-
-    const canonicalBody = JSON.stringify(req.body ?? {});
-    const rawBodyText = Buffer.isBuffer(rawBody)
-      ? rawBody.toString('utf8')
-      : String(rawBody);
+    const allowStagingChannelHmac =
+      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
+    const stagingTemporarySecrets = allowStagingChannelHmac
+      ? await WebhookService.getMappedStagingChannelLinkSecrets(
+          candidateTenantId,
+          req.body
+        )
+      : [];
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets,
-        stagingAlternateBodies:
-          canonicalBody !== rawBodyText ? [canonicalBody] : [],
-      }
+      { stagingTemporarySecrets }
     );
 
     const result = await ChannelProvisioningService.process(
@@ -2914,7 +2830,6 @@ async function handleDeliverectChannelProvisioning(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/provision',
-    '/webhooks/deliverect/channel/provision',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectChannelProvisioning(req, res, 'STORE_PROVISION')
@@ -2923,7 +2838,6 @@ v1Router.post(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/register',
-    '/webhooks/deliverect/channel/register',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectChannelProvisioning(req, res, 'CHANNEL_REGISTRATION')
@@ -2934,10 +2848,10 @@ v1Router.post(
  * Supports integration-specific routes (/webhooks/deliverect/:identifier) and global route with host/query resolution.
  * Enforces HMAC validation, event journaling, deduplication, and monotonic state progression.
  */
-v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], async (req: Request, res: Response) => {
+v1Router.post('/webhooks/deliverect/:identifier', async (req: Request, res: Response) => {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
 
     const result = await WebhookService.processWebhook(
       req.body,
@@ -5957,19 +5871,26 @@ v1Router.post(
     }
 
     // Secrets are written only to server-side Secret Manager. Firestore receives
-    // mode/status metadata, never credential values.
+    // mode/status metadata, never credential values. Webhook HMAC is always
+    // tenant-canonical even when OAuth credentials use platform mode.
+    const savedCanonicalWebhook = webhookSecret
+      ? await SecretManager.setSecret(`deliverect-webhook-${tenantId}`, webhookSecret, true)
+      : true;
+
     if (credentialMode === 'dedicated') {
       const savedId = await SecretManager.setSecret(`DELIVERECT_CLIENT_ID_${tenantId}`, clientId, true);
       const savedSecret = await SecretManager.setSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`, clientSecret, true);
-      const savedWebhook = webhookSecret
-        ? await SecretManager.setSecret(`DELIVERECT_WEBHOOK_SECRET_${tenantId}`, webhookSecret, true)
-        : true;
-      if ((!savedId || !savedSecret || !savedWebhook) && isLiveMode()) {
+      if ((!savedId || !savedSecret || !savedCanonicalWebhook) && isLiveMode()) {
         return res.status(500).json({
           error: 'Failed to persist dedicated credentials in Google Cloud Secret Manager.',
           code: 'SECRET_PERSISTENCE_FAILED',
         });
       }
+    } else if (!savedCanonicalWebhook && isLiveMode()) {
+      return res.status(500).json({
+        error: 'Failed to persist the tenant webhook secret in Google Cloud Secret Manager.',
+        code: 'SECRET_PERSISTENCE_FAILED',
+      });
     }
 
     // Explicit platform mode ignores any historical tenant secret versions.

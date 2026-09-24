@@ -10,6 +10,7 @@ import { TenantSecretResolver } from './IntegrationContext';
 import { getFirestoreDb } from '../firebase';
 import { getDispatchAdapter } from './index';
 import { DispatchOrchestrationService } from './DispatchOrchestrationService';
+import { SecretManager } from '../secrets';
 
 export interface WebhookProcessingResult {
   success: boolean;
@@ -97,6 +98,37 @@ export function normalizeDeliverectOrderStatus(value: unknown): string {
 }
 
 export class WebhookService {
+  private static ingressBuckets = new Map<string, { tokens: number; updatedAt: number }>();
+
+  /**
+   * Per-tenant ingress bucket. It is intentionally applied only after HMAC
+   * verification so unauthenticated traffic cannot consume another tenant's
+   * allowance. A shared/distributed limiter can replace this implementation
+   * without changing the route contract.
+   */
+  static consumeWebhookIngressToken(tenantId: string): void {
+    const capacity = Math.max(10, Number(process.env.WEBHOOK_TENANT_BURST || 300));
+    const refillPerMinute = Math.max(10, Number(process.env.WEBHOOK_TENANT_PER_MINUTE || 300));
+    const now = Date.now();
+    const current = this.ingressBuckets.get(tenantId) || { tokens: capacity, updatedAt: now };
+    const elapsedMinutes = Math.max(0, now - current.updatedAt) / 60_000;
+    current.tokens = Math.min(capacity, current.tokens + elapsedMinutes * refillPerMinute);
+    current.updatedAt = now;
+
+    if (current.tokens < 1) {
+      const err: any = new Error('Webhook ingress queue is temporarily saturated for this tenant.');
+      err.statusCode = 429;
+      err.code = 'WEBHOOK_INGRESS_SATURATED';
+      throw err;
+    }
+
+    current.tokens -= 1;
+    this.ingressBuckets.set(tenantId, current);
+  }
+
+  static resetWebhookIngressBucketsForTest(): void {
+    this.ingressBuckets.clear();
+  }
   /**
    * Constant-time HMAC SHA-256 verification (WH-01).
    * Prevents timing attacks and rejects any tampered bytes or modified signatures.
@@ -504,19 +536,7 @@ export class WebhookService {
     signatureHeader?: string,
     candidateTenantId?: string,
     options?: {
-      /**
-       * Deliverect staging signs Channel partner webhooks with a temporary
-       * channelLink value prior to certification. These candidates are only
-       * accepted for a tenant already resolved from a trusted route/account
-       * mapping and never in production.
-       */
       stagingTemporarySecrets?: string[];
-      /**
-       * Staging-only body variants. Raw request bytes remain authoritative, but
-       * this lets us survive a hosting proxy that reserializes JSON before the
-       * request reaches Express while preserving Deliverect's original HMAC.
-       */
-      stagingAlternateBodies?: Array<Buffer | string>;
     }
   ): Promise<{ tenantId: string; secret: string }> {
     if (!signatureHeader) {
@@ -526,82 +546,56 @@ export class WebhookService {
       throw err;
     }
 
-    // In demo or test mode, check candidate or default secret
-    if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      const tId = candidateTenantId || 'brand-alpha';
-      const secret = this.getWebhookSecret(tId);
-      if (this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
-        return { tenantId: tId, secret };
-      }
+    if (!candidateTenantId) {
+      const err: any = new Error('Webhook tenant could not be resolved from the route identifier.');
+      err.statusCode = 404;
+      err.code = 'WEBHOOK_TENANT_NOT_FOUND';
+      throw err;
     }
 
-    // In staging / production:
-    // 1. If candidateTenantId was provided, test its configured production/shared
-    // secret first.
-    if (candidateTenantId) {
-      const secret =
-        (await TenantSecretResolver.resolveTenantSecret(
-          candidateTenantId,
-          'DELIVERECT_WEBHOOK_SECRET'
-        )) || this.getWebhookSecret(candidateTenantId);
-      if (
-        secret &&
-        this.verifyDeliverectHmac(rawBody, signatureHeader, secret)
-      ) {
-        return { tenantId: candidateTenantId, secret };
-      }
+    // Demo/test fixtures keep their explicit local secret. Staging/production
+    // use one canonical Secret Manager secret per tenant and never scan/fallback
+    // across other tenants.
+    const secret =
+      isDemoMode() || process.env.NODE_ENV === 'test'
+        ? this.getWebhookSecret(candidateTenantId)
+        : (await SecretManager.getSecret(`deliverect-webhook-${candidateTenantId}`)) || '';
 
-      const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
-      const isProductionWebhook =
-        integration?.environment === 'production' ||
-        process.env.DELIVERECT_ENV === 'production';
+    if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
+      this.consumeWebhookIngressToken(candidateTenantId);
+      return { tenantId: candidateTenantId, secret };
+    }
 
-      if (!isProductionWebhook) {
-        const candidates = Array.from(
-          new Set(
-            (options?.stagingTemporarySecrets || [])
-              .map((value) => String(value || '').trim())
-              .filter(Boolean)
-          )
-        );
+    const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+    const isProductionWebhook =
+      integration?.environment === 'production' ||
+      process.env.DELIVERECT_ENV === 'production' ||
+      process.env.APP_MODE === 'production';
 
-        const candidateBodies: Array<Buffer | string> = [
-          rawBody,
-          ...(options?.stagingAlternateBodies || []),
-        ];
+    const allowStagingChannelHmac =
+      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
 
-        for (const temporarySecret of candidates) {
-          for (let bodyIndex = 0; bodyIndex < candidateBodies.length; bodyIndex += 1) {
-            if (this.verifyDeliverectHmac(candidateBodies[bodyIndex], signatureHeader, temporarySecret)) {
-              console.info(
-                `[WebhookService] Verified Deliverect staging webhook for tenant ${candidateTenantId} using mapped temporary HMAC secret${bodyIndex === 0 ? '' : ' and canonical JSON fallback'}.`
-              );
-              return { tenantId: candidateTenantId, secret: temporarySecret };
-            }
-          }
+    if (allowStagingChannelHmac && !isProductionWebhook) {
+      const candidates = Array.from(
+        new Set(
+          (options?.stagingTemporarySecrets || [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      for (const temporarySecret of candidates) {
+        if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
+          console.info(
+            `[WebhookService] Verified explicitly-enabled staging Channel HMAC for tenant ${candidateTenantId}.`
+          );
+          this.consumeWebhookIngressToken(candidateTenantId);
+          return { tenantId: candidateTenantId, secret: temporarySecret };
         }
       }
     }
 
-    // 2. Query known tenants from Firestore to find the matching secret
-    const db = getFirestoreDb();
-    if (db) {
-      try {
-        const tenantsSnap = await db.collection('tenants').get();
-        for (const doc of tenantsSnap.docs) {
-          const tId = doc.id;
-          if (tId === candidateTenantId) continue;
-          const secret = (await TenantSecretResolver.resolveTenantSecret(tId, 'DELIVERECT_WEBHOOK_SECRET')) || this.getWebhookSecret(tId);
-          if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
-            return { tenantId: tId, secret };
-          }
-        }
-      } catch (e) {
-        console.warn('[WebhookService] Failed scanning tenant webhook secrets:', e);
-      }
-    }
-
-    const err: any = new Error('Invalid webhook HMAC signature: No matching tenant found');
+    const err: any = new Error('Invalid webhook HMAC signature for resolved tenant');
     err.statusCode = 401;
     err.code = 'WEBHOOK_SIGNATURE_INVALID';
     throw err;
@@ -628,8 +622,11 @@ export class WebhookService {
       (headers['x-deliverect-hmac-sha256'] as string);
 
     // 1. Authoritatively resolve tenant & verify HMAC signature
-    const stagingTemporarySecrets =
-      await this.getMappedStagingChannelLinkSecrets(tenantId, payload);
+    const allowStagingChannelHmac =
+      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
+    const stagingTemporarySecrets = allowStagingChannelHmac
+      ? await this.getMappedStagingChannelLinkSecrets(tenantId, payload)
+      : [];
 
     const { tenantId: resolvedTenantId } = await this.resolveTenantForWebhook(
       rawBody,
@@ -641,13 +638,27 @@ export class WebhookService {
 
     // 2. Identify external event key
     const rawBuffer = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody, 'utf8');
-    const contentHash = crypto.createHash('sha256').update(rawBuffer).digest('hex');
-    const externalEventKey =
-      (headers['x-deliverect-event-id'] as string) ||
-      payload.eventId ||
-      payload.id ||
-      payload._id ||
-      contentHash;
+
+    const timestampValue =
+      payload?.timestamp ||
+      payload?.createdAt ||
+      payload?.updatedAt ||
+      payload?.data?.timestamp;
+    if (timestampValue) {
+      const timestampMs = Date.parse(String(timestampValue));
+      if (Number.isFinite(timestampMs) && Date.now() - timestampMs > 5 * 60 * 1000) {
+        const err: any = new Error('Webhook timestamp is older than the permitted 5 minute window.');
+        err.statusCode = 400;
+        err.code = 'WEBHOOK_TIMESTAMP_STALE';
+        throw err;
+      }
+    }
+
+    const externalEventKey = crypto
+      .createHash('sha256')
+      .update(Buffer.from(`${tenantId}:`, 'utf8'))
+      .update(rawBuffer)
+      .digest('hex');
 
     const webhookEventId = `wh_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 

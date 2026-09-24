@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import crypto from 'crypto';
 import { v1Router } from '../../server/api/v1Router';
 import { verifyCloudTasksOidcToken } from '../../server/asyncWorkerService';
 import { SecretManager } from '../../server/secrets';
@@ -179,7 +180,12 @@ describe('Pre-Staging Security Closure & Hardening', () => {
       expect(result.success).toBe(true);
 
       // Verify that journal entry recorded environment authoritatively
-      const event = await FirestorePlatformService.getWebhookEvent(eventKey);
+      const dedupeKey = crypto
+        .createHash('sha256')
+        .update(Buffer.from(`${testTenant}:`, 'utf8'))
+        .update(rawBody)
+        .digest('hex');
+      const event = await FirestorePlatformService.getWebhookEvent(dedupeKey);
       expect(event).toBeDefined();
       expect(event?.environment).toBe('staging');
       expect(event?.tenantId).toBe(testTenant);
