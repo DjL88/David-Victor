@@ -580,6 +580,14 @@ export const GenerateBillingDraftSchema = z.object({
   atTime: z.string().datetime().optional(),
 }).strict();
 
+export const CreateBillingAdjustmentSchema = z.object({
+  id: z.string().trim().min(1).max(160),
+  periodId: z.string().trim().min(1).max(160),
+  description: z.string().trim().min(1).max(500),
+  amount: BillingMoneySchema,
+  kind: z.enum(['CREDIT', 'ADJUSTMENT']),
+}).strict();
+
 export const UpdateSchedulingPolicySchema = z
   .object({
     acceptAsapOrdersOnly: z.boolean().optional(),
