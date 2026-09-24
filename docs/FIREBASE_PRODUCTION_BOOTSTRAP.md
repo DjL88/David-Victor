@@ -38,6 +38,7 @@ Populate the production App Hosting secret references declared in
 - `firebase_auth_domain`
 - `firebase_messaging_sender_id`
 - `firebase_web_app_id`
+- `firebase_appcheck_site_key`
 
 Browser Firebase configuration is injected at build time from those secret
 references plus the dedicated project/bucket values. Production also sets
@@ -75,3 +76,17 @@ firebase deploy --only firestore:rules,storage
 ```
 
 Never make `prod` the implicit/default Firebase project on developer machines.
+
+
+## Production admin / checkout security
+
+The production App Hosting configuration enables the fail-closed security flags:
+
+- `ADMIN_REQUIRE_MFA=true`
+- `ADMIN_REQUIRE_APP_CHECK=true`
+- `CHECKOUT_REQUIRE_APP_CHECK=true`
+
+Before the first production deploy, provision Identity Platform TOTP and Firebase
+App Check (reCAPTCHA Enterprise) in the dedicated production project and populate
+`firebase_appcheck_site_key`. These controls are intentionally not claimed as
+externally provisioned by this repository.
