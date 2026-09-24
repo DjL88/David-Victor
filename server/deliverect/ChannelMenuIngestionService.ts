@@ -4,6 +4,7 @@ import { BFFError } from '../errors';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
+import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -95,18 +96,11 @@ class CloudTasksChannelMenuQueue implements ChannelMenuQueueClient {
       process.env.CLOUD_TASKS_QUEUE;
     const location = process.env.CLOUD_TASKS_LOCATION || 'europe-west1';
     const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT;
-    const appUrl =
-      process.env.CHANNEL_WORKER_BASE_URL ||
-      process.env.APP_URL ||
-      process.env.BFF_URL ||
-      process.env.CLOUD_RUN_URL;
-    const serviceAccountEmail =
-      process.env.CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL ||
-      process.env.CLOUD_TASKS_SA_EMAIL ||
-      process.env.SERVICE_ACCOUNT_EMAIL;
+    const { appUrl, serviceAccountEmail, audience } =
+      getCloudTasksSecurityConfig();
     const client = this.getClient();
 
-    if (!queue || !projectId || !appUrl || !client) {
+    if (!queue || !projectId || !client) {
       throw new BFFError(
         'INTEGRATION_NOT_CONFIGURED',
         'Durable Menu Push queue is not configured. Configure CHANNEL_MENU_TASKS_QUEUE (or CLOUD_TASKS_QUEUE), project ID and the public BFF/worker URL.',
@@ -129,17 +123,10 @@ class CloudTasksChannelMenuQueue implements ChannelMenuQueueClient {
         url: `${String(appUrl).replace(/\/$/, '')}/api/v1/internal/tasks/channel-menu`,
         headers: { 'Content-Type': 'application/json' },
         body: Buffer.from(JSON.stringify(job)).toString('base64'),
-        ...(serviceAccountEmail
-          ? {
-              oidcToken: {
-                serviceAccountEmail,
-                audience:
-                  process.env.CLOUD_TASKS_AUDIENCE ||
-                  process.env.CLOUD_RUN_URL ||
-                  appUrl,
-              },
-            }
-          : {}),
+        oidcToken: {
+          serviceAccountEmail,
+          audience,
+        },
       },
     };
 
