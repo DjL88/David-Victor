@@ -43,6 +43,6 @@ describe('SEC-00 createApp behavioural harness', () => {
       .expect(200);
 
     expect(response.body.success).toBe(true);
-    expect(verifyIdToken).toHaveBeenCalledWith(token);
+    expect(verifyIdToken).toHaveBeenCalledWith(token, true);
   });
 });
