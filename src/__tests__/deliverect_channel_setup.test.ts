@@ -71,7 +71,7 @@ describe('Deliverect Channel setup', () => {
     expect(result.warnings).toContain('CHANNEL_LINK_ID_MISSING');
     expect(result.warnings).toContain('LOCATION_ID_MISSING');
   });
-  it('tracks Deliverect register, activate and disable lifecycle events', async () => {
+  it('tracks Deliverect register, activate and disable lifecycle events without losing tenant ownership', async () => {
     const tenantId = `tenant-channel-lifecycle-${Date.now()}`;
     const channelLinkId = 'channel-life-123';
 
@@ -93,6 +93,7 @@ describe('Deliverect Channel setup', () => {
       lifecycleStatus: 'INACTIVE',
       provisioningState: 'REGISTERED',
       externalLocationId: 'external-789',
+      assigned: true,
     });
 
     await ChannelProvisioningService.process(
@@ -109,6 +110,7 @@ describe('Deliverect Channel setup', () => {
     expect(stores.find((store) => store.channelLinkId === channelLinkId)).toMatchObject({
       lifecycleStatus: 'ACTIVE',
       provisioningState: 'ACTIVE',
+      assigned: true,
     });
 
     await ChannelProvisioningService.process(
@@ -125,7 +127,7 @@ describe('Deliverect Channel setup', () => {
     expect(stores.find((store) => store.channelLinkId === channelLinkId)).toMatchObject({
       lifecycleStatus: 'INACTIVE',
       provisioningState: 'INACTIVE',
-      assigned: false,
+      assigned: true,
     });
   });
 
