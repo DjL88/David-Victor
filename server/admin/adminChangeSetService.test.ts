@@ -16,6 +16,7 @@ describe('AdminChangeSetService', () => {
 
     expect(changeSet.status).toBe('APPROVAL_REQUIRED');
     expect(changeSet.autonomousExecutionEnabled).toBe(false);
+    expect(changeSet.independentApprovalRequired).toBe(true);
     expect(changeSet.actions[0].risk).toBe('HIGH_WRITE');
     expect(changeSet.reversible).toBe(true);
   });
@@ -86,6 +87,7 @@ describe('AdminChangeSetService', () => {
       actorRole: 'marketingEditor',
     });
 
+    expect(changeSet.independentApprovalRequired).toBe(false);
     expect(approved.status).toBe('APPROVED');
     expect(approved.approvedBy).toBe('marketing-1');
   });
