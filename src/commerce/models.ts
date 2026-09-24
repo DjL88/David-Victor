@@ -1029,7 +1029,7 @@ export interface AuditLogEntry {
   userName: string;
   userRole: AdminRole;
   tenantId: string;
-  category: 'Tenant' | 'Branding' | 'Stories' | 'Fees' | 'Rules' | 'Features' | 'Stores' | 'Integration' | 'Assets' | 'Compliance' | 'Payment';
+  category: 'Tenant' | 'Branding' | 'Stories' | 'Fees' | 'Rules' | 'Features' | 'Stores' | 'Integration' | 'Assets' | 'Compliance' | 'Payment' | 'Billing';
   action: string;
   details: string;
   actorType?: 'human' | 'assistant' | 'system';
