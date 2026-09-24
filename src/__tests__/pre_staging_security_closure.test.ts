@@ -69,6 +69,8 @@ describe('Pre-Staging Security Closure & Hardening', () => {
     it('rejects forged tokens that fail OIDC cryptographic verification', async () => {
       process.env.APP_MODE = 'staging';
       process.env.CLOUD_TASKS_SA_EMAIL = 'worker@project.iam.gserviceaccount.com';
+      process.env.CLOUD_TASKS_AUDIENCE = 'https://worker.example.test';
+      process.env.APP_URL = 'https://worker.example.test';
 
       const req: any = {
         headers: {
