@@ -41,7 +41,7 @@ describe('SEC-03 Deliverect webhook security', () => {
     expect(secretLookup).not.toHaveBeenCalled();
   });
 
-  it('rejects a mapped channel-link HMAC by default when the staging escape hatch is off', async () => {
+  it('accepts a mapped channel-link HMAC in staging without deployment-specific flags', async () => {
     const rawBody = Buffer.from(JSON.stringify({ status: 20 }), 'utf8');
     const temporarySecret = 'channel-link-secret';
     const signature = crypto
@@ -62,6 +62,25 @@ describe('SEC-03 Deliverect webhook security', () => {
         'brand-alpha',
         { stagingTemporarySecrets: [temporarySecret] }
       )
+    ).resolves.toMatchObject({ tenantId: 'brand-alpha', secret: temporarySecret });
+  });
+
+  it('still rejects mapped channel-link HMAC candidates in production', async () => {
+    process.env.APP_MODE = 'production';
+    process.env.DELIVERECT_ENV = 'production';
+    setServerRuntimeMode('production');
+    const rawBody = Buffer.from(JSON.stringify({ status: 20 }), 'utf8');
+    const temporarySecret = 'channel-link-secret';
+    const signature = crypto.createHmac('sha256', temporarySecret).update(rawBody).digest('hex');
+    vi.spyOn(SecretManager, 'getSecret').mockResolvedValue(null);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'brand-alpha', environment: 'production',
+    } as any);
+
+    await expect(
+      WebhookService.resolveTenantForWebhook(rawBody, signature, 'brand-alpha', {
+        stagingTemporarySecrets: [temporarySecret],
+      })
     ).rejects.toMatchObject({ code: 'WEBHOOK_SIGNATURE_INVALID' });
   });
 
