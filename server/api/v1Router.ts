@@ -33,7 +33,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
-import { PickingStatusIngressService } from '../deliverect/PickingStatusIngressService';
+import { PickingStatusIngressService, type PickingStatusIngressReceipt } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2544,46 +2544,52 @@ function extractQuestAmendmentItems(payload: any): any[] {
  * correct per-type branch (and per-item Firestore/payment update) actually
  * runs, instead of collapsing the whole batch into one generic status.
  */
-async function processQuestAmendments(
+async function queueQuestAmendments(
   payload: any,
   rawBody: Buffer | string,
+  signature: string,
   headers: Record<string, string | string[] | undefined>,
   tenantId: string
-): Promise<WebhookProcessingResult[]> {
+): Promise<PickingStatusIngressReceipt[]> {
   const items = extractQuestAmendmentItems(payload);
   const parentChannelOrderId =
     payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
   const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
+  const parentLocationId =
+    payload?.locationId || payload?.order?.locationId || payload?.data?.locationId;
+  const parentChannelLinkId =
+    payload?.channelLinkId || payload?.order?.channelLinkId || payload?.data?.channelLinkId;
   const baseEventId =
     (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
 
-  const results: WebhookProcessingResult[] = [];
+  const receipts: PickingStatusIngressReceipt[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const status = classifyQuestAmendment(item);
-    const itemPayload = {
-      ...item,
-      status,
-      eventType: status,
-      channelOrderId: item?.channelOrderId || parentChannelOrderId,
-      orderId: item?.orderId || parentOrderId,
-    };
-
-    // Every item in a batch must get its own idempotency key. WebhookService
-    // derives dedup identity from the x-deliverect-event-id header (or the
-    // shared rawBody's content hash) first — if left untouched, every item
-    // after the first in a multi-item batch would be silently deduplicated
-    // against the first item's key.
-    const itemHeaders = { ...headers };
-    if (items.length > 1) {
-      const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
-      itemHeaders['x-deliverect-event-id'] = `${baseEventId || 'evt'}_${i}_${plu}`;
-    }
-
-    results.push(await WebhookService.processWebhook(itemPayload, rawBody, itemHeaders, tenantId));
+    const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
+    // The per-item key is stable across retries even when Deliverect sends one
+    // amendment in the callback. This prevents one line replay from suppressing
+    // another line while keeping each individual amendment idempotent.
+    const itemEventId = `${baseEventId || 'amendment'}_${i}_${plu}`;
+    receipts.push(
+      await PickingStatusIngressService.acceptVerified({
+        tenantId,
+        payload: {
+          ...item,
+          status,
+          eventType: status,
+          channelOrderId: item?.channelOrderId || parentChannelOrderId,
+          orderId: item?.orderId || parentOrderId,
+          locationId: item?.locationId || parentLocationId,
+          channelLinkId: item?.channelLinkId || parentChannelLinkId,
+        },
+        rawBody,
+        signature,
+        externalEventId: itemEventId,
+      })
+    );
   }
-
-  return results;
+  return receipts;
 }
 
 async function handleQuestRetailCallback(
@@ -2634,11 +2640,34 @@ async function handleQuestRetailCallback(
       return res.status(200).type('text/plain').send('OK');
     }
 
-    const results = await processQuestAmendments(req.body, rawBody, req.headers, tenantId);
-    const last = results[results.length - 1];
+    const signatureHeader =
+      (req.headers['x-server-authorization-hmac-sha256'] as string) ||
+      (req.headers['x-deliverect-signature'] as string) ||
+      (req.headers['x-signature'] as string) ||
+      (req.headers['x-deliverect-hmac-sha256'] as string);
+
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(tenantId, req.body);
+    const verified = await WebhookService.resolveTenantForWebhook(
+      rawBody,
+      signatureHeader,
+      tenantId,
+      { stagingTemporarySecrets }
+    );
+    const receipts = await queueQuestAmendments(
+      req.body,
+      rawBody,
+      signatureHeader,
+      req.headers,
+      verified.tenantId
+    );
+
+    // Match the Picking Status callback's fast durable acknowledgement. The
+    // amendment effects are applied by the same replay-safe worker queue.
     return res.status(200).json({
-      ...last,
-      results,
+      success: true,
+      accepted: true,
+      receipts,
       callbackType: 'PICKING_AMENDMENTS',
     });
   } catch (err: any) {
