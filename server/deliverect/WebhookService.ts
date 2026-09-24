@@ -98,6 +98,37 @@ export function normalizeDeliverectOrderStatus(value: unknown): string {
 }
 
 export class WebhookService {
+  private static ingressBuckets = new Map<string, { tokens: number; updatedAt: number }>();
+
+  /**
+   * Per-tenant ingress bucket. It is intentionally applied only after HMAC
+   * verification so unauthenticated traffic cannot consume another tenant's
+   * allowance. A shared/distributed limiter can replace this implementation
+   * without changing the route contract.
+   */
+  static consumeWebhookIngressToken(tenantId: string): void {
+    const capacity = Math.max(10, Number(process.env.WEBHOOK_TENANT_BURST || 300));
+    const refillPerMinute = Math.max(10, Number(process.env.WEBHOOK_TENANT_PER_MINUTE || 300));
+    const now = Date.now();
+    const current = this.ingressBuckets.get(tenantId) || { tokens: capacity, updatedAt: now };
+    const elapsedMinutes = Math.max(0, now - current.updatedAt) / 60_000;
+    current.tokens = Math.min(capacity, current.tokens + elapsedMinutes * refillPerMinute);
+    current.updatedAt = now;
+
+    if (current.tokens < 1) {
+      const err: any = new Error('Webhook ingress queue is temporarily saturated for this tenant.');
+      err.statusCode = 429;
+      err.code = 'WEBHOOK_INGRESS_SATURATED';
+      throw err;
+    }
+
+    current.tokens -= 1;
+    this.ingressBuckets.set(tenantId, current);
+  }
+
+  static resetWebhookIngressBucketsForTest(): void {
+    this.ingressBuckets.clear();
+  }
   /**
    * Constant-time HMAC SHA-256 verification (WH-01).
    * Prevents timing attacks and rejects any tampered bytes or modified signatures.
@@ -531,6 +562,7 @@ export class WebhookService {
         : (await SecretManager.getSecret(`deliverect-webhook-${candidateTenantId}`)) || '';
 
     if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
+      this.consumeWebhookIngressToken(candidateTenantId);
       return { tenantId: candidateTenantId, secret };
     }
 
@@ -557,6 +589,7 @@ export class WebhookService {
           console.info(
             `[WebhookService] Verified explicitly-enabled staging Channel HMAC for tenant ${candidateTenantId}.`
           );
+          this.consumeWebhookIngressToken(candidateTenantId);
           return { tenantId: candidateTenantId, secret: temporarySecret };
         }
       }
