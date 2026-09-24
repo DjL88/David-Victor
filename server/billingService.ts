@@ -1,4 +1,4 @@
-import type { BillingMeterEvent, BillingRule, DraftInvoice, InvoiceLineItem, TenantBillingProfile } from '../src/commerce/billingModels';
+import type { BillingAdjustment, BillingMeterEvent, BillingRule, DraftInvoice, InvoiceLineItem, TenantBillingProfile } from '../src/commerce/billingModels';
 import type { Money } from '../src/commerce/models';
 
 function money(amount: number, currency: string): Money {
@@ -30,6 +30,7 @@ export function buildDraftInvoice(params: {
   startsAt: string;
   endsAt: string;
   events: BillingMeterEvent[];
+  adjustments?: BillingAdjustment[];
   createdAt?: string;
 }): DraftInvoice {
   const { profile, periodId, startsAt, endsAt } = params;
@@ -68,6 +69,27 @@ export function buildDraftInvoice(params: {
     }
     if (!amount) continue;
     lines.push({ id: `${periodId}:${rule.id}`, ruleId: rule.id, description: rule.label, quantity, unitAmount: rule.unitAmount, amount: money(amount, profile.currency), kind: rule.type === 'FIXED_RECURRING' ? 'RECURRING' : 'USAGE' });
+  }
+
+  const seenAdjustments = new Set<string>();
+  for (const adjustment of params.adjustments || []) {
+    if (adjustment.tenantId !== profile.tenantId || adjustment.periodId !== periodId) continue;
+    if (seenAdjustments.has(adjustment.id)) continue;
+    if (adjustment.amount.currency !== profile.currency) {
+      throw new Error('Billing adjustment currency must match the tenant billing currency.');
+    }
+    seenAdjustments.add(adjustment.id);
+    const rawAmount = Math.round(adjustment.amount.amount);
+    const signedAmount =
+      adjustment.kind === 'CREDIT' ? -Math.abs(rawAmount) : rawAmount;
+    if (!signedAmount) continue;
+    lines.push({
+      id: `${periodId}:adjustment:${adjustment.id}`,
+      description: adjustment.description,
+      quantity: 1,
+      amount: money(signedAmount, profile.currency),
+      kind: adjustment.kind,
+    });
   }
 
   const subtotalAmount = lines.reduce((sum, line) => sum + line.amount.amount, 0);
