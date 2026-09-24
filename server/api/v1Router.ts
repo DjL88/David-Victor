@@ -2403,9 +2403,49 @@ async function resolveDeliverectWebhookTenant(
   return tenantId;
 }
 
+function isExplicitQuestPickingStatusUpdate(payload: any): boolean {
+  const eventType = String(
+    payload?.eventType ??
+      payload?.event ??
+      payload?.type ??
+      payload?.data?.eventType ??
+      ''
+  )
+    .trim()
+    .toUpperCase();
+
+  if (eventType === 'PICKING_STATUS_UPDATE') return true;
+
+  const status = String(
+    payload?.pickingStatus ??
+      payload?.eventData?.status ??
+      payload?.data?.pickingStatus ??
+      payload?.status ??
+      ''
+  )
+    .trim()
+    .toUpperCase();
+
+  // These values are picking-specific. Generic numeric/order lifecycle statuses
+  // must remain generic and must not be coerced merely because they arrived on
+  // the configured Retail status URL.
+  return [
+    'PICKING_STARTED',
+    'PICKING',
+    'PICKING_COMPLETE',
+    'PICKED',
+  ].includes(status);
+}
+
 function normalizeQuestPickingStatusPayload(payload: any): any {
+  const eventData =
+    payload?.eventData && typeof payload.eventData === 'object'
+      ? payload.eventData
+      : {};
   const rawStatus =
     payload?.pickingStatus ??
+    eventData?.status ??
+    payload?.data?.pickingStatus ??
     payload?.status ??
     payload?.event ??
     payload?.eventType ??
@@ -2427,34 +2467,26 @@ function normalizeQuestPickingStatusPayload(payload: any): any {
     )
   ) {
     status = 'PICKING_COMPLETE';
-  } else if (['ACCEPTED', 'ORDER_ACCEPTED'].includes(value) || value === '20') {
-    status = 'ORDER_ACCEPTED';
-  } else if (value === '30' || value === 'DUPLICATE') {
-    status = 'DUPLICATE';
-  } else if (value === '80' || value === 'IN_DELIVERY') {
-    status = 'OUT_FOR_DELIVERY';
-  } else if (['CANCELLED', 'CANCELED', 'ORDER_CANCELLED'].includes(value) || value === '110') {
-    status = 'ORDER_CANCELLED';
-  } else if (['READY', 'PICKUP_READY'].includes(value) || value === '70') {
-    status = 'READY';
-  } else if (['FAILED', 'ORDER_FAILED'].includes(value) || ['120', '121', '124'].includes(value)) {
-    status = 'ORDER_FAILED';
-  } else if (!status) {
-    // This endpoint itself proves the event belongs to the picking lifecycle.
-    // Preserve the raw payload while advancing only to PICKING.
-    status = 'PICKING';
   }
 
   return {
     ...payload,
+    ...eventData,
     status,
     pickingStatus: status,
     rawPickingStatus: rawStatus,
     channelOrderId:
+      eventData?.channelOrderId ||
       payload?.channelOrderId ||
       payload?.order?.channelOrderId ||
       payload?.data?.channelOrderId,
+    channelLinkId:
+      eventData?.channelLinkId ||
+      eventData?.channelLink ||
+      payload?.channelLinkId ||
+      payload?.channelLink,
     orderId:
+      eventData?.orderId ||
       payload?.orderId ||
       payload?.order?.id ||
       payload?.data?.orderId,
