@@ -214,7 +214,7 @@ export interface CommerceStoresDiscoveryResult {
   success: boolean;
   stores: CommerceStore[];
   count: number;
-  status: 'COMMERCE_VERIFIED' | 'ACCOUNT_MAPPED';
+  status: 'COMMERCE_VERIFIED' | 'ACCOUNT_MAPPED' | 'STALE_LAST_KNOWN_GOOD';
   persistenceStatus: 'SUCCESS' | 'FAILED' | 'SKIPPED';
   persistenceError?: string;
   persistenceCode?: string;
@@ -1041,6 +1041,36 @@ export class LinkedAccountsAdapter {
     console.info(`[Commerce Stores] COMMERCE_STORES_RAW_ITEMS_COUNT: ${rawStoresList.length}`);
     console.info(`[Commerce Stores] COMMERCE_STORES_COUNT: ${stores.length}`);
     console.info(`[Commerce Stores] COMMERCE_STORES_DISCOVERED: ${storesDiscovered}`);
+
+    // A successful HTTP response with zero Commerce stores is not sufficient evidence
+    // that a previously provisioned tenant has been disconnected. Deliverect can
+    // transiently return an empty collection during deployment/restart or eventual
+    // consistency windows. Preserve the last-known-good projection and skip all
+    // destructive reconciliation. Explicit admin disconnect/reassignment remains the
+    // authority for removal; a later non-empty authoritative response may reconcile
+    // individual missing channel links.
+    if (!storesDiscovered) {
+      const lastKnown = inMemoryMappings.get(tenantId) || await this.loadFromFirestore(tenantId);
+      if (lastKnown) {
+        inMemoryMappings.set(tenantId, lastKnown);
+      }
+      const lastKnownStores = (lastKnown?.stores || []).filter((store) => {
+        const existingAccount = String(store.accountLinkId || '');
+        return existingAccount === accountId || existingAccount === `acclink_${accountId}`;
+      });
+      console.warn(`[Commerce Stores] EMPTY_VALID_RESPONSE: preserving ${lastKnownStores.length} last-known-good store(s) for tenant ${tenantId}, account ${accountId}.`);
+      return {
+        success: true,
+        stores: lastKnownStores,
+        count: lastKnownStores.length,
+        status: 'STALE_LAST_KNOWN_GOOD',
+        persistenceStatus: 'SKIPPED',
+        orphanedChannelLinkIds: [],
+        message: lastKnownStores.length
+          ? 'Deliverect returned an empty Commerce store response. The previous working store/location/catalogue mapping was preserved as last-known-good.'
+          : 'Deliverect returned an empty Commerce store response. No destructive reconciliation was performed.',
+      };
+    }
 
     // Update in-memory mappings so that getTenantMappings reflects the discovered stores and locations
     const existing = inMemoryMappings.get(tenantId) || {
