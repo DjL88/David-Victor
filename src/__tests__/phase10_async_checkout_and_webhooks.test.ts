@@ -133,6 +133,46 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       expect(normalizeDeliverectOrderStatus('124')).toBe('ORDER_FAILED');
     });
   });
+  it('acknowledges an undocumented numeric order status without corrupting lifecycle state', async () => {
+    const orderId = `order_unknown_numeric_${Date.now()}`;
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: orderId,
+        orderId,
+        orderReference: `REF-UNKNOWN-${Date.now()}`,
+        status: 'ACCEPTED',
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any,
+      testTenant
+    );
+
+    const payload = {
+      orderId,
+      channelOrderId: 'LT2639000C',
+      status: 25,
+      reason: 'Waiting for order to be released by LEITCHTECH',
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+    const result = await WebhookService.processWebhook(
+      payload,
+      rawBody,
+      { 'x-deliverect-signature': signature },
+      testTenant
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('IGNORED');
+    expect(result.newState).toBe('ACCEPTED');
+    expect(result.message).toContain('numeric order status 25');
+
+    const persisted = await FirestorePlatformService.getOrderProjection(orderId);
+    expect(persisted?.status).toBe('ACCEPTED');
+  });
+
   // ========================================================
   // CHECK-03: Webhook Recovery via Get Checkout
   // ========================================================
