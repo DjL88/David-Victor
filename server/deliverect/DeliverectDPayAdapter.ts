@@ -340,6 +340,24 @@ export class DeliverectDPayAdapter implements DPayAdapter {
   }
 
   /**
+   * Provider-side release of an uncaptured authorization.
+   *
+   * The current verified Deliverect contract in this repository does not expose
+   * a partner-safe void/release URL. Fail closed rather than pretending the
+   * authorization was released locally.
+   */
+  async voidAuthorization(
+    _paymentId: string,
+    _reason?: string
+  ): Promise<DPayPaymentResponse> {
+    throw new CommerceError(
+      ErrorCode.INTEGRATION_CAPABILITY_NOT_IMPLEMENTED,
+      'DPay authorization release/void is not configured for this partner contract. Local payment state was not changed.',
+      501
+    );
+  }
+
+  /**
    * Public Deliverect Pay contract:
    * POST /pay/channel/{channelLinkId}/payments/{paymentId}/refund
    */

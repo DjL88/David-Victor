@@ -187,6 +187,25 @@ export class DemoPaymentAdapter implements DPayAdapter {
     return updated;
   }
 
+  async voidAuthorization(paymentId: string, _reason?: string): Promise<DPayPaymentResponse> {
+    const payment = await this.getPayment(paymentId);
+    if (payment.status === 'captured' || payment.capturedAmount > 0) {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        'Captured payments must be refunded rather than voided.',
+        409
+      );
+    }
+    const updated: DPayPaymentResponse = {
+      ...payment,
+      status: 'canceled',
+      residualHoldAmount: 0,
+      updatedAt: new Date().toISOString(),
+    };
+    this.payments.set(paymentId, updated);
+    return updated;
+  }
+
   async refund(paymentId: string, refundAmountMinor: number, _reason?: string): Promise<DPayPaymentResponse> {
     const payment = await this.getPayment(paymentId);
     if (refundAmountMinor > payment.capturedAmount) {
