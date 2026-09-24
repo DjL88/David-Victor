@@ -29,6 +29,15 @@ env:
   # as plaintext runtime configuration. server/firebase.ts resolves the
   # PLATFORM_SUPERADMIN_EMAILS Secret Manager secret only for the break-glass
   # bootstrap path; normal admin authorization remains membership/claims based.
+  #
+  # MFA/App Check rollout remains intentionally explicit. After Firebase
+  # Identity Platform TOTP and reCAPTCHA Enterprise App Check are provisioned,
+  # enable these runtime flags rather than changing application code:
+  #   ADMIN_REQUIRE_MFA=true
+  #   ADMIN_REQUIRE_APP_CHECK=true
+  #   CHECKOUT_REQUIRE_APP_CHECK=true
+  # and provide VITE_FIREBASE_APPCHECK_SITE_KEY at BUILD time. The site key is
+  # public web configuration; private reCAPTCHA credentials do not belong here.
 
   # Cloud Tasks worker identity and exact OIDC audience are injected from
   # Secret Manager. The audience is also the canonical worker target origin.
