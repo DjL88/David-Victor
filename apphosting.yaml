@@ -2,7 +2,7 @@
 # Section 5 & Published Runtime Requirements:
 # APP_MODE=staging
 # DELIVERECT_ENV=staging
-# PLATFORM_SUPERADMIN_EMAILS=DLeitch22@gmail.com
+# PLATFORM_SUPERADMIN_EMAILS is resolved server-side from Secret Manager.
 
 env:
   - variable: APP_MODE
@@ -25,10 +25,10 @@ env:
       - RUNTIME
       - BUILD
 
-  - variable: PLATFORM_SUPERADMIN_EMAILS
-    value: DLeitch22@gmail.com
-    availability:
-      - RUNTIME
+  # SEC-02a/02b: the bootstrap SuperAdmin allowlist is deliberately not present
+  # as plaintext runtime configuration. server/firebase.ts resolves the
+  # PLATFORM_SUPERADMIN_EMAILS Secret Manager secret only for the break-glass
+  # bootstrap path; normal admin authorization remains membership/claims based.
 
   # Cloud Tasks worker identity and exact OIDC audience are injected from
   # Secret Manager. The audience is also the canonical worker target origin.
