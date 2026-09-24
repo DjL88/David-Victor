@@ -1,14 +1,13 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function isPlatformSuperAdmin() {
-      return request.auth != null && request.auth.token.platformSuperAdmin == true;
-    }
-    
-    // --- RETAIL COMMERCE PLATFORM & TENANT ASSETS ---
-    // Storefront assets are publicly readable, but browser writes are forbidden.
-    // Admin uploads use the authenticated BFF / short-lived signed GCS URLs, so
-    // Firebase Storage rules do not need to grant customers or admins direct write access.
+    // SEC-03: This shared Hi-Domino bucket is test-only for David-Victor.
+    // David-Victor browser writes are forbidden. Admin asset publication uses
+    // the authenticated BFF / short-lived signed GCS URLs and is constrained
+    // server-side to tenant-assets-public/. Production must move to the
+    // dedicated David-Victor bucket before launch (SEC-11).
+
+    // --- DAVID-VICTOR TENANT ASSETS ---
     match /tenant-assets-public/{allPaths=**} {
       allow read: if true;
       allow write: if false;
@@ -44,18 +43,21 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // --- AVES RADAR: ENGINE CORE ---
-    // Public read access for the species database to ensure high-speed initialization
+    // --- LEGACY SHARED-BUCKET APPLICATION DATA ---
+    // These paths belong to other applications sharing the temporary bucket.
+    // David-Victor must never grant writes to them. Existing public/authenticated
+    // reads are preserved until SEC-11 isolates David-Victor into its own bucket.
     match /ONNX/model.onnx {
       allow read: if true;
+      allow write: if false;
     }
     match /images/{imageName} {
       allow read: if true;
-      allow write: if isPlatformSuperAdmin();
+      allow write: if false;
     }
     match /brands/{imageName} {
       allow read: if true;
-      allow write: if isPlatformSuperAdmin();
+      allow write: if false;
     }
     match /photos_pawtraits/{imageName} {
       allow read: if true;
@@ -66,19 +68,16 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // --- ROOT-LEVEL PUBLIC ASSETS (Videos & files at bucket root without folders) ---
+    // Root-level legacy assets remain readable for compatibility, never writable.
     match /{fileName} {
       allow read: if !fileName.matches('.*/.*');
-      allow write: if !fileName.matches('.*/.*') && isPlatformSuperAdmin();
+      allow write: if false;
     }
 
-    // --- AVES RADAR: USER ASSETS ---
-    // Public read for sightings, restricted write to the owner
     match /users/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
-    
     match /photos/{photoName} {
       allow read: if true;
       allow write: if false;
@@ -89,50 +88,41 @@ service firebase.storage {
     }
     match /site/{photoName} {
       allow read: if true;
-      allow write: if isPlatformSuperAdmin();
+      allow write: if false;
     }
     match /logos/{photoName} {
       allow read: if true;
-      allow write: if isPlatformSuperAdmin();
+      allow write: if false;
     }
     match /videos/{photoName} {
       allow read: if true;
-      allow write: if isPlatformSuperAdmin();
+      allow write: if false;
     }
-
-    // --- CLASSIFICATION & ASSETS ---
     match /labels.csv {
       allow read: if true;
+      allow write: if false;
     }
     match /ONNX/{allPaths=**} {
       allow read: if true;
+      allow write: if false;
     }
-    
-    // --- HI-DOMINO: SCAN DATA ---
     match /scans/{userId}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      allow write: if false;
     }
-
-    // --- HI-DOMINO: PROFILE ASSETS ---
     match /avatars/{userId}/avatar.jpg {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId
-                   && request.resource.contentType.matches('image/.*');
+      allow write: if false;
     }
-
-    // --- HI-DOMINO: GAME STATE ---
     match /games/{gameId}/{allPaths=**} {
       allow read: if request.auth != null;
       allow write: if false;
     }
-
-    // --- HI-DOMINO: SCOREBOARDS ---
     match /scores/{gameId}/{allPaths=**} {
       allow read: if request.auth != null;
       allow write: if false;
     }
-    
+
     // --- GLOBAL SAFETY NET ---
     match /{allPaths=**} {
       allow read, write: if false;
