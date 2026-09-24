@@ -5944,6 +5944,18 @@ v1Router.post(
     const tenantId = req.params.id;
     const { credentialMode, clientId, clientSecret, webhookSecret, environment, deliverectAccountId, channelLinkId } = req.body;
 
+    // Account/channel assignment is a platform control-plane decision. Tenant
+    // administrators may maintain credentials, but cannot repoint their brand
+    // at another Deliverect account or channel link.
+    const isPlatformSuperAdmin =
+      authAdmin.role === 'platformSuperAdmin' || authAdmin.isSuperAdmin === true;
+    if (!isPlatformSuperAdmin && (deliverectAccountId !== undefined || channelLinkId !== undefined)) {
+      return res.status(403).json({
+        error: 'Only a Platform Super Admin can change Deliverect account or channel assignment.',
+        code: 'DELIVERECT_ASSIGNMENT_FORBIDDEN',
+      });
+    }
+
     // Secrets are written only to server-side Secret Manager. Firestore receives
     // mode/status metadata, never credential values.
     if (credentialMode === 'dedicated') {
