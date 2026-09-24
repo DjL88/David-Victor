@@ -33,7 +33,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
-import { PickingStatusIngressService } from '../deliverect/PickingStatusIngressService';
+import { PickingStatusIngressService, type PickingStatusIngressReceipt } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
@@ -2544,54 +2544,6 @@ function extractQuestAmendmentItems(payload: any): any[] {
  * correct per-type branch (and per-item Firestore/payment update) actually
  * runs, instead of collapsing the whole batch into one generic status.
  */
-async function processQuestAmendments(
-  payload: any,
-  rawBody: Buffer | string,
-  headers: Record<string, string | string[] | undefined>,
-  tenantId: string
-): Promise<WebhookProcessingResult[]> {
-  const items = extractQuestAmendmentItems(payload);
-  const parentChannelOrderId =
-    payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
-  const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
-  const parentLocationId =
-    payload?.locationId || payload?.order?.locationId || payload?.data?.locationId;
-  const parentChannelLinkId =
-    payload?.channelLinkId || payload?.order?.channelLinkId || payload?.data?.channelLinkId;
-  const baseEventId =
-    (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
-
-  const results: WebhookProcessingResult[] = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const status = classifyQuestAmendment(item);
-    const itemPayload = {
-      ...item,
-      status,
-      eventType: status,
-      channelOrderId: item?.channelOrderId || parentChannelOrderId,
-      orderId: item?.orderId || parentOrderId,
-      locationId: item?.locationId || parentLocationId,
-      channelLinkId: item?.channelLinkId || parentChannelLinkId,
-    };
-
-    // Every item in a batch must get its own idempotency key. WebhookService
-    // derives dedup identity from the x-deliverect-event-id header (or the
-    // shared rawBody's content hash) first — if left untouched, every item
-    // after the first in a multi-item batch would be silently deduplicated
-    // against the first item's key.
-    const itemHeaders = { ...headers };
-    if (items.length > 1) {
-      const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
-      itemHeaders['x-deliverect-event-id'] = `${baseEventId || 'evt'}_${i}_${plu}`;
-    }
-
-    results.push(await WebhookService.processWebhook(itemPayload, rawBody, itemHeaders, tenantId));
-  }
-
-  return results;
-}
-
 async function queueQuestAmendments(
   payload: any,
   rawBody: Buffer | string,
