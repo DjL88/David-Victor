@@ -543,6 +543,43 @@ export const UpdateFeePolicySchema = z
   })
   .passthrough();
 
+const BillingMoneySchema = z.object({
+  amount: z.number().int(),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/),
+}).strict();
+
+const BillingRuleSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  type: z.enum(['FIXED_RECURRING', 'PER_LOCATION', 'PER_ACCOUNT', 'PER_SUCCESSFUL_ORDER', 'REVENUE_SHARE']),
+  label: z.string().trim().min(1).max(240),
+  active: z.boolean(),
+  unitAmount: BillingMoneySchema.optional(),
+  basisPoints: z.number().int().min(0).max(10_000).optional(),
+  revenueBasis: z.enum(['SETTLED_MERCHANDISE_EX_VAT', 'SETTLED_ORDER_TOTAL']).optional(),
+  effectiveFrom: z.string().datetime(),
+  effectiveUntil: z.string().datetime().optional(),
+}).strict();
+
+export const SaveBillingProfileSchema = z.object({
+  identity: z.object({
+    legalName: z.string().trim().min(1).max(240),
+    legalAddress: z.string().max(2000).optional(),
+    vatRegistrationNumber: z.string().max(120).optional(),
+    billingEmail: z.string().email().optional(),
+  }).strict(),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/),
+  cadence: z.enum(['WEEKLY', 'FOUR_WEEKLY', 'MONTHLY']),
+  anchorDate: z.string().datetime(),
+  rules: z.array(BillingRuleSchema).max(100),
+  status: z.enum(['DRAFT', 'ACTIVE', 'SUSPENDED']),
+  contractVersion: z.number().int().min(1),
+  agreedAt: z.string().datetime().optional(),
+}).strict();
+
+export const GenerateBillingDraftSchema = z.object({
+  atTime: z.string().datetime().optional(),
+}).strict();
+
 export const UpdateSchedulingPolicySchema = z
   .object({
     acceptAsapOrdersOnly: z.boolean().optional(),
