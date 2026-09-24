@@ -35,7 +35,7 @@ describe('commercial billing metering', () => {
       event({ idempotencyKey: 'order-2', sourceId: 'order-2' }),
       event({ idempotencyKey: 'loc-1', type: 'LOCATION_ACTIVE', sourceType: 'LOCATION', sourceId: 'store-a' }),
       event({ idempotencyKey: 'loc-1-again', type: 'LOCATION_ACTIVE', sourceType: 'LOCATION', sourceId: 'store-a' }),
-      event({ idempotencyKey: 'revenue-1', type: 'REVENUE_SETTLED', amount: { amount: 10000, currency: 'GBP' } }),
+      event({ idempotencyKey: 'revenue-1', type: 'REVENUE_SETTLED', amount: { amount: 10000, currency: 'GBP' }, metadata: { revenueBasis: 'SETTLED_ORDER_TOTAL' } }),
     ];
     const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events, createdAt: '2026-10-01T00:00:00.000Z' });
     expect(invoice.lines.find((l) => l.ruleId === 'platform')?.amount.amount).toBe(10000);
@@ -50,5 +50,22 @@ describe('commercial billing metering', () => {
   it('ignores events from another tenant or outside the billing period', () => {
     const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [event({ tenantId: 'brand-beta' }), event({ idempotencyKey: 'old', occurredAt: '2026-08-31T23:59:59.000Z' })] });
     expect(invoice.lines.some((l) => l.ruleId === 'order')).toBe(false);
+  });
+
+  it('does not apply a new commercial rate to usage before its effective date', () => {
+    const changedProfile: TenantBillingProfile = {
+      ...profile,
+      rules: [{ id: 'new-rate', type: 'PER_SUCCESSFUL_ORDER', label: 'New order rate', active: true, unitAmount: { amount: 50, currency: 'GBP' }, effectiveFrom: '2026-09-15T00:00:00.000Z' }],
+    };
+    const invoice = buildDraftInvoice({ changedProfile, profile: changedProfile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [event({ idempotencyKey: 'before', occurredAt: '2026-09-10T12:00:00.000Z' }), event({ idempotencyKey: 'after', sourceId: 'order-2', occurredAt: '2026-09-20T12:00:00.000Z' })] } as any);
+    expect(invoice.lines.find((l) => l.ruleId === 'new-rate')?.amount.amount).toBe(50);
+  });
+
+  it('only applies revenue share to the contractually selected revenue basis', () => {
+    const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [
+      event({ idempotencyKey: 'total', type: 'REVENUE_SETTLED', amount: { amount: 10000, currency: 'GBP' }, metadata: { revenueBasis: 'SETTLED_ORDER_TOTAL' } }),
+      event({ idempotencyKey: 'ex-vat', type: 'REVENUE_SETTLED', amount: { amount: 8000, currency: 'GBP' }, metadata: { revenueBasis: 'SETTLED_MERCHANDISE_EX_VAT' } }),
+    ] });
+    expect(invoice.lines.find((l) => l.ruleId === 'share')?.amount.amount).toBe(250);
   });
 });
