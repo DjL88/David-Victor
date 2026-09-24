@@ -148,10 +148,10 @@ describe('SEC-01 media and private asset boundaries', () => {
     expect(privateResponse.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
   });
 
-  it('rejects SVG event-handler bypasses such as onbegin through the real admin upload route', async () => {
+  it('strips SVG event-handler bypasses such as onbegin through the real admin upload route', async () => {
     const { token } = installMockFirebaseAdminToken();
     const app = await createApp({ serveFrontend: false, initializeDependencies: false });
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><animate onbegin="alert(1)" /></svg>';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><animate onbegin="alert(1)" attributeName="x" /></svg>';
 
     const response = await request(app)
       .post('/api/v1/admin/assets/upload')
@@ -165,8 +165,13 @@ describe('SEC-01 media and private asset boundaries', () => {
         contentType: 'image/svg+xml',
         byteSize: Buffer.byteLength(svg),
       })
-      .expect(400);
+      .expect(200);
 
-    expect(response.body.code).toBe('VALIDATION_ERROR');
+    const publicUrl = String(response.body.asset?.publicUrl || '');
+    expect(publicUrl).toMatch(/^data:image\/svg\+xml;base64,/);
+    const sanitized = Buffer.from(publicUrl.split(',')[1], 'base64').toString('utf8');
+    expect(sanitized).toContain('<svg');
+    expect(sanitized.toLowerCase()).not.toContain('onbegin');
+    expect(sanitized.toLowerCase()).not.toContain('alert(1)');
   });
 });
