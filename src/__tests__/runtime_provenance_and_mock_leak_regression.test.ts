@@ -141,7 +141,11 @@ describe('Runtime Provenance & Mock Leak Regression Tests', () => {
     it('GET /api/v1/bootstrap returns 404 for unknown tenant in staging mode', async () => {
       setServerRuntimeMode('staging');
       const res = await fetch(`${baseUrl}/bootstrap`, {
-        headers: { 'x-tenant-id': 'unconfigured-tenant-abc' },
+        headers: {
+          host: 'unknown-tenant.example.test',
+          'x-tenant-id': 'unconfigured-tenant-abc',
+          'x-test-simulate-public': 'true',
+        },
       });
       expect(res.status).toBe(404);
       const data = await res.json();
