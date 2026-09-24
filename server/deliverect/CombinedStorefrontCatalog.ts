@@ -92,8 +92,13 @@ export function materializeStorefrontProducts(
 
     // Operational snooze truth is deliberately applied last. It is independent
     // of menu ingestion and may arrive before or after a menu push.
-    const plu = String(product.plu || '').trim();
-    const op = plu ? operational?.products?.[plu] : undefined;
+    // Canonical GTIN identity may retain the master's PLU while a store-specific
+    // menu uses a local PLU. Resolve operational state against the local override
+    // first, then canonical PLU, so snooze events match the selected store.
+    const localPlu = String(override?.plu || '').trim();
+    const canonicalPlu = String(product.plu || '').trim();
+    const op = (localPlu ? operational?.products?.[localPlu] : undefined)
+      || (canonicalPlu ? operational?.products?.[canonicalPlu] : undefined);
     result[identity] = op
       ? {
           ...product,
