@@ -64,6 +64,7 @@ export interface AssistantChangeSet {
   rollbackRevisionIds?: string[];
   reversible: boolean;
   applyAvailable: boolean;
+  independentApprovalRequired: boolean;
   autonomousExecutionEnabled: false;
 }
 
@@ -298,6 +299,9 @@ export class AdminChangeSetService {
         actions.length === 1 &&
         actions[0].actionName === 'branding.proposeUpdate' &&
         (args.revisionIds?.length || 0) === 1,
+      independentApprovalRequired: actions.some(
+        (action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED'
+      ),
       autonomousExecutionEnabled: false,
     };
 
