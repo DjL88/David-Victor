@@ -14,7 +14,7 @@ import {
 import { MediaHealth, MediaHealthSummary } from './mediaHealthModels';
 import { DEFAULT_SCHEDULING_POLICY } from './slotEngine';
 import { DEFAULT_SUBSTITUTION_POLICY } from './substitutionPricing';
-import { auth } from '../firebase';
+import { auth, getCurrentAppCheckToken } from '../firebase';
 import { getRuntimeMode, isDemoMode } from '../domain/runtime';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../rules/types';
 
@@ -99,6 +99,11 @@ export class HttpAdminClient implements AdminClient {
 
     if (authHeader) {
       headers['Authorization'] = authHeader;
+    }
+
+    const appCheckToken = await getCurrentAppCheckToken().catch(() => null);
+    if (appCheckToken) {
+      headers['X-Firebase-AppCheck'] = appCheckToken;
     }
 
     return headers;
