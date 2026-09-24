@@ -81,26 +81,31 @@ export function channelProductIdentity(item: Pick<ChannelCatalogItem, 'gtin' | '
 
 function overrideFrom(
   push: LocationCatalogPush,
-  item: ChannelCatalogItem
+  item: ChannelCatalogItem,
+  masterItem?: ChannelCatalogItem
 ): LocationInventoryOverride {
   const plu = cleanPlu(item.plu);
   const gtin = normalizeGtin(item.gtin);
   const identityKey = channelProductIdentity({ plu, gtin });
   if (!identityKey) throw new Error('Inventory override requires GTIN or PLU.');
-  return {
+  const override: LocationInventoryOverride = {
     locationId: push.locationId,
     channelLinkId: push.channelLinkId,
     catalogId: push.catalogId,
     plu,
     ...(gtin ? { gtin } : {}),
     identityKey,
-    ...(item.name !== undefined ? { name: item.name } : {}),
-    ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
-    ...(item.price !== undefined ? { price: item.price } : {}),
-    ...(item.status !== undefined ? { status: item.status } : {}),
-    ...(item.stock !== undefined ? { stock: item.stock } : {}),
-    ...(item.snoozed !== undefined ? { snoozed: item.snoozed } : {}),
   };
+
+  // Location records are sparse deltas over canonical product truth. Do not
+  // duplicate master product fields across every location.
+  const mutableFields = ['name', 'imageUrl', 'price', 'status', 'stock', 'snoozed'] as const;
+  for (const field of mutableFields) {
+    if (item[field] !== undefined && (!masterItem || item[field] !== masterItem[field])) {
+      (override as any)[field] = item[field];
+    }
+  }
+  return override;
 }
 
 /**
@@ -131,7 +136,8 @@ export function projectChannelCatalogs(
     const identityKey = channelProductIdentity({ plu, gtin });
     if (!identityKey) continue;
     products[identityKey] = { ...item, plu, ...(gtin ? { gtin } : {}) };
-    inventoryOverrides.push(overrideFrom(master, { ...item, plu, ...(gtin ? { gtin } : {}) }));
+    // The master product is canonical truth; it does not need a duplicate
+    // location override unless operational state is persisted separately.
   }
 
   for (const push of pushes) {
@@ -155,7 +161,15 @@ export function projectChannelCatalogs(
       if (!products[identityKey]) {
         products[identityKey] = { ...item, plu, ...(gtin ? { gtin } : {}) };
       }
-      inventoryOverrides.push(overrideFrom(push, { ...item, plu, ...(gtin ? { gtin } : {}) }));
+      const canonical = products[identityKey];
+      const override = overrideFrom(
+        push,
+        { ...item, plu, ...(gtin ? { gtin } : {}) },
+        canonical
+      );
+      const hasDelta = ['name', 'imageUrl', 'price', 'status', 'stock', 'snoozed']
+        .some((field) => (override as any)[field] !== undefined);
+      if (hasDelta) inventoryOverrides.push(override);
     }
   }
 
