@@ -89,7 +89,7 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       title: 'Authenticated But Not Authorized',
       message: `User ${email} signed in via Firebase, but has not been assigned platformSuperAdmin or tenant administrator permissions.`,
       actionHint:
-        'If this is initial deployment, add this email to PLATFORM_SUPERADMIN_EMAILS in your Cloud Run environment, or ask an existing administrator to add your account under Admin → Team & RBAC.',
+        'If this is initial deployment, configure the PLATFORM_SUPERADMIN_EMAILS bootstrap secret in Secret Manager, or ask an existing administrator to add your account under Admin → Team & RBAC.',
     };
   }
 
@@ -642,7 +642,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
             </div>
             <p className="text-gray-600 leading-relaxed">
               In Staging and Production, administrator identities must be verified with Firebase Authentication and authorized in Firestore RBAC or the initial{' '}
-              <code className="px-1 py-0.2 bg-gray-200/80 rounded font-mono text-[10px] text-gray-800">PLATFORM_SUPERADMIN_EMAILS</code> allowlist.
+              <code className="px-1 py-0.2 bg-gray-200/80 rounded font-mono text-[10px] text-gray-800">PLATFORM_SUPERADMIN_EMAILS</code> Secret Manager bootstrap allowlist.
             </p>
           </div>
 
