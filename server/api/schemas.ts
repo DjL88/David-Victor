@@ -478,6 +478,10 @@ export const CreateTenantSchema = z.object({
   currencySymbol: optionalTrimmedText,
   locale: optionalTrimmedText,
   orderCodePrefix: optionalOrderCodePrefix,
+  paymentPolicy: z.object({
+    allowUnpaidOrders: z.boolean().optional(),
+    hostedRedirectAllowedOrigins: z.array(z.string().url()).max(25).optional(),
+  }).strict().optional(),
   supportDetails: z.record(z.string(), z.any()).optional(),
   featureFlags: z.record(z.string(), z.any()).optional(),
 });
@@ -512,6 +516,10 @@ export const UpdateTenantConfigSchema = z.object({
   legalAddress: optionalTrimmedText,
   vatRegistrationNumber: optionalTrimmedText,
   orderCodePrefix: optionalOrderCodePrefix,
+  paymentPolicy: z.object({
+    allowUnpaidOrders: z.boolean().optional(),
+    hostedRedirectAllowedOrigins: z.array(z.string().url()).max(25).optional(),
+  }).strict().optional(),
   enabledLocales: z.array(z.string().trim().min(2).max(35)).max(50).optional(),
   copyOverrides: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   supportDetails: z.record(z.string(), z.any()).optional(),
