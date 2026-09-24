@@ -17,6 +17,19 @@ export interface PaymentToken {
   reference?: string;
 }
 
+export interface PaymentTokenRequest {
+  gatewayProfileId?: string;
+  channelLinkId?: string;
+  customerId?: string;
+  payment_method?: Record<string, unknown>;
+  // Demo-only presentation fields. Live HttpPaymentClient does not synthesize
+  // payment credentials from these values.
+  type?: string;
+  cardholderName?: string;
+  last4?: string;
+  brand?: string;
+}
+
 export interface DPayMode {
   type: 'token' | 'card' | 'hosted';
   tokenId?: string;
@@ -74,14 +87,7 @@ export interface PaymentGatewayProfile {
  * and capture through Deliverect Pay or configured PSP adapter.
  */
 export interface PaymentClient {
-  createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken>;
+  createToken(cardDetails?: PaymentTokenRequest): Promise<PaymentToken>;
 
   getPaymentGateways(channelLinkId: string): Promise<PaymentGatewayProfile[]>;
 
@@ -102,15 +108,8 @@ export interface PaymentClient {
 export class DemoPaymentClient implements PaymentClient {
   private payments = new Map<string, DPayPaymentResponse>();
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
-    const last4 = cardDetails?.last4 || '4242';
+  async createToken(cardDetails?: PaymentTokenRequest): Promise<PaymentToken> {
+    const last4 = cardDetails?.last4;
     const tokenId = `dpay_tok_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     return {
       token: tokenId,
@@ -198,18 +197,11 @@ export class HttpPaymentClient implements PaymentClient {
     this.baseUrl = baseUrl;
   }
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
+  async createToken(cardDetails?: PaymentTokenRequest): Promise<PaymentToken> {
     const res = await fetch(`${this.baseUrl}/payments/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardDetails }),
+      body: JSON.stringify(cardDetails || {}),
     });
 
     if (!res.ok) {
@@ -306,14 +298,7 @@ export class DynamicPaymentClient implements PaymentClient {
     return new HttpPaymentClient();
   }
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
+  async createToken(cardDetails?: PaymentTokenRequest): Promise<PaymentToken> {
     return this.resolveClient().createToken(cardDetails);
   }
 
