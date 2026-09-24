@@ -13,6 +13,7 @@ describe('SEC-03 Deliverect webhook security', () => {
     process.env.APP_MODE = 'staging';
     process.env.DELIVERECT_ENV = 'staging';
     delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
+    WebhookService.resetWebhookIngressBucketsForTest();
     setServerRuntimeMode('staging');
   });
 
@@ -20,6 +21,7 @@ describe('SEC-03 Deliverect webhook security', () => {
     delete process.env.APP_MODE;
     delete process.env.DELIVERECT_ENV;
     delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
+    WebhookService.resetWebhookIngressBucketsForTest();
     setServerRuntimeMode(null);
     vi.restoreAllMocks();
   });
