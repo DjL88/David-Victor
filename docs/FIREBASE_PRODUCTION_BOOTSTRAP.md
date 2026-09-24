@@ -34,9 +34,15 @@ Populate the production App Hosting secret references declared in
 - `cloud_tasks_audience`
 - `channel_menu_tasks_queue`
 - `channel_realtime_tasks_queue`
+- `firebase_web_api_key`
+- `firebase_auth_domain`
+- `firebase_messaging_sender_id`
+- `firebase_web_app_id`
 
-Browser Firebase configuration must be supplied at build time with the
-`VITE_FIREBASE_*` variables for that project. The checked-in
+Browser Firebase configuration is injected at build time from those secret
+references plus the dedicated project/bucket values. Production also sets
+`VITE_APP_MODE=production`, so the browser fails closed instead of silently
+falling back to the checked-in preview project. The checked-in
 `firebase-applet-config.json` is a non-production AI Studio fallback only; server
 runtime environment values take precedence and production fails closed if it
 resolves to a listed legacy project.
