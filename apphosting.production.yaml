@@ -1,0 +1,28 @@
+# Production Firebase App Hosting configuration.
+# Keep production on a dedicated backend/project from staging.
+env:
+  - variable: APP_MODE
+    value: production
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: DELIVERECT_ENV
+    value: production
+    availability:
+      - RUNTIME
+      - BUILD
+
+  # Security rollout flags are fail-closed in production.
+  - variable: ADMIN_MFA_ENFORCEMENT
+    value: required
+    availability:
+      - RUNTIME
+
+  - variable: APP_CHECK_ENFORCEMENT
+    value: required
+    availability:
+      - RUNTIME
+
+  # Do not define PREVIEW_TENANT_ID or ALLOW_STAGING_CHANNEL_HMAC here.
+  # Tenant-specific credentials and webhook secrets are resolved from Secret Manager.
