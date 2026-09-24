@@ -125,7 +125,7 @@ export class IntegrationContext {
       (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_SECRET', resolutionMode)) || '';
 
     const webhookSecret =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_WEBHOOK_SECRET', resolutionMode)) || '';
+      (await SecretManager.getSecret(`deliverect-webhook-${tenantId}`)) || '';
 
     // Legacy records preserve their old resolution behaviour, but expose which
     // source won so Admin can migrate them explicitly on the next save.
