@@ -18,7 +18,6 @@ import { useTenantStyles, useTenant } from '../../tenant/useTenant';
 import { formatCurrency } from '../../utils/formatters';
 import { useI18n } from '../../i18n/I18nContext';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
-import { defaultPaymentClient } from '../../commerce/PaymentClient';
 import { useCatalog } from '../../hooks/useCatalog';
 import { CheckoutRecommendations } from './CheckoutRecommendations';
 import { ReverseDealPromptCard } from '../deals/ReverseDealPromptCard';
