@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "test": "vitest run",
     "lint": "tsc --noEmit",
-    "test:certification": "vitest run src/__tests__/retail_quest_certification_contract.test.ts src/__tests__/order_payload_certification.test.ts src/__tests__/operational_certification_matrix.test.ts src/__tests__/webhook_http_certification.test.ts src/__tests__/webhook_authenticator_security.test.ts src/__tests__/webhook_raw_body_guard.test.ts src/__tests__/channel_catalog_projection.test.ts src/__tests__/tenant_isolation.test.ts src/__tests__/mfa_app_check_current.test.ts",
+    "test:certification": "vitest run src/__tests__/retail_quest_certification_contract.test.ts src/__tests__/quest_item_unavailable_actions.test.ts src/__tests__/deliverect_picking_fast_ack.test.ts src/__tests__/picking_status_ingress.test.ts src/__tests__/order_payload_certification.test.ts src/__tests__/operational_certification_matrix.test.ts src/__tests__/webhook_http_certification.test.ts src/__tests__/webhook_authenticator_security.test.ts src/__tests__/webhook_raw_body_guard.test.ts src/__tests__/channel_catalog_projection.test.ts src/__tests__/tenant_isolation.test.ts src/__tests__/mfa_app_check_current.test.ts",
     "audit:gate": "bun run lint && bun run test:certification && bun run build",
     "prove:webhook-staging": "tsx scripts/prove_signed_webhook_staging.ts"
   },
