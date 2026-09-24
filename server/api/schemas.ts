@@ -446,9 +446,19 @@ const optionalOrderCodePrefix = z.preprocess(
     .optional()
 );
 
+const RESERVED_TENANT_IDS = new Set([
+  'admin', 'api', 'app', 'assets', 'auth', 'cdn', 'dashboard', 'health',
+  'internal', 'preview', 'static', 'support', 'www',
+]);
+
+const TenantIdSchema = z.string()
+  .trim()
+  .regex(/^[a-z0-9][a-z0-9-]{2,40}$/, 'tenantId must be 3-41 lowercase letters, numbers or hyphens')
+  .refine((value) => !RESERVED_TENANT_IDS.has(value), 'tenantId is reserved by the platform');
+
 export const CreateTenantSchema = z.object({
   brandName: z.string().trim().min(1, 'brandName is required'),
-  tenantId: z.string().trim().min(1, 'tenantId is required').optional(),
+  tenantId: TenantIdSchema.optional(),
   domain: optionalTrimmedText,
   initialAdminEmail: optionalEmail,
   adminEmail: optionalEmail,
@@ -472,7 +482,41 @@ export const CreateTenantSchema = z.object({
   featureFlags: z.record(z.string(), z.any()).optional(),
 });
 
-export const UpdateTenantConfigSchema = z.record(z.string(), z.any());
+export const UpdateTenantConfigSchema = z.object({
+  brandName: z.string().trim().min(1).optional(),
+  tagline: optionalTrimmedText,
+  logoUrl: optionalTrimmedText,
+  iconUrl: optionalTrimmedText,
+  faviconUrl: optionalTrimmedText,
+  headerLogoMode: z.enum(['ICON_WITH_TEXT', 'WIDE_LOGO', 'LOGO_ONLY']).optional(),
+  headerLogoMaxWidth: z.number().positive().max(2000).optional(),
+  primaryColour: optionalTrimmedText,
+  secondaryColour: optionalTrimmedText,
+  backgroundColour: optionalTrimmedText,
+  textColour: optionalTrimmedText,
+  fontFamily: optionalTrimmedText,
+  headingFontFamily: optionalTrimmedText,
+  carouselTitleFontFamily: optionalTrimmedText,
+  surfaceColour: optionalTrimmedText,
+  mutedTextColour: optionalTrimmedText,
+  borderColour: optionalTrimmedText,
+  successColour: optionalTrimmedText,
+  warningColour: optionalTrimmedText,
+  errorColour: optionalTrimmedText,
+  borderRadius: optionalTrimmedText,
+  country: optionalTrimmedText,
+  currency: optionalTrimmedText,
+  currencySymbol: optionalTrimmedText,
+  locale: optionalTrimmedText,
+  legalName: optionalTrimmedText,
+  legalAddress: optionalTrimmedText,
+  vatRegistrationNumber: optionalTrimmedText,
+  orderCodePrefix: optionalOrderCodePrefix,
+  enabledLocales: z.array(z.string().trim().min(2).max(35)).max(50).optional(),
+  copyOverrides: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+  supportDetails: z.record(z.string(), z.any()).optional(),
+  featureFlags: z.record(z.string(), z.any()).optional(),
+}).strict();
 
 const MarketingScheduleSchema = z.object({
   startsAt: z.string().optional(), endsAt: z.string().optional(),
