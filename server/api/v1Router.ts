@@ -2857,6 +2857,26 @@ async function handleDeliverectOperationalWebhook(
 }
 
 
+v1Router.get(
+  '/admin/integrations/deliverect/menu-reviews',
+  requireAdminAuth('operationsEditor'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const reviews = await ChannelMenuIngestionService.listHeldReviews(tenantId);
+      res.status(200).json({
+        reviews,
+        issueCount: reviews.length,
+      });
+    } catch (err: any) {
+      res.status(err.status || err.statusCode || 500).json({
+        error: err.message,
+        code: err.code || 'CATALOGUE_REVIEWS_FAILED',
+      });
+    }
+  }
+);
+
 // A destructive catalogue push can only be released by an authenticated
 // operations-capable admin in the same tenant scope. The original raw payload
 // is reused; no browser-supplied catalogue data is trusted for the override.
