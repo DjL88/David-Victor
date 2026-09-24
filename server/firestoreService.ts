@@ -244,6 +244,33 @@ export function cleanUndefined<T>(obj: T): T {
   return cleaned as T;
 }
 
+const ORDER_PROJECTION_PII_KEY =
+  /^(?:customer|customerName|customerEmail|customerPhone|customerAddress|email|phone|telephone|mobile|address|formattedAddress|deliveryAddress|billingAddress|street|street1|street2|addressLine1|addressLine2|line1|line2|postcode|postalCode|zip|firstName|lastName|fullName|recipient|contact|payer)$/i;
+
+/**
+ * Order projections are intentionally de-identified. Upstream/provider metadata
+ * can contain arbitrary nested customer contact fields, so copy only
+ * non-contact metadata into the customer-visible projection.
+ */
+export function redactOrderProjectionMetadata<T>(value: T, depth: number = 0): T {
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (depth > 12) return undefined as T;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => redactOrderProjectionMetadata(item, depth + 1))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  const safe: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (ORDER_PROJECTION_PII_KEY.test(key)) continue;
+    const redacted = redactOrderProjectionMetadata(nested, depth + 1);
+    if (redacted !== undefined) safe[key] = redacted;
+  }
+  return safe as T;
+}
+
 const DOMAINS_STORAGE_PATH = path.join(process.cwd(), 'data', 'domains.json');
 const TENANTS_STORAGE_PATH = path.join(process.cwd(), 'data', 'tenants.json');
 const INTEGRATIONS_STORAGE_PATH = path.join(process.cwd(), 'data', 'integrations.json');
@@ -2546,7 +2573,7 @@ export class FirestoreService {
       settlementDetails: (order as any).settlementDetails || undefined,
       refunds: (rawOrderInput as any)?.refunds || (order as any).refunds || undefined,
       metadata: cleanUndefined({
-        ...((order as any).metadata || {}),
+        ...redactOrderProjectionMetadata((order as any).metadata || {}),
         // Snapshot customer-facing basket lines so historic receipts/order images
         // do not depend on the current catalogue after products are changed.
         orderItems: (order.originalBasket?.items || []).map((item: any) => cleanUndefined({
