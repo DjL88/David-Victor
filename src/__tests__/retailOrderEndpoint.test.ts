@@ -76,15 +76,20 @@ describe('DV-07a retail order endpoint resolver', () => {
     expect(() => resolveRetailOrderEndpoint({ ...base, tenantConfig })).toThrow(expected as RegExp);
   });
 
-  it('requires an explicit staging base URL and defaults production', () => {
+  it('uses environment-native staging and production hosts when deployment env vars are absent', () => {
+    expect(resolveRetailOrderEndpoint({ ...base, env: {} }).url)
+      .toBe('https://api.staging.deliverect.io/bwydi/order/cl_123');
+    expect(resolveRetailOrderEndpoint({ ...base, environment: 'production', env: {} }).url)
+      .toBe('https://api.deliverect.io/bwydi/order/cl_123');
+  });
+
+  it('still fails closed for an unknown environment without tenant or env configuration', () => {
     try {
-      resolveRetailOrderEndpoint({ ...base, env: {} });
+      resolveRetailOrderEndpoint({ ...base, environment: 'custom', env: {} });
       throw new Error('expected failure');
     } catch (err: any) {
       expect(err.code).toBe('INTEGRATION_NOT_CONFIGURED');
     }
-    expect(resolveRetailOrderEndpoint({ ...base, environment: 'production', env: {} }).url)
-      .toBe('https://api.deliverect.io/bwydi/order/cl_123');
   });
 
   it('allows only the documented version header values', () => {
