@@ -115,6 +115,46 @@ describe('Strict Tenant Resolution & Branding Audit Tests', () => {
     await FirestorePlatformService.deleteDomain(pending.domainId);
   });
 
+  it('requires each served hostname to be explicitly mapped and active', async () => {
+    const apex = `exact-${Date.now()}.example.test`;
+    const www = `www.${apex}`;
+
+    const mapped = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: apex,
+      tenantId: 'brand-alpha',
+      status: 'active',
+    });
+
+    expect(await FirestorePlatformService.resolveTenantByHostname(apex)).toBe('brand-alpha');
+    expect(await FirestorePlatformService.resolveTenantByHostname(www)).toBeNull();
+
+    await FirestorePlatformService.deleteDomain(mapped.domainId);
+  });
+
+  it('keeps only one primary domain per tenant', async () => {
+    const suffix = Date.now();
+    const first = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: `primary-a-${suffix}.example.test`,
+      tenantId: 'brand-alpha',
+      isPrimary: true,
+      status: 'active',
+    });
+    const second = await FirestorePlatformService.addOrUpdateDomain({
+      hostname: `primary-b-${suffix}.example.test`,
+      tenantId: 'brand-alpha',
+      isPrimary: true,
+      status: 'active',
+    });
+
+    const domains = await FirestorePlatformService.getDomainsForTenant('brand-alpha');
+    const created = domains.filter((domain) => domain.hostname.includes(String(suffix)));
+    expect(created.filter((domain) => domain.isPrimary)).toHaveLength(1);
+    expect(created.find((domain) => domain.hostname === second.hostname)?.isPrimary).toBe(true);
+
+    await FirestorePlatformService.deleteDomain(first.domainId);
+    await FirestorePlatformService.deleteDomain(second.domainId);
+  });
+
   it('persists branding changes (logo, colours, fonts) to BFF/storage and survives reload', async () => {
     const initialConfig = await FirestorePlatformService.getTenantConfig('brand-alpha');
     expect(initialConfig).toBeDefined();

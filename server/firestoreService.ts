@@ -703,6 +703,16 @@ export class FirestoreService {
       updatedAt: now,
     };
 
+    // A tenant can have many verified aliases, but only one primary domain.
+    // Keep this invariant in both demo/test memory and the authoritative store.
+    if (record.isPrimary) {
+      for (const [host, existingRecord] of Object.entries(inMemoryDomains)) {
+        if (host !== cleanHost && existingRecord.tenantId === tenantId && existingRecord.isPrimary) {
+          inMemoryDomains[host] = { ...existingRecord, isPrimary: false, updatedAt: now };
+        }
+      }
+    }
+
     const db = getFirestoreDb();
     if ((!db || isFirestorePermissionDenied()) && !useLocalRuntimeData) {
       const permission = getFirestorePermissionStatus();
@@ -719,6 +729,25 @@ export class FirestoreService {
 
     if (db && !isFirestorePermissionDenied()) {
       try {
+        if (record.isPrimary) {
+          const existingPrimaries = await db
+            .collection('domains')
+            .where('tenantId', '==', tenantId)
+            .where('isPrimary', '==', true)
+            .get();
+          const batch = db.batch();
+          for (const doc of existingPrimaries.docs) {
+            if (doc.id === domainSlug) continue;
+            batch.set(doc.ref, { isPrimary: false, updatedAt: now }, { merge: true });
+            batch.set(
+              db.collection('tenants').doc(tenantId).collection('domains').doc(doc.id),
+              { isPrimary: false, updatedAt: now },
+              { merge: true }
+            );
+          }
+          if (!existingPrimaries.empty) await batch.commit();
+        }
+
         const topDomainRef = db.collection('domains').doc(domainSlug);
         await topDomainRef.set(
           {
@@ -873,18 +902,8 @@ export class FirestoreService {
       return inMemoryDomains[cleanHost].tenantId;
     }
 
-    // 2. www-prefixed or non-www equivalent
-    if (cleanHost.startsWith('www.')) {
-      const withoutWww = cleanHost.slice(4);
-      if (inMemoryDomains[withoutWww]?.status === 'active') {
-        return inMemoryDomains[withoutWww].tenantId;
-      }
-    } else {
-      const withWww = `www.${cleanHost}`;
-      if (inMemoryDomains[withWww]?.status === 'active') {
-        return inMemoryDomains[withWww].tenantId;
-      }
-    }
+    // 2. Do not infer www/non-www aliases. Each served hostname must have
+    // its own verified ACTIVE mapping because DNS and TLS coverage are hostname-specific.
 
     // 3. Firestore query if connected and not denied
     const db = getFirestoreDb();
