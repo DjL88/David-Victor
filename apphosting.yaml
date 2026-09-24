@@ -42,9 +42,7 @@ env:
     availability:
       - RUNTIME
 
-  # Firebase App Hosting provides the canonical public URL to the runtime.
-  # Cloud Tasks uses the same origin for its worker target.
   - variable: APP_URL
-    value: https://david-victor--david-victor.europe-west4.hosted.app
+    secret: app_url
     availability:
       - RUNTIME
