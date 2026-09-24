@@ -14,7 +14,7 @@ import { DeliverectDPayAdapter } from './DeliverectDPayAdapter';
 import { IntegrationUnavailableDPayAdapter } from './IntegrationUnavailableDPayAdapter';
 import { OAuthTokenManager } from './OAuthTokenManager';
 import { FirestorePlatformService, OrderProjection } from '../firestoreService';
-import { getServerRuntimeMode } from '../runtimeMode';
+import { getServerRuntimeMode, isProductionMode } from '../runtimeMode';
 import { getDispatchAdapter } from './index';
 import { DispatchOrchestrationService } from './DispatchOrchestrationService';
 
@@ -170,6 +170,115 @@ export class PaymentService {
     return {
       amount: ceilingMinor,
       currency,
+    };
+  }
+
+  /**
+   * Creates a reusable DPay card token through Deliverect's Basis Theory proxy.
+   * Raw payment_method data is forwarded once and is never logged or persisted.
+   */
+  static async createPaymentToken(
+    request: {
+      gatewayProfileId: string;
+      channelLinkId: string;
+      customerId: string;
+      payment_method: Record<string, unknown>;
+    },
+    tenantId: string
+  ): Promise<{
+    token: string;
+    tokenId: string;
+    type: string;
+    status?: string;
+    brand?: string;
+    last4?: string;
+    reference?: string;
+  }> {
+    if (!request.gatewayProfileId || !request.channelLinkId || !request.customerId) {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        'gatewayProfileId, channelLinkId and customerId are required for DPay tokenization.',
+        400
+      );
+    }
+    if (!request.payment_method || typeof request.payment_method !== 'object') {
+      throw new CommerceError(
+        ErrorCode.INVALID_INPUT,
+        'payment_method is required for DPay tokenization.',
+        400
+      );
+    }
+
+    const configuredProxy = String(process.env.DPAY_TOKEN_PROXY_URL || '').trim();
+    const proxyUrl = configuredProxy || (
+      isProductionMode()
+        ? ''
+        : 'https://basistheory.staging.deliverect.com/'
+    );
+    if (!proxyUrl) {
+      throw new CommerceError(
+        ErrorCode.INTEGRATION_NOT_CONFIGURED,
+        'DPAY_TOKEN_PROXY_URL must be configured before production card tokenization is enabled.',
+        503
+      );
+    }
+
+    const tokenManager = OAuthTokenManager.getInstance(tenantId);
+    const authorization = await tokenManager.getAuthorizationHeader();
+
+    const raw = await getTenantCircuitBreaker(tenantId, 'dpay').execute(async () => {
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      const text = await response.text();
+      let body: any = {};
+      if (text) {
+        try { body = JSON.parse(text); } catch { body = {}; }
+      }
+
+      if (!response.ok) {
+        throw new CommerceError(
+          response.status === 401
+            ? ErrorCode.INTEGRATION_AUTH_FAILED
+            : ErrorCode.PAYMENT_NOT_AUTHORISED,
+          `DPay token proxy rejected the card tokenization request (HTTP ${response.status}).`,
+          response.status
+        );
+      }
+      return body;
+    });
+
+    const tokenId = String(
+      raw?.tokenId ||
+      raw?.id ||
+      raw?.token?.id ||
+      raw?.token ||
+      ''
+    ).trim();
+
+    if (!tokenId) {
+      throw new CommerceError(
+        ErrorCode.PAYMENT_NOT_AUTHORISED,
+        'DPay token proxy did not return a reusable payment token.',
+        422
+      );
+    }
+
+    return {
+      token: tokenId,
+      tokenId,
+      type: 'CARD',
+      status: raw?.status ? String(raw.status) : undefined,
+      brand: raw?.brand || raw?.paymentMethod?.brand,
+      last4: raw?.last4 || raw?.paymentMethod?.last4,
+      reference: raw?.reference || request.customerId,
     };
   }
 
