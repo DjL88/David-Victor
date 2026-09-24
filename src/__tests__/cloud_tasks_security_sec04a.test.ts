@@ -106,12 +106,17 @@ describe('SEC-04a Cloud Tasks OIDC hardening', () => {
     });
   });
 
-  it('fails boot in staging when required Cloud Tasks auth config is missing', async () => {
+  it('keeps Cloud Tasks fail-closed without making optional worker config block HTTP startup', async () => {
     delete process.env.CLOUD_TASKS_SA_EMAIL;
     expect(() => assertCloudTasksSecurityConfigured()).toThrow(/CLOUD_TASKS_SA_EMAIL/);
 
-    await expect(
-      createApp({ serveFrontend: false, initializeDependencies: true })
-    ).rejects.toThrow(/CLOUD_TASKS_SA_EMAIL/);
+    // Startup may still fail for another required integration dependency in this
+    // behavioural harness, but Cloud Tasks configuration must no longer be the
+    // reason the HTTP service cannot bind its port.
+    try {
+      await createApp({ serveFrontend: false, initializeDependencies: true });
+    } catch (err: any) {
+      expect(String(err?.message || err)).not.toMatch(/CLOUD_TASKS_SA_EMAIL/);
+    }
   });
 });
