@@ -16,6 +16,12 @@ import { BFFError } from './errors';
 import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
 import type { ProtectedBundleAllocation } from '../src/commerce/bundleAllocation';
 import { FirebaseAuthDomainService } from './firebaseAuthDomainService';
+import {
+  integrationProfileId,
+  validateIntegrationProfile,
+  type IntegrationEnvironment,
+  type TenantIntegrationProfile,
+} from './integrationProfile';
 
 export enum OperationType {
   CREATE = 'create',
@@ -129,6 +135,8 @@ export interface IntegrationConfig {
   /** Superadmin-managed Retail/Quest endpoint experiment configuration. */
   retailOrder?: RetailOrderEndpointConfig;
   environment: 'staging' | 'production';
+  /** Active environment used to select integrationProfiles/{tenantId}__{env}. */
+  activeEnv?: IntegrationEnvironment;
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';
   bffProxyUrl?: string;
@@ -236,6 +244,33 @@ export function cleanUndefined<T>(obj: T): T {
   return cleaned as T;
 }
 
+const ORDER_PROJECTION_PII_KEY =
+  /^(?:customer|customerName|customerEmail|customerPhone|customerAddress|email|phone|telephone|mobile|address|formattedAddress|deliveryAddress|billingAddress|street|street1|street2|addressLine1|addressLine2|line1|line2|postcode|postalCode|zip|firstName|lastName|fullName|recipient|contact|payer)$/i;
+
+/**
+ * Order projections are intentionally de-identified. Upstream/provider metadata
+ * can contain arbitrary nested customer contact fields, so copy only
+ * non-contact metadata into the customer-visible projection.
+ */
+export function redactOrderProjectionMetadata<T>(value: T, depth: number = 0): T {
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (depth > 12) return undefined as T;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => redactOrderProjectionMetadata(item, depth + 1))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  const safe: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (ORDER_PROJECTION_PII_KEY.test(key)) continue;
+    const redacted = redactOrderProjectionMetadata(nested, depth + 1);
+    if (redacted !== undefined) safe[key] = redacted;
+  }
+  return safe as T;
+}
+
 const DOMAINS_STORAGE_PATH = path.join(process.cwd(), 'data', 'domains.json');
 const TENANTS_STORAGE_PATH = path.join(process.cwd(), 'data', 'tenants.json');
 const INTEGRATIONS_STORAGE_PATH = path.join(process.cwd(), 'data', 'integrations.json');
@@ -326,6 +361,7 @@ const useLocalRuntimeData = isDemoMode() || process.env.NODE_ENV === 'test' || i
 const inMemoryTenants: Record<string, TenantConfig> =
   useLocalRuntimeData ? { ...MOCK_TENANTS, ...loadPersistedTenants() } : {};
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
+const inMemoryIntegrationProfiles: Record<string, TenantIntegrationProfile> = {};
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
 const inMemoryBasketBundleAllocations: Record<string, BasketBundleAllocationsDocument> = {};
@@ -1986,6 +2022,82 @@ export class FirestoreService {
   }
 
   /**
+   * Reads the environment-scoped integration profile. Unlike the legacy
+   * integrations/{tenantId} document, profiles never fall back to another
+   * environment or fabricate a default record.
+   */
+  static async getIntegrationProfile(
+    tenantId: string,
+    environment: IntegrationEnvironment
+  ): Promise<TenantIntegrationProfile | null> {
+    const id = integrationProfileId(tenantId, environment);
+    if (inMemoryIntegrationProfiles[id]) {
+      return validateIntegrationProfile(
+        inMemoryIntegrationProfiles[id],
+        tenantId,
+        environment
+      );
+    }
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
+        return null;
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Integration profile lookup requires Firestore.',
+        503
+      );
+    }
+
+    const snap = await db.collection('integrationProfiles').doc(id).get();
+    if (!snap.exists) return null;
+
+    const profile = validateIntegrationProfile(
+      snap.data() as TenantIntegrationProfile,
+      tenantId,
+      environment
+    );
+    inMemoryIntegrationProfiles[id] = profile;
+    return profile;
+  }
+
+  /**
+   * Persists a fully validated environment-scoped integration profile.
+   * Admin authorization is enforced by the calling BFF route/service.
+   */
+  static async updateIntegrationProfile(
+    profile: TenantIntegrationProfile
+  ): Promise<TenantIntegrationProfile> {
+    const validated = validateIntegrationProfile(profile);
+    const id = integrationProfileId(validated.tenantId, validated.environment);
+    const now = new Date().toISOString();
+    const next: TenantIntegrationProfile = {
+      ...validated,
+      id,
+      updatedAt: now,
+      createdAt: validated.createdAt || now,
+    };
+    inMemoryIntegrationProfiles[id] = next;
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
+        return next;
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Integration profile could not be saved because Firestore is unavailable.',
+        503
+      );
+    }
+
+    await db.collection('integrationProfiles').doc(id).set(cleanUndefined(next), { merge: true });
+    return next;
+  }
+
+  /**
    * Updates integration config in Firestore.
    */
   static async updateIntegrationConfig(tenantId: string, updates: Partial<IntegrationConfig>): Promise<IntegrationConfig> {
@@ -2461,7 +2573,7 @@ export class FirestoreService {
       settlementDetails: (order as any).settlementDetails || undefined,
       refunds: (rawOrderInput as any)?.refunds || (order as any).refunds || undefined,
       metadata: cleanUndefined({
-        ...((order as any).metadata || {}),
+        ...redactOrderProjectionMetadata((order as any).metadata || {}),
         // Snapshot customer-facing basket lines so historic receipts/order images
         // do not depend on the current catalogue after products are changed.
         orderItems: (order.originalBasket?.items || []).map((item: any) => cleanUndefined({

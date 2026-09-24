@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "nonprod": "lt-nonprod",
+    "prod": "lt-prod"
+  }
+}

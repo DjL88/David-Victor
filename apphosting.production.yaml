@@ -14,3 +14,129 @@ env:
 
   # Production credentials and webhook secrets are resolved server-side from
   # Secret Manager. Do not add PREVIEW_* or ALLOW_STAGING_CHANNEL_HMAC here.
+
+
+  # WP-10/11: production may only activate production tenant profiles.
+  - variable: ALLOWED_TENANT_ENVS
+    value: production
+    availability:
+      - RUNTIME
+
+  - variable: INTEGRATION_PROFILE_REQUIRED
+    value: "true"
+    availability:
+      - RUNTIME
+
+  # Dedicated project identity is deployment configuration. These references
+  # deliberately prevent the checked-in AI Studio fallback project from winning.
+  - variable: FIREBASE_PROJECT_ID
+    secret: firebase_project_id
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIREBASE_STORAGE_BUCKET
+    secret: firebase_storage_bucket
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIRESTORE_DATABASE_ID
+    secret: firestore_database_id
+    availability:
+      - RUNTIME
+
+  - variable: PUBLIC_BASE_URL
+    secret: public_base_url
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_SA_EMAIL
+    secret: cloud_tasks_sa_email
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_AUDIENCE
+    secret: cloud_tasks_audience
+    availability:
+      - RUNTIME
+
+  - variable: CHANNEL_MENU_TASKS_QUEUE
+    secret: channel_menu_tasks_queue
+    availability:
+      - RUNTIME
+
+  - variable: CHANNEL_REALTIME_TASKS_QUEUE
+    secret: channel_realtime_tasks_queue
+    availability:
+      - RUNTIME
+
+
+  # Browser Firebase configuration is build-scoped and must target the same
+  # dedicated production project. Production client startup fails closed if
+  # these values are absent or point at a listed legacy project.
+  - variable: VITE_APP_MODE
+    value: production
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_PROJECT_ID
+    secret: firebase_project_id
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_STORAGE_BUCKET
+    secret: firebase_storage_bucket
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_API_KEY
+    secret: firebase_web_api_key
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_AUTH_DOMAIN
+    secret: firebase_auth_domain
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_MESSAGING_SENDER_ID
+    secret: firebase_messaging_sender_id
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_APP_ID
+    secret: firebase_web_app_id
+    availability:
+      - BUILD
+
+
+  # Privileged production boundaries fail closed. Provision Identity Platform
+  # TOTP and Firebase App Check in the dedicated production project before deploy.
+  - variable: ADMIN_REQUIRE_MFA
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: ADMIN_REQUIRE_APP_CHECK
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: CHECKOUT_REQUIRE_APP_CHECK
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: VITE_FIREBASE_APPCHECK_SITE_KEY
+    secret: firebase_appcheck_site_key
+    availability:
+      - BUILD
+
+
+  # Authenticates infrastructure-supplied forwarding headers before tenant/host
+  # resolution trusts an edge override.
+  - variable: TRUSTED_EDGE_SECRET
+    secret: trusted_edge_secret
+    availability:
+      - RUNTIME

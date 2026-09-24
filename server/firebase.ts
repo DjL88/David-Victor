@@ -8,6 +8,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getServerRuntimeMode, isDemoMode } from './runtimeMode';
 import { SecretManager } from './secrets';
+import {
+  assertProductionFirebaseIsolation,
+  resolveFirebaseRuntimeTarget,
+} from './firebaseTarget';
 
 let adminAppInstance: AdminApp | null = null;
 let authInstance: AdminAuth | null = null;
@@ -45,7 +49,9 @@ export function getFirebaseConfig(): FirebaseAppletConfig | null {
 export function getFirebaseAdminApp(): AdminApp | null {
   if (adminAppInstance) return adminAppInstance;
   const config = getFirebaseConfig();
-  const projectId = config?.projectId || process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+  const target = resolveFirebaseRuntimeTarget(config, process.env);
+  assertProductionFirebaseIsolation(target, process.env);
+  const projectId = target.projectId;
   if (!projectId) return null;
 
   const existing = getAdminApps();
@@ -57,7 +63,7 @@ export function getFirebaseAdminApp(): AdminApp | null {
   try {
     adminAppInstance = initAdminApp({
       projectId,
-      storageBucket: config?.storageBucket || process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
+      storageBucket: target.storageBucket || `${projectId}.firebasestorage.app`,
     });
     return adminAppInstance;
   } catch (err) {
@@ -79,7 +85,9 @@ export function getFirestoreDb(): AdminFirestore | null {
   if (!app) return null;
 
   const config = getFirebaseConfig();
-  const dbId = config?.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID;
+  const target = resolveFirebaseRuntimeTarget(config, process.env);
+  assertProductionFirebaseIsolation(target, process.env);
+  const dbId = target.firestoreDatabaseId;
 
   try {
     if (dbId && dbId !== '(default)') {
@@ -150,15 +158,9 @@ async function logFirestorePermissionDiagnostics(err?: any): Promise<void> {
   firestorePermissionDiagnosticsLogged = true;
 
   const config = getFirebaseConfig();
-  const projectId =
-    config?.projectId ||
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.GOOGLE_CLOUD_PROJECT ||
-    null;
-  const databaseId =
-    config?.firestoreDatabaseId ||
-    process.env.FIRESTORE_DATABASE_ID ||
-    '(default)';
+  const target = resolveFirebaseRuntimeTarget(config, process.env);
+  const projectId = target.projectId;
+  const databaseId = target.firestoreDatabaseId || '(default)';
   const runtimeIdentity = await getCloudRunRuntimeIdentity();
 
   console.error(

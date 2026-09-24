@@ -22,7 +22,7 @@ import {
   getToken as getAppCheckToken,
   type AppCheck,
 } from 'firebase/app-check';
-import firebaseConfig from '../firebase-applet-config.json';
+import { resolveClientFirebaseConfig } from './firebaseClientConfig';
 
 let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
@@ -34,7 +34,11 @@ export function getClientFirebaseApp(): FirebaseApp {
     if (getApps().length > 0) {
       appInstance = getApp();
     } else {
-      appInstance = initializeApp(firebaseConfig);
+      appInstance = initializeApp(
+        resolveClientFirebaseConfig(
+          typeof import.meta !== 'undefined' ? ((import.meta as any).env || {}) : {}
+        )
+      );
     }
   }
   return appInstance;

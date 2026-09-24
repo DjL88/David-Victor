@@ -15,6 +15,11 @@ import { BFFError } from '../errors';
 import { isDemoMode } from '../runtimeMode';
 import { linkedAccountsAdapter } from './LinkedAccountsAdapter';
 import type { RetailOrderEndpointConfig } from './retailOrderEndpoint';
+import {
+  assertTenantEnvironmentAllowed,
+  normalizeIntegrationEnvironment,
+  type TenantIntegrationProfile,
+} from '../integrationProfile';
 
 export interface TenantIntegrationConfig {
   tenantId: string;
@@ -30,6 +35,9 @@ export interface TenantIntegrationConfig {
   /** Terminal Deliverect order-creation route. Exactly one route may run per order. */
   orderRoute?: 'retail_quest' | 'commerce_checkout';
   retailOrder?: RetailOrderEndpointConfig;
+  publicBaseUrl?: string;
+  profileVersion?: number;
+  dpay?: TenantIntegrationProfile['dpay'];
   tokenManager: OAuthTokenManager;
   isConfigured: boolean;
 }
@@ -105,14 +113,47 @@ export class IntegrationContext {
       // Integration may not exist yet
     }
 
-    const environment: DeliverectEnvironmentName =
-      (integrationRecord?.environment as DeliverectEnvironmentName) ||
-      (process.env.DELIVERECT_ENV as DeliverectEnvironmentName) ||
-      'staging';
+    let environment: DeliverectEnvironmentName;
+    try {
+      environment = normalizeIntegrationEnvironment(
+        integrationRecord?.activeEnv ||
+          integrationRecord?.environment ||
+          process.env.DELIVERECT_ENV ||
+          'staging'
+      );
+      assertTenantEnvironmentAllowed(environment, process.env.ALLOWED_TENANT_ENVS);
+    } catch (err: any) {
+      throw new BFFError(
+        'INTEGRATION_CONFIG_INVALID',
+        err?.message || 'Tenant integration environment is not allowed in this deployment.',
+        503
+      );
+    }
+
+    let integrationProfile: TenantIntegrationProfile | null = null;
+    try {
+      integrationProfile = await FirestorePlatformService.getIntegrationProfile(
+        tenantId,
+        environment
+      );
+    } catch (err) {
+      if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true') throw err;
+    }
+
+    const activeProfile =
+      integrationProfile?.status === 'ACTIVE' ? integrationProfile : null;
+    if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true' && !activeProfile) {
+      throw new BFFError(
+        'INTEGRATION_NOT_CONFIGURED',
+        `Active integration profile "${tenantId}__${environment}" is required for this deployment.`,
+        503
+      );
+    }
 
     // 2. Resolve credentials according to the tenant's explicit credential mode.
     // Existing tenants default to platform credentials for backwards compatibility.
-    const configuredCredentialMode = integrationRecord?.credentialMode;
+    const configuredCredentialMode =
+      activeProfile?.credentialMode || integrationRecord?.credentialMode;
     const resolutionMode: 'legacy' | 'platform' | 'dedicated' =
       configuredCredentialMode === 'dedicated'
         ? 'dedicated'
@@ -121,13 +162,27 @@ export class IntegrationContext {
           : 'legacy';
 
     const clientId =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_ID', resolutionMode)) || '';
+      (activeProfile?.secretRefs?.deliverectClientId
+        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectClientId)
+        : await TenantSecretResolver.resolveTenantSecret(
+            tenantId,
+            'DELIVERECT_CLIENT_ID',
+            resolutionMode
+          )) || '';
 
     const clientSecret =
-      (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_SECRET', resolutionMode)) || '';
+      (activeProfile?.secretRefs?.deliverectClientSecret
+        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectClientSecret)
+        : await TenantSecretResolver.resolveTenantSecret(
+            tenantId,
+            'DELIVERECT_CLIENT_SECRET',
+            resolutionMode
+          )) || '';
 
     const webhookSecret =
-      (await SecretManager.getSecret(`deliverect-webhook-${tenantId}`)) || '';
+      (activeProfile?.secretRefs?.deliverectWebhookSecret
+        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectWebhookSecret)
+        : await SecretManager.getSecret(`deliverect-webhook-${tenantId}`)) || '';
 
     // Legacy records preserve their old resolution behaviour, but expose which
     // source won so Admin can migrate them explicitly on the next save.
@@ -152,7 +207,8 @@ export class IntegrationContext {
       clientSecret,
     });
 
-    let deliverectAccountId = integrationRecord?.deliverectAccountId;
+    let deliverectAccountId =
+      activeProfile?.deliverect?.accountId || integrationRecord?.deliverectAccountId;
     if (!deliverectAccountId) {
       try {
         const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId);
@@ -164,10 +220,12 @@ export class IntegrationContext {
     }
 
     const channelName =
+      activeProfile?.deliverect?.channelName ||
       integrationRecord?.channelName ||
       process.env.DELIVERECT_CHANNEL_NAME ||
       undefined;
     const configuredOrderRoute = String(
+      activeProfile?.deliverect?.orderRoute ||
       integrationRecord?.orderRoute ||
       process.env.DELIVERECT_ORDER_ROUTE ||
       'retail_quest'
@@ -185,12 +243,17 @@ export class IntegrationContext {
       clientSecret,
       webhookSecret,
       deliverectAccountId,
-      allowedChannelLinkIds: Array.isArray(integrationRecord?.allowedChannelLinkIds)
-        ? integrationRecord.allowedChannelLinkIds.map(String)
-        : [],
+      allowedChannelLinkIds: activeProfile
+        ? activeProfile.allowedChannelLinkIds.map(String)
+        : Array.isArray(integrationRecord?.allowedChannelLinkIds)
+          ? integrationRecord.allowedChannelLinkIds.map(String)
+          : [],
       channelName,
-      retailOrder: integrationRecord?.retailOrder,
+      retailOrder: activeProfile?.deliverect?.retailOrder || integrationRecord?.retailOrder,
       orderRoute,
+      publicBaseUrl: activeProfile?.publicBaseUrl,
+      profileVersion: activeProfile?.version,
+      dpay: activeProfile?.dpay,
       tokenManager,
       isConfigured,
     };

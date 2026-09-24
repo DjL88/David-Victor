@@ -7,15 +7,27 @@ import {
 } from '../../src/domain/models';
 import { CommerceError, ErrorCode } from '../errors';
 import { OAuthTokenManager } from './OAuthTokenManager';
-import { isProductionMode } from '../runtimeMode';
 import { FirestorePlatformService } from '../firestoreService';
+import {
+  normalizeIntegrationEnvironment,
+  type IntegrationEnvironment,
+} from '../integrationProfile';
+import { IntegrationContext } from './IntegrationContext';
 
 export class DeliverectDPayAdapter implements DPayAdapter {
   readonly adapterName = 'DeliverectDPayAdapter';
   private tokenManager: OAuthTokenManager;
   private tenantId?: string;
+  private environment?: IntegrationEnvironment;
 
-  constructor(tenantIdOrTokenManager?: string | OAuthTokenManager) {
+  constructor(
+    tenantIdOrTokenManager?: string | OAuthTokenManager,
+    environment?: string
+  ) {
+    this.environment = environment
+      ? normalizeIntegrationEnvironment(environment)
+      : undefined;
+
     if (tenantIdOrTokenManager instanceof OAuthTokenManager) {
       this.tokenManager = tenantIdOrTokenManager;
     } else {
@@ -27,9 +39,64 @@ export class DeliverectDPayAdapter implements DPayAdapter {
     }
   }
 
+  private async resolveTokenManager(): Promise<OAuthTokenManager> {
+    if (this.tenantId) {
+      try {
+        const context = await IntegrationContext.assertConfigured(this.tenantId);
+        return context.tokenManager;
+      } catch (err) {
+        if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true') throw err;
+      }
+    }
+    return this.tokenManager;
+  }
+
   private async getBaseUrl(): Promise<string> {
-    const isProd = isProductionMode();
-    return isProd
+    let environment =
+      this.environment ||
+      normalizeIntegrationEnvironment(process.env.DELIVERECT_ENV || 'staging');
+
+    if (this.tenantId) {
+      const integration = await FirestorePlatformService.getIntegrationConfig(
+        this.tenantId
+      ).catch(() => null);
+      environment = normalizeIntegrationEnvironment(
+        integration?.activeEnv ||
+          integration?.environment ||
+          environment
+      );
+
+      const profile = await FirestorePlatformService.getIntegrationProfile(
+        this.tenantId,
+        environment
+      ).catch(() => null);
+
+      if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true') {
+        if (!profile || profile.status !== 'ACTIVE') {
+          throw new CommerceError(
+            ErrorCode.INTEGRATION_NOT_CONFIGURED,
+            `Active integration profile "${this.tenantId}__${environment}" is required for Deliverect Pay.`,
+            503
+          );
+        }
+      }
+
+      if (profile?.status === 'ACTIVE' && profile.dpay) {
+        if (!profile.dpay.enabled) {
+          throw new CommerceError(
+            ErrorCode.INTEGRATION_NOT_CONFIGURED,
+            'Deliverect Pay is disabled for this tenant environment.',
+            503
+          );
+        }
+        environment = normalizeIntegrationEnvironment(profile.dpay.environment);
+        if (profile.dpay.baseUrl) {
+          return profile.dpay.baseUrl.replace(/\/+$/, '');
+        }
+      }
+    }
+
+    return environment === 'production'
       ? 'https://api.deliverect.com'
       : 'https://api.staging.deliverect.com';
   }
@@ -67,8 +134,9 @@ export class DeliverectDPayAdapter implements DPayAdapter {
     init: RequestInit = {}
   ): Promise<any> {
     const send = async () => {
-      const authorization = await this.tokenManager.getAuthorizationHeader();
-      return fetch(url, {
+      const tokenManager = await this.resolveTokenManager();
+      const authorization = await tokenManager.getAuthorizationHeader();
+      const response = await fetch(url, {
         ...init,
         headers: {
           Authorization: authorization,
@@ -77,12 +145,15 @@ export class DeliverectDPayAdapter implements DPayAdapter {
           ...(init.headers || {}),
         },
       });
+      return { response, tokenManager };
     };
 
-    let response = await send();
+    let attempt = await send();
+    let response = attempt.response;
     if (response.status === 401) {
-      this.tokenManager.invalidateCache();
-      response = await send();
+      attempt.tokenManager.invalidateCache();
+      attempt = await send();
+      response = attempt.response;
     }
 
     const text = await response.text();
