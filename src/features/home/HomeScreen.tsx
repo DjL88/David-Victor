@@ -340,7 +340,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [renderableBaseProducts]);
 
   return (
-    <div id="home-screen-container" className="w-full max-w-7xl mx-auto pb-20 space-y-4">
+    <div id="home-screen-container" className="w-full max-w-7xl mx-auto pb-36 md:pb-24 space-y-4 overflow-x-clip">
       {/* Instagram-style horizontal Stories */}
       {!searchQuery && tenant?.featureFlags?.enableStories !== false && (
         <StoriesRow
