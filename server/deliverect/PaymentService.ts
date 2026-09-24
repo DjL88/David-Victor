@@ -36,7 +36,7 @@ export function getDPayAdapter(
     if (appMode === 'demo') {
       adapter = new DemoPaymentAdapter();
     } else if (hasCredentials) {
-      adapter = new DeliverectDPayAdapter(tokenManager);
+      adapter = new DeliverectDPayAdapter(normalizedTenantId, environment);
     } else {
       console.warn(
         `[Deliverect Pay] Non-demo mode (${appMode}) with no credentials for ${key}. Using IntegrationUnavailableDPayAdapter.`
