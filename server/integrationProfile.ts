@@ -135,9 +135,28 @@ export function validateIntegrationProfile(
   }
 
   const secretNames = Object.values(profile.secretRefs || {}).filter(Boolean) as string[];
+  const expectedSecretPrefix = integrationSecretPrefix(profile.tenantId, environment);
   for (const secretName of secretNames) {
     if (!/^[A-Za-z0-9_-]+$/.test(secretName)) {
       throw new Error('Integration profile contains an invalid Secret Manager reference.');
+    }
+    if (!secretName.startsWith(expectedSecretPrefix)) {
+      throw new Error(
+        `Integration profile secret "${secretName}" must be scoped to "${expectedSecretPrefix}*".`
+      );
+    }
+  }
+
+  if (profile.dpay) {
+    const dpayEnvironment = normalizeIntegrationEnvironment(profile.dpay.environment);
+    if (dpayEnvironment !== environment) {
+      throw new Error('DPay environment must match the integration profile environment.');
+    }
+    if (profile.dpay.baseUrl) {
+      const parsed = new URL(profile.dpay.baseUrl);
+      if (parsed.protocol !== 'https:') {
+        throw new Error('DPay baseUrl must use HTTPS.');
+      }
     }
   }
 
