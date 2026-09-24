@@ -70,3 +70,42 @@ env:
     secret: channel_realtime_tasks_queue
     availability:
       - RUNTIME
+
+
+  # Browser Firebase configuration is build-scoped and must target the same
+  # dedicated production project. Production client startup fails closed if
+  # these values are absent or point at a listed legacy project.
+  - variable: VITE_APP_MODE
+    value: production
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_PROJECT_ID
+    secret: firebase_project_id
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_STORAGE_BUCKET
+    secret: firebase_storage_bucket
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_API_KEY
+    secret: firebase_web_api_key
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_AUTH_DOMAIN
+    secret: firebase_auth_domain
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_MESSAGING_SENDER_ID
+    secret: firebase_messaging_sender_id
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_APP_ID
+    secret: firebase_web_app_id
+    availability:
+      - BUILD
