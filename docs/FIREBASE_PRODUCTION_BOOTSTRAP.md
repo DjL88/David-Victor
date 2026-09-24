@@ -39,6 +39,7 @@ Populate the production App Hosting secret references declared in
 - `firebase_messaging_sender_id`
 - `firebase_web_app_id`
 - `firebase_appcheck_site_key`
+- `trusted_edge_secret`
 
 Browser Firebase configuration is injected at build time from those secret
 references plus the dedicated project/bucket values. Production also sets
