@@ -3,7 +3,8 @@ import {
   auth,
   signInWithGoogle,
   signInWithEmail,
-  createAccountWithEmail,
+  isAdminInviteSignInLink,
+  signInWithAdminInviteLink,
   signOutUser,
   onAuthStateChanged,
   User,
@@ -23,7 +24,6 @@ import {
   HelpCircle,
   CheckCircle2,
   KeyRound,
-  UserPlus,
   LogIn,
   Sparkles,
 } from 'lucide-react';
@@ -89,7 +89,7 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       title: 'Authenticated But Not Authorized',
       message: `User ${email} signed in via Firebase, but has not been assigned platformSuperAdmin or tenant administrator permissions.`,
       actionHint:
-        'If this is initial deployment, add this email to PLATFORM_SUPERADMIN_EMAILS in your Cloud Run environment, or ask an existing administrator to add your account under Admin → Team & RBAC.',
+        'If this is initial deployment, configure the PLATFORM_SUPERADMIN_EMAILS bootstrap secret in Secret Manager, or ask an existing administrator to add your account under Admin → Team & RBAC.',
     };
   }
 
@@ -116,7 +116,7 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       code,
       title: 'Account Already Exists',
       message: 'An account with this email already exists in Firebase Authentication.',
-      actionHint: 'Switch to the "Sign In" tab and enter your password, or use Google SSO.',
+      actionHint: 'Use the administrator invitation link you were sent, or sign in with an existing authorized account.',
     };
   }
 
@@ -127,7 +127,7 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       code,
       title: 'Password Too Short',
       message: 'Firebase Authentication requires passwords to be at least 6 characters long.',
-      actionHint: 'Please choose a stronger password with at least 6 characters.',
+      actionHint: 'Use your existing administrator credentials or the invitation link supplied by an administrator.',
     };
   }
 
@@ -143,7 +143,7 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       code,
       title: 'Invalid Email or Password',
       message: 'The provided credentials do not match any registered account.',
-      actionHint: 'If this is your first time, switch to "Create Account" tab to set your password, or use Google SSO.',
+      actionHint: 'If this is your first time, use the administrator invitation link you were sent. Otherwise check your existing credentials.',
     };
   }
 
@@ -190,14 +190,20 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
   const [modeTimeout, setModeTimeout] = useState(false);
   const [formattedError, setFormattedError] = useState<FormattedAuthError | null>(null);
 
-  // Email / Password Form
-  const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
+  // Existing-account sign-in or an administrator-issued email-link invitation.
+  // There is deliberately no browser self-registration path.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isInviteLink, setIsInviteLink] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isDemo = appMode === 'demo';
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsInviteLink(isAdminInviteSignInLink(window.location.href));
+    }
+  }, []);
 
   const handleExitToStorefront = () => {
     if (typeof window !== 'undefined') {
@@ -299,40 +305,19 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
-    if (authMode === 'register') {
-      if (password.length < 6) {
-        setFormattedError({
-          type: 'invalid_credentials',
-          code: 'auth/weak-password',
-          title: 'Password Too Short',
-          message: 'Firebase Authentication requires passwords to be at least 6 characters.',
-        });
-        return;
-      }
-      if (password !== confirmPassword) {
-        setFormattedError({
-          type: 'invalid_credentials',
-          code: 'auth/passwords-dont-match',
-          title: 'Passwords Do Not Match',
-          message: 'Please ensure both password fields match exactly.',
-        });
-        return;
-      }
-    }
+    if (!email || (!isInviteLink && !password)) return;
 
     setIsSubmitting(true);
     setFormattedError(null);
     try {
-      let cred;
-      if (authMode === 'register') {
-        cred = await createAccountWithEmail(email, password);
-      } else {
-        cred = await signInWithEmail(email, password);
-      }
-      if (cred?.user) {
-        setUser(cred.user);
-        await verifySession(cred.user, true);
+      const fbUser =
+        isInviteLink && typeof window !== 'undefined'
+          ? await signInWithAdminInviteLink(email, window.location.href)
+          : await signInWithEmail(email, password);
+
+      if (fbUser) {
+        setUser(fbUser);
+        await verifySession(fbUser, true);
       }
     } catch (err: any) {
       setFormattedError(parseAuthError(err, email));
@@ -512,38 +497,18 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
             </div>
           )}
 
-          {/* AUTHENTICATION TABS */}
-          <div className="flex p-1 bg-gray-100 rounded-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('signin');
-                setFormattedError(null);
-              }}
-              className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                authMode === 'signin'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('register');
-                setFormattedError(null);
-              }}
-              className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                authMode === 'register'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              Create Account
-            </button>
+          <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600 flex items-start gap-2.5">
+            <Lock className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-gray-900">
+                {isInviteLink ? 'Administrator invitation' : 'Authorized administrators only'}
+              </p>
+              <p className="mt-1 leading-relaxed">
+                {isInviteLink
+                  ? 'Enter the email address that received this invitation to accept access.'
+                  : 'New administrator accounts are created only through invitations from an existing administrator.'}
+              </p>
+            </div>
           </div>
 
           {/* CURRENT AUTHENTICATED USER QUICK VERIFY */}
@@ -589,27 +554,15 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={authMode === 'register' ? 'At least 6 characters' : '••••••••••••'}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
-              />
-            </div>
-
-            {authMode === 'register' && (
+            {!isInviteLink && (
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Confirm Password</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Password</label>
                 <input
                   type="password"
                   required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
                   className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
                 />
               </div>
@@ -621,11 +574,11 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
               className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-sm font-semibold rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting
-                ? authMode === 'register'
-                  ? 'Creating Account...'
+                ? isInviteLink
+                  ? 'Accepting Invitation...'
                   : 'Authenticating...'
-                : authMode === 'register'
-                ? 'Create Administrator Account'
+                : isInviteLink
+                ? 'Accept Administrator Invitation'
                 : 'Sign In with Email'}
             </button>
           </form>
@@ -689,7 +642,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
             </div>
             <p className="text-gray-600 leading-relaxed">
               In Staging and Production, administrator identities must be verified with Firebase Authentication and authorized in Firestore RBAC or the initial{' '}
-              <code className="px-1 py-0.2 bg-gray-200/80 rounded font-mono text-[10px] text-gray-800">PLATFORM_SUPERADMIN_EMAILS</code> allowlist.
+              <code className="px-1 py-0.2 bg-gray-200/80 rounded font-mono text-[10px] text-gray-800">PLATFORM_SUPERADMIN_EMAILS</code> Secret Manager bootstrap allowlist.
             </p>
           </div>
 

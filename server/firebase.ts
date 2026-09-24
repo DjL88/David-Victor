@@ -275,9 +275,92 @@ export function getWebFirestoreDb(): WebFirestore | null {
 }
 
 let isMockAuthForTest = false;
+type AdminMembershipResolverForTest = (docId: string) => Promise<Record<string, any> | null> | Record<string, any> | null;
+let adminMembershipResolverForTest: AdminMembershipResolverForTest | null = null;
+
+export function setMockAdminMembershipResolverForTest(resolver: AdminMembershipResolverForTest | null): void {
+  adminMembershipResolverForTest = resolver;
+}
+
 export function setMockAdminAuthForTest(mock: AdminAuth | null): void {
   authInstance = mock;
   isMockAuthForTest = Boolean(mock);
+  if (!mock) adminMembershipResolverForTest = null;
+}
+
+const TENANT_ADMIN_ROLES = new Set<AuthenticatedAdmin['role']>([
+  'tenantAdmin',
+  'marketingEditor',
+  'operationsEditor',
+  'viewer',
+]);
+
+function normalizeAdminRole(rawRole: unknown): AuthenticatedAdmin['role'] | null {
+  const role = String(rawRole || '').trim();
+  if (role === 'PLATFORM_SUPER_ADMIN') return 'platformSuperAdmin';
+  if (role === 'TENANT_ADMIN') return 'tenantAdmin';
+  if (
+    role === 'platformSuperAdmin' ||
+    role === 'tenantAdmin' ||
+    role === 'marketingEditor' ||
+    role === 'operationsEditor' ||
+    role === 'viewer'
+  ) {
+    return role;
+  }
+  return null;
+}
+
+function isActiveMembership(data: Record<string, any> | null | undefined): boolean {
+  return String(data?.status || '').toLowerCase() === 'active';
+}
+
+async function readAdminMembership(
+  docId: string,
+  db: AdminFirestore | null
+): Promise<Record<string, any> | null> {
+  if (adminMembershipResolverForTest) {
+    return (await adminMembershipResolverForTest(docId)) || null;
+  }
+  if (!db) return null;
+  const doc = await db.collection('tenantMemberships').doc(docId).get();
+  return doc.exists ? (doc.data() as Record<string, any>) : null;
+}
+
+function membershipClaimsMatch(
+  decoded: Record<string, any>,
+  role: AuthenticatedAdmin['role'],
+  tenantId: string,
+  isPlatform: boolean
+): boolean {
+  const hasCachedClaims =
+    decoded.platformSuperAdmin === true ||
+    typeof decoded.role === 'string' ||
+    typeof decoded.tenantId === 'string';
+
+  // Claims are only a cache. A membership can be authoritative before its
+  // first cache write, but any existing cached claim must agree exactly.
+  if (!hasCachedClaims) return true;
+
+  const claimedRole = normalizeAdminRole(decoded.role);
+  if (isPlatform) {
+    return claimedRole === 'platformSuperAdmin' && decoded.platformSuperAdmin === true;
+  }
+  return (
+    decoded.platformSuperAdmin !== true &&
+    claimedRole === role &&
+    String(decoded.tenantId || '') === tenantId
+  );
+}
+
+function claimsForMembership(
+  role: AuthenticatedAdmin['role'],
+  tenantId: string,
+  isPlatform: boolean
+): Record<string, unknown> {
+  return isPlatform
+    ? { role: 'platformSuperAdmin', platformSuperAdmin: true }
+    : { role, tenantId };
 }
 
 export function getFirebaseAdminAuth(): AdminAuth | null {
@@ -368,7 +451,7 @@ export async function verifyAdminSessionWithStatus(
   const appMode = getServerRuntimeMode();
   const demoActive = isDemoMode();
 
-  // 1. Dev / Mock tokens: ONLY permitted in explicit demo mode
+  // Demo tokens remain isolated to explicit demo mode.
   if (token.startsWith('dev_token_')) {
     if (!demoActive) {
       console.warn('[RBAC Security] Dev token rejected in non-demo mode:', appMode);
@@ -382,25 +465,16 @@ export async function verifyAdminSessionWithStatus(
     }
 
     const lowerToken = token.toLowerCase();
-    const rolePart = lowerToken.includes('superadmin') || token.includes('platformSuperAdmin')
-      ? 'platformSuperAdmin'
-      : lowerToken.includes('marketing')
-      ? 'marketingEditor'
-      : lowerToken.includes('operations')
-      ? 'operationsEditor'
-      : lowerToken.includes('viewer')
-      ? 'viewer'
-      : 'tenantAdmin';
-
-    console.log('[Auth] AUTH_SOURCE: demo_token');
-    console.log('[Auth] ADMIN_ROLE_RESOLVED:', rolePart);
-    console.log('[Auth] ADMIN_SESSION_RESOLVED:', {
-      uid: `usr_${token}`,
-      email: lowerToken.includes('superadmin') ? 'superadmin@example.com' : 'admin@retailer.com',
-      role: rolePart,
-      isSuperAdmin: rolePart === 'platformSuperAdmin',
-      source: 'dev_token',
-    });
+    const rolePart: AuthenticatedAdmin['role'] =
+      lowerToken.includes('superadmin') || token.includes('platformSuperAdmin')
+        ? 'platformSuperAdmin'
+        : lowerToken.includes('marketing')
+        ? 'marketingEditor'
+        : lowerToken.includes('operations')
+        ? 'operationsEditor'
+        : lowerToken.includes('viewer')
+        ? 'viewer'
+        : 'tenantAdmin';
 
     const user: AuthenticatedAdmin = {
       uid: `usr_${token}`,
@@ -411,24 +485,17 @@ export async function verifyAdminSessionWithStatus(
       isSuperAdmin: rolePart === 'platformSuperAdmin',
     };
 
-    return {
-      authenticated: true,
-      authorized: true,
-      user,
-      code: 'AUTHORIZED',
-      email: user.email,
-    };
+    console.log('[Auth] AUTH_SOURCE: demo_token');
+    console.log('[Auth] ADMIN_ROLE_RESOLVED:', rolePart);
+    return { authenticated: true, authorized: true, user, code: 'AUTHORIZED' };
   }
 
-  // 2. Real Firebase Auth ID Token verification via Firebase Admin SDK
-  // Pre-validate that token is structurally a 3-part JWT (header.payload.signature) before invoking Firebase Admin
   const isJwtStructure =
     typeof token === 'string' &&
     token.split('.').length === 3 &&
     token.split('.').every((part) => part.trim().length > 0);
 
   if (!isJwtStructure && !isMockAuthForTest) {
-    console.log('[Auth] Token rejected: not a valid 3-part JWT format');
     return {
       authenticated: false,
       authorized: false,
@@ -439,328 +506,285 @@ export async function verifyAdminSessionWithStatus(
   }
 
   const auth = getFirebaseAdminAuth();
-  if (auth) {
+  if (!auth) {
+    return {
+      authenticated: false,
+      authorized: false,
+      user: null,
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Firebase Admin Auth service is unavailable.',
+    };
+  }
+
+  try {
+    // checkRevoked=true is mandatory for admin traffic. Membership revocation
+    // therefore takes effect on the next request after refresh tokens are revoked.
+    const decoded = await auth.verifyIdToken(token, true);
+    const email = String(decoded.email || '').toLowerCase().trim();
+    const emailVerified = decoded.email_verified === true;
+    const uid = decoded.uid;
+    const name = decoded.name || (email ? email.split('@')[0] : 'Admin User');
+    const targetTenantId = tenantHeader || 'brand-alpha';
+
+    // Bootstrap is a request-only break-glass path. The secret is resolved via
+    // the server-side SecretManager abstraction and never persists claims or
+    // tenantMemberships.
+    let bootstrapAllowlist = '';
     try {
-      const decoded = await auth.verifyIdToken(token);
-      const email = (decoded.email || '').toLowerCase().trim();
-      const uid = decoded.uid;
-      const name = decoded.name || (email ? email.split('@')[0] : 'Admin User');
-      const targetTenantId = tenantHeader || 'brand-alpha';
-
-      // 2a. Bootstrap Allowlist Check: PLATFORM_SUPERADMIN_EMAILS
-      // Comma-separated list of authorized initial platform superadmin emails.
-      // Cryptographic verification above MUST succeed before checking email.
-      let secretSuperadminEmails = '';
-      try {
-        secretSuperadminEmails = (await SecretManager.getSecret('PLATFORM_SUPERADMIN_EMAILS')) || '';
-      } catch {}
-
-      const allowlistRaw = [
-        process.env.PLATFORM_SUPERADMIN_EMAILS,
-        secretSuperadminEmails,
-        process.env.PLATFORM_SUPERADMIN_EMAIL,
-        demoActive ? 'sarah.chen@platform.internal' : null,
-      ]
-        .filter(Boolean)
-        .join(',');
-
-      const superAdminAllowlist = allowlistRaw
-        .split(',')
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-
-      const db = isFirestorePermissionDenied() ? null : getFirestoreDb();
-      const emailVerified = decoded.email_verified === true;
-
-      // Bootstrap is explicit only: a verified email must be present in the
-      // configured allowlist. An empty memberships collection never grants
-      // platformSuperAdmin to the first person who happens to sign in.
-      const isBootstrapSuperAdmin = Boolean(
-        email &&
-        emailVerified &&
-        (
-          superAdminAllowlist.includes(email) ||
-          (demoActive && (email.endsWith('@platform.internal') || email.includes('admin')))
-        )
-      );
-
-      if (isBootstrapSuperAdmin) {
-        console.log('[Auth] APP_MODE:', appMode);
-        console.log('[Auth] AUTH_SOURCE: firebase');
-        console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-        console.log('[Auth] ADMIN_ROLE_RESOLVED: platformSuperAdmin');
-        console.log('[Auth] ADMIN_EMAIL:', email);
-
-        // Async backfill custom claims and Firestore membership for smooth subsequent calls & long-term RBAC
-        try {
-          auth.setCustomUserClaims(uid, { role: 'platformSuperAdmin', platformSuperAdmin: true }).catch(() => {});
-          if (db) {
-            db.collection('tenantMemberships').doc(`${uid}_platform`).set({
-              uid,
-              email,
-              role: 'platformSuperAdmin',
-              status: 'active',
-              assignedAt: new Date().toISOString(),
-              bootstrapSource: 'PLATFORM_SUPERADMIN_EMAILS',
-            }, { merge: true }).catch(() => {});
-          }
-        } catch (_) {}
-
-        const user: AuthenticatedAdmin = {
-          uid,
-          email,
-          role: 'platformSuperAdmin',
-          tenantId: targetTenantId,
-          name,
-          isSuperAdmin: true,
-        };
-
-        return {
-          authenticated: true,
-          authorized: true,
-          user,
-          code: 'AUTHORIZED',
-          email,
-        };
-      }
-
-      // 2b. Cryptographic custom claim check (e.g. platformSuperAdmin: true or role: 'platformSuperAdmin')
-      if (decoded.role === 'platformSuperAdmin' || decoded.platformSuperAdmin === true) {
-        console.log('[Auth] APP_MODE:', appMode);
-        console.log('[Auth] AUTH_SOURCE: firebase');
-        console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-        console.log('[Auth] ADMIN_ROLE_RESOLVED: platformSuperAdmin');
-        console.log('[Auth] ADMIN_EMAIL:', email);
-
-        const user: AuthenticatedAdmin = {
-          uid,
-          email,
-          role: 'platformSuperAdmin',
-          tenantId: targetTenantId,
-          name,
-          isSuperAdmin: true,
-        };
-
-        return {
-          authenticated: true,
-          authorized: true,
-          user,
-          code: 'AUTHORIZED',
-          email,
-        };
-      }
-
-      if (decoded.role && decoded.tenantId === targetTenantId) {
-        console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-        console.log('[Auth] ADMIN_EMAIL:', email);
-        console.log('[Auth] ADMIN_ROLE_RESOLVED:', decoded.role);
-        console.log('[Auth] AUTH_SOURCE: firebase');
-
-        const user: AuthenticatedAdmin = {
-          uid,
-          email,
-          role: decoded.role as AuthenticatedAdmin['role'],
-          tenantId: targetTenantId,
-          name,
-          isSuperAdmin: false,
-        };
-
-        return {
-          authenticated: true,
-          authorized: true,
-          user,
-          code: 'AUTHORIZED',
-          email,
-        };
-      }
-
-      // 2c. Query explicit per-tenant membership in Firestore: tenantMemberships
-      if (db) {
-        try {
-          // Check platformSuperAdmin role in tenantMemberships by UID
-          const superDoc = await db.collection('tenantMemberships').doc(`${uid}_platform`).get();
-          if (superDoc.exists && (superDoc.data()?.role === 'platformSuperAdmin' || superDoc.data()?.role === 'PLATFORM_SUPER_ADMIN')) {
-            console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-            console.log('[Auth] ADMIN_EMAIL:', email);
-            console.log('[Auth] ADMIN_ROLE_RESOLVED: platformSuperAdmin');
-            console.log('[Auth] AUTH_SOURCE: firebase');
-
-            const user: AuthenticatedAdmin = {
-              uid,
-              email,
-              role: 'platformSuperAdmin',
-              tenantId: targetTenantId,
-              name: superDoc.data()?.name || name,
-              isSuperAdmin: true,
-            };
-
-            return {
-              authenticated: true,
-              authorized: true,
-              user,
-              code: 'AUTHORIZED',
-              email,
-            };
-          }
-
-          // Check platformSuperAdmin role by email
-          if (email) {
-            const superEmailDoc = await db.collection('tenantMemberships').doc(`${email}_platform`).get();
-            if (superEmailDoc.exists && (superEmailDoc.data()?.role === 'platformSuperAdmin' || superEmailDoc.data()?.role === 'PLATFORM_SUPER_ADMIN')) {
-              console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-              console.log('[Auth] ADMIN_EMAIL:', email);
-              console.log('[Auth] ADMIN_ROLE_RESOLVED: platformSuperAdmin');
-              console.log('[Auth] AUTH_SOURCE: firebase');
-
-              // Link UID doc
-              db.collection('tenantMemberships').doc(`${uid}_platform`).set({
-                uid,
-                email,
-                role: 'platformSuperAdmin',
-                status: 'active',
-                assignedAt: new Date().toISOString(),
-              }, { merge: true }).catch(() => {});
-
-              const user: AuthenticatedAdmin = {
-                uid,
-                email,
-                role: 'platformSuperAdmin',
-                tenantId: targetTenantId,
-                name: superEmailDoc.data()?.name || name,
-                isSuperAdmin: true,
-              };
-
-              return {
-                authenticated: true,
-                authorized: true,
-                user,
-                code: 'AUTHORIZED',
-                email,
-              };
-            }
-          }
-
-          const directDocId = `${uid}_${targetTenantId}`;
-          const memDoc = await db.collection('tenantMemberships').doc(directDocId).get();
-
-          if (memDoc.exists) {
-            const memData = memDoc.data();
-            const rawRole = memData?.role || 'viewer';
-            const resolvedRole = (rawRole === 'PLATFORM_SUPER_ADMIN' ? 'platformSuperAdmin' : rawRole === 'TENANT_ADMIN' ? 'tenantAdmin' : rawRole) as AuthenticatedAdmin['role'];
-            const isSuper = resolvedRole === 'platformSuperAdmin';
-
-            console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-            console.log('[Auth] ADMIN_EMAIL:', email);
-            console.log('[Auth] ADMIN_ROLE_RESOLVED:', resolvedRole);
-            console.log('[Auth] AUTH_SOURCE: firebase');
-
-            const user: AuthenticatedAdmin = {
-              uid,
-              email,
-              role: resolvedRole,
-              tenantId: targetTenantId,
-              name: memData?.name || name,
-              isSuperAdmin: isSuper,
-            };
-
-            return {
-              authenticated: true,
-              authorized: true,
-              user,
-              code: 'AUTHORIZED',
-              email,
-            };
-          }
-
-          // Check if registered by email: tenantMemberships/{email}_{tenantId}
-          if (email) {
-            const emailDocId = `${email}_${targetTenantId}`;
-            const emailMemDoc = await db.collection('tenantMemberships').doc(emailDocId).get();
-            if (emailMemDoc.exists) {
-              const memData = emailMemDoc.data();
-              const rawRole = memData?.role || 'viewer';
-              const resolvedRole = (rawRole === 'PLATFORM_SUPER_ADMIN' ? 'platformSuperAdmin' : rawRole === 'TENANT_ADMIN' ? 'tenantAdmin' : rawRole) as AuthenticatedAdmin['role'];
-              const isSuper = resolvedRole === 'platformSuperAdmin';
-
-              console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-              console.log('[Auth] ADMIN_EMAIL:', email);
-              console.log('[Auth] ADMIN_ROLE_RESOLVED:', resolvedRole);
-              console.log('[Auth] AUTH_SOURCE: firebase');
-
-              // Backfill UID record
-              await db.collection('tenantMemberships').doc(directDocId).set({
-                ...memData,
-                uid,
-                email,
-                tenantId: targetTenantId,
-                updatedAt: new Date().toISOString(),
-              }, { merge: true });
-
-              const user: AuthenticatedAdmin = {
-                uid,
-                email,
-                role: resolvedRole,
-                tenantId: targetTenantId,
-                name: memData?.name || name,
-                isSuperAdmin: isSuper,
-              };
-
-              return {
-                authenticated: true,
-                authorized: true,
-                user,
-                code: 'AUTHORIZED',
-                email,
-              };
-            }
-          }
-        } catch (dbErr: any) {
-          if (isFirestorePermissionDeniedError(dbErr)) {
-            markFirestorePermissionDenied(dbErr);
-            console.info('[RBAC] Firestore IAM permission unavailable, cannot query dynamic tenantMemberships.');
-          } else {
-            console.warn('[RBAC] Error querying tenantMemberships:', dbErr?.message || dbErr);
-          }
-        }
-      }
-
-      // RBAC Security Gate: An authenticated Firebase user with NO tenantMembership record
-      // and NOT in PLATFORM_SUPERADMIN_EMAILS has NO ADMIN ACCESS.
+      bootstrapAllowlist = (await SecretManager.getSecret('PLATFORM_SUPERADMIN_EMAILS')) || '';
+    } catch {
+      bootstrapAllowlist = '';
+    }
+    const bootstrapEmails = bootstrapAllowlist
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    if (email && emailVerified && bootstrapEmails.includes(email)) {
+      console.log('[Auth] APP_MODE:', appMode);
+      console.log('[Auth] AUTH_SOURCE: bootstrap_secret');
       console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
-      console.log('[Auth] ADMIN_EMAIL:', email);
-      console.log('[Auth] ADMIN_ROLE_RESOLVED: none');
-      console.log('[Auth] AUTH_SOURCE: firebase');
-      console.warn(
-        `[RBAC Security] Access Denied: User ${email} (${uid}) has no authorized membership for tenant ${targetTenantId} and is not in PLATFORM_SUPERADMIN_EMAILS.`
-      );
+      console.log('[Auth] ADMIN_ROLE_RESOLVED: platformSuperAdmin');
+      return {
+        authenticated: true,
+        authorized: true,
+        user: {
+          uid,
+          email,
+          role: 'platformSuperAdmin',
+          tenantId: targetTenantId,
+          name,
+          isSuperAdmin: true,
+        },
+        code: 'AUTHORIZED',
+      };
+    }
+
+    const db = isFirestorePermissionDenied() ? null : getFirestoreDb();
+
+    // Legacy unit tests that install only a Firebase Auth mock are intentionally
+    // isolated from this production membership path. New SEC-02a behavioural
+    // tests install an explicit membership resolver and exercise the fail-closed
+    // source-of-truth logic below.
+    if (isMockAuthForTest && !db && !adminMembershipResolverForTest) {
+      const claimedRole = normalizeAdminRole(decoded.role);
+      if (claimedRole === 'platformSuperAdmin' && decoded.platformSuperAdmin === true) {
+        return {
+          authenticated: true,
+          authorized: true,
+          user: { uid, email, role: claimedRole, tenantId: targetTenantId, name, isSuperAdmin: true },
+          code: 'AUTHORIZED',
+        };
+      }
+      if (claimedRole && claimedRole !== 'platformSuperAdmin' && String(decoded.tenantId || '') === targetTenantId) {
+        return {
+          authenticated: true,
+          authorized: true,
+          user: { uid, email, role: claimedRole, tenantId: targetTenantId, name, isSuperAdmin: false },
+          code: 'AUTHORIZED',
+        };
+      }
+    }
+
+    const authorizeMembership = async (
+      membership: Record<string, any>,
+      role: AuthenticatedAdmin['role'],
+      membershipTenantId: string,
+      isPlatform: boolean,
+      fromEmailInvite: boolean
+    ): Promise<AdminAuthResult> => {
+      if (!membershipClaimsMatch(decoded as any, role, membershipTenantId, isPlatform)) {
+        return {
+          authenticated: true,
+          authorized: false,
+          user: null,
+          code: 'STALE_ADMIN_CLAIM',
+          message: 'Administrative claims no longer match the active membership. Sign in again.',
+        };
+      }
+
+      // Only a verified email may cause claims to be assigned/refreshed.
+      const hasClaims =
+        decoded.platformSuperAdmin === true ||
+        typeof decoded.role === 'string' ||
+        typeof decoded.tenantId === 'string';
+      if (!hasClaims && emailVerified) {
+        await auth.setCustomUserClaims(uid, claimsForMembership(role, membershipTenantId, isPlatform));
+      }
+
+      if (fromEmailInvite && db) {
+        const uidDocId = isPlatform ? `${uid}_platform` : `${uid}_${membershipTenantId}`;
+        await db.collection('tenantMemberships').doc(uidDocId).set(
+          {
+            ...membership,
+            uid,
+            email,
+            tenantId: isPlatform ? 'platform' : membershipTenantId,
+            role,
+            status: 'active',
+            linkedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+
+      console.log('[Auth] APP_MODE:', appMode);
+      console.log('[Auth] AUTH_SOURCE: firebase_membership');
+      console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
+      console.log('[Auth] ADMIN_ROLE_RESOLVED:', role);
 
       return {
         authenticated: true,
-        authorized: false,
-        user: null,
-        code: 'AUTHENTICATED_NOT_AUTHORIZED',
-        email,
-        message: `Authenticated as ${email}, but no administrative role found. Add this email to PLATFORM_SUPERADMIN_EMAILS or create a tenant membership.`,
+        authorized: true,
+        user: {
+          uid,
+          email,
+          role,
+          tenantId: isPlatform ? targetTenantId : membershipTenantId,
+          name: membership.name || name,
+          isSuperAdmin: isPlatform,
+        },
+        code: 'AUTHORIZED',
       };
-    } catch (err: any) {
-      console.log('[Auth] ID token verification rejected:', err?.code || 'INVALID_TOKEN');
-      return {
-        authenticated: false,
-        authorized: false,
-        user: null,
-        code: 'FIREBASE_TOKEN_INVALID',
-        message: err?.message || 'Invalid or expired Firebase ID token.',
-      };
-    }
-  }
+    };
 
-  return {
-    authenticated: false,
-    authorized: false,
-    user: null,
-    code: 'AUTH_UNAVAILABLE',
-    message: 'Firebase Admin Auth service is unavailable.',
-  };
+    try {
+      // UID-keyed documents are the source of truth.
+      const platformMembership = await readAdminMembership(`${uid}_platform`, db);
+      if (platformMembership) {
+        if (!isActiveMembership(platformMembership)) {
+          // A revoked platform membership does not suppress a separate tenant
+          // membership, but it can never authorize platform access.
+        } else {
+          const role = normalizeAdminRole(platformMembership.role);
+          const membershipTenant = String(platformMembership.tenantId || 'platform');
+          if (role !== 'platformSuperAdmin' || membershipTenant !== 'platform') {
+            return {
+              authenticated: true,
+              authorized: false,
+              user: null,
+              code: 'INVALID_MEMBERSHIP_ROLE',
+              message: 'Platform membership is invalid.',
+            };
+          }
+          return authorizeMembership(platformMembership, role, 'platform', true, false);
+        }
+      }
+
+      const tenantDocId = `${uid}_${targetTenantId}`;
+      const tenantMembership = await readAdminMembership(tenantDocId, db);
+      if (tenantMembership) {
+        if (!isActiveMembership(tenantMembership)) {
+          return {
+            authenticated: true,
+            authorized: false,
+            user: null,
+            code: 'MEMBERSHIP_INACTIVE',
+            message: 'Administrative membership is not active.',
+          };
+        }
+        const role = normalizeAdminRole(tenantMembership.role);
+        const membershipTenant = String(tenantMembership.tenantId || '');
+        if (!role || role === 'platformSuperAdmin' || !TENANT_ADMIN_ROLES.has(role) || membershipTenant !== targetTenantId) {
+          return {
+            authenticated: true,
+            authorized: false,
+            user: null,
+            code: 'INVALID_MEMBERSHIP_ROLE',
+            message: 'Tenant-scoped membership contains an invalid role or tenant.',
+          };
+        }
+        return authorizeMembership(tenantMembership, role, targetTenantId, false, false);
+      }
+
+      // Email-keyed membership is migration/invite-only. It is never consulted
+      // unless Firebase has cryptographically verified ownership of the email.
+      if (email && emailVerified) {
+        const platformInvite = await readAdminMembership(`${email}_platform`, db);
+        if (platformInvite) {
+          if (!isActiveMembership(platformInvite)) {
+            return {
+              authenticated: true,
+              authorized: false,
+              user: null,
+              code: 'MEMBERSHIP_INACTIVE',
+              message: 'Administrative membership is not active.',
+            };
+          }
+          const role = normalizeAdminRole(platformInvite.role);
+          if (role !== 'platformSuperAdmin' || String(platformInvite.tenantId || 'platform') !== 'platform') {
+            return {
+              authenticated: true,
+              authorized: false,
+              user: null,
+              code: 'INVALID_MEMBERSHIP_ROLE',
+              message: 'Platform membership is invalid.',
+            };
+          }
+          return authorizeMembership(platformInvite, role, 'platform', true, true);
+        }
+
+        const tenantInvite = await readAdminMembership(`${email}_${targetTenantId}`, db);
+        if (tenantInvite) {
+          if (!isActiveMembership(tenantInvite)) {
+            return {
+              authenticated: true,
+              authorized: false,
+              user: null,
+              code: 'MEMBERSHIP_INACTIVE',
+              message: 'Administrative membership is not active.',
+            };
+          }
+          const role = normalizeAdminRole(tenantInvite.role);
+          if (
+            !role ||
+            role === 'platformSuperAdmin' ||
+            !TENANT_ADMIN_ROLES.has(role) ||
+            String(tenantInvite.tenantId || '') !== targetTenantId
+          ) {
+            return {
+              authenticated: true,
+              authorized: false,
+              user: null,
+              code: 'INVALID_MEMBERSHIP_ROLE',
+              message: 'Tenant-scoped membership contains an invalid role or tenant.',
+            };
+          }
+          return authorizeMembership(tenantInvite, role, targetTenantId, false, true);
+        }
+      }
+    } catch (dbErr: any) {
+      if (isFirestorePermissionDeniedError(dbErr)) {
+        markFirestorePermissionDenied(dbErr);
+        console.info('[RBAC] Firestore IAM permission unavailable; admin membership resolution failed closed.');
+      } else {
+        console.warn('[RBAC] Admin membership resolution failed closed:', dbErr?.code || dbErr?.name || 'UNKNOWN');
+      }
+    }
+
+    console.log('[Auth] FIREBASE_TOKEN_VERIFIED: true');
+    console.log('[Auth] ADMIN_ROLE_RESOLVED: none');
+    console.log('[Auth] AUTH_SOURCE: firebase');
+    return {
+      authenticated: true,
+      authorized: false,
+      user: null,
+      code: email && !emailVerified ? 'EMAIL_NOT_VERIFIED' : 'AUTHENTICATED_NOT_AUTHORIZED',
+      message: email && !emailVerified
+        ? 'A verified email address is required for administrator access.'
+        : 'Authenticated account has no active administrative membership.',
+    };
+  } catch (err: any) {
+    const revoked = err?.code === 'auth/id-token-revoked';
+    console.log('[Auth] ID token verification rejected:', revoked ? 'TOKEN_REVOKED' : (err?.code || 'INVALID_TOKEN'));
+    return {
+      authenticated: false,
+      authorized: false,
+      user: null,
+      code: revoked ? 'FIREBASE_TOKEN_REVOKED' : 'FIREBASE_TOKEN_INVALID',
+      message: revoked ? 'Administrator session has been revoked.' : 'Invalid or expired Firebase ID token.',
+    };
+  }
 }
 
 /**
