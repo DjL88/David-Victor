@@ -5,6 +5,25 @@
  * as well as pluggable third-party PSPs, gift cards, and split payments.
  */
 
+export interface PaymentTokenizationRequest {
+  gatewayProfileId?: string;
+  channelLinkId?: string;
+  customerId?: string;
+  payment_method?: {
+    number: string;
+    exp_month: number;
+    exp_year: number;
+    cvc: string;
+    name?: string;
+  };
+  // Demo-only display metadata; never accepted as a live substitute for card data.
+  cardNumberMasked?: string;
+  brand?: string;
+  type?: string;
+  cardholderName?: string;
+  last4?: string;
+}
+
 export interface PaymentToken {
   token: string;
   tokenId?: string;
@@ -74,14 +93,7 @@ export interface PaymentGatewayProfile {
  * and capture through Deliverect Pay or configured PSP adapter.
  */
 export interface PaymentClient {
-  createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken>;
+  createToken(cardDetails?: PaymentTokenizationRequest): Promise<PaymentToken>;
 
   getPaymentGateways(channelLinkId: string): Promise<PaymentGatewayProfile[]>;
 
@@ -102,14 +114,7 @@ export interface PaymentClient {
 export class DemoPaymentClient implements PaymentClient {
   private payments = new Map<string, DPayPaymentResponse>();
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
+  async createToken(cardDetails?: PaymentTokenizationRequest): Promise<PaymentToken> {
     const last4 = cardDetails?.last4 || cardDetails?.cardNumberMasked?.slice(-4) || '';
     const tokenId = `dpay_tok_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     return {
@@ -198,18 +203,27 @@ export class HttpPaymentClient implements PaymentClient {
     this.baseUrl = baseUrl;
   }
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
+  async createToken(cardDetails?: PaymentTokenizationRequest): Promise<PaymentToken> {
+    if (
+      !cardDetails?.gatewayProfileId ||
+      !cardDetails.channelLinkId ||
+      !cardDetails.customerId ||
+      !cardDetails.payment_method
+    ) {
+      throw new Error(
+        'Live DPay tokenization requires gatewayProfileId, channelLinkId, customerId and payment_method.'
+      );
+    }
+
     const res = await fetch(`${this.baseUrl}/payments/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardDetails }),
+      body: JSON.stringify({
+        gatewayProfileId: cardDetails.gatewayProfileId,
+        channelLinkId: cardDetails.channelLinkId,
+        customerId: cardDetails.customerId,
+        payment_method: cardDetails.payment_method,
+      }),
     });
 
     if (!res.ok) {
@@ -306,14 +320,7 @@ export class DynamicPaymentClient implements PaymentClient {
     return new HttpPaymentClient();
   }
 
-  async createToken(cardDetails?: {
-    cardNumberMasked?: string;
-    expiry?: string;
-    brand?: string;
-    type?: string;
-    cardholderName?: string;
-    last4?: string;
-  }): Promise<PaymentToken> {
+  async createToken(cardDetails?: PaymentTokenizationRequest): Promise<PaymentToken> {
     return this.resolveClient().createToken(cardDetails);
   }
 
