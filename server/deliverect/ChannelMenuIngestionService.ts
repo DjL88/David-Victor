@@ -4,6 +4,7 @@ import { BFFError } from '../errors';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
+import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
 
 export interface ChannelMenuIngressJob {
@@ -509,6 +510,12 @@ export class ChannelMenuIngestionService {
           JSON.stringify(operationalMenu)
         );
       }
+
+      // A successful Menu Push becomes the new catalogue truth. Invalidate the
+      // bounded storefront discovery/catalog caches only after the durable worker
+      // has finished normalising every menu, so the next customer read refreshes
+      // the combined catalogue instead of serving stale pre-publish data.
+      CommerceDiscoveryService.getInstance().clearCache();
 
       await this.saveIngressRecord({
         ...processing,
