@@ -164,7 +164,7 @@ export const AislesModal: React.FC<AislesModalProps> = ({
     >
       <div
         id="aisles-directory-dialog-container"
-        className="bg-white w-full max-w-2xl h-[580px] max-h-[85vh] sm:max-h-[82vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-gray-100"
+        className="bg-white w-full max-w-2xl h-[min(92dvh,760px)] sm:h-[min(88dvh,760px)] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-gray-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Search */}
