@@ -1254,6 +1254,36 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async listHeldCatalogueReviews(tenantId?: string): Promise<{ reviews: any[]; issueCount: number }> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/integrations/deliverect/menu-reviews`, {
+      method: 'GET',
+      headers: { ...headers, 'x-tenant-id': tId },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to fetch catalogue reviews: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async approveHeldCatalogueReview(tenantId: string, eventId: string): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/integrations/deliverect/menu-reviews/${encodeURIComponent(eventId)}/approve`,
+      {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to approve catalogue review: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
   async traceRequest(params: {
     tenantId?: string;
     storeId?: string;
