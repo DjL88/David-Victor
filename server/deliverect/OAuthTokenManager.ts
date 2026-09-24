@@ -12,7 +12,9 @@
  * - Throws genuine upstream errors on invalid credentials; ZERO demo fallback.
  */
 
+import { createHash, randomUUID } from 'node:crypto';
 import { SecretManager } from '../secrets';
+import { getFirestoreDb } from '../firebase';
 
 export const DELIVERECT_ENVIRONMENTS = {
   staging: {
@@ -92,6 +94,109 @@ export class OAuthTokenManager {
 
   private cachedToken: TokenRecord | null = null;
   private inFlightTokenPromise: Promise<string> | null = null;
+  private readonly cacheOwnerId = randomUUID();
+
+  private get sharedCacheKey(): string {
+    // Key by the complete credential/audience identity without persisting either
+    // credential. Rotating a secret therefore cannot accidentally reuse a token
+    // minted for the previous credential set.
+    return createHash('sha256')
+      .update([this.environment, this.config.audience, this.clientId, this.clientSecret].join('|'))
+      .digest('hex');
+  }
+
+  private async claimSharedToken(): Promise<{ token: TokenRecord | null; claimed: boolean }> {
+    const db = getFirestoreDb();
+    if (!db) return { token: null, claimed: true };
+
+    const ref = db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey);
+    const now = Date.now();
+    const leaseMs = 15_000;
+
+    try {
+      return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? snap.data() : undefined;
+      const expiresAt = Number(data?.expiresAt || 0);
+      if (data?.accessToken && now < expiresAt - 60_000) {
+        return {
+          token: {
+            accessToken: String(data.accessToken),
+            tokenType: String(data.tokenType || 'Bearer'),
+            expiresAt,
+            scope: data.scope ? String(data.scope) : undefined,
+          },
+          claimed: false,
+        };
+      }
+
+      const leaseUntil = Number(data?.leaseUntil || 0);
+      const leaseOwner = String(data?.leaseOwner || '');
+      if (leaseUntil > now && leaseOwner && leaseOwner !== this.cacheOwnerId) {
+        return { token: null, claimed: false };
+      }
+
+      tx.set(ref, {
+        environment: this.environment,
+        audience: this.config.audience,
+        clientIdHash: createHash('sha256').update(this.clientId).digest('hex'),
+        leaseOwner: this.cacheOwnerId,
+        leaseUntil: now + leaseMs,
+        updatedAt: new Date(now).toISOString(),
+      }, { merge: true });
+      return { token: null, claimed: true };
+      });
+    } catch (err) {
+      // OAuth remains available if the shared cache is temporarily degraded;
+      // the local in-flight guard still prevents a per-instance stampede.
+      console.warn('[OAuthTokenManager] Shared token cache unavailable; using local refresh guard:', err);
+      return { token: null, claimed: true };
+    }
+  }
+
+  private async awaitSharedTokenOrClaim(): Promise<TokenRecord | null> {
+    // A lease is deliberately short. Waiting instances poll the shared record
+    // rather than creating an OAuth stampede across Cloud Run instances.
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const state = await this.claimSharedToken();
+      if (state.token) return state.token;
+      if (state.claimed) return null;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    // The lease has expired (or its owner died); the next transaction can claim it.
+    const finalState = await this.claimSharedToken();
+    return finalState.token;
+  }
+
+  private async publishSharedToken(token: TokenRecord): Promise<void> {
+    const db = getFirestoreDb();
+    if (!db) return;
+    const ref = db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey);
+    await ref.set({
+      environment: this.environment,
+      audience: this.config.audience,
+      clientIdHash: createHash('sha256').update(this.clientId).digest('hex'),
+      accessToken: token.accessToken,
+      tokenType: token.tokenType,
+      expiresAt: token.expiresAt,
+      scope: token.scope || null,
+      leaseOwner: null,
+      leaseUntil: 0,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  }
+
+  private async releaseSharedLease(): Promise<void> {
+    const db = getFirestoreDb();
+    if (!db) return;
+    const ref = db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists && snap.data()?.leaseOwner === this.cacheOwnerId) {
+        tx.set(ref, { leaseOwner: null, leaseUntil: 0, updatedAt: new Date().toISOString() }, { merge: true });
+      }
+    });
+  }
 
   constructor(options?: {
     environment?: DeliverectEnvironmentName;
@@ -117,6 +222,14 @@ export class OAuthTokenManager {
    */
   invalidateCache(): void {
     this.cachedToken = null;
+    const db = getFirestoreDb();
+    if (db && this.clientId && this.clientSecret) {
+      // Keep the public API synchronous for existing callers; invalidate the
+      // shared credential asynchronously so a 401 cannot poison other instances.
+      void db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey).delete().catch((err) => {
+        console.warn('[OAuthTokenManager] Shared token invalidation failed:', err);
+      });
+    }
   }
 
   /**
@@ -195,14 +308,41 @@ export class OAuthTokenManager {
       return this.cachedToken.accessToken;
     }
 
-    // If an exchange is already in progress, await the existing promise to prevent stampede
+    // Prevent both in-process and cross-instance token stampedes. In live
+    // Firestore-backed deployments, one instance claims a short refresh lease
+    // and every other instance reuses the published token.
     if (this.inFlightTokenPromise) {
       return this.inFlightTokenPromise;
     }
 
-    this.inFlightTokenPromise = this.requestFreshToken().finally(() => {
-      this.inFlightTokenPromise = null;
-    });
+    const shared = await this.awaitSharedTokenOrClaim();
+    if (shared) {
+      this.cachedToken = shared;
+      return shared.accessToken;
+    }
+
+    // A second caller in this process may have reached the shared lease while
+    // the first caller was awaiting Firestore.
+    if (this.inFlightTokenPromise) {
+      return this.inFlightTokenPromise;
+    }
+
+    this.inFlightTokenPromise = this.requestFreshToken()
+      .then(async (token) => {
+        if (this.cachedToken) {
+          await this.publishSharedToken(this.cachedToken).catch((err) => {
+            console.warn('[OAuthTokenManager] Could not publish shared token cache:', err);
+          });
+        }
+        return token;
+      })
+      .catch(async (err) => {
+        await this.releaseSharedLease().catch(() => undefined);
+        throw err;
+      })
+      .finally(() => {
+        this.inFlightTokenPromise = null;
+      });
 
     return this.inFlightTokenPromise;
   }
