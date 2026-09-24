@@ -16,6 +16,12 @@ import { BFFError } from './errors';
 import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
 import type { ProtectedBundleAllocation } from '../src/commerce/bundleAllocation';
 import { FirebaseAuthDomainService } from './firebaseAuthDomainService';
+import {
+  integrationProfileId,
+  validateIntegrationProfile,
+  type IntegrationEnvironment,
+  type TenantIntegrationProfile,
+} from './integrationProfile';
 
 export enum OperationType {
   CREATE = 'create',
@@ -129,6 +135,8 @@ export interface IntegrationConfig {
   /** Superadmin-managed Retail/Quest endpoint experiment configuration. */
   retailOrder?: RetailOrderEndpointConfig;
   environment: 'staging' | 'production';
+  /** Active environment used to select integrationProfiles/{tenantId}__{env}. */
+  activeEnv?: IntegrationEnvironment;
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';
   bffProxyUrl?: string;
@@ -326,6 +334,7 @@ const useLocalRuntimeData = isDemoMode() || process.env.NODE_ENV === 'test' || i
 const inMemoryTenants: Record<string, TenantConfig> =
   useLocalRuntimeData ? { ...MOCK_TENANTS, ...loadPersistedTenants() } : {};
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
+const inMemoryIntegrationProfiles: Record<string, TenantIntegrationProfile> = {};
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
 const inMemoryBasketBundleAllocations: Record<string, BasketBundleAllocationsDocument> = {};
@@ -1983,6 +1992,82 @@ export class FirestoreService {
 
   static async getTenantIntegration(tenantId: string = 'brand-alpha'): Promise<IntegrationConfig> {
     return this.getIntegrationConfig(tenantId);
+  }
+
+  /**
+   * Reads the environment-scoped integration profile. Unlike the legacy
+   * integrations/{tenantId} document, profiles never fall back to another
+   * environment or fabricate a default record.
+   */
+  static async getIntegrationProfile(
+    tenantId: string,
+    environment: IntegrationEnvironment
+  ): Promise<TenantIntegrationProfile | null> {
+    const id = integrationProfileId(tenantId, environment);
+    if (inMemoryIntegrationProfiles[id]) {
+      return validateIntegrationProfile(
+        inMemoryIntegrationProfiles[id],
+        tenantId,
+        environment
+      );
+    }
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
+        return null;
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Integration profile lookup requires Firestore.',
+        503
+      );
+    }
+
+    const snap = await db.collection('integrationProfiles').doc(id).get();
+    if (!snap.exists) return null;
+
+    const profile = validateIntegrationProfile(
+      snap.data() as TenantIntegrationProfile,
+      tenantId,
+      environment
+    );
+    inMemoryIntegrationProfiles[id] = profile;
+    return profile;
+  }
+
+  /**
+   * Persists a fully validated environment-scoped integration profile.
+   * Admin authorization is enforced by the calling BFF route/service.
+   */
+  static async updateIntegrationProfile(
+    profile: TenantIntegrationProfile
+  ): Promise<TenantIntegrationProfile> {
+    const validated = validateIntegrationProfile(profile);
+    const id = integrationProfileId(validated.tenantId, validated.environment);
+    const now = new Date().toISOString();
+    const next: TenantIntegrationProfile = {
+      ...validated,
+      id,
+      updatedAt: now,
+      createdAt: validated.createdAt || now,
+    };
+    inMemoryIntegrationProfiles[id] = next;
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (isDemoMode() || process.env.NODE_ENV === 'test' || isTestMode()) {
+        return next;
+      }
+      throw new BFFError(
+        'DATABASE_UNAVAILABLE',
+        'Integration profile could not be saved because Firestore is unavailable.',
+        503
+      );
+    }
+
+    await db.collection('integrationProfiles').doc(id).set(cleanUndefined(next), { merge: true });
+    return next;
   }
 
   /**
