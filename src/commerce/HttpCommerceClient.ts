@@ -44,7 +44,7 @@ import {
   VisualRule,
 } from './models';
 import { BundleProduct, SelectedBundleModifier } from './bundleModels';
-import { getCurrentIdToken } from '../firebase';
+import { getCurrentAppCheckToken, getCurrentIdToken } from '../firebase';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
@@ -87,6 +87,7 @@ export class HttpCommerceClient implements CommerceClient {
     let res: Response | null = null;
     let lastError: unknown = null;
     const retryDelays = [200, 600, 1200];
+    const appCheckToken = await getCurrentAppCheckToken().catch(() => null);
 
     for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
       try {
@@ -95,6 +96,7 @@ export class HttpCommerceClient implements CommerceClient {
           headers: {
             'Content-Type': 'application/json',
             'X-Tenant-ID': this.currentTenantId,
+            ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
             ...(options.headers || {}),
           },
         });
