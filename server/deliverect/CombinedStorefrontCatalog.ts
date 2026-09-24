@@ -20,6 +20,8 @@ export interface HostedChannelMenuSnapshot {
     status?: string;
     stock?: number | boolean;
     snoozed?: boolean;
+    /** Forward-compatible Deliverect merchandise discriminator. Unknown values are retained. */
+    type?: string;
   }>;
 }
 
@@ -46,6 +48,7 @@ export function projectHostedMenusToCombinedCatalog(
       ...(product.status !== undefined ? { status: product.status } : {}),
       ...(product.stock !== undefined ? { stock: product.stock } : {}),
       ...(product.snoozed !== undefined ? { snoozed: product.snoozed } : {}),
+      ...(product.type !== undefined ? { type: product.type } : {}),
     })),
   }));
   return projectChannelCatalogs(masterLocationId, pushes);
