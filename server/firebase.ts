@@ -1,6 +1,7 @@
 import { initializeApp as initAdminApp, getApps as getAdminApps, App as AdminApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
 import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase-admin/storage';
+import { getAppCheck as getAdminAppCheck, AppCheck as AdminAppCheck } from 'firebase-admin/app-check';
 import { getFirestore as getAdminFirestore, Firestore as AdminFirestore } from 'firebase-admin/firestore';
 import { initializeApp as initWebApp, getApps as getWebApps, FirebaseApp as WebApp } from 'firebase/app';
 import { getFirestore as getWebFirestore, Firestore as WebFirestore } from 'firebase/firestore';
@@ -12,6 +13,7 @@ import { SecretManager } from './secrets';
 let adminAppInstance: AdminApp | null = null;
 let authInstance: AdminAuth | null = null;
 let storageInstance: AdminStorage | null = null;
+let appCheckInstance: AdminAppCheck | null = null;
 let firestoreInstance: AdminFirestore | null = null;
 let webAppInstance: WebApp | null = null;
 let webFirestoreInstance: WebFirestore | null = null;
@@ -393,6 +395,57 @@ export function getFirebaseStorage(): AdminStorage | null {
   }
 }
 
+let appCheckVerifierForTest: { verifyToken(token: string): Promise<any> } | null = null;
+
+export function setMockAppCheckVerifierForTest(
+  verifier: { verifyToken(token: string): Promise<any> } | null
+): void {
+  appCheckVerifierForTest = verifier;
+}
+
+export function getFirebaseAdminAppCheck(): AdminAppCheck | null {
+  if (appCheckVerifierForTest) return appCheckVerifierForTest as unknown as AdminAppCheck;
+  if (appCheckInstance) return appCheckInstance;
+  const app = getFirebaseAdminApp();
+  if (!app) return null;
+
+  try {
+    appCheckInstance = getAdminAppCheck(app);
+    return appCheckInstance;
+  } catch (err) {
+    console.warn('[Firebase Admin] App Check initialization warning:', err);
+    return null;
+  }
+}
+
+export async function verifyFirebaseAppCheckToken(token?: string | null): Promise<boolean> {
+  const value = String(token || '').trim();
+  if (!value) return false;
+  const verifier = appCheckVerifierForTest || getFirebaseAdminAppCheck();
+  if (!verifier) return false;
+  try {
+    await verifier.verifyToken(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function adminMfaIsRequired(): boolean {
+  const configured = String(process.env.ADMIN_MFA_ENFORCEMENT || '').trim().toLowerCase();
+  if (configured === 'required' || configured === 'true' || configured === '1') return true;
+  if (configured === 'optional' || configured === 'false' || configured === '0') return false;
+  return getServerRuntimeMode() === 'production';
+}
+
+function hasSecondFactor(decoded: Record<string, any>): boolean {
+  const firebaseClaims = decoded.firebase as Record<string, any> | undefined;
+  const factor = firebaseClaims?.sign_in_second_factor;
+  if (typeof factor === 'string' && factor.trim()) return true;
+  if (Array.isArray(factor) && factor.length > 0) return true;
+  return false;
+}
+
 /**
  * Verified Admin User Identity
  */
@@ -523,6 +576,16 @@ export async function verifyAdminSessionWithStatus(
     const email = String(decoded.email || '').toLowerCase().trim();
     const emailVerified = decoded.email_verified === true;
     const uid = decoded.uid;
+
+    if (adminMfaIsRequired() && !hasSecondFactor(decoded as any)) {
+      return {
+        authenticated: true,
+        authorized: false,
+        user: null,
+        code: 'MFA_REQUIRED',
+        message: 'Multi-factor authentication is required for administrator access.',
+      };
+    }
     const name = decoded.name || (email ? email.split('@')[0] : 'Admin User');
     const targetTenantId = tenantHeader || 'brand-alpha';
 
