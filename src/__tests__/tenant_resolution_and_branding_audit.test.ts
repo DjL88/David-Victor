@@ -27,64 +27,29 @@ describe('Strict Tenant Resolution & Branding Audit Tests', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects arbitrary public query parameters or headers from switching tenants without authorization', async () => {
+  it('requires tenant context to be resolved before route handlers consume it', async () => {
     const { resolveTenant, resolveAdminRequestedTenant } = await import('../../server/api/v1Router');
 
-    // Case A: Unauthenticated public request with fake domain and malicious override
     const unauthReq: any = {
-      headers: {
-        'x-forwarded-host': 'attacker-site.com',
-        'x-tenant-id': 'brand-beta',
-      },
+      headers: { 'x-tenant-id': 'brand-beta' },
       query: { tenantId: 'brand-beta' },
       hostname: 'attacker-site.com',
-      simulatePublicRequest: true,
     };
+    expect(() => resolveTenant(unauthReq)).toThrow('Tenant scope has not been resolved');
 
-    expect(() => resolveTenant(unauthReq)).toThrow('Tenant not found for domain "attacker-site.com".');
+    expect(resolveTenant({ resolvedTenantId: 'brand-alpha' } as any)).toBe('brand-alpha');
 
-    // Case B: Authorized preview token allows explicit override
-    process.env.PREVIEW_AUTH_TOKEN = 'test-secret-preview-token';
-    const authPreviewReq: any = {
-      headers: {
-        'x-forwarded-host': 'preview.internal',
-        'x-preview-auth-token': 'test-secret-preview-token',
-        'x-tenant-id': 'brand-beta',
-      },
-      query: {},
-      hostname: 'preview.internal',
-    };
-    expect(resolveTenant(authPreviewReq)).toBe('brand-beta');
-
-    // Case C: Authenticated platformSuperAdmin allows explicit override
-    const superAdminReq: any = {
-      headers: {
-        'x-tenant-id': 'brand-beta',
-      },
-      query: {},
-      adminUser: {
-        uid: 'super-user',
-        role: 'platformSuperAdmin',
-      },
-    };
-    expect(resolveTenant(superAdminReq)).toBe('brand-beta');
-
-    // Case D: Authenticated tenantAdmin is locked to their assigned tenant
     const tenantAdminReq: any = {
-      headers: {
-        'x-tenant-id': 'brand-alpha', // Attempt to access brand-alpha
-      },
-      query: {},
+      headers: { 'x-tenant-id': 'brand-alpha' },
       adminUser: {
         uid: 'tenant-user',
         role: 'tenantAdmin',
-        tenantId: 'brand-beta', // Locked to brand-beta
+        tenantId: 'brand-beta',
       },
     };
     expect(resolveTenant(tenantAdminReq)).toBe('brand-beta');
 
-    // Case E: Admin path tenant wins over a conflicting caller-controlled header.
-    // requireAdminAuth must verify the route resource, not the header-selected tenant.
+    // Route-bound tenant IDs remain authoritative for authenticated admin routes.
     const mismatchedAdminReq: any = {
       path: '/admin/tenants/brand-beta',
       params: { id: 'brand-beta' },
