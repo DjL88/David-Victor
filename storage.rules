@@ -1,6 +1,9 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isPlatformSuperAdmin() {
+      return request.auth != null && request.auth.token.platformSuperAdmin == true;
+    }
     
     // --- RETAIL COMMERCE PLATFORM & TENANT ASSETS ---
     // Storefront assets are publicly readable, but browser writes are forbidden.
@@ -48,23 +51,25 @@ service firebase.storage {
     }
     match /images/{imageName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if isPlatformSuperAdmin();
     }
     match /brands/{imageName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if isPlatformSuperAdmin();
     }
     match /photos_pawtraits/{imageName} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     match /portals/{allPaths=**} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
     // --- ROOT-LEVEL PUBLIC ASSETS (Videos & files at bucket root without folders) ---
     match /{fileName} {
       allow read: if !fileName.matches('.*/.*');
-      allow write: if !fileName.matches('.*/.*') && request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if !fileName.matches('.*/.*') && isPlatformSuperAdmin();
     }
 
     // --- AVES RADAR: USER ASSETS ---
@@ -75,22 +80,24 @@ service firebase.storage {
     }
     
     match /photos/{photoName} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     match /sessions/{allPaths=**} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     match /site/{photoName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if isPlatformSuperAdmin();
     }
     match /logos/{photoName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if isPlatformSuperAdmin();
     }
     match /videos/{photoName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'dleitch22@gmail.com';
+      allow write: if isPlatformSuperAdmin();
     }
 
     // --- CLASSIFICATION & ASSETS ---
@@ -117,13 +124,13 @@ service firebase.storage {
     // --- HI-DOMINO: GAME STATE ---
     match /games/{gameId}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
 
     // --- HI-DOMINO: SCOREBOARDS ---
     match /scores/{gameId}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
     
     // --- GLOBAL SAFETY NET ---
