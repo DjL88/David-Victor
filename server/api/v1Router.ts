@@ -54,6 +54,7 @@ import { isMarketingContentVisible } from '../marketingSchedule';
 import { getServerRuntimeMode, isDemoMode, isStagingMode, isProductionMode, isLiveMode, isTestMode } from '../runtimeMode';
 import { DemoDiscoveryDataProvider } from '../deliverect/DemoDiscoveryDataProvider';
 import { DeliverectCommerceBasketApi } from '../deliverect/DeliverectCommerceBasketApi';
+import { DPayTokenProxy } from '../deliverect/DPayTokenProxy';
 import { mergeCheckoutProjection } from '../deliverect/CheckoutProjectionMerge';
 import {
   isConfirmedOrderLifecycleStatus,
@@ -108,6 +109,7 @@ import {
   DeliverySlotsSchema,
   PaymentSessionSchema,
   PaymentGatewaysQuerySchema,
+  CreatePaymentTokenSchema,
   DPayRequestPaymentSchema,
   CapturePaymentSchema,
   RefundPaymentSchema,
@@ -1328,6 +1330,24 @@ v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
 // ==========================================
 // 8. PAYMENTS & CHECKOUT
 // ==========================================
+v1Router.post(
+  '/payments/token',
+  checkoutAndPaymentRateLimiter.middleware(),
+  validateBody(CreatePaymentTokenSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      // This is the only BFF route allowed to receive raw card fields. The
+      // request body is forwarded immediately to Deliverect's token proxy and
+      // is never logged or persisted.
+      const token = await DPayTokenProxy.createToken(tenantId, req.body);
+      res.status(201).json(token);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Payment tokenization failed');
+    }
+  }
+);
+
 v1Router.get('/payments/gateways', async (req: Request, res: Response) => {
   try {
     const channelLinkId = req.query.channelLinkId as string;
