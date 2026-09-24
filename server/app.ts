@@ -16,6 +16,7 @@ import { aiStudioPreviewBffProxy } from './aiStudioPreviewProxy';
 import { getTrustedRequestHost, getTrustedRequestProtocol, resolveRequestTenant } from './tenantResolution';
 import { proxyFirebaseMedia } from './mediaProxy';
 import { adminSecurityMiddleware } from './adminSecurity';
+import { assertCloudTasksRuntimeConfig } from './asyncWorkerService';
 import { buildStorefrontManifest, buildStorefrontMetadata, injectStorefrontMetadata } from './storefrontMetadataService';
 import { requireExactWebhookRawBody } from './webhookRawBodyGuard';
 
@@ -23,6 +24,7 @@ export interface AppRequest extends Request { requestId?: string; startTime?: nu
 export interface CreateAppOptions { serveFrontend?: boolean; initializeDependencies?: boolean; }
 
 export async function createApp(options: CreateAppOptions = {}) {
+  assertCloudTasksRuntimeConfig();
   const app = express();
   const serveFrontend = options.serveFrontend !== false;
   const initializeDependencies = options.initializeDependencies !== false;
