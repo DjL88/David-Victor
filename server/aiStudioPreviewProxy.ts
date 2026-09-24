@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { getTrustedRequestHost } from './tenantResolution';
 
 const PREVIEW_PROXY_ENV_KEYS = [
   'PREVIEW_BFF_URL',
@@ -39,8 +40,7 @@ export function resolvePreviewBffBaseUrl(
 }
 
 function requestHost(req: Request): string {
-  const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
-  return (forwarded || req.get('host') || '').toLowerCase().split(':')[0];
+  return getTrustedRequestHost(req);
 }
 
 function forwardedHeaders(
@@ -52,7 +52,6 @@ function forwardedHeaders(
     'authorization',
     'content-type',
     'accept',
-    'x-tenant-id',
     'x-request-id',
     'cache-control',
     'if-none-match',
@@ -63,10 +62,9 @@ function forwardedHeaders(
     if (typeof value === 'string' && value.length > 0) headers[key] = value;
   }
 
-  // Bootstrap runs before the browser knows the active tenant, so ensure the
-  // published BFF receives the explicitly configured preview tenant when the
-  // request itself does not yet carry X-Tenant-ID.
-  if (!headers['x-tenant-id'] && env.PREVIEW_TENANT_ID) {
+  // Managed preview traffic is server-pinned to PREVIEW_TENANT_ID. Never
+  // forward a caller-selected tenant header through the trusted proxy.
+  if (env.PREVIEW_TENANT_ID) {
     headers['x-tenant-id'] = env.PREVIEW_TENANT_ID.trim();
   }
 

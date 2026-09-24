@@ -105,3 +105,4 @@ The following cannot be live-executed until Deliverect staging credentials (`cli
 
 ## Audit II work packages
 - SEC-00 — Express composition extracted to `server/app.ts`; Supertest behavioural harness covers health plus authenticated admin access. (2026-09-24)
+- TEN-00 — Public tenant resolution centralized: managed preview hosts are server-pinned, anonymous tenant overrides are ignored, forwarded hosts require edge proof, exact ACTIVE domains only, and tenant-varying responses emit Vary: Host. (2026-09-24)

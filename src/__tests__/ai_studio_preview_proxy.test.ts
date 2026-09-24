@@ -53,7 +53,7 @@ describe('AI Studio preview BFF proxy', () => {
     const app = await createApp({ serveFrontend: false, initializeDependencies: false });
     const response = await request(app)
       .get('/api/v1/bootstrap')
-      .set('X-Forwarded-Host', 'ais-dev-example.europe-west3.run.app')
+      .set('Host', 'ais-dev-example.europe-west3.run.app')
       .expect(200);
 
     expect(response.body).toEqual({ proxied: true });

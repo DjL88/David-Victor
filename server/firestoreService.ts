@@ -938,29 +938,9 @@ export class FirestoreService {
     // 4. Custom domains only route through an ACTIVE domain record.
     // A tenant's branding/defaultDomain field is not proof of DNS ownership.
 
-    // 5. Subdomain heuristic (e.g. brand-beta.1bwydi.ai.studio -> brand-beta)
-    const hostParts = cleanHost.split('.');
-    if (hostParts.length > 2) {
-      const candidateSlug = hostParts[0].toLowerCase();
-      if (inMemoryTenants[candidateSlug]) {
-        return candidateSlug;
-      }
-    }
-
-    // 6. Explicit authorized preview environment variable (if authorized by server configuration)
-    if (process.env.PREVIEW_TENANT_ID && (
-      cleanHost.includes('ai.studio') ||
-      cleanHost.includes('aistudio') ||
-      cleanHost.includes('run.app') ||
-      cleanHost.endsWith('.hosted.app') ||
-      cleanHost.endsWith('.web.app') ||
-      cleanHost.endsWith('.firebaseapp.com') ||
-      cleanHost.includes('localhost') ||
-      cleanHost.includes('127.0.0.1') ||
-      cleanHost.includes('googleusercontent.com')
-    )) {
-      return process.env.PREVIEW_TENANT_ID;
-    }
+    // Hostname routing is exact and ACTIVE-only. Managed preview hosts are
+    // resolved by tenantResolution.ts from server-controlled configuration;
+    // this persistence layer must never infer a tenant from a hostname label.
 
     return null;
   }

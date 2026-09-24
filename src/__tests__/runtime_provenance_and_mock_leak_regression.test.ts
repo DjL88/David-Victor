@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
+import request from 'supertest';
+import { createApp } from '../../server/app';
 import http from 'http';
 import { v1Router } from '../../server/api/v1Router';
 import {
@@ -138,14 +140,18 @@ describe('Runtime Provenance & Mock Leak Regression Tests', () => {
       });
     });
 
-    it('GET /api/v1/bootstrap returns 404 for unknown tenant in staging mode', async () => {
+    it('GET /api/v1/bootstrap returns 404 for an unknown public host in staging mode', async () => {
       setServerRuntimeMode('staging');
-      const res = await fetch(`${baseUrl}/bootstrap`, {
-        headers: { 'x-tenant-id': 'unconfigured-tenant-abc' },
-      });
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.code).toBe('TENANT_NOT_FOUND');
+      const app = await createApp({ serveFrontend: false, initializeDependencies: false });
+
+      const res = await request(app)
+        .get('/api/v1/bootstrap?tenantId=unconfigured-tenant-abc')
+        .set('Host', 'unknown-tenant.example.test')
+        .set('X-Tenant-ID', 'unconfigured-tenant-abc')
+        .set('X-Test-Simulate-Public', 'true')
+        .expect(404);
+
+      expect(res.body.code).toBe('TENANT_NOT_FOUND');
     });
   });
 

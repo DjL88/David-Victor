@@ -13,6 +13,7 @@ import { MetricsService } from './metricsService';
 import { getServerRuntimeMode } from './runtimeMode';
 import { FirestorePlatformService } from './firestoreService';
 import { aiStudioPreviewBffProxy } from './aiStudioPreviewProxy';
+import { getTrustedRequestHost, getTrustedRequestProtocol, resolveRequestTenant } from './tenantResolution';
 import {
   buildStorefrontManifest,
   buildStorefrontMetadata,
@@ -172,15 +173,11 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('/api/ready', handleReady);
 
   const resolveStorefrontTenant = async (req: Request) => {
-    const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
-    const host = (forwardedHost || req.get('host') || '').toLowerCase().split(':')[0];
-    if (!host) return null;
-
     try {
-      const tenantId = await FirestorePlatformService.resolveTenantByHostname(host);
-      if (!tenantId) return null;
-      return await FirestorePlatformService.getTenantConfig(tenantId);
+      const resolution = await resolveRequestTenant(req);
+      return await FirestorePlatformService.getTenantConfig(resolution.tenantId);
     } catch (err: any) {
+      const host = getTrustedRequestHost(req);
       console.warn(
         `[Storefront Metadata] Could not resolve tenant for ${host}: ${err?.message || err}`
       );
@@ -189,10 +186,8 @@ export async function createApp(options: CreateAppOptions = {}) {
   };
 
   const requestOrigin = (req: Request): string => {
-    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-    const proto = forwardedProto || req.protocol || 'https';
-    const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
-    const host = forwardedHost || req.get('host') || 'localhost';
+    const proto = getTrustedRequestProtocol(req);
+    const host = getTrustedRequestHost(req) || 'localhost';
     return `${proto}://${host}`;
   };
 

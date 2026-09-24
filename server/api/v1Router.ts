@@ -75,6 +75,7 @@ import {
   domainVerificationRecordValue,
   verifyDomainOwnershipTxt,
 } from '../domainVerificationService';
+import { resolveRequestTenant, type TenantResolution } from '../tenantResolution';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -170,53 +171,21 @@ interface AuthenticatedRequest extends Request {
  * For development/demo only, an explicit development override is permitted.
  */
 export function resolveTenant(req: Request): string {
-  if ((req as any).resolvedTenantId) {
-    return (req as any).resolvedTenantId;
-  }
-  const authAdmin = (req as any).adminUser;
-  const isSuperAdmin = authAdmin?.role === 'platformSuperAdmin';
-  const requestedOverride = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-  const authorizedPreviewToken = req.headers['x-preview-auth-token'] as string;
-  const isAuthorizedPreview =
-    Boolean(authorizedPreviewToken && process.env.PREVIEW_AUTH_TOKEN && authorizedPreviewToken === process.env.PREVIEW_AUTH_TOKEN);
-
-  // 1. Authenticated tenant admin is strictly locked to their assigned tenant (Tenant A cannot access Tenant B)
-  if (authAdmin && !isSuperAdmin && authAdmin.tenantId) {
-    return authAdmin.tenantId;
+  const resolved = (req as any).resolvedTenantId;
+  if (typeof resolved === 'string' && resolved.trim()) {
+    return resolved.trim();
   }
 
-  // 2. Authorized mechanism: Platform Super Admin or Authorized Preview Token
-  if ((isSuperAdmin || isAuthorizedPreview) && requestedOverride) {
-    return requestedOverride;
+  const admin = (req as any).adminUser as AuthenticatedAdmin | undefined;
+  if (admin?.tenantId) {
+    return admin.tenantId;
   }
 
-  // 3. In test mode, allow test suites to target specific tenants (unless simulating public request)
-  if (isTestMode() && requestedOverride && !(req as any).simulatePublicRequest) {
-    return requestedOverride;
-  }
-
-  // 4. Admin routes fallback
-  if (req.path?.startsWith('/admin')) {
-    if (requestedOverride) return requestedOverride;
-    if (authAdmin?.tenantId) return authAdmin.tenantId;
-    return 'brand-alpha';
-  }
-
-  // 5. Container / preview hosts fallback
-  const host = ((req.headers['x-forwarded-host'] as string) || req.hostname || '').toLowerCase().split(':')[0];
-  const isContainerOrPreviewHost =
-    host.endsWith('.run.app') ||
-    host.endsWith('.google.com') ||
-    host.endsWith('.googleusercontent.com') ||
-    host.endsWith('.ai.studio') ||
-    host.includes('aistudio') ||
-    host === 'localhost' ||
-    host === '127.0.0.1';
-  if (isContainerOrPreviewHost) {
-    return requestedOverride || process.env.PREVIEW_TENANT_ID || 'brand-alpha';
-  }
-
-  throw new BFFError('TENANT_NOT_FOUND', `Tenant not found for domain "${host}".`, 404);
+  throw new BFFError(
+    'TENANT_SCOPE_REQUIRED',
+    'Tenant scope has not been resolved for this request.',
+    400
+  );
 }
 
 async function getCallerUid(req: Request): Promise<string | undefined> {
@@ -253,7 +222,9 @@ async function getCallerUid(req: Request): Promise<string | undefined> {
 // Global v1Router tenant resolution middleware
 v1Router.use(async (req: Request, res: Response, next) => {
   try {
-    // 0. Exempt routes: probes, platform mode, webhooks (verified by HMAC), async tasks (verified by OIDC), and admin routes (verified by auth & tenant headers)
+    // These routes establish their own authenticated/signed tenant boundary.
+    // Crucially, anonymous X-Tenant-ID / ?tenantId values are not copied onto
+    // exempt requests anymore.
     const tenantResolutionExempt =
       req.path === '/platform/mode' ||
       req.path.startsWith('/platform') ||
@@ -265,96 +236,26 @@ v1Router.use(async (req: Request, res: Response, next) => {
       req.path.startsWith('/internal/tasks');
 
     if (tenantResolutionExempt) {
-      const override = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-      if (override) {
-        (req as any).resolvedTenantId = override;
-      }
       return next();
     }
 
-    const authAdmin = (req as any).adminUser;
-    const isSuperAdmin = authAdmin?.role === 'platformSuperAdmin';
-    const requestedOverride = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-    const authorizedPreviewToken = req.headers['x-preview-auth-token'] as string;
-    const isAuthorizedPreview =
-      Boolean(authorizedPreviewToken && process.env.PREVIEW_AUTH_TOKEN && authorizedPreviewToken === process.env.PREVIEW_AUTH_TOKEN);
-
-    // 0. Authenticated tenant admin is strictly locked to their assigned tenant (Tenant A cannot access Tenant B)
-    if (authAdmin && !isSuperAdmin && authAdmin.tenantId) {
-      (req as any).resolvedTenantId = authAdmin.tenantId;
-      return next();
+    const resolution = await resolveRequestTenant(req);
+    (req as any).resolvedTenantId = resolution.tenantId;
+    (req as any).tenantResolution = resolution satisfies TenantResolution;
+    res.setHeader('Vary', 'Host');
+    if (resolution.usedOverride) {
+      res.setHeader('Cache-Control', 'private, no-store');
     }
-
-    // 1. Authorized mechanism: Platform Super Admin or Authorized Preview Token
-    if ((isSuperAdmin || isAuthorizedPreview) && requestedOverride) {
-      (req as any).resolvedTenantId = requestedOverride;
-      return next();
+    return next();
+  } catch (err: any) {
+    if (err instanceof BFFError) {
+      res.setHeader('Vary', 'Host');
+      return res.status(err.statusCode).json({
+        code: err.code,
+        message: err.message,
+      });
     }
-
-    // 2. In test mode, allow tests to specify target tenant via header/query (unless simulating public caller)
-    if (isTestMode() && requestedOverride && !(req as any).simulatePublicRequest) {
-      (req as any).resolvedTenantId = requestedOverride;
-      return next();
-    }
-
-    // 3. Admin routes fallback
-    if (req.path?.startsWith('/admin')) {
-      if (requestedOverride && isSuperAdmin) {
-        (req as any).resolvedTenantId = requestedOverride;
-        return next();
-      }
-      if (authAdmin?.tenantId) {
-        (req as any).resolvedTenantId = authAdmin.tenantId;
-        return next();
-      }
-    }
-
-    // 3. Resolve via hostname/domains in Firestore and Persistent Registry
-    const forwardedHost = (req.headers['x-forwarded-host'] as string) || '';
-    const rawHost = (forwardedHost.split(',')[0] || (req.headers.host as string) || req.hostname || '').toLowerCase().trim();
-    const host = rawHost.split(':')[0];
-    const resolvedFromDb = await FirestorePlatformService.resolveTenantByHostname(host);
-
-    if (resolvedFromDb) {
-      (req as any).resolvedTenantId = resolvedFromDb;
-      return next();
-    }
-
-    // 4. Server-authorized preview tenant for container/preview hosts
-    const isContainerOrPreviewHost =
-      host.endsWith('.run.app') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.googleusercontent.com') ||
-      host.endsWith('.hosted.app') ||
-      host.endsWith('.web.app') ||
-      host.endsWith('.firebaseapp.com') ||
-      host.endsWith('.ai.studio') ||
-      host.includes('aistudio') ||
-      host === 'localhost' ||
-      host === '127.0.0.1';
-
-    if (isContainerOrPreviewHost) {
-      const previewTenantId =
-        requestedOverride ||
-        process.env.PREVIEW_TENANT_ID ||
-        (isDemoMode() || isTestMode() ? 'brand-alpha' : undefined);
-      if (!previewTenantId) {
-        return res.status(503).json({
-          code: 'PREVIEW_TENANT_NOT_CONFIGURED',
-          message: 'This preview host has no configured tenant.',
-        });
-      }
-      (req as any).resolvedTenantId = previewTenantId;
-      return next();
-    }
-
-    // Explicitly reject unknown domains without fallback
-    return res.status(404).json({
-      code: 'TENANT_NOT_FOUND',
-      message: `Tenant not found for domain "${host}".`,
-    });
-  } catch (err) {
-    next(err);
+    return next(err);
   }
 });
 
@@ -373,7 +274,9 @@ function sendConditionalJson(
   const etag = `"${hash}"`;
 
   res.setHeader('ETag', etag);
-  res.setHeader('Cache-Control', cacheControl);
+  res.setHeader('Vary', 'Host');
+  const resolution = (req as any).tenantResolution as TenantResolution | undefined;
+  res.setHeader('Cache-Control', resolution?.usedOverride ? 'private, no-store' : cacheControl);
 
   const ifNoneMatch = req.headers['if-none-match'];
   if (ifNoneMatch === etag || ifNoneMatch === hash || ifNoneMatch === `W/${etag}`) {
