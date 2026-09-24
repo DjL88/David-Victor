@@ -132,3 +132,11 @@ env:
     secret: firebase_appcheck_site_key
     availability:
       - BUILD
+
+
+  # Authenticates infrastructure-supplied forwarding headers before tenant/host
+  # resolution trusts an edge override.
+  - variable: TRUSTED_EDGE_SECRET
+    secret: trusted_edge_secret
+    availability:
+      - RUNTIME
