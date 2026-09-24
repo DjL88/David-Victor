@@ -22,7 +22,13 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-export const OrdersScreen: React.FC = () => {
+interface OrdersScreenProps {
+  initialOrderId?: string;
+  onOpenOrder?: (orderId: string) => void;
+  onBackToList?: () => void;
+}
+
+export const OrdersScreen: React.FC<OrdersScreenProps> = ({ initialOrderId, onOpenOrder, onBackToList }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
   const { t } = useI18n();
   const { appMode } = useTenant();
@@ -30,6 +36,7 @@ export const OrdersScreen: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [routeError, setRouteError] = useState<string>('');
 
   const getOrderStatusLabel = (status: string) => {
     switch (status) {
@@ -100,10 +107,16 @@ export const OrdersScreen: React.FC = () => {
     try {
       const history = await defaultCommerceClient.getOrderHistory();
       setOrders(history);
-      // If there are orders and none selected, or to sync
-      if (selectedOrder) {
-        const found = history.find((o) => o.id === selectedOrder.id);
-        if (found) setSelectedOrder(found);
+      const requestedId = selectedOrder?.id || initialOrderId;
+      if (requestedId) {
+        const found = history.find((o) => o.id === requestedId || o.displayId === requestedId);
+        if (found) {
+          setSelectedOrder(found);
+          setRouteError('');
+        } else if (initialOrderId) {
+          setSelectedOrder(null);
+          setRouteError('That order could not be found for this account.');
+        }
       }
     } catch (e) {
       console.error('Failed to load orders', e);
@@ -114,7 +127,7 @@ export const OrdersScreen: React.FC = () => {
 
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [initialOrderId]);
 
   const handleCreateDemo = async (scenario: DemoScenario) => {
     setLoading(true);
@@ -136,7 +149,11 @@ export const OrdersScreen: React.FC = () => {
             setSelectedOrder(updated);
             setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
           }}
-          onBackToList={() => setSelectedOrder(null)}
+          onBackToList={() => {
+            setSelectedOrder(null);
+            setRouteError('');
+            onBackToList?.();
+          }}
         />
       </div>
     );
@@ -235,6 +252,12 @@ export const OrdersScreen: React.FC = () => {
         </div>
       </div>}
 
+      {routeError && (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-800">
+          {routeError}
+        </div>
+      )}
+
       {/* Orders List */}
       <div className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
@@ -259,7 +282,11 @@ export const OrdersScreen: React.FC = () => {
             return (
               <div
                 key={order.id}
-                onClick={() => setSelectedOrder(order)}
+                onClick={() => {
+                  setSelectedOrder(order);
+                  setRouteError('');
+                  onOpenOrder?.(order.id);
+                }}
                 className="p-4 rounded-3xl bg-white border border-gray-100 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-3 group"
               >
                 <div className="flex items-center justify-between">
