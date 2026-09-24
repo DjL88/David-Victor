@@ -188,6 +188,11 @@ export interface TenantConfig {
   vatRegistrationNumber?: string;
   /** 2-4 character human-facing prefix used for short order references, e.g. LT. */
   orderCodePrefix?: string;
+  /** Checkout payment policy. Unpaid orders are denied unless explicitly enabled. */
+  paymentPolicy?: {
+    allowUnpaidOrders?: boolean;
+    hostedRedirectAllowedOrigins?: string[];
+  };
   /** Storefront languages enabled for this tenant. Defaults to all supported locales when omitted. */
   enabledLocales?: string[];
   /** Per-locale brand wording overrides keyed by typed storefront copy key. */
