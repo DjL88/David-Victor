@@ -30,6 +30,12 @@ export interface DPayAdapter {
   capture(paymentId: string, finalAmountMinor: number): Promise<DPayPaymentResponse>;
 
   /**
+   * Releases an uncaptured authorization. Implementations must confirm the
+   * provider-side release before local payment/order state is changed.
+   */
+  voidAuthorization(paymentId: string, reason?: string): Promise<DPayPaymentResponse>;
+
+  /**
    * Refunds a captured payment.
    * In DeliverectDPayAdapter, raw implementation is blocked until verified with staging (DV-06).
    */
