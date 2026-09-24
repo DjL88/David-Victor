@@ -194,6 +194,10 @@ export interface TenantConfig {
   copyOverrides?: Record<string, Record<string, string>>;
   supportDetails: TenantSupportDetails;
   featureFlags: TenantFeatureFlags;
+  /** Payment is required by default. Pay-at-store/COD brands must opt in explicitly. */
+  paymentPolicy?: {
+    allowUnpaidOrders?: boolean;
+  };
 }
 
 export interface Tenant {
