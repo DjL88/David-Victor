@@ -48,6 +48,7 @@ export const MOCK_TENANTS: Record<string, TenantConfig> = {
     currency: 'GBP',
     currencySymbol: '£',
     locale: 'en-GB',
+    paymentPolicy: { allowUnpaidOrders: true },
     supportDetails: {
       email: 'support@brand-alpha.co.uk',
       phone: '0800 123 4567',
