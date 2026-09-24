@@ -4,6 +4,7 @@ import { BFFError } from '../errors';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
+import { WebhookIngressLimiter } from '../webhookIngressLimiter';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -363,6 +364,8 @@ export class ChannelMenuIngestionService {
       updatedAt: now,
     };
     await this.saveIngressRecord(record);
+
+    await WebhookIngressLimiter.assertCanEnqueue(params.tenantId);
 
     const job: ChannelMenuIngressJob = {
       jobId,
