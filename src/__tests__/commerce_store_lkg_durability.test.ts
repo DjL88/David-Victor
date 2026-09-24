@@ -54,7 +54,7 @@ describe('Commerce store last-known-good durability', () => {
       throw new Error(`Unexpected request: ${url}`);
     }) as any);
 
-    const result = await adapter.getCommerceStores('account-1', 'tenant-1');
+    const result = await adapter.getCommerceStores('account-1', 'tenant-lkg-existing');
 
     expect(result.success).toBe(true);
     expect(result.status).toBe('STALE_LAST_KNOWN_GOOD');
@@ -76,7 +76,7 @@ describe('Commerce store last-known-good durability', () => {
     (adapter as any).loadFromFirestore = vi.fn(async () => null);
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (String(url).includes('/commerce/account-1/stores')) {
+      if (String(url).includes('/commerce/account-empty/stores')) {
         return new Response(JSON.stringify({ items: [], total: 0, page: 1, size: 50 }), { status: 200 });
       }
       if (String(url).includes('/locations?')) {
@@ -85,7 +85,7 @@ describe('Commerce store last-known-good durability', () => {
       throw new Error(`Unexpected request: ${url}`);
     }) as any);
 
-    const result = await adapter.getCommerceStores('account-1', 'tenant-1');
+    const result = await adapter.getCommerceStores('account-empty', 'tenant-lkg-empty');
 
     expect(result.status).toBe('STALE_LAST_KNOWN_GOOD');
     expect(result.stores).toEqual([]);
