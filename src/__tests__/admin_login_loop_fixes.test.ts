@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { resolveTenant } from '../../server/api/v1Router';
+import request from 'supertest';
+import { createApp } from '../../server/app';
+import { installMockFirebaseAdminToken } from './helpers/firebaseAuthHarness';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
 import { HttpAdminClient } from '../commerce/HttpAdminClient';
 
@@ -18,34 +20,31 @@ describe('Admin Login Loop Fixes (5 Code Errors)', () => {
     vi.restoreAllMocks();
   });
 
-  it('Error 1 & 2: resolveTenant does NOT throw 404 on unmapped hostnames for admin routes', () => {
-    const mockAdminReq: any = {
-      path: '/admin/auth/me',
-      hostname: 'cloud-run-container-12345.a.run.app',
-      headers: {
-        'x-forwarded-host': 'cloud-run-container-12345.a.run.app',
-      },
-      query: {},
-    };
+  it('Error 1 & 2: authenticated admin identity works on an unmapped managed hostname', async () => {
+    const { token } = installMockFirebaseAdminToken();
+    const app = await createApp({ serveFrontend: false, initializeDependencies: false });
 
-    expect(() => resolveTenant(mockAdminReq)).not.toThrow();
-    const resolved = resolveTenant(mockAdminReq);
-    expect(resolved).toBe('brand-alpha');
+    const response = await request(app)
+      .get('/api/v1/admin/auth/me')
+      .set('Host', 'cloud-run-container-12345.a.run.app')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.role).toBe('platformSuperAdmin');
   });
 
-  it('Error 1 & 2: resolveTenant respects x-tenant-id header on admin paths in staging', () => {
-    const mockAdminReq: any = {
-      path: '/admin/memberships',
-      hostname: 'random-host.run.app',
-      headers: {
-        'x-forwarded-host': 'random-host.run.app',
-        'x-tenant-id': 'custom-tenant',
-      },
-      query: {},
-    };
+  it('Error 1 & 2: authenticated admin routes can use their explicit tenant scope in staging', async () => {
+    const { token } = installMockFirebaseAdminToken();
+    const app = await createApp({ serveFrontend: false, initializeDependencies: false });
 
-    const resolved = resolveTenant(mockAdminReq);
-    expect(resolved).toBe('custom-tenant');
+    const response = await request(app)
+      .get('/api/v1/admin/memberships')
+      .set('Host', 'random-host.run.app')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Tenant-ID', 'custom-tenant')
+      .expect(200);
+
+    expect(response.body).toEqual([]);
   });
 
   it('keeps an explicitly selected tenant when a Platform SuperAdmin identity still references an old tenant', async () => {
