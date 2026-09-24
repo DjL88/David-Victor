@@ -400,6 +400,12 @@ export interface AdminClient {
    */
   getConnectionHealth?(tenantId?: string): Promise<any>;
 
+  /** Lists destructive Deliverect Menu Pushes held for authorised review. */
+  listHeldCatalogueReviews?(tenantId?: string): Promise<{ reviews: any[]; issueCount: number }>;
+
+  /** Explicitly approves one held Menu Push using its durable server-side payload. */
+  approveHeldCatalogueReview?(tenantId: string, eventId: string): Promise<any>;
+
   /**
    * Retrieves tenant dispatch orchestration rules.
    */
