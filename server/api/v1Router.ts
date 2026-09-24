@@ -106,6 +106,7 @@ import {
   DeliveryOptionsSchema,
   DeliverySlotsSchema,
   PaymentSessionSchema,
+  PaymentTokenSchema,
   PaymentGatewaysQuerySchema,
   DPayRequestPaymentSchema,
   CapturePaymentSchema,
@@ -1327,6 +1328,25 @@ v1Router.post('/dispatch/webhooks', async (req: Request, res: Response) => {
 // ==========================================
 // 8. PAYMENTS & CHECKOUT
 // ==========================================
+v1Router.post('/payments/token', validateBody(PaymentTokenSchema), async (req: Request, res: Response) => {
+  try {
+    // Keep the PCI-bearing payload transient: do not log or persist req.body.
+    const serializedLength = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
+    if (serializedLength > 32 * 1024) {
+      return res.status(413).json({
+        error: 'Payment tokenization payload is too large.',
+        code: 'PAYMENT_TOKEN_PAYLOAD_TOO_LARGE',
+      });
+    }
+
+    const tenantId = resolveTenant(req);
+    const token = await PaymentService.createPaymentToken(req.body, tenantId);
+    res.json(token);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Payment tokenization failed');
+  }
+});
+
 v1Router.get('/payments/gateways', async (req: Request, res: Response) => {
   try {
     const channelLinkId = req.query.channelLinkId as string;
