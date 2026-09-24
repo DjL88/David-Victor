@@ -12,6 +12,7 @@ import {
   normalizeIntegrationEnvironment,
   type IntegrationEnvironment,
 } from '../integrationProfile';
+import { IntegrationContext } from './IntegrationContext';
 
 export class DeliverectDPayAdapter implements DPayAdapter {
   readonly adapterName = 'DeliverectDPayAdapter';
@@ -36,6 +37,18 @@ export class DeliverectDPayAdapter implements DPayAdapter {
           : undefined;
       this.tokenManager = OAuthTokenManager.getInstance(this.tenantId);
     }
+  }
+
+  private async resolveTokenManager(): Promise<OAuthTokenManager> {
+    if (this.tenantId) {
+      try {
+        const context = await IntegrationContext.assertConfigured(this.tenantId);
+        return context.tokenManager;
+      } catch (err) {
+        if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true') throw err;
+      }
+    }
+    return this.tokenManager;
   }
 
   private async getBaseUrl(): Promise<string> {
@@ -121,8 +134,9 @@ export class DeliverectDPayAdapter implements DPayAdapter {
     init: RequestInit = {}
   ): Promise<any> {
     const send = async () => {
-      const authorization = await this.tokenManager.getAuthorizationHeader();
-      return fetch(url, {
+      const tokenManager = await this.resolveTokenManager();
+      const authorization = await tokenManager.getAuthorizationHeader();
+      const response = await fetch(url, {
         ...init,
         headers: {
           Authorization: authorization,
@@ -131,12 +145,15 @@ export class DeliverectDPayAdapter implements DPayAdapter {
           ...(init.headers || {}),
         },
       });
+      return { response, tokenManager };
     };
 
-    let response = await send();
+    let attempt = await send();
+    let response = attempt.response;
     if (response.status === 401) {
-      this.tokenManager.invalidateCache();
-      response = await send();
+      attempt.tokenManager.invalidateCache();
+      attempt = await send();
+      response = attempt.response;
     }
 
     const text = await response.text();
