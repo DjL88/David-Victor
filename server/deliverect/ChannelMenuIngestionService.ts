@@ -539,6 +539,7 @@ export class ChannelMenuIngestionService {
             updatedAt: new Date().toISOString(),
             error: undefined,
           });
+          await this.recordReviewAlert(job.tenantId, job.eventId, review);
           // Preserve the last-known-good hosted menu. The raw candidate is
           // already durably buffered under this ingress event for authorised
           // review; do not publish or invalidate storefront caches.
@@ -635,6 +636,73 @@ export class ChannelMenuIngestionService {
     }
   }
 
+  static async listHeldReviews(tenantId: string): Promise<Array<{
+    eventId: string;
+    receivedAt: string;
+    menuIds: string[];
+    channelLinkIds: string[];
+    review: NonNullable<ChannelMenuIngressRecord['review']>;
+  }>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return [];
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    let records: ChannelMenuIngressRecord[] = [];
+    if (db) {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .where('status', '==', 'REVIEW_REQUIRED')
+        .limit(50)
+        .get();
+      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
+    } else {
+      records = Array.from(memoryIngress.values()).filter(
+        (record) =>
+          record.tenantId === cleanTenantId &&
+          record.status === 'REVIEW_REQUIRED'
+      );
+    }
+    return records
+      .filter((record) => Boolean(record.review))
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .map((record) => ({
+        eventId: record.eventId,
+        receivedAt: record.receivedAt,
+        menuIds: record.menuIds,
+        channelLinkIds: record.channelLinkIds,
+        review: record.review!,
+      }));
+  }
+
+  private static async recordReviewAlert(
+    tenantId: string,
+    eventId: string,
+    review: NonNullable<ChannelMenuIngressRecord['review']>
+  ): Promise<void> {
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) return;
+    await db
+      .collection('tenants')
+      .doc(tenantId)
+      .collection('adminAlerts')
+      .doc(`catalogue-review-${safeSegment(eventId)}`)
+      .set(
+        {
+          type: 'CATALOGUE_REVIEW_REQUIRED',
+          severity: 'warning',
+          status: 'OPEN',
+          tenantId,
+          eventId,
+          title: 'Catalogue change needs review',
+          message: `A Deliverect Menu Push would remove ${review.removedProductCount} products (${review.removedPercent}%). The previous catalogue remains live.`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+  }
+
   static async inspectDestructiveMenuPush(params: {
     tenantId: string;
     payload: any;
@@ -677,7 +745,7 @@ export class ChannelMenuIngestionService {
       approvedBy: params.approvedBy,
       updatedAt: approvedAt,
     });
-    return this.processJob(
+    const result = await this.processJob(
       {
         jobId: record.jobId,
         eventId: record.eventId,
@@ -687,6 +755,24 @@ export class ChannelMenuIngestionService {
       },
       { approvedReviewEventId: record.eventId }
     );
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (db) {
+      await db
+        .collection('tenants')
+        .doc(params.tenantId)
+        .collection('adminAlerts')
+        .doc(`catalogue-review-${safeSegment(record.eventId)}`)
+        .set(
+          {
+            status: 'RESOLVED',
+            resolvedAt: new Date().toISOString(),
+            resolvedBy: params.approvedBy,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+    }
+    return result;
   }
 
   static async getLatestNormalizedMenu(
