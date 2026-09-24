@@ -84,29 +84,31 @@ export function getCloudTasksSecurityConfig(): CloudTasksSecurityConfig {
 
 export function assertCloudTasksSecurityConfigured(): void { void getCloudTasksSecurityConfig(); }
 
-export function getCloudTasksCapabilityHealth(): CloudTasksCapabilityHealth {
-  const live = isLiveMode();
+export function getCloudTasksCapabilityHealth(
+  env: NodeJS.ProcessEnv = process.env,
+  live: boolean = isLiveMode()
+): CloudTasksCapabilityHealth {
   const projectConfigured = Boolean(
-    String(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || '').trim()
+    String(env.GOOGLE_CLOUD_PROJECT || env.GCP_PROJECT || '').trim()
   );
-  const identityConfigured = Boolean(String(process.env.CLOUD_TASKS_SA_EMAIL || '').trim());
-  const audienceConfigured = Boolean(String(process.env.CLOUD_TASKS_AUDIENCE || '').trim());
+  const identityConfigured = Boolean(String(env.CLOUD_TASKS_SA_EMAIL || '').trim());
+  const audienceConfigured = Boolean(String(env.CLOUD_TASKS_AUDIENCE || '').trim());
   const appUrlConfigured = Boolean(
-    String(process.env.APP_URL || process.env.CLOUD_TASKS_AUDIENCE || '').trim()
+    String(env.APP_URL || env.CLOUD_TASKS_AUDIENCE || '').trim()
   );
   const bulkQueueConfigured = Boolean(
     String(
-      process.env.CHANNEL_MENU_TASKS_QUEUE ||
-      process.env.CLOUD_TASKS_BULK_QUEUE ||
-      process.env.CLOUD_TASKS_QUEUE ||
+      env.CHANNEL_MENU_TASKS_QUEUE ||
+      env.CLOUD_TASKS_BULK_QUEUE ||
+      env.CLOUD_TASKS_QUEUE ||
       ''
     ).trim()
   );
   const realtimeQueueConfigured = Boolean(
     String(
-      process.env.CHANNEL_REALTIME_TASKS_QUEUE ||
-      process.env.CLOUD_TASKS_REALTIME_QUEUE ||
-      process.env.CLOUD_TASKS_QUEUE ||
+      env.CHANNEL_REALTIME_TASKS_QUEUE ||
+      env.CLOUD_TASKS_REALTIME_QUEUE ||
+      env.CLOUD_TASKS_QUEUE ||
       ''
     ).trim()
   );
