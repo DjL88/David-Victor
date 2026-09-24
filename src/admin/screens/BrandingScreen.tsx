@@ -510,10 +510,19 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         )}
       </div>
 
-      <section
-        data-admin-ai-target="branding-brand-profile"
-        className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5 shadow-xs"
-      >
+      <details className="rounded-2xl border border-gray-200 bg-white shadow-xs">
+        <summary className="cursor-pointer list-none p-5">
+          <div className="flex items-center gap-2">
+            <FileCode className="w-4 h-4 text-indigo-600" />
+            <span className="text-sm font-bold text-gray-900">Import brand guidelines</span>
+            <span className="ml-1 text-[10px] font-medium text-gray-400">Optional</span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">Have a logo or brand guide? Use it to prefill colours and typography.</p>
+        </summary>
+        <section
+          data-admin-ai-target="branding-brand-profile"
+          className="border-t border-gray-100 p-5"
+        >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2">
@@ -716,6 +725,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           </div>
         )}
       </section>
+      </details>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT COLUMN: BRAND & THEME FORM */}
@@ -1208,7 +1218,8 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 ))}
               </div>
             </div>
-          </div>
+            </div>
+          </details>
 
         </div>
 
