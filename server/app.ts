@@ -23,6 +23,7 @@ import {
   assertNoLiveTenantUsesStagingWebhookFallback,
   deliverectWebhookPayloadLimit,
 } from './webhookSecurity';
+import { assertCloudTasksSecurityConfigured } from './cloudTasksSecurity';
 
 export interface AppRequest extends Request { requestId?: string; startTime?: number; }
 export interface CreateAppOptions { serveFrontend?: boolean; initializeDependencies?: boolean; }
@@ -42,6 +43,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('/media/firebase', mediaProxyRateLimiter.middleware(), proxyFirebaseMedia);
   app.use('/media/firebase',(err:any,_req:Request,res:Response,next:NextFunction)=>{ if(err instanceof BFFError)return res.status(err.statusCode).json({code:err.code,error:err.safeMessage}); return next(err); });
   if(initializeDependencies){
+    assertCloudTasksSecurityConfigured();
     const db = getFirestoreDb();
     await assertNoLiveTenantUsesStagingWebhookFallback(db);
     getDeliverectAdapter();
