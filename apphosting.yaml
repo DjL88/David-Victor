@@ -30,8 +30,8 @@ env:
     availability:
       - RUNTIME
 
-  # Cloud Tasks worker security. These values are deployment configuration,
-  # not application secrets. Keep their names aligned with cloudTasksSecurity.ts.
+  # Cloud Tasks worker identity and exact OIDC audience are injected from
+  # Secret Manager. The audience is also the canonical worker target origin.
   - variable: CLOUD_TASKS_SA_EMAIL
     secret: cloud_tasks_sa_email
     availability:
@@ -39,10 +39,5 @@ env:
 
   - variable: CLOUD_TASKS_AUDIENCE
     secret: cloud_tasks_audience
-    availability:
-      - RUNTIME
-
-  - variable: APP_URL
-    secret: app_url
     availability:
       - RUNTIME
