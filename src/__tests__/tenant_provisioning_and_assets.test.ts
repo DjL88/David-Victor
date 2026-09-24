@@ -7,6 +7,7 @@ import {
   normalizeAssetType,
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE_BYTES,
+  sanitizeSvgBuffer,
   validateFileMagicBytes,
 } from '../../server/assetService';
 import { BFFError } from '../../server/errors';
@@ -283,13 +284,18 @@ describe('Phase 5: Asset Service and Cloud Storage Upload Lifecycle', () => {
     const validSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>');
     expect(() => validateFileMagicBytes(validSvg, 'image/svg+xml')).not.toThrow();
 
-    // Malicious SVG with embedded script
+    // Active SVG markup is structurally valid, then sanitized before publication.
     const maliciousSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
-    expect(() => validateFileMagicBytes(maliciousSvg, 'image/svg+xml')).toThrow(/SVG sanitisation policy violation/);
+    expect(() => validateFileMagicBytes(maliciousSvg, 'image/svg+xml')).not.toThrow();
+    const sanitizedScriptSvg = sanitizeSvgBuffer(maliciousSvg).toString('utf8');
+    expect(sanitizedScriptSvg).toContain('<svg');
+    expect(sanitizedScriptSvg.toLowerCase()).not.toContain('<script');
+    expect(sanitizedScriptSvg).not.toContain('alert(1)');
 
-    // Malicious SVG with onload handler
     const maliciousOnloadSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="steal()"></svg>');
-    expect(() => validateFileMagicBytes(maliciousOnloadSvg, 'image/svg+xml')).toThrow(/SVG sanitisation policy violation/);
+    const sanitizedOnloadSvg = sanitizeSvgBuffer(maliciousOnloadSvg).toString('utf8');
+    expect(sanitizedOnloadSvg.toLowerCase()).not.toContain('onload');
+    expect(sanitizedOnloadSvg).not.toContain('steal()');
   });
 
   it('fails with internal error when signed upload URL cannot be generated in staging mode', async () => {
