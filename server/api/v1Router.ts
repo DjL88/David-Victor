@@ -39,6 +39,7 @@ import { CustomerAccountService } from '../customerAccountService';
 import { OrderReferenceService } from '../orderReferenceService';
 import { CheckoutLockService } from '../checkoutLockService';
 import { assertAllowedHostedPaymentRedirect } from '../paymentRedirectPolicy';
+import { assertCheckoutPaymentPresent } from '../paymentPolicy';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
@@ -1532,9 +1533,18 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
         : ['https://pay.deliverect.com']
     );
 
+    const trustedHost = getTrustedRequestHost(req);
+    if (!trustedHost) {
+      throw new BFFError(
+        'PAYMENT_RETURN_URL_UNAVAILABLE',
+        'A trusted storefront host is required for payment return routing.',
+        500
+      );
+    }
+
     res.json({
       ...session,
-      returnUrl: `${getTrustedRequestProtocol(req)}://${getTrustedRequestHost(req)}/checkout/return?checkoutId=${encodeURIComponent(basketId)}`,
+      returnUrl: `${getTrustedRequestProtocol(req)}://${trustedHost}/checkout/return?checkoutId=${encodeURIComponent(basketId)}`,
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to create payment session');
@@ -1746,17 +1756,16 @@ v1Router.post(
 
     // SEC-04b: unpaid ordering is an explicit tenant opt-in, never an implicit
     // capability of the checkout route.
-    const allowUnpaidOrders =
-      tenantConfig.paymentPolicy?.allowUnpaidOrders === true;
-    if (
-      !checkoutOptions.paymentId &&
-      !checkoutOptions.paymentTokenRef &&
-      !allowUnpaidOrders
-    ) {
-      return res.status(402).json({
-        error: 'Payment authorization is required before checkout.',
-        code: 'PAYMENT_REQUIRED',
-      });
+    try {
+      assertCheckoutPaymentPresent(tenantConfig.paymentPolicy, checkoutOptions);
+    } catch (paymentGateErr: any) {
+      if (paymentGateErr?.statusCode === 402) {
+        return res.status(402).json({
+          error: paymentGateErr.message,
+          code: paymentGateErr.code || 'PAYMENT_REQUIRED',
+        });
+      }
+      throw paymentGateErr;
     }
 
     // Allocate a compact human-facing Retail/Quest reference only after we know
