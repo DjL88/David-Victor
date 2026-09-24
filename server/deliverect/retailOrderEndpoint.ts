@@ -85,8 +85,18 @@ export function resolveRetailOrderEndpoint(args: {
 }): ResolvedRetailOrderEndpoint {
   const tenant = args.tenantConfig || {};
   const envBase = args.env.DELIVERECT_RETAIL_ORDER_BASE_URL;
-  const baseRaw = tenant.baseUrl || envBase || (args.environment === 'production' ? 'https://api.deliverect.io' : undefined);
-  if (!baseRaw) throw new BFFError('INTEGRATION_NOT_CONFIGURED', 'Retail order base URL is not configured for staging', 503);
+  // The Deliverect environment itself is authoritative for the standard host.
+  // Keep tenant/env overrides for endpoint experiments, but do not make a
+  // deployment mechanism (App Hosting vs Cloud Run/AI Studio) responsible for
+  // supplying the normal staging host.
+  const environmentDefault =
+    args.environment === 'production'
+      ? 'https://api.deliverect.io'
+      : args.environment === 'staging'
+        ? 'https://api.staging.deliverect.io'
+        : undefined;
+  const baseRaw = tenant.baseUrl || envBase || environmentDefault;
+  if (!baseRaw) throw new BFFError('INTEGRATION_NOT_CONFIGURED', 'Retail order base URL is not configured for this environment', 503);
   const baseUrl = validateBaseUrl(baseRaw);
 
   const envTemplate = args.env.DELIVERECT_RETAIL_ORDER_PATH_TEMPLATE;
