@@ -68,6 +68,7 @@ import type {
 import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocation';
 import { qualifyAutomaticDeals } from '../../src/commerce/automaticDealEngine';
 import { resolveRetailOrderEndpoint } from './retailOrderEndpoint';
+import { projectRetailQuestOrder } from './RetailQuestOrderContract';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
@@ -3194,60 +3195,69 @@ export class DeliverectApiClient implements DeliverectAdapter {
       Boolean(scheduledFulfillmentTime) &&
       new Date(scheduledFulfillmentTime!).getTime() - Date.now() > 30 * 60_000;
 
-    const payload: any = {
+    // Keep the live submitter on the same deterministic contract exercised by
+    // WP-03 certification tests. Route-specific enrichment remains explicit below.
+    const payload: any = projectRetailQuestOrder({
       channelOrderId: channelOrderReference,
       channelOrderDisplayId,
-      orderType: basket.fulfillmentType === 'delivery' ? 2 : 1,
-      deliveryIsAsap: !isScheduledMoreThanThirtyMinutesAhead,
-      ...(scheduledFulfillmentTime
-        ? basket.fulfillmentType === 'delivery'
-          ? { deliveryTime: scheduledFulfillmentTime }
-          : { pickupTime: scheduledFulfillmentTime }
-        : {}),
       placedTime: now,
-      courier: 'restaurant',
-      decimalDigits: 2,
-      payment: {
-        amount: basket.total.amount,
-        type: 0,
-        due: hasOnlineAuthorization ? 0 : basket.total.amount,
-        rebate: 0,
-      },
-      items: retailItems,
-      // This flag tells the operational/POS flow not to collect payment again.
-      // The actual PSP settlement remains AUTHORIZED until Quest finalisation.
-      orderIsAlreadyPaid: hasOnlineAuthorization,
-      note: options?.customerNotes,
+      fulfillmentType: basket.fulfillmentType === 'delivery' ? 'delivery' : 'pickup',
+      fulfillmentTime: scheduledFulfillmentTime,
+      totalMinor: basket.total.amount,
+      hasOnlineAuthorization,
+      customerNotes: options?.customerNotes,
       customer: basket.customer
         ? {
             name: basket.customer.name,
             email: basket.customer.email,
-            phoneNumber: basket.customer.phone,
+            phone: basket.customer.phone,
             companyName: basket.customer.companyName,
           }
         : undefined,
-      validationId: options?.dispatchValidationId,
-    };
-
-    if (basket.fulfillmentType === 'delivery') {
-      const address: any = options?.deliveryAddress || (basket as any)?.fulfillment?.address;
-      if (!address) {
-        throw new CommerceError(
-          'VALIDATION_ERROR',
-          'Delivery address is required for a Retail delivery order.',
-          422
-        );
-      }
-      payload.deliveryAddress = {
-        street: address.street || address.line1 || address.formattedAddress,
-        postalCode: address.postalCode || address.postcode,
-        city: address.city,
-        country: address.country,
-        ...(typeof address.latitude === 'number' && typeof address.longitude === 'number'
-          ? { coordinates: [{ latitude: address.latitude, longitude: address.longitude }] }
-          : {}),
-      };
-    }
+      deliveryAddress:
+        basket.fulfillmentType === 'delivery'
+          ? (() => {
+              const address: any =
+                options?.deliveryAddress || (basket as any)?.fulfillment?.address;
+              if (!address) {
+                throw new CommerceError(
+                  'VALIDATION_ERROR',
+                  'Delivery address is required for a Retail delivery order.',
+                  422
+                );
+              }
+              return {
+                line1: address.street || address.line1 || address.formattedAddress,
+                postcode: address.postalCode || address.postcode,
+                city: address.city,
+                country: address.country,
+                latitude: address.latitude,
+                longitude: address.longitude,
+              };
+            })()
+          : undefined,
+      items: retailItems.map((item: any) => ({
+        plu: item.plu,
+        name: item.name,
+        unitPriceMinor: item.price,
+        quantity: item.quantity,
+        note: item.remark,
+        substitutionPreference:
+          item.itemUnavailableActions?.includes('ITEM_SUBSTITUTION_CUSTOMER')
+            ? 'CUSTOMER_SELECTED'
+            : item.itemUnavailableActions?.includes('ITEM_SUBSTITUTION')
+              ? 'BEST_MATCH'
+              : item.itemUnavailableActions?.includes('CANCEL_ORDER')
+                ? 'CANCEL_ORDER_IF_UNAVAILABLE'
+                : 'DO_NOT_SUBSTITUTE',
+        preferredSubstitutePlu: item.substituteCandidate?.[0]?.plu,
+        preferredSubstituteName: item.substituteCandidate?.[0]?.name,
+        preferredSubstitutePriceMinor: item.substituteCandidate?.[0]?.price,
+      })),
+    });
+    // Dispatch validation is a Bwydi/Deliverect route concern, not part of the
+    // generic deterministic order contract.
+    if (options?.dispatchValidationId) payload.validationId = options.dispatchValidationId;
 
     const endpoint = resolveRetailOrderEndpoint({
       environment: context.environment,
