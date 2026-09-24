@@ -5,6 +5,9 @@ import {
   signInWithEmail,
   isAdminInviteSignInLink,
   signInWithAdminInviteLink,
+  beginAdminTotpEnrollment,
+  completeAdminTotpEnrollment,
+  completeAdminTotpSignIn,
   signOutUser,
   onAuthStateChanged,
   User,
@@ -37,6 +40,7 @@ export interface FormattedAuthError {
     | 'unauthorized_domain'
     | 'provider_disabled'
     | 'not_authorized'
+    | 'mfa_required'
     | 'invalid_credentials'
     | 'session_expired'
     | 'generic';
@@ -71,6 +75,22 @@ function parseAuthError(err: any, currentEmail?: string | null): FormattedAuthEr
       title: 'Sign-In Provider Disabled',
       message: 'The requested sign-in method (Email/Password or Google SSO) is not enabled in Firebase.',
       actionHint: 'Enable the provider in Firebase Console → Authentication → Sign-in method.',
+    };
+  }
+
+  // 3. Multi-factor authentication is required either by Firebase during
+  // sign-in or by the BFF after first-factor authentication.
+  if (
+    code === 'MFA_REQUIRED' ||
+    code === 'auth/multi-factor-auth-required' ||
+    message.includes('Multi-factor authentication is required')
+  ) {
+    return {
+      type: 'mfa_required',
+      code: code || 'MFA_REQUIRED',
+      title: 'Authenticator Required',
+      message: 'Administrator access requires a time-based one-time password (TOTP) from an authenticator app.',
+      actionHint: 'Enter your current authenticator code. If this account is not enrolled yet, enrol an authenticator app below.',
     };
   }
 
@@ -196,6 +216,10 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
   const [password, setPassword] = useState('');
   const [isInviteLink, setIsInviteLink] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaSubmitting, setMfaSubmitting] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaEnrollment, setMfaEnrollment] = useState<{ secretKey: string; qrCodeUrl: string } | null>(null);
+  const [pendingMfaError, setPendingMfaError] = useState<any>(null);
 
   const isDemo = appMode === 'demo';
 
@@ -320,6 +344,9 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
         await verifySession(fbUser, true);
       }
     } catch (err: any) {
+      if (err?.code === 'auth/multi-factor-auth-required') {
+        setPendingMfaError(err);
+      }
       setFormattedError(parseAuthError(err, email));
       setIsSubmitting(false);
     }
@@ -335,6 +362,9 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
         await verifySession(fbUser, true);
       }
     } catch (err: any) {
+      if (err?.code === 'auth/multi-factor-auth-required') {
+        setPendingMfaError(err);
+      }
       setFormattedError(parseAuthError(err));
       setIsSubmitting(false);
     }
@@ -346,6 +376,51 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
     setFormattedError(null);
     if (!isDemo) {
       setAdminUser(null);
+    }
+  };
+
+  const handleBeginMfaEnrollment = async () => {
+    setMfaSubmitting(true);
+    setFormattedError(null);
+    try {
+      const enrollment = await beginAdminTotpEnrollment();
+      setMfaEnrollment(enrollment);
+    } catch (err: any) {
+      setFormattedError(parseAuthError(err, user?.email));
+    } finally {
+      setMfaSubmitting(false);
+    }
+  };
+
+  const handleCompleteMfaEnrollment = async () => {
+    if (!mfaCode.trim()) return;
+    setMfaSubmitting(true);
+    try {
+      const enrolledUser = await completeAdminTotpEnrollment(mfaCode);
+      setMfaEnrollment(null);
+      setMfaCode('');
+      setUser(enrolledUser);
+      await verifySession(enrolledUser, true);
+    } catch (err: any) {
+      setFormattedError(parseAuthError(err, user?.email));
+    } finally {
+      setMfaSubmitting(false);
+    }
+  };
+
+  const handleCompleteMfaSignIn = async () => {
+    if (!pendingMfaError || !mfaCode.trim()) return;
+    setMfaSubmitting(true);
+    try {
+      const signedInUser = await completeAdminTotpSignIn(pendingMfaError, mfaCode);
+      setPendingMfaError(null);
+      setMfaCode('');
+      setUser(signedInUser);
+      await verifySession(signedInUser, true);
+    } catch (err: any) {
+      setFormattedError(parseAuthError(err, email));
+    } finally {
+      setMfaSubmitting(false);
     }
   };
 
@@ -442,7 +517,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
           {formattedError && (
             <div
               className={`p-4 rounded-xl border text-xs space-y-2.5 ${
-                formattedError.type === 'not_authorized'
+                formattedError.type === 'not_authorized' || formattedError.type === 'mfa_required'
                   ? 'bg-amber-50/80 border-amber-200 text-amber-900'
                   : formattedError.type === 'unauthorized_domain'
                   ? 'bg-purple-50/80 border-purple-200 text-purple-900'
@@ -450,7 +525,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
               }`}
             >
               <div className="flex items-start gap-2.5">
-                {formattedError.type === 'not_authorized' ? (
+                {formattedError.type === 'not_authorized' || formattedError.type === 'mfa_required' ? (
                   <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 ) : formattedError.type === 'unauthorized_domain' ? (
                   <Globe className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -491,6 +566,73 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children, onExit }) => {
                   >
                     <LogOut className="w-3 h-3" />
                     Switch Account
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {formattedError?.type === 'mfa_required' && (
+            <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/80 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <KeyRound className="w-4 h-4 text-indigo-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-indigo-950">
+                    {pendingMfaError ? 'Enter your authenticator code' : 'Enrol an authenticator app'}
+                  </p>
+                  <p className="text-[11px] text-indigo-800 mt-1 leading-relaxed">
+                    {pendingMfaError
+                      ? 'Open your authenticator app and enter the current six-digit code.'
+                      : 'This admin account needs TOTP MFA before the BFF will authorize it.'}
+                  </p>
+                </div>
+              </div>
+
+              {!pendingMfaError && !mfaEnrollment && (
+                <button
+                  type="button"
+                  onClick={handleBeginMfaEnrollment}
+                  disabled={mfaSubmitting || !user}
+                  className="w-full py-2.5 px-4 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
+                >
+                  {mfaSubmitting ? 'Preparing authenticator...' : 'Set up authenticator'}
+                </button>
+              )}
+
+              {mfaEnrollment && (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-gray-700">
+                    Add this key to your authenticator app, or use the compatible URI below.
+                  </p>
+                  <div className="p-2.5 rounded-lg bg-white border border-indigo-200 font-mono text-xs break-all text-gray-900">
+                    {mfaEnrollment.secretKey}
+                  </div>
+                  <details className="text-[10px] text-gray-600">
+                    <summary className="cursor-pointer font-semibold">Authenticator URI</summary>
+                    <div className="mt-1 p-2 bg-white border border-indigo-100 rounded break-all font-mono">
+                      {mfaEnrollment.qrCodeUrl}
+                    </div>
+                  </details>
+                </div>
+              )}
+
+              {(pendingMfaError || mfaEnrollment) && (
+                <div className="flex gap-2">
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="123456"
+                    className="min-w-0 flex-1 px-3 py-2 bg-white border border-indigo-200 rounded-lg text-sm font-mono tracking-widest focus:outline-hidden focus:ring-2 focus:ring-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={pendingMfaError ? handleCompleteMfaSignIn : handleCompleteMfaEnrollment}
+                    disabled={mfaSubmitting || mfaCode.length < 6}
+                    className="px-3.5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
+                  >
+                    {mfaSubmitting ? 'Checking...' : 'Verify'}
                   </button>
                 </div>
               )}
