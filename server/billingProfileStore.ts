@@ -7,17 +7,28 @@ export interface StoredTenantBillingProfile extends TenantBillingProfile {
   agreedBy?: string;
 }
 
-function validateProfile(profile: StoredTenantBillingProfile): void {
+export function validateBillingProfile(profile: StoredTenantBillingProfile): void {
   if (!profile.tenantId || !profile.identity?.legalName || !profile.currency || !profile.anchorDate) {
     throw new Error('Billing profile requires tenant, legal identity, currency and anchor date.');
   }
   if (!['WEEKLY', 'FOUR_WEEKLY', 'MONTHLY'].includes(profile.cadence)) throw new Error('Unsupported billing cadence.');
   if (!Number.isInteger(profile.contractVersion) || profile.contractVersion < 1) throw new Error('Billing contract version must be a positive integer.');
+  const seenRuleIds = new Set<string>();
   for (const rule of profile.rules) {
     if (!rule.id || !rule.label || !rule.effectiveFrom) throw new Error('Billing rules require id, label and effective date.');
+    if (seenRuleIds.has(rule.id)) throw new Error(`Duplicate billing rule id: ${rule.id}`);
+    seenRuleIds.add(rule.id);
+    if (!Number.isFinite(Date.parse(rule.effectiveFrom))) throw new Error(`Billing rule ${rule.id} has an invalid effectiveFrom date.`);
+    if (rule.effectiveUntil && !Number.isFinite(Date.parse(rule.effectiveUntil))) throw new Error(`Billing rule ${rule.id} has an invalid effectiveUntil date.`);
+    if (rule.effectiveUntil && rule.effectiveUntil <= rule.effectiveFrom) throw new Error(`Billing rule ${rule.id} effectiveUntil must be after effectiveFrom.`);
     if (rule.unitAmount && rule.unitAmount.currency !== profile.currency) throw new Error('Billing rule currency must match the tenant billing currency.');
-    if (rule.type === 'REVENUE_SHARE' && (!rule.revenueBasis || !Number.isFinite(rule.basisPoints))) {
-      throw new Error('Revenue-share rules require an explicit revenue basis and basis points.');
+    if (rule.type === 'REVENUE_SHARE') {
+      if (!rule.revenueBasis || !Number.isInteger(rule.basisPoints) || (rule.basisPoints || 0) < 0 || (rule.basisPoints || 0) > 10_000) {
+        throw new Error('Revenue-share rules require an explicit revenue basis and basis points between 0 and 10000.');
+      }
+      if (rule.unitAmount) throw new Error('Revenue-share rules must not also define a unit amount.');
+    } else if (!rule.unitAmount) {
+      throw new Error(`Billing rule ${rule.id} requires a unit amount.`);
     }
   }
 }
@@ -33,7 +44,7 @@ function versionId(tenantId: string, contractVersion: number): string {
  * silently rewriting terms that were already agreed.
  */
 export async function saveTenantBillingProfile(profile: StoredTenantBillingProfile): Promise<StoredTenantBillingProfile> {
-  validateProfile(profile);
+  validateBillingProfile(profile);
   const db = getFirestoreDb();
   if (!db) throw new Error('Firestore is required for durable billing profiles.');
   const ref = db.collection('billingProfiles').doc(profile.tenantId);
