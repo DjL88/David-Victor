@@ -15,7 +15,7 @@ import { FirestorePlatformService } from './firestoreService';
 import { aiStudioPreviewBffProxy } from './aiStudioPreviewProxy';
 import { getTrustedRequestHost, getTrustedRequestProtocol, resolveRequestTenant } from './tenantResolution';
 import { proxyFirebaseMedia } from './mediaProxy';
-import { adminSecurityMiddleware } from './adminSecurity';
+import { adminSecurityMiddleware, checkoutAppCheckMiddleware } from './adminSecurity';
 import { buildStorefrontManifest, buildStorefrontMetadata, injectStorefrontMetadata } from './storefrontMetadataService';
 import { requireExactWebhookRawBody } from './webhookRawBodyGuard';
 import {
@@ -69,6 +69,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/api/v1',aiStudioPreviewBffProxy);
   // SEC-02b: privileged Admin endpoints may require Firebase App Check and MFA.
   app.use('/api/v1/admin', adminSecurityMiddleware);
+  // Customer checkout App Check rolls out independently from Admin enforcement.
+  app.post('/api/v1/checkouts', checkoutAppCheckMiddleware);
+  app.post('/api/commerce/checkouts', checkoutAppCheckMiddleware);
   app.use('/api/v1',v1Router); app.use('/api/commerce',v1Router); app.use('/integrations/deliverect',v1Router);
   app.use('/api',(err:any,req:AppRequest,res:Response,_next:NextFunction)=>{const requestId=req.requestId||(req.headers['x-request-id'] as string)||'unknown';if(err instanceof BFFError)return res.status(err.statusCode).json(err.toPayload(requestId));console.error(`[BFF Unhandled Error] [${requestId}]:`,err);res.status(500).json({code:'INTERNAL_ERROR',safeMessage:'An internal server error occurred while processing your request.',requestId,retryable:false});});
   if(serveFrontend){if(process.env.NODE_ENV!=='production'){console.log('[Server] Running in DEVELOPMENT mode with Vite middleware');const vite=await createViteServer({server:{middlewareMode:true},appType:'spa'});app.use(vite.middlewares);}else{console.log('[Server] Running in PRODUCTION mode with static file serving');const distPath=path.join(process.cwd(),'dist');const indexTemplate=await fs.readFile(path.join(distPath,'index.html'),'utf8');app.use(express.static(distPath,{index:false}));app.get('*',async(req,res)=>{const tenant=await resolveStorefrontTenant(req);if(!tenant)return res.setHeader('Cache-Control','no-store').type('html').send(indexTemplate);const metadata=buildStorefrontMetadata(tenant,req.path||'/',requestOrigin(req));const html=injectStorefrontMetadata(indexTemplate,metadata);res.setHeader('Cache-Control','public, max-age=60, stale-while-revalidate=300');return res.type('html').send(html);});}}
