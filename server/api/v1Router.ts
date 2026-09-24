@@ -65,6 +65,12 @@ import {
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
 import { resolveRetailOrderEndpoint } from '../deliverect/retailOrderEndpoint';
+import { getTenantBillingProfile, saveTenantBillingProfile } from '../billingProfileStore';
+import { buildBillingInsightsSnapshot } from '../billingInsightsService';
+import { listBillingMeterEvents } from '../billingMeterStore';
+import { buildDraftInvoice, resolveBillingPeriod } from '../billingService';
+import { saveBillingDraft, listBillingDrafts, finalizeBillingInvoice } from '../billingInvoiceStore';
+import { recordBillingAdjustment, listBillingAdjustments } from '../billingAdjustmentStore';
 import { validateBody } from './validation';
 import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
@@ -140,6 +146,9 @@ import {
   AdminAssistantPlanSchema,
   AdminAssistantExecuteSchema,
   AdminAssistantChangeSetSchema,
+  SaveBillingProfileSchema,
+  GenerateBillingDraftSchema,
+  CreateBillingAdjustmentSchema,
 } from './schemas';
 
 export const v1Router = Router();
