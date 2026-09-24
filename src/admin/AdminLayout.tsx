@@ -33,8 +33,6 @@ import {
   ShieldCheck,
   Languages,
   SlidersHorizontal,
-  CalendarClock,
-  Truck,
   Store,
   History,
   Users,
