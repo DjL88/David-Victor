@@ -30,18 +30,14 @@ export function getDPayAdapter(
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = dPayAdapters.get(key);
   if (!adapter) {
-    const tokenManager = OAuthTokenManager.getInstance(normalizedTenantId);
-    const hasCredentials = tokenManager.isConfigured;
-
     if (appMode === 'demo') {
       adapter = new DemoPaymentAdapter();
-    } else if (hasCredentials) {
-      adapter = new DeliverectDPayAdapter(normalizedTenantId, environment);
     } else {
-      console.warn(
-        `[Deliverect Pay] Non-demo mode (${appMode}) with no credentials for ${key}. Using IntegrationUnavailableDPayAdapter.`
-      );
-      adapter = new IntegrationUnavailableDPayAdapter();
+      // Credential and environment resolution is asynchronous and tenant/profile
+      // scoped inside DeliverectDPayAdapter. Do not decide availability from
+      // process-local env credentials here: dedicated tenant secrets may live
+      // exclusively in Secret Manager.
+      adapter = new DeliverectDPayAdapter(normalizedTenantId, environment);
     }
     dPayAdapters.set(key, adapter);
     console.log(`[Deliverect Pay] Active DPay Adapter for [${key}]: ${adapter.adapterName}`);
