@@ -29,3 +29,22 @@ env:
     value: DLeitch22@gmail.com
     availability:
       - RUNTIME
+
+  # Cloud Tasks worker security. These values are deployment configuration,
+  # not application secrets. Keep their names aligned with cloudTasksSecurity.ts.
+  - variable: CLOUD_TASKS_SA_EMAIL
+    secret: cloud_tasks_sa_email
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_AUDIENCE
+    secret: cloud_tasks_audience
+    availability:
+      - RUNTIME
+
+  # Firebase App Hosting provides the canonical public URL to the runtime.
+  # Cloud Tasks uses the same origin for its worker target.
+  - variable: APP_URL
+    value: https://david-victor--david-victor.europe-west4.hosted.app
+    availability:
+      - RUNTIME
