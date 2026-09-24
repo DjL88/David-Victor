@@ -113,7 +113,8 @@ export class OAuthTokenManager {
     const now = Date.now();
     const leaseMs = 15_000;
 
-    return db.runTransaction(async (tx) => {
+    try {
+      return await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const data = snap.exists ? snap.data() : undefined;
       const expiresAt = Number(data?.expiresAt || 0);
@@ -144,7 +145,13 @@ export class OAuthTokenManager {
         updatedAt: new Date(now).toISOString(),
       }, { merge: true });
       return { token: null, claimed: true };
-    });
+      });
+    } catch (err) {
+      // OAuth remains available if the shared cache is temporarily degraded;
+      // the local in-flight guard still prevents a per-instance stampede.
+      console.warn('[OAuthTokenManager] Shared token cache unavailable; using local refresh guard:', err);
+      return { token: null, claimed: true };
+    }
   }
 
   private async awaitSharedTokenOrClaim(): Promise<TokenRecord | null> {
@@ -322,7 +329,11 @@ export class OAuthTokenManager {
 
     this.inFlightTokenPromise = this.requestFreshToken()
       .then(async (token) => {
-        if (this.cachedToken) await this.publishSharedToken(this.cachedToken);
+        if (this.cachedToken) {
+          await this.publishSharedToken(this.cachedToken).catch((err) => {
+            console.warn('[OAuthTokenManager] Could not publish shared token cache:', err);
+          });
+        }
         return token;
       })
       .catch(async (err) => {
