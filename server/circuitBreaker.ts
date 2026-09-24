@@ -117,7 +117,14 @@ export class CircuitBreaker {
     }
   }
 
-  private onFailure(_error: any): void {
+  private onFailure(error: any): void {
+    const status = Number(error?.statusCode || error?.status || 0);
+    // Client/request errors are not evidence that the upstream service is down.
+    // Never let a tenant's invalid request trip an infrastructure breaker.
+    if (status >= 400 && status < 500) {
+      return;
+    }
+
     this.lastFailureTime = Date.now();
     this.failures += 1;
 
@@ -208,6 +215,45 @@ export async function executeWithRetry<T>(
   }
 }
 
+const tenantCircuitBreakers = new Map<string, CircuitBreaker>();
+
+export type CircuitService = 'commerce' | 'dispatch' | 'dpay';
+
+function serviceOptions(service: CircuitService): CircuitBreakerOptions {
+  if (service === 'dispatch') {
+    return { name: 'deliverect-dispatch', failureThreshold: 4, cooldownMs: 20000, timeoutMs: 8000 };
+  }
+  if (service === 'dpay') {
+    return { name: 'deliverect-dpay', failureThreshold: 3, cooldownMs: 30000, timeoutMs: 12000 };
+  }
+  return { name: 'deliverect-commerce', failureThreshold: 5, cooldownMs: 15000, timeoutMs: 10000 };
+}
+
+export function getTenantCircuitBreaker(
+  tenantId: string,
+  service: CircuitService
+): CircuitBreaker {
+  const normalizedTenant = String(tenantId || 'unknown').trim() || 'unknown';
+  const key = `${normalizedTenant}:${service}`;
+  let breaker = tenantCircuitBreakers.get(key);
+  if (!breaker) {
+    const options = serviceOptions(service);
+    breaker = new CircuitBreaker({
+      ...options,
+      name: `${key}`,
+    });
+    tenantCircuitBreakers.set(key, breaker);
+  }
+  return breaker;
+}
+
+export function resetTenantCircuitBreakers(): void {
+  for (const breaker of tenantCircuitBreakers.values()) breaker.reset();
+  tenantCircuitBreakers.clear();
+}
+
+// Legacy aggregate breakers are retained only for backwards-compatible metrics
+// while call sites migrate to tenant-scoped breakers.
 // Global registry of circuit breakers for subsystems
 export const circuitBreakers = {
   commerce: new CircuitBreaker({ name: 'deliverect-commerce', failureThreshold: 5, cooldownMs: 15000, timeoutMs: 10000 }),
