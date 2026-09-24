@@ -135,6 +135,37 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     clearCache.mockRestore();
   });
 
+  it('serves the latest durable pushed menu back to storefront readers', async () => {
+    const tenantId = `tenant-storefront-truth-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1'
+    );
+
+    expect(hosted).toBeTruthy();
+    expect(hosted.source).toBe('DELIVERECT_CHANNEL_PUSH');
+    expect(hosted.menuId).toBe('menu-1');
+    expect(hosted.products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          plu: 'DRINK-1',
+          name: 'Water',
+          priceMinor: 125,
+        }),
+      ])
+    );
+  });
+
   it('deduplicates retried Menu Pushes before creating another task', async () => {
     const tenantId = `tenant-dedupe-${Date.now()}`;
     const payload = sampleMenu();
