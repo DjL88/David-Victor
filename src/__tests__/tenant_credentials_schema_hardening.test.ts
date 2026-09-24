@@ -8,7 +8,7 @@ import { installMockFirebaseAdminToken } from './helpers/firebaseAuthHarness';
 describe('TEN-01 credentials, schema and tenant ID hardening', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    setServerRuntimeMode('test');
+    setServerRuntimeMode('demo');
   });
 
   afterEach(() => {
