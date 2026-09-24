@@ -18,6 +18,7 @@ import { proxyFirebaseMedia } from './mediaProxy';
 import { adminSecurityMiddleware } from './adminSecurity';
 import { buildStorefrontManifest, buildStorefrontMetadata, injectStorefrontMetadata } from './storefrontMetadataService';
 import { requireExactWebhookRawBody } from './webhookRawBodyGuard';
+import { assertCloudTasksSecurityConfigured } from './cloudTasksSecurity';
 
 export interface AppRequest extends Request { requestId?: string; startTime?: number; }
 export interface CreateAppOptions { serveFrontend?: boolean; initializeDependencies?: boolean; }
@@ -35,7 +36,11 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use(express.urlencoded({ extended:true }));
   app.get('/media/firebase', mediaProxyRateLimiter.middleware(), proxyFirebaseMedia);
   app.use('/media/firebase',(err:any,_req:Request,res:Response,next:NextFunction)=>{ if(err instanceof BFFError)return res.status(err.statusCode).json({code:err.code,error:err.safeMessage}); return next(err); });
-  if(initializeDependencies){ getFirestoreDb(); getDeliverectAdapter(); }
+  if(initializeDependencies){
+    assertCloudTasksSecurityConfigured();
+    getFirestoreDb();
+    getDeliverectAdapter();
+  }
   const handleHealth=(req:AppRequest,res:Response)=>res.json({status:'ok',service:'commerce-bff',requestId:req.requestId,timestamp:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime())});
   app.get('/health',handleHealth); app.get('/api/health',handleHealth);
   const handleReady=async(req:AppRequest,res:Response)=>{ const db=getFirestoreDb(); const adapter=getDeliverectAdapter(); const appMode=getServerRuntimeMode(); let dbReady=false; let dbError:string|undefined; if(appMode==='demo'||process.env.NODE_ENV==='test')dbReady=true; else if(db){try{await Promise.race([db.collection('_health').doc('probe').get(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Firestore read timeout (3000ms)')),3000))]);dbReady=true;}catch(err:any){dbError=err?.message||'Firestore connection check failed';}} const deliverectReady=appMode==='demo'||process.env.NODE_ENV==='test'?Boolean(adapter):Boolean(adapter&&adapter.adapterName!=='IntegrationUnavailableAdapter'&&(adapter as any).isConnected!==false); const checks={database:dbReady,deliverect:deliverectReady,appMode,...(dbError?{dbError}:{})}; const isReady=checks.database&&checks.deliverect; res.status(isReady?200:503).json({status:isReady?'ready':'degraded',service:'commerce-bff',requestId:req.requestId,checks,timestamp:new Date().toISOString()}); };
