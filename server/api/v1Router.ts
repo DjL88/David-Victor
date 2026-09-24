@@ -38,6 +38,7 @@ import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
 import { OrderReferenceService } from '../orderReferenceService';
 import { CheckoutLockService } from '../checkoutLockService';
+import { assertAllowedHostedPaymentRedirect } from '../paymentRedirectPolicy';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
@@ -1511,9 +1512,30 @@ v1Router.post('/payments/sessions', validateBody(PaymentSessionSchema), async (r
   try {
     const { basketId } = req.body;
     const tenantId = resolveTenant(req);
+    const tenantConfig = await FirestorePlatformService.getTenantConfig(tenantId);
     const adapter = await getDeliverectAdapterAsync(tenantId);
     const session = await adapter.createPaymentSession(basketId);
-    res.json(session);
+
+    const allowedOrigins =
+      tenantConfig.paymentPolicy?.hostedRedirectAllowedOrigins || [];
+    if (allowedOrigins.length === 0 && !isDemoMode()) {
+      throw new BFFError(
+        'PAYMENT_REDIRECT_POLICY_MISSING',
+        'Hosted payment redirect origins are not configured for this tenant.',
+        503
+      );
+    }
+    assertAllowedHostedPaymentRedirect(
+      session.redirectUrl,
+      allowedOrigins.length > 0
+        ? allowedOrigins
+        : ['https://pay.deliverect.com']
+    );
+
+    res.json({
+      ...session,
+      returnUrl: `${getTrustedRequestProtocol(req)}://${getTrustedRequestHost(req)}/checkout/return?checkoutId=${encodeURIComponent(basketId)}`,
+    });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to create payment session');
   }
