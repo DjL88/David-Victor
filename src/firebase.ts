@@ -5,7 +5,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User,
@@ -47,8 +48,17 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
   return cred.user;
 }
 
-export async function createAccountWithEmail(email: string, pass: string): Promise<User> {
-  const cred = await createUserWithEmailAndPassword(auth, email, pass);
+export function isAdminInviteSignInLink(link?: string): boolean {
+  const resolvedLink =
+    link || (typeof window !== 'undefined' ? window.location.href : '');
+  return Boolean(resolvedLink) && isSignInWithEmailLink(auth, resolvedLink);
+}
+
+export async function signInWithAdminInviteLink(email: string, link: string): Promise<User> {
+  if (!email || !link || !isSignInWithEmailLink(auth, link)) {
+    throw new Error('Invalid administrator invitation link.');
+  }
+  const cred = await signInWithEmailLink(auth, email.trim().toLowerCase(), link);
   return cred.user;
 }
 
