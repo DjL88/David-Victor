@@ -2021,8 +2021,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
       catalog,
       Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
     );
-    const finalRaw = await api.updateDiscounts(basketId, automaticDiscounts);
-    return this.mapLiveCommerceBasket(finalRaw);
+    await api.updateDiscounts(basketId, automaticDiscounts);
+
+    // PATCH /items and PATCH /discounts are mutation acknowledgements, not a
+    // reliable priced-basket projection. In particular Deliverect can return
+    // payment.total=0 here while the lines themselves already carry valid
+    // prices. Reconcile is the authoritative pricing boundary: only render the
+    // basket after Deliverect has recalculated payment.subTotal/payment.total.
+    const reconciledRaw = await api.reconcileBasket(basketId);
+    return this.mapLiveCommerceBasket(reconciledRaw);
   }
 
   async updateBasketItems(
@@ -2143,8 +2150,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
       catalog,
       Array.isArray((raw as any)?.discounts) ? (raw as any).discounts : []
     );
-    const finalRaw = await api.updateDiscounts(basketId, automaticDiscounts);
-    return this.mapLiveCommerceBasket(finalRaw);
+    await api.updateDiscounts(basketId, automaticDiscounts);
+
+    // Always re-read authoritative arithmetic after a basket mutation. The
+    // discounts PATCH response may legitimately be sparse/stale and has been
+    // observed with payment.total=0 despite non-zero item prices.
+    const reconciledRaw = await api.reconcileBasket(basketId);
+    return this.mapLiveCommerceBasket(reconciledRaw);
   }
 
   /**
