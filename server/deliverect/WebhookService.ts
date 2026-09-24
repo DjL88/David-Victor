@@ -831,6 +831,21 @@ export class WebhookService {
         };
       }
 
+      // Unknown numeric POS/order statuses are valid transport events but do not
+      // have a documented lifecycle meaning here. Acknowledge and journal them
+      // without inventing a transition or persisting the numeric value as state.
+      if (/^\d+$/.test(rawStatus)) {
+        await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+        return {
+          success: true,
+          eventId: webhookEventId,
+          status: 'IGNORED',
+          message: `Unmapped Deliverect numeric order status ${rawStatus} was safely acknowledged without changing order state.`,
+          orderId: targetOrder.orderId,
+          newState: currentState,
+        };
+      }
+
       const currentRank = ORDER_STATE_RANKING[currentState] || 0;
       const incomingRank = ORDER_STATE_RANKING[rawStatus] || 0;
 
