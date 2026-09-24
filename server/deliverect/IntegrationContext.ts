@@ -14,6 +14,7 @@ import { FirestorePlatformService } from '../firestoreService';
 import { BFFError } from '../errors';
 import { isDemoMode } from '../runtimeMode';
 import { linkedAccountsAdapter } from './LinkedAccountsAdapter';
+import type { RetailOrderEndpointConfig } from './retailOrderEndpoint';
 
 export interface TenantIntegrationConfig {
   tenantId: string;
@@ -28,6 +29,7 @@ export interface TenantIntegrationConfig {
   channelName?: string;
   /** Terminal Deliverect order-creation route. Exactly one route may run per order. */
   orderRoute?: 'retail_quest' | 'commerce_checkout';
+  retailOrder?: RetailOrderEndpointConfig;
   tokenManager: OAuthTokenManager;
   isConfigured: boolean;
 }
@@ -187,6 +189,7 @@ export class IntegrationContext {
         ? integrationRecord.allowedChannelLinkIds.map(String)
         : [],
       channelName,
+      retailOrder: integrationRecord?.retailOrder,
       orderRoute,
       tokenManager,
       isConfigured,
