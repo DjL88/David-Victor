@@ -613,9 +613,14 @@ export class HttpCommerceClient implements CommerceClient {
   ): Promise<HostedPaymentSession> {
     const basketId =
       typeof requestOrBasketId === 'string' ? requestOrBasketId : requestOrBasketId.basketId;
+    const canonicalReturnUrl =
+      returnUrl ||
+      (typeof window !== 'undefined'
+        ? `${window.location.origin}/checkout/return?checkoutId=${encodeURIComponent(basketId)}`
+        : undefined);
     return this.request<HostedPaymentSession>('/payments/sessions', {
       method: 'POST',
-      body: JSON.stringify({ basketId, returnUrl: returnUrl || window.location.href }),
+      body: JSON.stringify({ basketId, returnUrl: canonicalReturnUrl }),
     });
   }
 
