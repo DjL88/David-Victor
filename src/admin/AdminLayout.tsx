@@ -24,6 +24,7 @@ import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
 import { AdminWorkspaceProvider, type AdminGuideStep, type AdminNavigateOptions } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
+import { getRuntimeMode } from '../domain/runtime';
 import {
   Palette,
   Film,
@@ -491,7 +492,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             <div className="flex justify-between items-center px-1">
               <span>Environment</span>
               <span className="font-mono text-indigo-300 font-bold">
-                {isDemo ? 'Demo Sandbox' : 'Cloud Staging'}
+                {isDemo ? 'Demo Sandbox' : getRuntimeMode() === 'PRODUCTION' ? 'Production' : getRuntimeMode() === 'STAGING' ? 'Cloud Staging' : 'Unresolved'}
               </span>
             </div>
             <div className="flex justify-between items-center px-1">
