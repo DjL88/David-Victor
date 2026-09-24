@@ -4,7 +4,7 @@ import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
 import { IntegrationContext } from './IntegrationContext';
 import { CommerceDiscoveryService, asyncPool } from './CommerceDiscoveryService';
 import { resolveStoreGeography } from '../geographyService';
-import { circuitBreakers } from '../circuitBreaker';
+import { getCircuitBreaker } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { assertProductAddAllowed } from '../ruleEnforcementService';
@@ -443,7 +443,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
   async testConnection(accountId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
     const start = Date.now();
     try {
-      return await circuitBreakers.commerce.execute(async () => {
+      return await getCircuitBreaker(this.tenantId, 'commerce').execute(async () => {
         const token = await this.tokenManager.getAccessToken();
         const targetAccId = accountId || (await this.resolveAccountId().catch(() => ''));
 
@@ -645,7 +645,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
   async getProductTagDefinitions(forceRefresh = false): Promise<ProductTagDefinition[]> {
     if (!forceRefresh && this.tagDefinitionsCache && Date.now() - this.tagDefinitionsCache.loadedAt < DeliverectApiClient.TAG_CACHE_TTL_MS) return this.tagDefinitionsCache.definitions;
-    const raw = await circuitBreakers.commerce.execute(async () => {
+    const raw = await getCircuitBreaker(this.tenantId, 'commerce').execute(async () => {
       const token = await this.tokenManager.getAccessToken();
       const response = await fetch(`${this.baseUrl}/allAllergens`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
       if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
@@ -1265,7 +1265,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
     const token = await this.tokenManager.getAccessToken();
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId, 'commerce').execute(async () => {
       const start = Date.now();
       const url = `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/menus`;
       const res = await fetch(url, {
@@ -1336,7 +1336,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
     const token = await this.tokenManager.getAccessToken();
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId, 'commerce').execute(async () => {
       const start = Date.now();
       const primaryUrl = `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/stores/${encodeURIComponent(channelLinkId)}/menus`;
       let res = await fetch(primaryUrl, {
@@ -1504,7 +1504,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       store?.physicalLocationId ? `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(store.physicalLocationId)}/menus` : null,
     ].filter(Boolean) as string[];
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId, 'commerce').execute(async () => {
       let lastStatus = 502;
       for (const url of urls) {
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
