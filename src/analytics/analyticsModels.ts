@@ -19,13 +19,23 @@ export type FrontendAnalyticsEventType =
   | 'ENTRY_STORIES_STARTED'
   | 'NO_SERVICEABLE_STORE'
   | 'CATEGORY_VIEW'
+  | 'PRODUCT_IMPRESSION'
   | 'PRODUCT_VIEW'
+  | 'PRODUCT_HOVER'
+  | 'PRODUCT_FOCUS'
+  | 'CATEGORY_DWELL'
   | 'STORY_IMPRESSION'
   | 'STORY_OPEN'
   | 'STORY_PRODUCT_CLICK'
   | 'SEARCH'
   | 'SEARCH_NO_RESULTS'
+  | 'SEARCH_RESULT_IMPRESSION'
   | 'SEARCH_RESULT_CLICK'
+  | 'RECOMMENDATION_IMPRESSION'
+  | 'RECOMMENDATION_CLICK'
+  | 'RECOMMENDATION_ADD_TO_BASKET'
+  | 'RECOMMENDATION_DISMISSED'
+  | 'RECOMMENDATION_CONVERTED'
   | 'ADD_TO_BASKET'
   | 'REMOVE_FROM_BASKET'
   | 'CHECKOUT_STARTED'
@@ -43,6 +53,8 @@ export type BackendAnalyticsEventType =
   | 'ITEM_SUBSTITUTED'
   | 'ITEM_REMOVED'
   | 'ITEM_QUANTITY_AMENDED'
+  | 'ITEM_REFUNDED'
+  | 'ORDER_REFUNDED'
   | 'PICKING_COMPLETE'
   | 'PAYMENT_CAPTURED'
   | 'COURIER_ASSIGNED'
@@ -66,13 +78,23 @@ export const AnalyticsEventType = {
   ENTRY_STORIES_STARTED: 'ENTRY_STORIES_STARTED',
   NO_SERVICEABLE_STORE: 'NO_SERVICEABLE_STORE',
   CATEGORY_VIEW: 'CATEGORY_VIEW',
+  PRODUCT_IMPRESSION: 'PRODUCT_IMPRESSION',
   PRODUCT_VIEW: 'PRODUCT_VIEW',
+  PRODUCT_HOVER: 'PRODUCT_HOVER',
+  PRODUCT_FOCUS: 'PRODUCT_FOCUS',
+  CATEGORY_DWELL: 'CATEGORY_DWELL',
   STORY_IMPRESSION: 'STORY_IMPRESSION',
   STORY_OPEN: 'STORY_OPEN',
   STORY_PRODUCT_CLICK: 'STORY_PRODUCT_CLICK',
   SEARCH: 'SEARCH',
   SEARCH_NO_RESULTS: 'SEARCH_NO_RESULTS',
+  SEARCH_RESULT_IMPRESSION: 'SEARCH_RESULT_IMPRESSION',
   SEARCH_RESULT_CLICK: 'SEARCH_RESULT_CLICK',
+  RECOMMENDATION_IMPRESSION: 'RECOMMENDATION_IMPRESSION',
+  RECOMMENDATION_CLICK: 'RECOMMENDATION_CLICK',
+  RECOMMENDATION_ADD_TO_BASKET: 'RECOMMENDATION_ADD_TO_BASKET',
+  RECOMMENDATION_DISMISSED: 'RECOMMENDATION_DISMISSED',
+  RECOMMENDATION_CONVERTED: 'RECOMMENDATION_CONVERTED',
   ADD_TO_BASKET: 'ADD_TO_BASKET',
   REMOVE_FROM_BASKET: 'REMOVE_FROM_BASKET',
   CHECKOUT_STARTED: 'CHECKOUT_STARTED',
@@ -88,6 +110,8 @@ export const AnalyticsEventType = {
   ITEM_SUBSTITUTED: 'ITEM_SUBSTITUTED',
   ITEM_REMOVED: 'ITEM_REMOVED',
   ITEM_QUANTITY_AMENDED: 'ITEM_QUANTITY_AMENDED',
+  ITEM_REFUNDED: 'ITEM_REFUNDED',
+  ORDER_REFUNDED: 'ORDER_REFUNDED',
   PICKING_COMPLETE: 'PICKING_COMPLETE',
   PAYMENT_CAPTURED: 'PAYMENT_CAPTURED',
   COURIER_ASSIGNED: 'COURIER_ASSIGNED',
@@ -143,6 +167,8 @@ export interface ProductPerformanceMetric {
   category: string;
   impressions: number;
   productViews: number;
+  productHovers: number;
+  dwellTimeMs: number;
   addToBasketCount: number;
   ordersCount: number;
   conversionRate: number; // percentage
@@ -151,6 +177,7 @@ export interface ProductPerformanceMetric {
   questRemovals: number;
   questSubstitutions: number;
   quantityReductions: number;
+  refunds: number;
   pickSuccessRate: number; // percentage e.g. 96.4%
   estimatedLostRevenue: number;
 }
@@ -173,11 +200,37 @@ export interface StoryPerformanceMetric {
 export interface SearchQueryMetric {
   query: string;
   frequency: number;
-  resultsCount: number;
+  resultsCount?: number;
+  resultImpressions: number;
   resultClicks: number;
   addToBasketCount: number;
   conversionRate: number;
   noResult: boolean;
+}
+
+export interface RecommendationPerformanceMetric {
+  surface: string;
+  reasonCode: string;
+  impressions: number;
+  clicks: number;
+  addToBaskets: number;
+  conversions: number;
+  dismissals: number;
+  clickThroughRate: number;
+  attachRate: number;
+  conversionRate: number;
+  incrementalBasketValue: number;
+}
+
+export interface AnalyticsOperationsSummary {
+  pickedItems: number;
+  substitutedItems: number;
+  removedItems: number;
+  refundedItems: number;
+  refundedOrders: number;
+  substitutionRate: number;
+  removalRate: number;
+  refundRate: number;
 }
 
 export interface RegionalMetric {
@@ -215,6 +268,8 @@ export interface InsightsDashboardData {
   products: ProductPerformanceMetric[];
   stories: StoryPerformanceMetric[];
   searches: SearchQueryMetric[];
+  recommendations: RecommendationPerformanceMetric[];
+  operations: AnalyticsOperationsSummary;
   regions: RegionalMetric[];
   abandonedBasket: AbandonedBasketMetric[];
 }
