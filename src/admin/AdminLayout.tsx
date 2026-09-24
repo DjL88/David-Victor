@@ -255,9 +255,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     {
       title: 'Rules',
       items: [
-        { id: 'product_rules', label: 'Product rules', icon: ShieldCheck },
-        { id: 'courier_settings', label: 'Courier settings', icon: Truck },
-        { id: 'order_scheduling', label: 'Order scheduling', icon: CalendarClock },
+        { id: 'product_rules', label: 'Rules', icon: ShieldCheck },
       ],
     },
     {
