@@ -138,8 +138,9 @@ class InMemoryPickingStatusQueue implements PickingStatusQueueClient {
  * Fast, durable acknowledgement path for Deliverect picker status callbacks.
  *
  * HMAC authentication is completed by the route before this service is called.
- * Live traffic is then committed to Cloud Tasks before the HTTP 200 is returned,
- * keeping Deliverect's request thread independent from Firestore/order settlement.
+ * Live traffic is durably journalled before Cloud Tasks enqueue is attempted.
+ * A queue outage is exposed as degraded infrastructure without turning an
+ * already-persisted verified callback into an HTTP failure.
  */
 export class PickingStatusIngressService {
   private static queueClient: PickingStatusQueueClient | null = null;
