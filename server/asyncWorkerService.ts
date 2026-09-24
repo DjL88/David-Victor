@@ -5,7 +5,32 @@ import { NotificationService } from './notificationService';
 import { AnalyticsService } from './analyticsService';
 import { isDemoMode } from './runtimeMode';
 
-const oAuth2Client = new OAuth2Client();
+let cloudTasksOidcVerifier: Pick<OAuth2Client, 'verifyIdToken'> = new OAuth2Client();
+
+export function setCloudTasksOidcVerifierForTest(
+  verifier: Pick<OAuth2Client, 'verifyIdToken'> | null
+): void {
+  cloudTasksOidcVerifier = verifier || new OAuth2Client();
+}
+
+export function assertCloudTasksRuntimeConfig(): void {
+  if (isDemoMode() || process.env.NODE_ENV === 'test') return;
+
+  const required = {
+    CLOUD_TASKS_SA_EMAIL: process.env.CLOUD_TASKS_SA_EMAIL,
+    CLOUD_TASKS_AUDIENCE: process.env.CLOUD_TASKS_AUDIENCE,
+    APP_URL: process.env.APP_URL,
+  };
+  const missing = Object.entries(required)
+    .filter(([, value]) => !String(value || '').trim())
+    .map(([key]) => key);
+
+  if (missing.length) {
+    throw new Error(
+      `Cloud Tasks live runtime configuration is incomplete: missing ${missing.join(', ')}.`
+    );
+  }
+}
 
 /**
  * Cryptographically verifies Google Cloud Tasks OIDC tokens.
@@ -39,14 +64,17 @@ export async function verifyCloudTasksOidcToken(req: any): Promise<{ email: stri
     return { email: 'demo-worker@project.iam.gserviceaccount.com', sub: 'demo-worker' };
   }
 
-  const expectedAudience =
-    process.env.CLOUD_TASKS_AUDIENCE ||
-    process.env.CLOUD_RUN_URL ||
-    'https://api.platform.example.com';
-  const expectedEmail = process.env.CLOUD_TASKS_SA_EMAIL;
+  const expectedAudience = String(process.env.CLOUD_TASKS_AUDIENCE || '').trim();
+  const expectedEmail = String(process.env.CLOUD_TASKS_SA_EMAIL || '').trim();
+  if (!expectedAudience || !expectedEmail) {
+    const err: any = new Error('Cloud Tasks OIDC verifier is not configured for this live runtime.');
+    err.statusCode = 401;
+    err.code = 'OIDC_CONFIG_MISSING';
+    throw err;
+  }
 
   try {
-    const ticket = await oAuth2Client.verifyIdToken({
+    const ticket = await cloudTasksOidcVerifier.verifyIdToken({
       idToken: token,
       audience: expectedAudience,
     });
@@ -65,11 +93,16 @@ export async function verifyCloudTasksOidcToken(req: any): Promise<{ email: stri
       throw err;
     }
 
-    if (expectedEmail && payload.email !== expectedEmail) {
-      const err: any = new Error(
-        `OIDC service account mismatch: expected ${expectedEmail}, got ${payload.email}`
-      );
-      err.statusCode = 403;
+    if (payload.email_verified !== true) {
+      const err: any = new Error('Cloud Tasks OIDC service-account email is not verified.');
+      err.statusCode = 401;
+      err.code = 'OIDC_EMAIL_NOT_VERIFIED';
+      throw err;
+    }
+
+    if (payload.email !== expectedEmail) {
+      const err: any = new Error('Cloud Tasks OIDC service account does not match the configured worker identity.');
+      err.statusCode = 401;
       err.code = 'OIDC_SERVICE_ACCOUNT_MISMATCH';
       throw err;
     }
@@ -140,8 +173,14 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
     if (client && queue && projectId) {
       try {
         const parent = client.queuePath(projectId, location, queue);
-        const appUrl = process.env.APP_URL || process.env.BFF_URL || 'http://localhost:3000';
-        const serviceAccountEmail = process.env.CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL;
+        const appUrl = String(process.env.APP_URL || '').replace(/\/$/, '');
+        const serviceAccountEmail = String(process.env.CLOUD_TASKS_SA_EMAIL || '').trim();
+        const audience = String(process.env.CLOUD_TASKS_AUDIENCE || '').trim();
+        if (isLiveEnvironment && (!appUrl || !serviceAccountEmail || !audience)) {
+          throw new Error(
+            '[CloudTasksQueueClient] APP_URL, CLOUD_TASKS_SA_EMAIL and CLOUD_TASKS_AUDIENCE are required in live modes.'
+          );
+        }
         const task: any = {
           httpRequest: {
             httpMethod: 'POST',
@@ -154,7 +193,7 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
               ? {
                   oidcToken: {
                     serviceAccountEmail,
-                    audience: appUrl,
+                    audience,
                   },
                 }
               : {}),
@@ -198,8 +237,14 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
     if (client && queue && projectId) {
       try {
         const parent = client.queuePath(projectId, location, queue);
-        const appUrl = process.env.APP_URL || process.env.BFF_URL || 'http://localhost:3000';
-        const serviceAccountEmail = process.env.CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL;
+        const appUrl = String(process.env.APP_URL || '').replace(/\/$/, '');
+        const serviceAccountEmail = String(process.env.CLOUD_TASKS_SA_EMAIL || '').trim();
+        const audience = String(process.env.CLOUD_TASKS_AUDIENCE || '').trim();
+        if (isLiveEnvironment && (!appUrl || !serviceAccountEmail || !audience)) {
+          throw new Error(
+            '[CloudTasksQueueClient] APP_URL, CLOUD_TASKS_SA_EMAIL and CLOUD_TASKS_AUDIENCE are required in live modes.'
+          );
+        }
         const task: any = {
           httpRequest: {
             httpMethod: 'POST',
@@ -212,7 +257,7 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
               ? {
                   oidcToken: {
                     serviceAccountEmail,
-                    audience: appUrl,
+                    audience,
                   },
                 }
               : {}),
