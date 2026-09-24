@@ -56,3 +56,11 @@ env:
     secret: cloud_tasks_audience
     availability:
       - RUNTIME
+
+
+  # Non-production deployment guard. Tenant integration profiles cannot switch
+  # this service to production endpoints or production secrets.
+  - variable: ALLOWED_TENANT_ENVS
+    value: staging
+    availability:
+      - RUNTIME
