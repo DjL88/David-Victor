@@ -18,8 +18,7 @@ const AdminLayout = lazy(() =>
 );
 
 const GOOGLE_MAPS_API_KEY =
-  (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) ||
-  'xDh0vIFs-lfpjyGqlg9KJnrAMqQ=';
+  (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined)?.trim() || '';
 
 // Catch Google Maps auth / activation errors globally to prevent unhandled script alerts
 if (typeof window !== 'undefined') {
