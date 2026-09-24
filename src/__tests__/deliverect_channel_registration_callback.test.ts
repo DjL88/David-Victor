@@ -29,6 +29,8 @@ describe('Deliverect Channel registration callback', () => {
         environment: 'staging',
         status: 'COMMERCE_VERIFIED',
       } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile')
+      .mockResolvedValue(null);
     vi.spyOn(FirestorePlatformService, 'saveTenantStore')
       .mockImplementation(async (_tenantId: string, store: any) => store);
     vi.spyOn(FirestorePlatformService, 'getTenantStores')
@@ -117,6 +119,33 @@ describe('Deliverect Channel registration callback', () => {
     const body = await res.json();
     expect(body.registration.tenantId).toBe('brand-alpha');
   });
+  it('prefers the tenant environment publicBaseUrl over a deployment-wide callback origin', async () => {
+    vi.mocked(FirestorePlatformService.getIntegrationProfile).mockResolvedValue({
+      id: 'brand-alpha__staging',
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      status: 'ACTIVE',
+      version: 1,
+      publicBaseUrl: 'https://brand-alpha.integrations.example.test',
+      credentialMode: 'platform',
+      allowedChannelLinkIds: ['channel-link-789'],
+      deliverect: {},
+      secretRefs: {},
+    } as any);
+
+    const res = await postRegister('/webhooks/deliverect/account-123/channel/register');
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    const expectedBase =
+      'https://brand-alpha.integrations.example.test/api/v1/webhooks/deliverect/brand-alpha';
+    expect(body.statusUpdateURL).toBe(expectedBase);
+    expect(body.menuUpdateURL).toBe(`${expectedBase}/channel/menu_update`);
+    expect(body.snoozeUnsnoozeURL).toBe(`${expectedBase}/channel/snooze`);
+    expect(body.busyModeURL).toBe(`${expectedBase}/channel/busy_mode`);
+    expect(body.updatePrepTimeURL).toBe(`${expectedBase}/channel/prep_time`);
+  });
+
   it('accepts a staging menu push signed with its channelLinkId', async () => {
     const menuPayload = {
       accountId: 'account-123',
