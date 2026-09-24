@@ -17,6 +17,7 @@ import { getTrustedRequestHost, getTrustedRequestProtocol, resolveRequestTenant 
 import { proxyFirebaseMedia } from './mediaProxy';
 import { adminSecurityMiddleware } from './adminSecurity';
 import { buildStorefrontManifest, buildStorefrontMetadata, injectStorefrontMetadata } from './storefrontMetadataService';
+import { requireExactWebhookRawBody } from './webhookRawBodyGuard';
 
 export interface AppRequest extends Request { requestId?: string; startTime?: number; }
 export interface CreateAppOptions { serveFrontend?: boolean; initializeDependencies?: boolean; }
@@ -44,6 +45,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('/manifest.webmanifest',async(req,res)=>{const tenant=await resolveStorefrontTenant(req);if(!tenant)return res.status(404).json({error:'Storefront tenant not found for this hostname.'});res.setHeader('Content-Type','application/manifest+json; charset=utf-8');res.setHeader('Cache-Control','public, max-age=300');return res.json(buildStorefrontManifest(tenant));});
   app.get('/robots.txt',(req,res)=>{const origin=requestOrigin(req);res.type('text/plain');res.setHeader('Cache-Control','public, max-age=300');return res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /checkout\nDisallow: /basket\nDisallow: /account\nSitemap: ${origin}/sitemap.xml\n`);});
   app.get('/sitemap.xml',async(req,res)=>{const tenant=await resolveStorefrontTenant(req);if(!tenant)return res.status(404).type('text/plain').send('Storefront tenant not found.');const origin=requestOrigin(req).replace(/[<>&"']/g,'');res.type('application/xml');res.setHeader('Cache-Control','public, max-age=300');return res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/</loc></url></urlset>`);});
+  // SEC-04b: every Deliverect POST webhook must reach HMAC verification with
+  // the exact bytes captured by express.json's verify hook. Never allow a
+  // handler to reconstruct JSON and authenticate different bytes.
+  app.use('/api/v1/webhooks/deliverect', requireExactWebhookRawBody);
+  app.use('/api/commerce/webhooks/deliverect', requireExactWebhookRawBody);
+  app.use('/integrations/deliverect/webhooks/deliverect', requireExactWebhookRawBody);
   app.use('/api',standardApiRateLimiter.middleware());
   app.use('/api/v1',aiStudioPreviewBffProxy);
   // SEC-02b: privileged Admin endpoints may require Firebase App Check and MFA.
