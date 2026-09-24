@@ -124,3 +124,11 @@ export const checkoutAndPaymentRateLimiter = new RateLimiter({
   maxRequests: 30, // 30 attempts per minute to prevent checkout spam & card testing
   message: 'Payment and checkout request threshold exceeded. Please wait a moment before trying again.',
 });
+
+
+export const mediaProxyRateLimiter = new RateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 120,
+  keyGenerator: (req) => req.socket.remoteAddress || 'unknown',
+  message: 'Media request threshold exceeded. Please wait a moment and try again.',
+});
