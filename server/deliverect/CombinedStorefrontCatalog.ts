@@ -20,6 +20,8 @@ export interface HostedChannelMenuSnapshot {
     status?: string;
     stock?: number | boolean;
     snoozed?: boolean;
+    /** Forward-compatible Deliverect merchandise discriminator. Unknown values are retained. */
+    type?: string;
   }>;
 }
 
@@ -46,14 +48,32 @@ export function projectHostedMenusToCombinedCatalog(
       ...(product.status !== undefined ? { status: product.status } : {}),
       ...(product.stock !== undefined ? { stock: product.stock } : {}),
       ...(product.snoozed !== undefined ? { snoozed: product.snoozed } : {}),
+      ...(product.type !== undefined ? { type: product.type } : {}),
     })),
   }));
   return projectChannelCatalogs(masterLocationId, pushes);
 }
 
+export interface StorefrontOperationalOverlay {
+  status?: 'ONLINE' | 'BUSY' | 'PAUSED' | 'CLOSED' | 'OPEN';
+  preparationTimeDelay?: number;
+  products?: Record<string, { availability: 'ACTIVE' | 'SNOOZED'; snoozed?: boolean }>;
+}
+
+export interface MaterializedStorefrontCatalog {
+  products: Record<string, ChannelCatalogItem>;
+  store: {
+    orderable: boolean;
+    busy: boolean;
+    preparationTimeDelay?: number;
+    status?: StorefrontOperationalOverlay['status'];
+  };
+}
+
 export function materializeStorefrontProducts(
   projection: ChannelCatalogProjection,
-  locationId: string
+  locationId: string,
+  operational?: StorefrontOperationalOverlay
 ): Record<string, ChannelCatalogItem> {
   const result: Record<string, ChannelCatalogItem> = {};
   const local = projection.inventoryOverrides.filter((o) => o.locationId === locationId);
@@ -61,7 +81,7 @@ export function materializeStorefrontProducts(
 
   for (const [identity, canonical] of Object.entries(projection.products)) {
     const override = byIdentity.get(identity);
-    result[identity] = override
+    const product = override
       ? {
           ...canonical,
           ...(override.name !== undefined ? { name: override.name } : {}),
@@ -72,6 +92,42 @@ export function materializeStorefrontProducts(
           ...(override.snoozed !== undefined ? { snoozed: override.snoozed } : {}),
         }
       : { ...canonical };
+
+    // Operational snooze truth is deliberately applied last. It is independent
+    // of menu ingestion and may arrive before or after a menu push.
+    // Canonical GTIN identity may retain the master's PLU while a store-specific
+    // menu uses a local PLU. Resolve operational state against the local override
+    // first, then canonical PLU, so snooze events match the selected store.
+    const localPlu = String(override?.plu || '').trim();
+    const canonicalPlu = String(product.plu || '').trim();
+    const op = (localPlu ? operational?.products?.[localPlu] : undefined)
+      || (canonicalPlu ? operational?.products?.[canonicalPlu] : undefined);
+    result[identity] = op
+      ? {
+          ...product,
+          snoozed: op.snoozed ?? op.availability === 'SNOOZED',
+          status: op.availability === 'SNOOZED' ? 'SNOOZED' : product.status,
+        }
+      : product;
   }
   return result;
+}
+
+export function materializeStorefrontCatalog(
+  projection: ChannelCatalogProjection,
+  locationId: string,
+  operational?: StorefrontOperationalOverlay
+): MaterializedStorefrontCatalog {
+  const status = operational?.status;
+  return {
+    products: materializeStorefrontProducts(projection, locationId, operational),
+    store: {
+      status,
+      orderable: status !== 'CLOSED' && status !== 'PAUSED',
+      busy: status === 'BUSY',
+      ...(operational?.preparationTimeDelay !== undefined
+        ? { preparationTimeDelay: operational.preparationTimeDelay }
+        : {}),
+    },
+  };
 }
