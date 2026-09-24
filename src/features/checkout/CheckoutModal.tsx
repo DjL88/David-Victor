@@ -400,22 +400,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       let authorizationMaximum: Money | undefined;
 
       if (!isCollection) {
-        const subPolicy = await defaultCommerceClient.getSubstitutionPolicy?.(checkoutBasket.storeId);
-        const policyBuffer = subPolicy?.defaultBufferPercentage ?? 0;
-        const calcMax = calculateAuthorizationMaximum(
-          checkoutBasket.total,
-          true,
-          policyBuffer,
-          checkoutBasket.currency,
-          preChosenBufferInfo.extraBufferAmount
+        // Live card details are never fabricated in the storefront. Delivery
+        // payments must go through the provider-hosted/tokenized flow instead.
+        setRevalidationError(
+          'Continue with Secure Hosted Payment to authorize this delivery order.'
         );
-        authorizationMaximum = calcMax.authorizationMaximum;
-        const token = await defaultPaymentClient.createToken({
-          type: 'CARD',
-          cardholderName: name,
-          last4: '4242',
-        });
-        paymentTokenRef = token.token;
+        return;
       }
 
       // For Collection, the chosen slot is a real basket property on Deliverect's side
@@ -737,8 +727,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Simulate Hosted Payment Completion
+  // Demo keeps the polling simulation. Live hosted payment leaves this app
+  // only via a redirect URL already validated by the BFF tenant allowlist.
   const handleCompleteHostedPayment = async () => {
+    if (!isDemo) {
+      if (!hostedRedirectUrl) {
+        setFailureReason('The payment provider did not return a safe redirect URL.');
+        setPhase('order_failed');
+        return;
+      }
+      window.location.assign(hostedRedirectUrl);
+      return;
+    }
+
     setPhase('polling_status');
     setStatusMessage('Preparing payment...');
 
@@ -1623,7 +1624,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <button
                 type="button"
                 id="direct-auth-pay-btn"
-                onClick={handleDirectAuthorizeCheckout}
+                onClick={isCollectionBasket ? handleDirectAuthorizeCheckout : handleInitiatePayment}
                 disabled={
                   isAuthorizingDirect ||
                   isRevalidating ||
@@ -1705,7 +1706,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         )}
 
-        {/* PHASE 2: HOSTED PAYMENT REDIRECT SIMULATION */}
+        {/* PHASE 2: HOSTED PAYMENT REDIRECT */}
         {phase === 'hosted_payment' && (
           <div className="text-center py-6 space-y-4">
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100">
