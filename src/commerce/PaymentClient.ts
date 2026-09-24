@@ -110,7 +110,7 @@ export class DemoPaymentClient implements PaymentClient {
     cardholderName?: string;
     last4?: string;
   }): Promise<PaymentToken> {
-    const last4 = cardDetails?.last4 || '4242';
+    const last4 = cardDetails?.last4 || cardDetails?.cardNumberMasked?.slice(-4) || '';
     const tokenId = `dpay_tok_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     return {
       token: tokenId,
