@@ -9,12 +9,25 @@ import {
   signInWithEmailLink,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  multiFactor,
+  getMultiFactorResolver,
+  TotpMultiFactorGenerator,
+  type MultiFactorError,
+  type TotpSecret,
   User,
 } from 'firebase/auth';
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  getToken as getAppCheckToken,
+  type AppCheck,
+} from 'firebase/app-check';
 import firebaseConfig from '../firebase-applet-config.json';
 
 let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
+let appCheckInstance: AppCheck | null = null;
+let pendingTotpSecret: TotpSecret | null = null;
 
 export function getClientFirebaseApp(): FirebaseApp {
   if (!appInstance) {
@@ -33,6 +46,28 @@ export function getClientFirebaseAuth(): Auth {
     authInstance = getAuth(app);
   }
   return authInstance;
+}
+
+export function getClientFirebaseAppCheck(): AppCheck | null {
+  if (appCheckInstance) return appCheckInstance;
+  const siteKey =
+    typeof import.meta !== 'undefined'
+      ? String((import.meta as any).env?.VITE_FIREBASE_APPCHECK_SITE_KEY || '').trim()
+      : '';
+  if (!siteKey) return null;
+
+  appCheckInstance = initializeAppCheck(getClientFirebaseApp(), {
+    provider: new ReCaptchaEnterpriseProvider(siteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+  return appCheckInstance;
+}
+
+export async function getCurrentAppCheckToken(): Promise<string | null> {
+  const appCheck = getClientFirebaseAppCheck();
+  if (!appCheck) return null;
+  const result = await getAppCheckToken(appCheck, false);
+  return result.token || null;
 }
 
 export const auth = getClientFirebaseAuth();
@@ -60,6 +95,59 @@ export async function signInWithAdminInviteLink(email: string, link: string): Pr
   }
   const cred = await signInWithEmailLink(auth, email.trim().toLowerCase(), link);
   return cred.user;
+}
+
+export async function beginAdminTotpEnrollment(): Promise<{
+  secretKey: string;
+  qrCodeUrl: string;
+}> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in before enrolling multi-factor authentication.');
+  if (!user.emailVerified) throw new Error('Verify your email address before enrolling MFA.');
+
+  const session = await multiFactor(user).getSession();
+  pendingTotpSecret = await TotpMultiFactorGenerator.generateSecret(session);
+  return {
+    secretKey: pendingTotpSecret.secretKey,
+    qrCodeUrl: pendingTotpSecret.generateQrCodeUrl(
+      user.email || 'administrator',
+      'Bwydi Admin'
+    ),
+  };
+}
+
+export async function completeAdminTotpEnrollment(code: string): Promise<User> {
+  const user = auth.currentUser;
+  if (!user || !pendingTotpSecret) {
+    throw new Error('Start MFA enrollment before entering a verification code.');
+  }
+  const assertion = TotpMultiFactorGenerator.assertionForEnrollment(
+    pendingTotpSecret,
+    code.trim()
+  );
+  await multiFactor(user).enroll(assertion, 'Authenticator app');
+  pendingTotpSecret = null;
+  await user.getIdToken(true);
+  return user;
+}
+
+export async function completeAdminTotpSignIn(
+  error: MultiFactorError,
+  code: string
+): Promise<User> {
+  const resolver = getMultiFactorResolver(auth, error);
+  const hint = resolver.hints.find(
+    (candidate) => candidate.factorId === TotpMultiFactorGenerator.FACTOR_ID
+  );
+  if (!hint) {
+    throw new Error('No supported authenticator-app factor is enrolled for this account.');
+  }
+  const assertion = TotpMultiFactorGenerator.assertionForSignIn(
+    hint.uid,
+    code.trim()
+  );
+  const result = await resolver.resolveSignIn(assertion);
+  return result.user;
 }
 
 export async function signOutUser(): Promise<void> {
