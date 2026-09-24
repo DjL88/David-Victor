@@ -117,7 +117,14 @@ export class CircuitBreaker {
     }
   }
 
-  private onFailure(_error: any): void {
+  private onFailure(error: any): void {
+    const status = Number(error?.statusCode ?? error?.status ?? error?.response?.status);
+    // Client/request failures say nothing about upstream health. They must never
+    // poison a tenant's circuit or another tenant's traffic.
+    if (Number.isFinite(status) && status >= 400 && status < 500) {
+      return;
+    }
+
     this.lastFailureTime = Date.now();
     this.failures += 1;
 
@@ -208,9 +215,51 @@ export async function executeWithRetry<T>(
   }
 }
 
-// Global registry of circuit breakers for subsystems
+export type CircuitService = 'commerce' | 'dispatch' | 'dpay';
+
+const tenantCircuitBreakers = new Map<string, CircuitBreaker>();
+
+const serviceOptions: Record<CircuitService, Omit<CircuitBreakerOptions, 'name'>> = {
+  commerce: { failureThreshold: 5, cooldownMs: 15000, timeoutMs: 10000 },
+  dispatch: { failureThreshold: 4, cooldownMs: 20000, timeoutMs: 8000 },
+  dpay: { failureThreshold: 3, cooldownMs: 30000, timeoutMs: 12000 },
+};
+
+/** SEC-04b: circuit state is isolated by tenant + upstream service. */
+export function getCircuitBreaker(
+  tenantId: string,
+  service: CircuitService
+): CircuitBreaker {
+  const cleanTenant = String(tenantId || '').trim() || 'unknown';
+  const key = `${cleanTenant}:${service}`;
+  let breaker = tenantCircuitBreakers.get(key);
+  if (!breaker) {
+    breaker = new CircuitBreaker({
+      name: key,
+      ...serviceOptions[service],
+    });
+    tenantCircuitBreakers.set(key, breaker);
+  }
+  return breaker;
+}
+
+export function getCircuitBreakerStats(): Record<string, CircuitStats> {
+  return Object.fromEntries(
+    Array.from(tenantCircuitBreakers.entries()).map(([key, breaker]) => [
+      key,
+      breaker.getStats(),
+    ])
+  );
+}
+
+export function resetCircuitBreakersForTest(): void {
+  tenantCircuitBreakers.clear();
+}
+
+// Backwards-compatible diagnostics only. Runtime integration calls should use
+// getCircuitBreaker(tenantId, service) so one tenant cannot trip another.
 export const circuitBreakers = {
-  commerce: new CircuitBreaker({ name: 'deliverect-commerce', failureThreshold: 5, cooldownMs: 15000, timeoutMs: 10000 }),
-  dispatch: new CircuitBreaker({ name: 'deliverect-dispatch', failureThreshold: 4, cooldownMs: 20000, timeoutMs: 8000 }),
-  dpay: new CircuitBreaker({ name: 'deliverect-dpay', failureThreshold: 3, cooldownMs: 30000, timeoutMs: 12000 }),
+  commerce: getCircuitBreaker('platform-diagnostics', 'commerce'),
+  dispatch: getCircuitBreaker('platform-diagnostics', 'dispatch'),
+  dpay: getCircuitBreaker('platform-diagnostics', 'dpay'),
 };
