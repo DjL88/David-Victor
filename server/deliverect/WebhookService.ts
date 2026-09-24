@@ -667,7 +667,11 @@ export class WebhookService {
     payload: any,
     rawBody: Buffer | string,
     headers: Record<string, string | string[] | undefined>,
-    tenantId: string = 'brand-alpha'
+    tenantId: string = 'brand-alpha',
+    internalContext?: {
+      replayAlreadyClaimed?: boolean;
+      webhookEventId?: string;
+    }
   ): Promise<WebhookProcessingResult> {
     const signatureHeader =
       (headers['x-server-authorization-hmac-sha256'] as string) ||
@@ -697,31 +701,41 @@ export class WebhookService {
       .update(rawBuffer)
       .digest('hex');
 
-    const webhookEventId = `wh_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const webhookEventId =
+      internalContext?.webhookEventId ||
+      `wh_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    // 3. Deduplication Check (WH-02) via Atomic Idempotency Claim
-    const claim = await FirestorePlatformService.claimWebhookIdempotency('deliverect', externalEventKey, webhookEventId);
-    if (!claim.claimed) {
-      console.log(`[WebhookService] Deduplicated event ${externalEventKey} via atomic idempotency claim.`);
-      return {
-        success: true,
-        eventId: claim.existingEventId || webhookEventId,
-        status: 'DEDUPLICATED',
-        message: 'Event was previously processed and acknowledged idempotently.',
-      };
+    // 3. Deduplication is claimed once for the exact inbound body. Internal
+    // child amendments may reuse that claim, but provider event IDs never do.
+    if (!internalContext?.replayAlreadyClaimed) {
+      const claim = await FirestorePlatformService.claimWebhookIdempotency(
+        'deliverect',
+        externalEventKey,
+        webhookEventId
+      );
+      if (!claim.claimed) {
+        console.log(`[WebhookService] Deduplicated event ${externalEventKey} via atomic idempotency claim.`);
+        return {
+          success: true,
+          eventId: claim.existingEventId || webhookEventId,
+          status: 'DEDUPLICATED',
+          message: 'Event was previously processed and acknowledged idempotently.',
+        };
+      }
+
+      const existing = await FirestorePlatformService.getWebhookEvent(externalEventKey);
+      if (existing && existing.processingStatus === 'PROCESSED') {
+        console.log(`[WebhookService] Deduplicated event ${externalEventKey} - already processed.`);
+        return {
+          success: true,
+          eventId: existing.webhookEventId,
+          status: 'DEDUPLICATED',
+          message: 'Event was previously processed and acknowledged idempotently.',
+        };
+      }
     }
 
     try {
-    const existing = await FirestorePlatformService.getWebhookEvent(externalEventKey);
-    if (existing && existing.processingStatus === 'PROCESSED') {
-      console.log(`[WebhookService] Deduplicated event ${externalEventKey} - already processed.`);
-      return {
-        success: true,
-        eventId: existing.webhookEventId,
-        status: 'DEDUPLICATED',
-        message: 'Event was previously processed and acknowledged idempotently.',
-      };
-    }
 
     // 4. Resolve integration environment authoritatively
     const integrationConfig = await FirestorePlatformService.getIntegrationConfig(tenantId);
