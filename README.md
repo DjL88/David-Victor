@@ -1,20 +1,28 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# LT / Leitch Tech — White-Label Retail Commerce Platform
 
-# Run and deploy your AI Studio app
+Multi-tenant storefront and administration platform with Deliverect integration.
 
-This contains everything you need to run your app locally.
+## Local development
 
-View your app in AI Studio: https://ai.studio/apps/94d6f13b-2728-44ae-81f7-336ea211333f
+1. Install dependencies with `bun install --frozen-lockfile`.
+2. Configure the required local environment values. Do not commit credentials or provider secrets.
+3. Run `bun run dev`.
 
-## Run Locally
+## Quality gates
 
-**Prerequisites:**  Node.js
+Before merging, run:
 
+- `bun run lint`
+- `bun run test`
+- `bun run test:certification`
+- `bun run build`
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+The GitHub CI workflow runs typecheck, the full test suite, the deterministic certification gate and the production build. Provider/staging certification remains separate from repository CI and must not be inferred from a green local build.
+
+## Branding and compatibility
+
+LT / Leitch Tech is the platform presentation brand. Existing persisted collection names, public API contracts, provider identifiers and compatibility surfaces are not renamed merely for presentation branding; migrations must be explicit and backwards-compatible.
+
+## Deployment
+
+Production uses dedicated deployment configuration and tenant/environment integration profiles. Follow the repository production bootstrap documentation rather than relying on AI Studio preview configuration.
