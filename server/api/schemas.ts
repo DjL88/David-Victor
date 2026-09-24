@@ -327,6 +327,19 @@ export const PaymentGatewaysQuerySchema = z.object({
   channelLinkId: z.string().min(1, 'channelLinkId is required'),
 });
 
+export const CreatePaymentTokenSchema = z.object({
+  gatewayProfileId: z.string().trim().min(1),
+  channelLinkId: z.string().trim().min(1),
+  customerId: z.string().trim().min(1),
+  payment_method: z.object({
+    number: z.string().regex(/^\d{12,19}$/, 'Card number must contain digits only'),
+    exp_month: z.number().int().min(1).max(12),
+    exp_year: z.number().int().min(new Date().getUTCFullYear()).max(new Date().getUTCFullYear() + 30),
+    cvc: z.string().regex(/^\d{3,4}$/),
+    name: z.string().trim().min(1).max(200).optional(),
+  }).strict(),
+}).strict();
+
 export const DPayRequestPaymentSchema = z.object({
   channelLinkId: z.string().min(1, 'channelLinkId is required'),
   gatewayProfileId: z.string().optional(),
