@@ -1,5 +1,6 @@
 import { PaymentService } from './deliverect/PaymentService';
 import { FirestorePlatformService } from './firestoreService';
+import { IntegrationContext } from './deliverect/IntegrationContext';
 import { NotificationService } from './notificationService';
 import { AnalyticsService } from './analyticsService';
 import { isDemoMode } from './runtimeMode';
@@ -294,13 +295,13 @@ export class AsyncWorkerService {
       // default. Missing/inactive profiles fail closed to PAYMENT_ACTION_REQUIRED.
       let reauthorizeIfNeeded = false;
       try {
-        const integration = await FirestorePlatformService.getIntegrationConfig(job.tenantId);
-        const environment = integration?.environment === 'production' ? 'production' : 'staging';
-        const profile = await FirestorePlatformService.getIntegrationProfile(job.tenantId, environment);
+        // Reuse the canonical tenant integration resolver so activeEnv,
+        // deployment environment guards, ACTIVE-profile requirements and
+        // environment-scoped DPay configuration cannot drift from checkout.
+        const integration = await IntegrationContext.getContext(job.tenantId);
         reauthorizeIfNeeded =
-          profile?.status === 'ACTIVE' &&
-          profile?.dpay?.enabled === true &&
-          profile?.dpay?.excessAmountPolicy === 'AUTO_REAUTHORIZE';
+          integration.dpay?.enabled === true &&
+          integration.dpay?.excessAmountPolicy === 'AUTO_REAUTHORIZE';
       } catch (err: any) {
         console.warn(
           `[AsyncWorkerService] Payment excess policy unavailable for ${job.tenantId}; defaulting to manual action required: ${err?.message || err}`
