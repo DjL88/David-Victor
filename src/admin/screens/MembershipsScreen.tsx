@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Mail,
   Building2,
+  Copy,
 } from 'lucide-react';
 
 interface MembershipRecord {
@@ -41,6 +42,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   // Filter state (for platformSuperAdmin)
   const [selectedTenantFilter, setSelectedTenantFilter] = useState<string>(
@@ -103,16 +105,18 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
     setIsSubmitting(true);
     setError(null);
     setSuccessMessage(null);
+    setInviteLink(null);
 
     try {
-      await defaultAdminClient.createMembership({
+      const result = await defaultAdminClient.createMembership({
         email: newEmail.trim().toLowerCase(),
         role: newRole,
         tenantId: newRole === 'platformSuperAdmin' ? 'platform' : newTenantId,
         name: newName.trim() || undefined,
       });
 
-      setSuccessMessage(`Membership for ${newEmail} created successfully.`);
+      setSuccessMessage('Administrator invitation created. Share the secure link with the invited person.');
+      setInviteLink(typeof result?.inviteLink === 'string' && result.inviteLink ? result.inviteLink : null);
       setIsAddModalOpen(false);
       setNewEmail('');
       setNewName('');
@@ -127,6 +131,7 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
   const handleDeleteMember = async (id: string) => {
     setError(null);
     setSuccessMessage(null);
+    setInviteLink(null);
     try {
       await defaultAdminClient.deleteMembership(id);
       setSuccessMessage('Membership revoked successfully.');
@@ -231,7 +236,27 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
       {successMessage && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 text-xs text-emerald-700">
           <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-          <p className="font-medium mt-0.5">{successMessage}</p>
+          <div className="min-w-0 flex-1">
+            <p className="font-medium mt-0.5">{successMessage}</p>
+            {inviteLink && (
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteLink}
+                  aria-label="Administrator invitation link"
+                  className="min-w-0 flex-1 px-3 py-2 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono text-gray-700"
+                />
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(inviteLink)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-emerald-200 rounded-lg font-semibold text-emerald-800 hover:bg-emerald-100"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -319,8 +344,14 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Active
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            String(m.status || '').toLowerCase() === 'active'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}
+                        >
+                          {m.status || 'Unknown'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-gray-500 text-[11px]">
