@@ -572,10 +572,14 @@ export class WebhookService {
       process.env.DELIVERECT_ENV === 'production' ||
       process.env.APP_MODE === 'production';
 
-    const allowStagingChannelHmac =
-      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
-
-    if (allowStagingChannelHmac && !isProductionWebhook) {
+    // Deliverect staging Channel callbacks may be signed with the mapped
+    // channelLink/location identifier instead of the tenant webhook secret.
+    // These candidates are not payload-trusted: callers obtain them only from
+    // this tenant's existing store projection/allowlist. Permit that bounded
+    // staging scheme automatically so callback auth does not depend on a
+    // deployment-specific feature flag. Production always fails closed to the
+    // canonical tenant Secret Manager secret above.
+    if (!isProductionWebhook) {
       const candidates = Array.from(
         new Set(
           (options?.stagingTemporarySecrets || [])
@@ -587,7 +591,7 @@ export class WebhookService {
       for (const temporarySecret of candidates) {
         if (this.verifyDeliverectHmac(rawBody, signatureHeader, temporarySecret)) {
           console.info(
-            `[WebhookService] Verified explicitly-enabled staging Channel HMAC for tenant ${candidateTenantId}.`
+            `[WebhookService] Verified mapped staging Channel HMAC for tenant ${candidateTenantId}.`
           );
           this.consumeWebhookIngressToken(candidateTenantId);
           return { tenantId: candidateTenantId, secret: temporarySecret };
@@ -622,11 +626,8 @@ export class WebhookService {
       (headers['x-deliverect-hmac-sha256'] as string);
 
     // 1. Authoritatively resolve tenant & verify HMAC signature
-    const allowStagingChannelHmac =
-      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
-    const stagingTemporarySecrets = allowStagingChannelHmac
-      ? await this.getMappedStagingChannelLinkSecrets(tenantId, payload)
-      : [];
+    const stagingTemporarySecrets =
+      await this.getMappedStagingChannelLinkSecrets(tenantId, payload);
 
     const { tenantId: resolvedTenantId } = await this.resolveTenantForWebhook(
       rawBody,
