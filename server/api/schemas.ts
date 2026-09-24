@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolveRetailOrderEndpoint } from '../deliverect/retailOrderEndpoint';
 
 export const ResolveLocationSchema = z.object({
   query: z.string().min(1, 'Location query is required'),
@@ -616,10 +617,30 @@ export const ReorderHeroBannersSchema = z
   })
   .passthrough();
 
+const RetailOrderEndpointConfigSchema = z.object({
+  baseUrl: z.string().optional(),
+  pathTemplate: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+}).strict().superRefine((value, ctx) => {
+  try {
+    resolveRetailOrderEndpoint({
+      environment: 'production',
+      tenantConfig: value,
+      env: {},
+      channelName: 'preview-channel',
+      channelLinkId: 'preview-link',
+      accountId: 'preview-account',
+    });
+  } catch (err: any) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: err?.safeMessage || err?.message || 'Invalid retail order endpoint configuration' });
+  }
+});
+
 export const UpdateIntegrationSchema = z.object({
   deliverectAccountId: z.string().optional(),
   channelName: z.string().min(1).optional(),
   orderRoute: z.enum(['retail_quest', 'commerce_checkout']).optional(),
+  retailOrder: RetailOrderEndpointConfigSchema.optional(),
   environment: z.enum(['staging', 'production']).optional(),
   status: z.enum(['connected', 'standalone', 'error']).optional(),
   bffProxyUrl: z.string().optional(),
