@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { BFFError } from '../errors';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { WebhookService } from './WebhookService';
+import { WebhookIngressLimiter } from '../webhookIngressLimiter';
 
 export interface PickingStatusIngressJob {
   jobId: string;
@@ -173,6 +174,8 @@ export class PickingStatusIngressService {
       contentHash
     ).trim();
     const jobId = `picking_${contentHash}`;
+
+    await WebhookIngressLimiter.assertCanEnqueue(params.tenantId);
 
     const job: PickingStatusIngressJob = {
       jobId,
