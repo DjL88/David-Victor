@@ -2647,7 +2647,10 @@ async function handleQuestRetailCallback(
         { stagingTemporarySecrets }
       );
 
-      const payload = normalizeQuestPickingStatusPayload(req.body);
+      const payload = isExplicitQuestPickingStatusUpdate(req.body)
+        ? normalizeQuestPickingStatusPayload(req.body)
+        : req.body;
+
       await PickingStatusIngressService.acceptVerified({
         tenantId: verified.tenantId,
         payload,
