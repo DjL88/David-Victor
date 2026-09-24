@@ -60,3 +60,12 @@ Looking at the order's Communication Traces, we see Delivery Manager (DMA) calls
 4. Should Retail orders be submitted via a specific endpoint/host or channel-name convention we haven't been told about (for context: we tried both `api.staging.deliverect.com/bwydi/order/...` and `api.staging.deliverect.io/bwydi/order/...`, both accepted, same behavior)?
 
 Happy to provide additional order IDs, payloads, or timestamps on request.
+
+
+## Retail endpoint questions for Deliverect
+
+1. What is the exact Retail/GenericRetailAPI order creation path?
+2. Does the `bwydi` channel resolve to `GenericRetailAPI` and a retail-range channel ID where `isRetailContext` is true?
+3. Is `x-deliverect-version: retail` required for Retail/Quest order creation?
+4. Does authentication differ on the Retail endpoint?
+5. What exact `itemUnavailableActions` enum values does Quest accept for Replace, Adjust, Remove and Cancel behaviour?
