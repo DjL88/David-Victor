@@ -27,12 +27,11 @@ const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 function detectInitialTenant(): string | undefined {
   if (typeof window === 'undefined') return undefined;
 
-  // 1. Check URL query param (e.g. ?tenantId=brand-beta) in demo or admin contexts
-  const urlParams = new URLSearchParams(window.location.search);
-  const queryTenant = urlParams.get('tenantId') || urlParams.get('brand');
-  if (queryTenant) return queryTenant;
+  // Tenant query-string overrides are demo-only and are applied only after the
+  // authoritative backend runtime mode has resolved. Never let a stale/demo URL
+  // choose tenant scope during live startup.
 
-  // 2. Check Hostname / Subdomain (e.g. brand-beta.yourhost.com -> 'brand-beta')
+  // Check Hostname / Subdomain (e.g. brand-beta.yourhost.com -> 'brand-beta')
   const host = window.location.hostname;
   const parts = host.split('.');
   if (parts.length > 2 && !['www', 'localhost', 'run', 'app'].includes(parts[0])) {
@@ -105,7 +104,11 @@ export const TenantProvider: React.FC<{
 
   useEffect(() => {
     let isMounted = true;
-    const initialTenant = detectInitialTenant();
+    const hostTenant = detectInitialTenant();
+    const demoQueryTenant = appMode === 'demo' && typeof window !== 'undefined'
+      ? (new URLSearchParams(window.location.search).get('tenantId') || new URLSearchParams(window.location.search).get('brand') || undefined)
+      : undefined;
+    const initialTenant = demoQueryTenant || hostTenant;
 
     if (initialTenant && 'setTenant' in commerceClient) {
       (commerceClient as unknown as { setTenant: (id: string) => void }).setTenant(initialTenant);

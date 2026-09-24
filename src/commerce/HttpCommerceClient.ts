@@ -48,7 +48,7 @@ import { getCurrentIdToken } from '../firebase';
 
 export class HttpCommerceClient implements CommerceClient {
   private baseUrl: string;
-  private currentTenantId: string = 'brand-alpha';
+  private currentTenantId: string = '';
   private appMode: 'unknown' | 'demo' | 'staging' | 'production' = 'unknown';
 
   constructor(baseUrl: string = '/api/v1') {
@@ -57,7 +57,7 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   setTenant(tenantId: string) {
-    this.currentTenantId = tenantId;
+    this.currentTenantId = tenantId.trim();
   }
 
   async fetchAppMode(): Promise<'unknown' | 'demo' | 'staging' | 'production'> {
@@ -94,7 +94,9 @@ export class HttpCommerceClient implements CommerceClient {
           ...options,
           headers: {
             'Content-Type': 'application/json',
-            'X-Tenant-ID': this.currentTenantId,
+            ...(this.appMode === 'demo' && this.currentTenantId
+              ? { 'X-Tenant-ID': this.currentTenantId }
+              : {}),
             ...(options.headers || {}),
           },
         });
@@ -127,9 +129,10 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getBootstrap(): Promise<BootstrapResponse> {
-    return this.request<BootstrapResponse>(
-      `/bootstrap?tenantId=${encodeURIComponent(this.currentTenantId)}`
-    );
+    const query = this.appMode === 'demo' && this.currentTenantId
+      ? `?tenantId=${encodeURIComponent(this.currentTenantId)}`
+      : '';
+    return this.request<BootstrapResponse>(`/bootstrap${query}`);
   }
 
   async resolveAddress(query: string | Coordinates): Promise<LocationResolutionResult> {
@@ -208,9 +211,10 @@ export class HttpCommerceClient implements CommerceClient {
   }
 
   async getStories(_context?: { storeId?: string; coordinates?: Coordinates }): Promise<Story[]> {
-    return this.request<Story[]>(
-      `/stories?tenantId=${encodeURIComponent(this.currentTenantId)}`
-    );
+    const query = this.appMode === 'demo' && this.currentTenantId
+      ? `?tenantId=${encodeURIComponent(this.currentTenantId)}`
+      : '';
+    return this.request<Story[]>(`/stories${query}`);
   }
 
   async searchProducts(
