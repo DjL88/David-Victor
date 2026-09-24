@@ -112,6 +112,8 @@ export interface StoreProductOperationalState {
   source: 'DELIVERECT_WEBHOOK';
 }
 
+import type { RetailOrderEndpointConfig } from './deliverect/retailOrderEndpoint';
+
 export interface IntegrationConfig {
   tenantId: string;
   credentialMode?: 'platform' | 'dedicated';
@@ -124,6 +126,8 @@ export interface IntegrationConfig {
   channelName?: string;
   /** Which Deliverect endpoint creates the live order. */
   orderRoute?: 'retail_quest' | 'commerce_checkout';
+  /** Superadmin-managed Retail/Quest endpoint experiment configuration. */
+  retailOrder?: RetailOrderEndpointConfig;
   environment: 'staging' | 'production';
   status: 'connected' | 'standalone' | 'error' | 'UNCONFIGURED' | 'OAUTH_VERIFIED' | 'ACCOUNT_MAPPED' | 'COMMERCE_VERIFIED' | 'CONNECTED';
   connectionState?: 'CONNECTED' | 'DISCONNECTED' | 'DEGRADED' | 'CHECKING';

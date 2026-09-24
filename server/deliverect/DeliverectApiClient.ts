@@ -67,6 +67,7 @@ import type {
 } from '../../src/commerce/bundleModels';
 import { allocateProtectedBundlePrices } from '../../src/commerce/bundleAllocation';
 import { qualifyAutomaticDeals } from '../../src/commerce/automaticDealEngine';
+import { resolveRetailOrderEndpoint } from './retailOrderEndpoint';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
@@ -3248,17 +3249,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
       };
     }
 
-    // Real Deliverect traffic observed for another Retail integration (Snappy
-    // Shopper) submits orders to api.deliverect.io, not api.deliverect.com —
-    // distinct from the general Channel/webhook API, which does use .com.
-    // Defaults to the .io equivalent of whichever environment (staging/
-    // production) this.baseUrl is already pointed at; DELIVERECT_RETAIL_ORDER_BASE_URL
-    // still overrides explicitly (e.g. to roll back to .com) if this turns out wrong.
-    const retailOrderBaseUrl = (
-      process.env.DELIVERECT_RETAIL_ORDER_BASE_URL || this.baseUrl.replace(/\.com(\/|$)/, '.io$1')
-    ).replace(/\/+$/, '');
-    const url = `${retailOrderBaseUrl}/${encodeURIComponent(channelName)}/order/${encodeURIComponent(channelLinkId)}`;
-    console.log(`[DeliverectApiClient] Submitting retail order to: ${url}`);
+    const endpoint = resolveRetailOrderEndpoint({
+      environment: context.environment,
+      tenantConfig: latestIntegration?.retailOrder || context.retailOrder,
+      env: process.env,
+      channelName,
+      channelLinkId,
+      accountId: latestIntegration?.deliverectAccountId || context.deliverectAccountId,
+    });
+    const url = endpoint.url;
+    const endpointHeaderNames = Object.keys(endpoint.headers);
+    console.log(
+      `[DeliverectApiClient] Retail order endpoint url=${url} headers=[${endpointHeaderNames.join(',')}] source=${JSON.stringify(endpoint.source)}`
+    );
     const send = async () => {
       const authorization = await this.tokenManager.getAuthorizationHeader();
       return fetch(url, {
@@ -3267,6 +3270,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           Authorization: authorization,
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...endpoint.headers,
         },
         body: JSON.stringify(payload),
       });
@@ -3376,6 +3380,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
         metadata: {
           orderRoute: 'retail_quest',
           dpayCaptureMode: options?.paymentId ? 'manual' : undefined,
+          deliverectOrderEndpoint: {
+            url: endpoint.url,
+            headerNames: endpointHeaderNames,
+            source: endpoint.source,
+          },
         },
         createdAt: now,
         updatedAt: now,

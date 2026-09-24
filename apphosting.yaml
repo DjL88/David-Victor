@@ -25,6 +25,12 @@ env:
       - RUNTIME
       - BUILD
 
+  # DV-07a: preserve the current staging Retail/Quest host explicitly.
+  - variable: DELIVERECT_RETAIL_ORDER_BASE_URL
+    value: https://api.staging.deliverect.io
+    availability:
+      - RUNTIME
+
   # SEC-02a/02b: the bootstrap SuperAdmin allowlist is deliberately not present
   # as plaintext runtime configuration. server/firebase.ts resolves the
   # PLATFORM_SUPERADMIN_EMAILS Secret Manager secret only for the break-glass

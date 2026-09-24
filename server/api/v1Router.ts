@@ -62,6 +62,7 @@ import {
 } from '../checkoutState';
 import { inspectDeliverectMenu, selectRawMenu } from '../deliverect/DeliverectMenuInspector';
 import { OAuthTokenManager } from '../deliverect/OAuthTokenManager';
+import { resolveRetailOrderEndpoint } from '../deliverect/retailOrderEndpoint';
 import { validateBody } from './validation';
 import { listAssistantActionsForRole, assertAssistantActionAllowed, buildReadOnlyActionPlan, hasServerAdminCapability, type ServerAdminCapability } from '../admin/adminActionRegistry';
 import { AdminAssistantActionService } from '../admin/adminAssistantActionService';
@@ -5197,8 +5198,27 @@ v1Router.get('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), async (
     const tenantId = req.params.id;
     const config = await FirestorePlatformService.getIntegrationConfig(tenantId);
     const context = await IntegrationContext.getContext(tenantId);
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const firstChannelLinkId = config.allowedChannelLinkIds?.[0] || config.channelLinkId;
+    let retailOrderEndpoint: any = null;
+    if (context.channelName && firstChannelLinkId) {
+      try {
+        retailOrderEndpoint = resolveRetailOrderEndpoint({
+          environment: context.environment,
+          tenantConfig: config.retailOrder,
+          env: process.env,
+          channelName: context.channelName,
+          channelLinkId: firstChannelLinkId,
+          accountId: config.deliverectAccountId || context.deliverectAccountId,
+        });
+      } catch (err: any) {
+        retailOrderEndpoint = { error: err?.safeMessage || err?.message, code: err?.code };
+      }
+    }
     res.json({
       ...config,
+      canEditRetailOrderEndpoint: authAdmin.role === 'platformSuperAdmin',
+      retailOrderEndpoint,
       credentialMode: context.credentialMode,
       credentials: {
         configured: context.isConfigured,
@@ -5215,21 +5235,30 @@ v1Router.get('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), async (
 
 v1Router.patch('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), validateBody(UpdateIntegrationSchema), async (req: Request, res: Response) => {
   try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'retailOrder') && authAdmin.role !== 'platformSuperAdmin') {
+      return res.status(403).json({ error: 'Retail order endpoint configuration is restricted to platform superadmins.', code: 'FORBIDDEN_SUPERADMIN_ONLY' });
+    }
+    const before = await FirestorePlatformService.getIntegrationConfig(req.params.id);
     const updated = await FirestorePlatformService.updateIntegrationConfig(req.params.id, req.body);
+    IntegrationContext.invalidate(req.params.id);
 
     await FirestorePlatformService.addAuditLog(req.params.id, {
-      userId: (req as AuthenticatedRequest).adminUser?.uid || 'admin',
-      userName: (req as AuthenticatedRequest).adminUser?.name || 'Admin',
-      userRole: (req as AuthenticatedRequest).adminUser?.role || 'tenantAdmin',
+      userId: authAdmin.uid || 'admin',
+      userName: authAdmin.name || 'Admin',
+      userRole: authAdmin.role || 'tenantAdmin',
       tenantId: req.params.id,
       category: 'Integration',
       action: 'UPDATE_INTEGRATION',
-      details: `Updated integration config: ${Object.keys(req.body).join(', ')}`,
+      details: Object.prototype.hasOwnProperty.call(req.body, 'retailOrder')
+        ? `Updated retail order endpoint. before=${JSON.stringify(before.retailOrder || null)} after=${JSON.stringify(updated.retailOrder || null)}`
+        : `Updated integration config: ${Object.keys(req.body).join(', ')}`,
     });
 
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const status = err?.statusCode || 500;
+    res.status(status).json({ error: err?.safeMessage || err.message, code: err?.code });
   }
 });
 

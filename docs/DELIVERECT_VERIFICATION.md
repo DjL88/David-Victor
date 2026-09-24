@@ -74,3 +74,15 @@ The Admin UI provides a guided 3-stage live onboarding flow under **Integrations
 | `CHECK-01`| Checkout | Submit checkout with basket & payment ref | Asynchronous order placement initiated |
 | `QST-01` | Quest | Simulate item picked & substitute | Inbound HMAC verified, order projection updated |
 | `PAY-02` | DPay | Partial capture of final amount | Captures final amount (`<= authorized ceiling`) |
+
+
+## Retail order endpoint experiment
+
+| Variant | Base URL | Path template | Header | channelOrderId | HTTP status | Quest actions shown? (Y/N) | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A0 | https://api.staging.deliverect.io | /{channelName}/order/{channelLinkId} | none |  |  |  |  |
+| A | https://api.staging.deliverect.io | /{channelName}/order/{channelLinkId} | x-deliverect-version: retail |  |  |  |  |
+| B | https://api.staging.deliverect.io | /generic-retail/order/{channelLinkId} *(confirm exact path with Deliverect)* | none |  |  |  |  |
+| C | https://api.staging.deliverect.io | /generic-retail/order/{channelLinkId} *(confirm exact path with Deliverect)* | x-deliverect-version: retail |  |  |  |  |
+
+For each variant place a best-match test order, open it in Quest, record whether Replace, Adjust and Remove appear, then leave the confirmed working variant configured.
