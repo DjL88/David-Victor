@@ -2503,10 +2503,9 @@ async function processQuestAmendments(
   const parentChannelOrderId =
     payload?.channelOrderId || payload?.order?.channelOrderId || payload?.data?.channelOrderId;
   const parentOrderId = payload?.orderId || payload?.order?.id || payload?.data?.orderId;
-  const baseEventId =
-    (headers['x-deliverect-event-id'] as string) || payload?.eventId || payload?.id || payload?._id;
-
   const results: WebhookProcessingResult[] = [];
+  let replayEventId: string | undefined;
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const status = classifyQuestAmendment(item);
@@ -2518,18 +2517,26 @@ async function processQuestAmendments(
       orderId: item?.orderId || parentOrderId,
     };
 
-    // Every item in a batch must get its own idempotency key. WebhookService
-    // derives dedup identity from the x-deliverect-event-id header (or the
-    // shared rawBody's content hash) first — if left untouched, every item
-    // after the first in a multi-item batch would be silently deduplicated
-    // against the first item's key.
-    const itemHeaders = { ...headers };
-    if (items.length > 1) {
-      const plu = item?.plu || item?.item?.plu || item?.originalPlu || i;
-      itemHeaders['x-deliverect-event-id'] = `${baseEventId || 'evt'}_${i}_${plu}`;
-    }
+    const result = await WebhookService.processWebhook(
+      itemPayload,
+      rawBody,
+      headers,
+      tenantId,
+      i === 0
+        ? undefined
+        : {
+            replayAlreadyClaimed: true,
+            webhookEventId: replayEventId,
+          }
+    );
 
-    results.push(await WebhookService.processWebhook(itemPayload, rawBody, itemHeaders, tenantId));
+    results.push(result);
+    if (i === 0) {
+      replayEventId = result.eventId;
+      // A retry of the exact provider body has already applied every child
+      // amendment from its first delivery, so do not re-run child effects.
+      if (result.status === 'DEDUPLICATED') return results;
+    }
   }
 
   return results;
