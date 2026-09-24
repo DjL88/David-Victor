@@ -119,50 +119,33 @@ export async function verifyCloudTasksOidcToken(
   const config = getCloudTasksSecurityConfig();
 
   try {
-    const payload: TokenPayload = tokenVerifierForTest
-      ? await tokenVerifierForTest(token, config.audience)
-      : (() => {
-          throw new Error('unreachable');
-        })();
-
+    let payload: TokenPayload | undefined;
     if (tokenVerifierForTest) {
-      return validatePayload(payload, config);
-    }
-
-    throw new Error('unreachable');
-  } catch (err: any) {
-    if (tokenVerifierForTest) {
-      if (err.statusCode) throw err;
-      const authErr: any = new Error(
-        `Cloud Tasks OIDC token cryptographic verification failed: ${err.message}`
-      );
-      authErr.statusCode = 401;
-      authErr.code = 'OIDC_TOKEN_INVALID';
-      throw authErr;
-    }
-
-    try {
+      payload = await tokenVerifierForTest(token, config.audience);
+    } else {
       const ticket = await oAuth2Client.verifyIdToken({
         idToken: token,
         audience: config.audience,
       });
-      const payload = ticket.getPayload() as TokenPayload | undefined;
-      if (!payload) {
-        const emptyErr: any = new Error('Empty OIDC token payload.');
-        emptyErr.statusCode = 401;
-        emptyErr.code = 'OIDC_TOKEN_INVALID';
-        throw emptyErr;
-      }
-      return validatePayload(payload, config);
-    } catch (verifyErr: any) {
-      if (verifyErr.statusCode) throw verifyErr;
-      const authErr: any = new Error(
-        `Cloud Tasks OIDC token cryptographic verification failed: ${verifyErr.message}`
-      );
-      authErr.statusCode = 401;
-      authErr.code = 'OIDC_TOKEN_INVALID';
-      throw authErr;
+      payload = ticket.getPayload() as TokenPayload | undefined;
     }
+
+    if (!payload) {
+      const err: any = new Error('Empty OIDC token payload.');
+      err.statusCode = 401;
+      err.code = 'OIDC_TOKEN_INVALID';
+      throw err;
+    }
+
+    return validatePayload(payload, config);
+  } catch (err: any) {
+    if (err.statusCode) throw err;
+    const authErr: any = new Error(
+      `Cloud Tasks OIDC token cryptographic verification failed: ${err.message}`
+    );
+    authErr.statusCode = 401;
+    authErr.code = 'OIDC_TOKEN_INVALID';
+    throw authErr;
   }
 }
 
