@@ -38,7 +38,15 @@ interface ChannelMenuIngressRecord {
   contentHash: string;
   menuIds: string[];
   channelLinkIds: string[];
-  status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'QUEUE_FAILED' | 'FAILED';
+  status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'REVIEW_REQUIRED' | 'QUEUE_FAILED' | 'FAILED';
+  review?: {
+    reason: 'DESTRUCTIVE_DELTA';
+    previousProductCount: number;
+    nextProductCount: number;
+    removedProductCount: number;
+    removedPercent: number;
+    removedExamples: string[];
+  };
   receivedAt: string;
   updatedAt: string;
   processedAt?: string;
@@ -407,7 +415,49 @@ export class ChannelMenuIngestionService {
     };
   }
 
-  static async processJob(job: ChannelMenuIngressJob): Promise<{ processed: number }> {
+  private static productKey(product: any): string {
+    return String(product?.plu || product?.id || product?._id || product?.productId || '').trim();
+  }
+
+  private static async destructiveDeltaReview(params: {
+    tenantId: string;
+    channelLinkId: string;
+    menuId: string;
+    nextProducts: any[];
+  }): Promise<ChannelMenuIngressRecord['review'] | undefined> {
+    const previous = await this.getLatestNormalizedMenu(
+      params.tenantId,
+      params.channelLinkId,
+      params.menuId
+    );
+    const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
+    if (previousProducts.length < 20) return undefined;
+
+    const previousKeys = new Set(previousProducts.map(this.productKey).filter(Boolean));
+    const nextKeys = new Set(params.nextProducts.map(this.productKey).filter(Boolean));
+    const removed = Array.from(previousKeys).filter((key) => !nextKeys.has(key));
+    const removedPercent = previousKeys.size
+      ? Math.round((removed.length / previousKeys.size) * 10000) / 100
+      : 0;
+
+    // Conservative platform defaults. Tenant-specific thresholds can be layered
+    // on later without weakening this fail-safe. Both an absolute and relative
+    // threshold avoid holding ordinary small catalogue edits.
+    const percentThreshold = Math.max(1, Number(process.env.CATALOG_DESTRUCTIVE_DELTA_PERCENT || 25));
+    const absoluteThreshold = Math.max(1, Number(process.env.CATALOG_DESTRUCTIVE_DELTA_COUNT || 100));
+    if (removed.length < absoluteThreshold && removedPercent < percentThreshold) return undefined;
+
+    return {
+      reason: 'DESTRUCTIVE_DELTA',
+      previousProductCount: previousKeys.size,
+      nextProductCount: nextKeys.size,
+      removedProductCount: removed.length,
+      removedPercent,
+      removedExamples: removed.slice(0, 20),
+    };
+  }
+
+  static async processJob(job: ChannelMenuIngressJob): Promise<{ processed: number; reviewRequired?: boolean }> {
     const existing = await this.getIngressRecord(job.tenantId, job.eventId);
     if (existing?.status === 'PROCESSED') return { processed: existing.menuIds.length };
 
@@ -466,6 +516,28 @@ export class ChannelMenuIngestionService {
           receivedAt: job.receivedAt,
           processedAt: new Date().toISOString(),
         };
+        const review = await this.destructiveDeltaReview({
+          tenantId: job.tenantId,
+          channelLinkId,
+          menuId,
+          nextProducts: parsed.products,
+        });
+        if (review) {
+          await this.saveIngressRecord({
+            ...processing,
+            menuIds: menus.map(menuIdOf).filter(Boolean),
+            channelLinkIds: menus.map(channelLinkIdOf).filter(Boolean),
+            status: 'REVIEW_REQUIRED',
+            review,
+            updatedAt: new Date().toISOString(),
+            error: undefined,
+          });
+          // Preserve the last-known-good hosted menu. The raw candidate is
+          // already durably buffered under this ingress event for authorised
+          // review; do not publish or invalidate storefront caches.
+          return { processed: 0, reviewRequired: true };
+        }
+
         const normalizedBody = Buffer.from(JSON.stringify(normalized), 'utf8');
         const normalizedPath =
           `hosted-catalog/tenants/${safeSegment(job.tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
