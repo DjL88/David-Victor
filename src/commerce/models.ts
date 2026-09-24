@@ -1012,6 +1012,23 @@ export type VisualRuleAction =
   | { type: 'BADGE'; label: string; localizationKey?: string; params?: Record<string, unknown> }
   | { type: 'WARNING'; text: string; params?: Record<string, unknown> };
 
+export type PolicyScopeLevel = 'platform' | 'market' | 'retailer' | 'region' | 'location';
+
+export interface PolicyScope {
+  level: PolicyScopeLevel;
+  market?: string;
+  region?: string;
+  locationIds?: string[];
+}
+
+export interface PolicyProvenance {
+  /** Human-readable source/reference supplied by the retailer or a verified Market Pack. */
+  source: string;
+  marketPackId?: string;
+  marketPackVersion?: string;
+  reviewedAt?: string;
+}
+
 export interface VisualRule {
   id: string;
   name: string;
@@ -1020,6 +1037,14 @@ export interface VisualRule {
   priority: number;
   matchConditions: VisualRuleMatchCondition[];
   actions: VisualRuleAction[];
+  /** Optional policy metadata keeps existing product rules backwards compatible. */
+  scope?: PolicyScope;
+  explanation?: string;
+  effectiveFrom?: string;
+  effectiveUntil?: string;
+  version?: number;
+  supersedesRuleId?: string;
+  provenance?: PolicyProvenance;
 }
 
 export interface AuditLogEntry {
