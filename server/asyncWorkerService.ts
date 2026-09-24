@@ -290,7 +290,26 @@ export class AsyncWorkerService {
       job.attempts++;
       console.log(`[AsyncWorkerService] Executing payment settlement for order ${job.orderId} (Attempt ${job.attempts})...`);
 
-      const settlement = await PaymentService.settleOrderPayment(job.orderId, job.tenantId);
+      // Reauthorization is tenant/environment policy, never an implicit worker
+      // default. Missing/inactive profiles fail closed to PAYMENT_ACTION_REQUIRED.
+      let reauthorizeIfNeeded = false;
+      try {
+        const integration = await FirestorePlatformService.getIntegrationConfig(job.tenantId);
+        const environment = integration?.environment === 'production' ? 'production' : 'staging';
+        const profile = await FirestorePlatformService.getIntegrationProfile(job.tenantId, environment);
+        reauthorizeIfNeeded =
+          profile?.status === 'ACTIVE' &&
+          profile?.dpay?.enabled === true &&
+          profile?.dpay?.excessAmountPolicy === 'AUTO_REAUTHORIZE';
+      } catch (err: any) {
+        console.warn(
+          `[AsyncWorkerService] Payment excess policy unavailable for ${job.tenantId}; defaulting to manual action required: ${err?.message || err}`
+        );
+      }
+
+      const settlement = await PaymentService.settleOrderPayment(job.orderId, job.tenantId, {
+        reauthorizeIfNeeded,
+      });
 
       const targetOrder = await FirestorePlatformService.getOrderProjection(job.orderId);
       if (targetOrder) {

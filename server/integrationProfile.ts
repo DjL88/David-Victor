@@ -29,6 +29,12 @@ export interface TenantIntegrationProfile {
     enabled: boolean;
     environment: IntegrationEnvironment;
     baseUrl?: string;
+    /**
+     * Explicit merchant policy for a picked total above the authorised ceiling.
+     * MANUAL_ACTION_REQUIRED is the fail-closed default. AUTO_REAUTHORIZE may
+     * only be selected when the tenant has deliberately enabled that provider flow.
+     */
+    excessAmountPolicy?: 'MANUAL_ACTION_REQUIRED' | 'AUTO_REAUTHORIZE';
   };
   secretRefs: IntegrationProfileSecretRefs;
   createdAt?: string;
@@ -157,6 +163,12 @@ export function validateIntegrationProfile(
       if (parsed.protocol !== 'https:') {
         throw new Error('DPay baseUrl must use HTTPS.');
       }
+    }
+    if (
+      profile.dpay.excessAmountPolicy &&
+      !['MANUAL_ACTION_REQUIRED', 'AUTO_REAUTHORIZE'].includes(profile.dpay.excessAmountPolicy)
+    ) {
+      throw new Error('DPay excessAmountPolicy is invalid.');
     }
   }
 
