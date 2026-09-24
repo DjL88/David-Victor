@@ -2414,7 +2414,19 @@ function isExplicitQuestPickingStatusUpdate(payload: any): boolean {
     .trim()
     .toUpperCase();
 
-  if (eventType === 'PICKING_STATUS_UPDATE') return true;
+  const pickingSpecificStatuses = [
+    'PICKING_STARTED',
+    'PICKING',
+    'PICKING_COMPLETE',
+    'PICKED',
+  ];
+
+  if (
+    eventType === 'PICKING_STATUS_UPDATE' ||
+    pickingSpecificStatuses.includes(eventType)
+  ) {
+    return true;
+  }
 
   const status = String(
     payload?.pickingStatus ??
@@ -2429,12 +2441,7 @@ function isExplicitQuestPickingStatusUpdate(payload: any): boolean {
   // These values are picking-specific. Generic numeric/order lifecycle statuses
   // must remain generic and must not be coerced merely because they arrived on
   // the configured Retail status URL.
-  return [
-    'PICKING_STARTED',
-    'PICKING',
-    'PICKING_COMPLETE',
-    'PICKED',
-  ].includes(status);
+  return pickingSpecificStatuses.includes(status);
 }
 
 function normalizeQuestPickingStatusPayload(payload: any): any {
