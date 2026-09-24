@@ -1,3 +1,5 @@
+import { formatMinorCurrency, majorToMinor, minorToMajor } from './currency';
+
 /**
  * Domain Money Value Object (integer minor units)
  * Example: £10.00 = 1000 GBP, €52.37 = 5237 EUR
@@ -23,12 +25,12 @@ export function createMoney(minorUnits: number, currency = 'GBP'): Money {
 }
 
 export function fromMajorUnits(majorUnits: number, currency = 'GBP'): Money {
-  const roundedMinor = Math.round(majorUnits * 100);
+  const roundedMinor = majorToMinor(majorUnits, currency);
   return createMoney(roundedMinor, currency);
 }
 
 export function toMajorUnits(money: Money): number {
-  return money.amount / 100;
+  return minorToMajor(money.amount, money.currency);
 }
 
 export function addMoney(a: Money, b: Money): Money {
@@ -61,17 +63,7 @@ export function isPositiveMoney(money: Money): boolean {
 }
 
 export function formatMoney(money: Money, locale = 'en-GB'): string {
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: money.currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(toMajorUnits(money));
-  } catch {
-    const symbol = money.currency === 'GBP' ? '£' : money.currency === 'EUR' ? '€' : '$';
-    return `${symbol}${(money.amount / 100).toFixed(2)}`;
-  }
+  return formatMinorCurrency(money.amount, money.currency, locale);
 }
 
 export const MoneyUtil = {
