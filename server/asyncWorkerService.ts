@@ -1,90 +1,14 @@
-import { OAuth2Client } from 'google-auth-library';
 import { PaymentService } from './deliverect/PaymentService';
 import { FirestorePlatformService } from './firestoreService';
 import { NotificationService } from './notificationService';
 import { AnalyticsService } from './analyticsService';
 import { isDemoMode } from './runtimeMode';
+import {
+  getCloudTasksSecurityConfig,
+  verifyCloudTasksOidcToken,
+} from './cloudTasksSecurity';
 
-const oAuth2Client = new OAuth2Client();
-
-/**
- * Cryptographically verifies Google Cloud Tasks OIDC tokens.
- *
- * Section 20/23/24: Cloud Tasks Worker Security.
- * Strictly verifies the OIDC token issuer (accounts.google.com),
- * audience (matching CLOUD_TASKS_AUDIENCE / CLOUD_RUN_URL),
- * and expected service-account email (matching CLOUD_TASKS_SA_EMAIL).
- *
- * Explicitly rejects arbitrary headers like x-cloudtasks-queuename or bare Bearer headers.
- */
-export async function verifyCloudTasksOidcToken(req: any): Promise<{ email: string; sub: string }> {
-  const authHeader = req.headers?.authorization;
-  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
-    const err: any = new Error('Unauthorized task worker request. Missing Bearer authorization header.');
-    err.statusCode = 401;
-    err.code = 'OIDC_AUTH_REQUIRED';
-    throw err;
-  }
-
-  const token = authHeader.split('Bearer ')[1]?.trim();
-  if (!token) {
-    const err: any = new Error('Unauthorized task worker request. Empty bearer token.');
-    err.statusCode = 401;
-    err.code = 'OIDC_AUTH_REQUIRED';
-    throw err;
-  }
-
-  // In demo mode with explicit demo token, allow demo execution
-  if (isDemoMode() && token === 'demo-token') {
-    return { email: 'demo-worker@project.iam.gserviceaccount.com', sub: 'demo-worker' };
-  }
-
-  const expectedAudience =
-    process.env.CLOUD_TASKS_AUDIENCE ||
-    process.env.CLOUD_RUN_URL ||
-    'https://api.platform.example.com';
-  const expectedEmail = process.env.CLOUD_TASKS_SA_EMAIL;
-
-  try {
-    const ticket = await oAuth2Client.verifyIdToken({
-      idToken: token,
-      audience: expectedAudience,
-    });
-    const payload = ticket.getPayload();
-    if (!payload) {
-      const err: any = new Error('Empty OIDC token payload.');
-      err.statusCode = 401;
-      err.code = 'OIDC_TOKEN_INVALID';
-      throw err;
-    }
-
-    if (payload.iss !== 'accounts.google.com' && payload.iss !== 'https://accounts.google.com') {
-      const err: any = new Error(`Invalid OIDC token issuer: ${payload.iss}`);
-      err.statusCode = 401;
-      err.code = 'OIDC_ISSUER_INVALID';
-      throw err;
-    }
-
-    if (expectedEmail && payload.email !== expectedEmail) {
-      const err: any = new Error(
-        `OIDC service account mismatch: expected ${expectedEmail}, got ${payload.email}`
-      );
-      err.statusCode = 403;
-      err.code = 'OIDC_SERVICE_ACCOUNT_MISMATCH';
-      throw err;
-    }
-
-    return { email: payload.email || '', sub: payload.sub };
-  } catch (err: any) {
-    if (err.statusCode) throw err;
-    const authErr: any = new Error(
-      `Cloud Tasks OIDC token cryptographic verification failed: ${err.message}`
-    );
-    authErr.statusCode = 401;
-    authErr.code = 'OIDC_TOKEN_INVALID';
-    throw authErr;
-  }
-}
+export { verifyCloudTasksOidcToken } from './cloudTasksSecurity';
 
 export interface SettlementJob {
   jobId: string;
@@ -140,8 +64,8 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
     if (client && queue && projectId) {
       try {
         const parent = client.queuePath(projectId, location, queue);
-        const appUrl = process.env.APP_URL || process.env.BFF_URL || 'http://localhost:3000';
-        const serviceAccountEmail = process.env.CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL;
+        const { appUrl, serviceAccountEmail, audience } =
+          getCloudTasksSecurityConfig();
         const task: any = {
           httpRequest: {
             httpMethod: 'POST',
@@ -150,14 +74,10 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
               'Content-Type': 'application/json',
             },
             body: Buffer.from(JSON.stringify(job)).toString('base64'),
-            ...(serviceAccountEmail
-              ? {
-                  oidcToken: {
-                    serviceAccountEmail,
-                    audience: appUrl,
-                  },
-                }
-              : {}),
+            oidcToken: {
+              serviceAccountEmail,
+              audience,
+            },
           },
         };
         await client.createTask({ parent, task });
@@ -198,8 +118,8 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
     if (client && queue && projectId) {
       try {
         const parent = client.queuePath(projectId, location, queue);
-        const appUrl = process.env.APP_URL || process.env.BFF_URL || 'http://localhost:3000';
-        const serviceAccountEmail = process.env.CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL;
+        const { appUrl, serviceAccountEmail, audience } =
+          getCloudTasksSecurityConfig();
         const task: any = {
           httpRequest: {
             httpMethod: 'POST',
@@ -208,14 +128,10 @@ export class CloudTasksQueueClient implements ITaskQueueClient {
               'Content-Type': 'application/json',
             },
             body: Buffer.from(JSON.stringify(job)).toString('base64'),
-            ...(serviceAccountEmail
-              ? {
-                  oidcToken: {
-                    serviceAccountEmail,
-                    audience: appUrl,
-                  },
-                }
-              : {}),
+            oidcToken: {
+              serviceAccountEmail,
+              audience,
+            },
           },
         };
         await client.createTask({ parent, task });
