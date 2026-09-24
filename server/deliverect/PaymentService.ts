@@ -10,8 +10,6 @@ import { CommerceError, ErrorCode } from '../errors';
 import { DPayAdapter } from './DPayAdapter';
 import { DemoPaymentAdapter } from './DemoPaymentAdapter';
 import { DeliverectDPayAdapter } from './DeliverectDPayAdapter';
-import { IntegrationUnavailableDPayAdapter } from './IntegrationUnavailableDPayAdapter';
-import { OAuthTokenManager } from './OAuthTokenManager';
 import { FirestorePlatformService, OrderProjection } from '../firestoreService';
 import { getServerRuntimeMode } from '../runtimeMode';
 import { getDispatchAdapter } from './index';
