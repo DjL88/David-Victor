@@ -35,16 +35,15 @@ describe('WP-08 signed webhook HTTP certification gate', () => {
 
   const sign = (raw: string) => crypto.createHmac('sha256', secret).update(Buffer.from(raw)).digest('hex');
 
-  it('preserves exact JSON bytes through Express and accepts a valid signed request', async () => {
+  it('preserves exact JSON bytes through Express into the real webhook processor', async () => {
     const raw = '{"status":20,"orderId":"order-cert-1","channelLinkId":"cl-cert"}';
-    const resolver = vi.spyOn(WebhookService, 'resolveTenantForWebhook').mockImplementation(async (body, signature, candidate) => {
+    const processor = vi.spyOn(WebhookService, 'processWebhook').mockImplementation(async (_payload, body, headers, candidate) => {
       expect(Buffer.isBuffer(body)).toBe(true);
       expect(body.toString('utf8')).toBe(raw);
-      expect(signature).toBe(sign(raw));
+      expect(headers['x-server-authorization-hmac-sha256']).toBe(sign(raw));
       expect(candidate).toBe(tenantId);
-      return { tenantId, secret } as any;
+      return { success: true } as any;
     });
-    vi.spyOn(WebhookService, 'processWebhook').mockResolvedValue({ success: true } as any);
 
     const app = await createApp({ serveFrontend: false, initializeDependencies: false });
     const response = await request(app)
@@ -54,7 +53,7 @@ describe('WP-08 signed webhook HTTP certification gate', () => {
       .send(raw);
 
     expect(response.status).toBe(200);
-    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(processor).toHaveBeenCalledTimes(1);
   });
 
   it('rejects tampered bytes at the real HTTP boundary', async () => {
