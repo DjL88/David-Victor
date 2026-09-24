@@ -1,0 +1,16 @@
+# Dedicated production runtime. Keep staging/preview variables in apphosting.yaml.
+env:
+  - variable: APP_MODE
+    value: production
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: DELIVERECT_ENV
+    value: production
+    availability:
+      - RUNTIME
+      - BUILD
+
+  # Production credentials and webhook secrets are resolved server-side from
+  # Secret Manager. Do not add PREVIEW_* or ALLOW_STAGING_CHANNEL_HMAC here.
