@@ -102,13 +102,11 @@ The following cannot be live-executed until Deliverect staging credentials (`cli
 
 *Mitigation:* Clean adapter interfaces (`CommerceAdapter`, `PaymentService`, `DispatchAdapter`) implemented with typed `503 INTEGRATION_NOT_CONFIGURED` responses in staging/production, enabling complete frontend and BFF testing without falsifying integration success.
 
-
 ## Audit II work packages
-- SEC-00 — Express composition extracted to `server/app.ts`; Supertest behavioural harness covers health plus authenticated admin access. (2026-09-24)
-- TEN-00 — Public tenant resolution centralized: managed preview hosts are server-pinned, anonymous tenant overrides are ignored, forwarded hosts require edge proof, exact ACTIVE domains only, and tenant-varying responses emit Vary: Host. (2026-09-24)
-- SEC-01 — David-Victor media proxy now serves only the configured bucket's `tenant-assets-public/` image/video objects with MIME, 50 MB, rate-limit and sandbox controls; SVG uploads are sanitized with DOMPurify/jsdom before publication; brand guidelines are admin-only; asset IDs are UUID-backed; legacy shared-bucket world-write paths are closed and email-based write gates are replaced by the `platformSuperAdmin` custom claim. The shared Hi-Domino bucket remains test-only pending the SEC-11 move to dedicated production storage. (2026-09-24)
-- SEC-02a — Admin self-registration is removed; Firebase email-link invitations are admin-generated; live admin tokens are checked for revocation; active UID-keyed tenantMemberships are authoritative over cached claims; email-keyed invite fallback requires a verified email; inactive/stale/tenant-invalid roles fail closed; membership revocation clears claims and revokes refresh tokens; bootstrap access is request-only via SecretManager; admin 403s/logs no longer echo email addresses. (2026-09-24)
-
-
-## Audit II work packages
+- **SEC-00 (2026-09-24):** Express composition extracted to `server/app.ts`; Supertest behavioural harness covers health plus authenticated admin access.
+- **TEN-00 (2026-09-24):** Public tenant resolution centralized: managed preview hosts are server-pinned, anonymous tenant overrides are ignored, forwarded hosts require edge proof, exact ACTIVE domains only, and tenant-varying responses emit `Vary: Host`.
+- **SEC-01 (2026-09-24):** David-Victor media proxy serves only the configured bucket's `tenant-assets-public/` image/video objects with MIME, 50 MB, rate-limit and sandbox controls; SVG uploads are sanitized before publication; brand guidelines are admin-only; asset IDs are UUID-backed; David-Victor browser writes to shared storage are closed. The shared Hi-Domino bucket remains test-only pending SEC-11 dedicated production storage.
+- **SEC-02a (2026-09-24):** Admin self-registration removed; Firebase email-link invitations are admin-generated; live admin tokens are checked for revocation; active UID-keyed tenant memberships are authoritative; verified email is required for invite fallback; inactive/stale/tenant-invalid roles fail closed; revocation clears claims and refresh tokens; bootstrap access is SecretManager-backed; admin 403s/logs no longer echo email addresses.
 - **TEN-01 (2026-09-24):** Hardened tenant IDs and branding PATCH schemas; tenant admins can no longer change Deliverect account/channel assignment through the credentials route.
+- **SEC-02b (2026-09-24):** Privileged Admin routes gained staging/production MFA and Firebase App Check enforcement boundaries behind explicit rollout flags, preserving existing deployments until client attestation/MFA configuration is provisioned.
+- **SEC-03 (2026-09-24):** Shared test-bucket rules are fail-closed for writes across legacy non-David-Victor application paths. Existing reads are preserved for compatibility; David-Victor production remains blocked on SEC-11 dedicated storage isolation.
