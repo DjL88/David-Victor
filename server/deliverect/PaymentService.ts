@@ -16,6 +16,7 @@ import { FirestorePlatformService, OrderProjection } from '../firestoreService';
 import { getServerRuntimeMode } from '../runtimeMode';
 import { getDispatchAdapter } from './index';
 import { DispatchOrchestrationService } from './DispatchOrchestrationService';
+import { getCircuitBreaker } from '../circuitBreaker';
 
 const dPayAdapters = new Map<string, DPayAdapter>();
 
@@ -176,8 +177,11 @@ export class PaymentService {
    * Retrieves payment gateways for a store/channel link (PAY-01).
    */
   static async getPaymentGateways(channelLinkId: string, tenantId?: string): Promise<PaymentGatewayProfile[]> {
-    const adapter = getDPayAdapter(tenantId);
-    return adapter.getPaymentGateways(channelLinkId);
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    return getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.getPaymentGateways(channelLinkId)
+    );
   }
 
   /**
@@ -237,7 +241,9 @@ export class PaymentService {
     }
 
     const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.requestPayment(request);
+    const response = await getCircuitBreaker(tenantId, 'dpay').execute(() =>
+      adapter.requestPayment(request)
+    );
 
     // Save payment projection
     const projection: DomainPaymentProjection = {
@@ -267,16 +273,22 @@ export class PaymentService {
    * Retrieves payment status and projection.
    */
   static async getPayment(paymentId: string, tenantId?: string): Promise<DPayPaymentResponse> {
-    const adapter = getDPayAdapter(tenantId);
-    return adapter.getPayment(paymentId);
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    return getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.getPayment(paymentId)
+    );
   }
 
   /**
    * Captures an authorized payment (PAY-07, PAY-08).
    */
   static async capture(paymentId: string, finalAmountMinor: number, tenantId?: string): Promise<DPayPaymentResponse> {
-    const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.capture(paymentId, finalAmountMinor);
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.capture(paymentId, finalAmountMinor)
+    );
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       status: response.status,
@@ -291,6 +303,33 @@ export class PaymentService {
   }
 
   /**
+   * Releases an uncaptured authorization. The provider call completes first;
+   * Firestore is mutated only after an acknowledged release.
+   */
+  static async voidAuthorization(
+    paymentId: string,
+    reason?: string,
+    tenantId?: string
+  ): Promise<DPayPaymentResponse> {
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.voidAuthorization(paymentId, reason)
+    );
+
+    await FirestorePlatformService.updatePaymentProjection(paymentId, {
+      status: response.status,
+      residualHoldAmount: {
+        amount: response.residualHoldAmount ?? 0,
+        currency: response.currency,
+      },
+      updatedAt: response.updatedAt || new Date().toISOString(),
+    });
+
+    return response;
+  }
+
+  /**
    * Refunds a captured payment.
    */
   static async refund(
@@ -299,8 +338,11 @@ export class PaymentService {
     reason?: string,
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
-    const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.refund(paymentId, refundAmountMinor, reason);
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.refund(paymentId, refundAmountMinor, reason)
+    );
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       status: response.status,
@@ -318,8 +360,11 @@ export class PaymentService {
     additionalAmountMinor: number,
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
-    const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.reauthorize(paymentId, additionalAmountMinor);
+    const resolvedTenant = tenantId || 'brand-alpha';
+    const adapter = getDPayAdapter(resolvedTenant);
+    const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
+      adapter.reauthorize(paymentId, additionalAmountMinor)
+    );
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       authorizedAmount: { amount: response.authorizedAmount, currency: response.currency },
@@ -802,13 +847,22 @@ export class PaymentService {
 
       return refundResult;
     } else {
-      // Authorized only: release hold
-      const authorizedAmount = payment?.authorizedAmount?.amount ?? order.authorizedMaximum ?? order.total;
-      await FirestorePlatformService.updatePaymentProjection(paymentId, {
-        status: 'canceled',
-        residualHoldAmount: { amount: authorizedAmount, currency: payment?.currency || 'GBP' },
-        updatedAt: new Date().toISOString(),
-      });
+      // Authorized only: release the hold at the provider first. If that call
+      // fails or is unsupported, neither payment nor order is marked VOIDED.
+      const voided = await PaymentService.voidAuthorization(
+        paymentId,
+        reason || 'Order cancelled before capture',
+        tenantId
+      );
+      const authorizedAmount =
+        voided.authorizedAmount ??
+        payment?.authorizedAmount?.amount ??
+        order.authorizedMaximum ??
+        order.total;
+      const releasedAmount =
+        payment?.residualHoldAmount?.amount ??
+        authorizedAmount;
+      const currency = voided.currency;
 
       const voidResult: SettlementResult = {
         status: 'VOIDED',
@@ -816,9 +870,9 @@ export class PaymentService {
         paymentId,
         finalAmount: 0,
         authorizedAmount,
-        residualHoldReleased: authorizedAmount,
+        residualHoldReleased: releasedAmount,
         reason: reason || 'Order cancelled before capture. Pre-authorization hold released.',
-        settledAt: new Date().toISOString(),
+        settledAt: voided.updatedAt || new Date().toISOString(),
       };
 
       await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
@@ -833,7 +887,7 @@ export class PaymentService {
         tenantId,
         action: 'PAYMENT_AUTHORIZATION_RELEASED',
         category: 'Payment',
-        details: `Order ${orderId} cancelled. Pre-authorization hold of £${(authorizedAmount / 100).toFixed(2)} on payment ${paymentId} released.`,
+        details: `Order ${orderId} cancelled. Provider confirmed release of ${releasedAmount} ${currency} minor units on payment ${paymentId}.`,
       });
 
       return voidResult;
