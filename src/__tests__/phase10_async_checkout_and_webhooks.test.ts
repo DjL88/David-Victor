@@ -369,7 +369,8 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       });
     });
 
-    it('accepts Deliverect documented channelLink HMAC in staging once the tenant is account-routed', async () => {
+    it('accepts an explicitly enabled temporary channelLink HMAC in staging', async () => {
+      process.env.ALLOW_STAGING_CHANNEL_HMAC = 'true';
       const rawPayload = JSON.stringify({
         accountId: 'account-staging-1',
         channelLinkId: 'channel-link-staging-1',
@@ -397,6 +398,7 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
 
       expect(resolved.tenantId).toBe(testTenant);
       expect(resolved.secret).toBe('channel-link-staging-1');
+      delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
       configSpy.mockRestore();
     });
 
@@ -454,7 +456,12 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       expect(firstResult.status).toBe('PROCESSED');
 
       // Check journal record
-      const journalEntry = await FirestorePlatformService.getWebhookEvent(externalEventKey);
+      const dedupeKey = crypto
+        .createHash('sha256')
+        .update(Buffer.from(`${testTenant}:`, 'utf8'))
+        .update(Buffer.from(rawBody, 'utf8'))
+        .digest('hex');
+      const journalEntry = await FirestorePlatformService.getWebhookEvent(dedupeKey);
       expect(journalEntry).not.toBeNull();
       expect(journalEntry?.processingStatus).toBe('PROCESSED');
 
@@ -512,12 +519,17 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       code: 'WEBHOOK_ORDER_NOT_FOUND_RETRYABLE',
     });
 
-    const journal = await FirestorePlatformService.getWebhookEvent(eventId);
+    const dedupeKey = crypto
+      .createHash('sha256')
+      .update(Buffer.from(`${testTenant}:`, 'utf8'))
+      .update(Buffer.from(rawBody, 'utf8'))
+      .digest('hex');
+    const journal = await FirestorePlatformService.getWebhookEvent(dedupeKey);
     expect(journal?.processingStatus).toBe('FAILED');
 
     const retryClaim = await FirestorePlatformService.claimWebhookIdempotency(
       'deliverect',
-      eventId,
+      dedupeKey,
       `wh_retry_${Date.now()}`
     );
     expect(retryClaim.claimed).toBe(true);
