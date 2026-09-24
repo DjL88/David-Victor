@@ -8,12 +8,13 @@ import { getDeliverectAdapter } from './deliverect';
 import { getFirestoreDb } from './firebase';
 import { BFFError } from './errors';
 import { securityHeadersMiddleware } from './securityHeaders';
-import { standardApiRateLimiter } from './rateLimiter';
+import { mediaProxyRateLimiter, standardApiRateLimiter } from './rateLimiter';
 import { MetricsService } from './metricsService';
 import { getServerRuntimeMode } from './runtimeMode';
 import { FirestorePlatformService } from './firestoreService';
 import { aiStudioPreviewBffProxy } from './aiStudioPreviewProxy';
 import { getTrustedRequestHost, getTrustedRequestProtocol, resolveRequestTenant } from './tenantResolution';
+import { proxyFirebaseMedia } from './mediaProxy';
 import {
   buildStorefrontManifest,
   buildStorefrontMetadata,
@@ -79,29 +80,15 @@ export async function createApp(options: CreateAppOptions = {}) {
   );
   app.use(express.urlencoded({ extended: true }));
 
-  app.get('/media/firebase', async (req, res) => {
-    try {
-      const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
-      const mediaUrl = new URL(rawUrl);
-      if (mediaUrl.protocol !== 'https:' || mediaUrl.hostname !== 'firebasestorage.googleapis.com') {
-        return res.status(400).json({ error: 'Unsupported media URL' });
-      }
-      const upstream = await fetch(mediaUrl, {
-        headers: req.headers.range ? { Range: req.headers.range } : undefined,
+  app.get('/media/firebase', mediaProxyRateLimiter.middleware(), proxyFirebaseMedia);
+  app.use('/media/firebase', (err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof BFFError) {
+      return res.status(err.statusCode).json({
+        code: err.code,
+        error: err.safeMessage,
       });
-      if (!upstream.ok && upstream.status !== 206) {
-        return res.status(upstream.status).json({ error: 'Media unavailable' });
-      }
-      for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
-        const value = upstream.headers.get(header);
-        if (value) res.setHeader(header, value);
-      }
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      const body = Buffer.from(await upstream.arrayBuffer());
-      return res.status(upstream.status).send(body);
-    } catch {
-      return res.status(400).json({ error: 'Invalid media URL' });
     }
+    return next(err);
   });
 
   if (initializeDependencies) {
