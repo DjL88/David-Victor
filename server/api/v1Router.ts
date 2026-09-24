@@ -18,6 +18,7 @@ import {
   getFirestorePermissionStatus,
   verifyAdminSession,
   verifyAdminSessionWithStatus,
+  verifyFirebaseAppCheckToken,
   AuthenticatedAdmin,
 } from '../firebase';
 import { AssetService, AssetType, normalizeAssetType } from '../assetService';
@@ -167,6 +168,34 @@ interface AuthenticatedRequest extends Request {
   adminUser?: AuthenticatedAdmin;
   resolvedTenantId?: string;
 }
+
+function appCheckIsRequired(): boolean {
+  const configured = String(process.env.APP_CHECK_ENFORCEMENT || '').trim().toLowerCase();
+  if (configured === 'required' || configured === 'true' || configured === '1') return true;
+  if (configured === 'optional' || configured === 'false' || configured === '0') return false;
+  return isProductionMode();
+}
+
+function requireAppCheck() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (isDemoMode() || !appCheckIsRequired()) return next();
+
+    const raw = req.headers['x-firebase-appcheck'];
+    const token = Array.isArray(raw) ? raw[0] : raw;
+    const valid = await verifyFirebaseAppCheckToken(token || null);
+    if (!valid) {
+      return res.status(401).json({
+        error: 'A valid Firebase App Check token is required.',
+        code: 'APP_CHECK_REQUIRED',
+      });
+    }
+    next();
+  };
+}
+
+// Protect every admin route at the router boundary. Authentication/RBAC still
+// runs afterwards; App Check only proves the request came through an attested app.
+v1Router.use('/admin', requireAppCheck());
 
 /**
  * Section 8 & Item 11: Hostname / Subdomain Tenant Resolver
@@ -1654,6 +1683,7 @@ function assertCheckoutRecoveryOwnership(
 
 v1Router.post(
   '/checkouts',
+  requireAppCheck(),
   checkoutAndPaymentRateLimiter.middleware(),
   validateBody(CheckoutBasketSchema),
   async (req: Request, res: Response) => {
