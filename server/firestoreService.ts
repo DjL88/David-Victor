@@ -323,6 +323,7 @@ const inMemoryTenants: Record<string, TenantConfig> =
   useLocalRuntimeData ? { ...MOCK_TENANTS, ...loadPersistedTenants() } : {};
 const inMemoryIntegrations: Record<string, IntegrationConfig> = { ...loadPersistedIntegrations() };
 const inMemoryCheckouts: Record<string, CheckoutResult> = {};
+const inMemoryCheckoutLocks: Record<string, { tenantId: string; basketId: string; createdAt: string }> = {};
 const inMemoryBasketSubstitutionPreferences: Record<string, BasketSubstitutionPreferencesDocument> = {};
 const inMemoryBasketBundleAllocations: Record<string, BasketBundleAllocationsDocument> = {};
 const inMemoryOrderProjections: Record<string, OrderProjection> = {};
@@ -2530,6 +2531,63 @@ export class FirestoreService {
       console.warn('[Firestore Admin] Could not find payment by orderReference:', err);
     }
     return null;
+  }
+
+  /**
+   * Claims the one-checkout-per-basket boundary before any upstream order call.
+   * Firestore create() is atomic: concurrent requests cannot both acquire it.
+   */
+  static async claimCheckoutLock(
+    tenantId: string,
+    basketId: string
+  ): Promise<{ claimed: boolean }> {
+    const lockId = `${tenantId}:${basketId}`;
+    if (inMemoryCheckoutLocks[lockId]) return { claimed: false };
+
+    const record = {
+      tenantId,
+      basketId,
+      createdAt: new Date().toISOString(),
+    };
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test') {
+        throw new Error('Database persistence is unavailable. Checkout lock cannot be acquired.');
+      }
+      inMemoryCheckoutLocks[lockId] = record;
+      return { claimed: true };
+    }
+
+    try {
+      await db.collection('checkoutLocks').doc(lockId).create(record);
+      inMemoryCheckoutLocks[lockId] = record;
+      return { claimed: true };
+    } catch (err: any) {
+      const alreadyExists =
+        err?.code === 6 ||
+        err?.code === 'ALREADY_EXISTS' ||
+        err?.code === 'already-exists' ||
+        String(err?.message || '').toLowerCase().includes('already exists');
+      if (alreadyExists) return { claimed: false };
+      throw err;
+    }
+  }
+
+  static async releaseCheckoutLock(
+    tenantId: string,
+    basketId: string
+  ): Promise<void> {
+    const lockId = `${tenantId}:${basketId}`;
+    delete inMemoryCheckoutLocks[lockId];
+
+    const db = getFirestoreDb();
+    if (!db) return;
+    try {
+      await db.collection('checkoutLocks').doc(lockId).delete();
+    } catch (err) {
+      console.warn('[Firestore Admin] Could not release checkout lock:', err);
+    }
   }
 
   /**
