@@ -15,12 +15,11 @@ describe('Deliverect Channel registration callback', () => {
   beforeEach(async () => {
     setServerRuntimeMode('staging');
     process.env.CHANNEL_PUBLIC_BASE_URL = 'https://channel.example.test';
+    process.env.ALLOW_STAGING_CHANNEL_HMAC = 'true';
 
-    vi.spyOn(FirestorePlatformService, 'resolveTenantByIntegrationId')
-      .mockResolvedValue(null);
-    vi.spyOn(FirestorePlatformService, 'resolveTenantByDeliverectAccountId')
-      .mockImplementation(async (accountId: string) =>
-        accountId === 'account-123' ? 'brand-alpha' : null
+    vi.spyOn(FirestorePlatformService, 'resolveTenantByWebhookIdentifier')
+      .mockImplementation(async (identifier: string) =>
+        ['brand-alpha', 'account-123'].includes(identifier) ? 'brand-alpha' : null
       );
     vi.spyOn(FirestorePlatformService, 'getIntegrationConfig')
       .mockResolvedValue({
@@ -74,6 +73,7 @@ describe('Deliverect Channel registration callback', () => {
     } else {
       process.env.CHANNEL_PUBLIC_BASE_URL = originalChannelBase;
     }
+    delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -105,19 +105,9 @@ describe('Deliverect Channel registration callback', () => {
     });
   }
 
-  it('accepts the standardized registration URL using accountId routing and staging channelLink HMAC', async () => {
+  it('rejects the legacy no-identifier registration URL before HMAC lookup', async () => {
     const res = await postRegister('/webhooks/deliverect/channel/register');
-    expect(res.status).toBe(200);
-
-    const body = await res.json();
-    expect(body).toMatchObject({
-      statusUpdateURL: 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha',
-      menuUpdateURL: 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha/channel/menu_update',
-      snoozeUnsnoozeURL: 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha/channel/snooze',
-      busyModeURL: 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha/channel/busy_mode',
-      updatePrepTimeURL: 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha/channel/prep_time',
-    });
-    expect(body.registration.channelStatus).toBe('REGISTERED');
+    expect(res.status).toBe(404);
   });
 
   it('also accepts the account-id URL already configured in Deliverect staging', async () => {
@@ -245,7 +235,7 @@ describe('Deliverect Channel registration callback', () => {
     });
   });
 
-  it('can verify a staging callback against canonical JSON if a hosting hop reformatted the body', async () => {
+  it('rejects a staging callback when the signed bytes differ from the received bytes', async () => {
     const payload = {
       accountId: 'account-123',
       locationId: 'location-456',
@@ -259,20 +249,14 @@ describe('Deliverect Channel registration callback', () => {
       payload.channelLinkId
     );
 
-    const resolved = await WebhookService.resolveTenantForWebhook(
-      reformattedBody,
-      signature,
-      'brand-alpha',
-      {
-        stagingTemporarySecrets: ['channel-link-789'],
-        stagingAlternateBodies: [canonicalBody],
-      }
-    );
-
-    expect(resolved).toEqual({
-      tenantId: 'brand-alpha',
-      secret: 'channel-link-789',
-    });
+    await expect(
+      WebhookService.resolveTenantForWebhook(
+        reformattedBody,
+        signature,
+        'brand-alpha',
+        { stagingTemporarySecrets: ['channel-link-789'] }
+      )
+    ).rejects.toMatchObject({ code: 'WEBHOOK_SIGNATURE_INVALID' });
   });
 
   it('rejects an arbitrary payload channelLinkId even when the caller self-signs with it', async () => {
