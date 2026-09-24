@@ -2541,14 +2541,11 @@ async function handleQuestRetailCallback(
         (req.headers['x-signature'] as string) ||
         (req.headers['x-deliverect-hmac-sha256'] as string);
 
-      const allowStagingChannelHmac =
-        String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
-      const stagingTemporarySecrets = allowStagingChannelHmac
-        ? await WebhookService.getMappedStagingChannelLinkSecrets(
-            tenantId,
-            req.body
-          )
-        : [];
+      const stagingTemporarySecrets =
+        await WebhookService.getMappedStagingChannelLinkSecrets(
+          tenantId,
+          req.body
+        );
 
       const verified = await WebhookService.resolveTenantForWebhook(
         rawBody,
@@ -2628,14 +2625,11 @@ async function handleDeliverectOperationalWebhook(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const allowStagingChannelHmac =
-      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
-    const stagingTemporarySecrets = allowStagingChannelHmac
-      ? await WebhookService.getMappedStagingChannelLinkSecrets(
-          candidateTenantId,
-          req.body
-        )
-      : [];
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
@@ -2764,14 +2758,11 @@ async function handleDeliverectChannelProvisioning(
       (req.headers['x-signature'] as string) ||
       (req.headers['x-deliverect-hmac-sha256'] as string);
 
-    const allowStagingChannelHmac =
-      String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
-    const stagingTemporarySecrets = allowStagingChannelHmac
-      ? await WebhookService.getMappedStagingChannelLinkSecrets(
-          candidateTenantId,
-          req.body
-        )
-      : [];
+    const stagingTemporarySecrets =
+      await WebhookService.getMappedStagingChannelLinkSecrets(
+        candidateTenantId,
+        req.body
+      );
 
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
