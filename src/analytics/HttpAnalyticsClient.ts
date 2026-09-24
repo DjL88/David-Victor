@@ -104,63 +104,15 @@ export class HttpAnalyticsClient implements AnalyticsClient {
     tenantId: string,
     timeframe: '7d' | '30d' | '90d' = '30d'
   ): Promise<InsightsDashboardData> {
-    const headers: Record<string, string> = {
-      'x-tenant-id': tenantId,
-    };
-    try {
-      const authHeader = await getAdminAuthorizationHeader();
-      if (authHeader) {
-        headers['Authorization'] = authHeader;
-      }
-    } catch {
-      // ignore
-    }
+    const headers: Record<string, string> = { 'x-tenant-id': tenantId };
+    const authHeader = await getAdminAuthorizationHeader();
+    if (authHeader) headers['Authorization'] = authHeader;
 
-    try {
-      const res = await fetch(`/api/v1/analytics/insights?timeframe=${timeframe}`, {
-        headers,
-      });
-      if (!res.ok) {
-        console.warn(`[HttpAnalyticsClient] Insights request returned status ${res.status} ${res.statusText}`);
-        return {
-          timeframe,
-          totalSessions: 0,
-          activeStoresCount: 0,
-          totalOrders: 0,
-          totalGrossMerchandiseValue: 0,
-          averageOrderValue: 0,
-          overallConversionRate: 0,
-          serviceabilityRate: 0,
-          pickingSuccessRate: 100,
-          funnel: [],
-          products: [],
-          stories: [],
-          searches: [],
-          regions: [],
-          abandonedBasket: [],
-        };
-      }
-      return await res.json();
-    } catch (err) {
-      console.warn('[HttpAnalyticsClient] Network error fetching insights:', err);
-      return {
-        timeframe,
-        totalSessions: 0,
-        activeStoresCount: 0,
-        totalOrders: 0,
-        totalGrossMerchandiseValue: 0,
-        averageOrderValue: 0,
-        overallConversionRate: 0,
-        serviceabilityRate: 0,
-        pickingSuccessRate: 100,
-        funnel: [],
-        products: [],
-        stories: [],
-        searches: [],
-        regions: [],
-        abandonedBasket: [],
-      };
+    const res = await fetch(`/api/v1/analytics/insights?timeframe=${timeframe}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Insights request failed with ${res.status} ${res.statusText}`);
     }
+    return await res.json();
   }
 
   async getRecentEvents(tenantId: string, limit: number = 50): Promise<AnalyticsEvent[]> {
