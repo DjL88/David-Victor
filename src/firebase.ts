@@ -29,12 +29,32 @@ let authInstance: Auth | null = null;
 let appCheckInstance: AppCheck | null = null;
 let pendingTotpSecret: TotpSecret | null = null;
 
+export function resolveClientFirebaseConfig(
+  env: Record<string, unknown> =
+    typeof import.meta !== 'undefined' ? ((import.meta as any).env || {}) : {}
+) {
+  const value = (key: string, fallback?: string) =>
+    String(env[key] || fallback || '').trim() || undefined;
+
+  return {
+    apiKey: value('VITE_FIREBASE_API_KEY', (firebaseConfig as any).apiKey),
+    authDomain: value('VITE_FIREBASE_AUTH_DOMAIN', (firebaseConfig as any).authDomain),
+    projectId: value('VITE_FIREBASE_PROJECT_ID', (firebaseConfig as any).projectId),
+    storageBucket: value('VITE_FIREBASE_STORAGE_BUCKET', (firebaseConfig as any).storageBucket),
+    messagingSenderId: value(
+      'VITE_FIREBASE_MESSAGING_SENDER_ID',
+      (firebaseConfig as any).messagingSenderId
+    ),
+    appId: value('VITE_FIREBASE_APP_ID', (firebaseConfig as any).appId),
+  };
+}
+
 export function getClientFirebaseApp(): FirebaseApp {
   if (!appInstance) {
     if (getApps().length > 0) {
       appInstance = getApp();
     } else {
-      appInstance = initializeApp(firebaseConfig);
+      appInstance = initializeApp(resolveClientFirebaseConfig());
     }
   }
   return appInstance;
