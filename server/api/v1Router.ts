@@ -2315,84 +2315,41 @@ v1Router.post('/checkouts/:checkoutId/confirm-demo', requireAdminAuth('tenantAdm
  * Resolve an inbound Deliverect callback to a provisioned tenant. Retail Quest
  * callbacks use the same integration identifier as the normal Channel webhook.
  */
-async function resolveDeliverectWebhookTenant(
-  req: Request
-): Promise<string> {
+async function resolveDeliverectWebhookTenant(req: Request): Promise<string> {
   const identifier = String(req.params.identifier || '').trim();
-  const payloadAccountId = String(
-    req.body?.accountId ||
-    req.body?.account ||
-    req.body?.account?._id ||
-    ''
-  ).trim();
-  let tenantId: string | undefined;
-
-  if (identifier) {
-    const resolved =
-      await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
-    if (resolved) {
-      tenantId = resolved;
-    } else {
-      // Deliverect Channel staging screens commonly use the account id in a
-      // callback URL. Treat it as a routing identifier only when exactly one
-      // tenant has explicitly mapped that Deliverect account.
-      const accountTenant =
-        await FirestorePlatformService.resolveTenantByDeliverectAccountId(identifier);
-      if (accountTenant) {
-        tenantId = accountTenant;
-      } else {
-        // Provisioning UI may expose the tenant id directly (e.g. brand-alpha)
-        // rather than the opaque integrationId. This is safe because routing only
-        // selects the candidate tenant; the callback must still pass HMAC
-        // verification before any state is mutated.
-        const directIntegration =
-          await FirestorePlatformService.getIntegrationConfig(identifier);
-        if (directIntegration?.tenantId === identifier) {
-          tenantId = identifier;
-        } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
-          tenantId = identifier;
-        }
-      }
-    }
-  }
-
-  // Channel registration is documented as a standardized URL. When the URL
-  // carries no tenant identifier, use the accountId Deliverect sends in the
-  // payload to resolve the already-mapped tenant.
-  if (!tenantId && payloadAccountId) {
-    tenantId =
-      (await FirestorePlatformService.resolveTenantByDeliverectAccountId(payloadAccountId)) ||
-      undefined;
-  }
-
-  if (!tenantId) {
-    if (isDemoMode() || process.env.NODE_ENV === 'test') {
-      return (
-        (req.query.tenantId as string) ||
-        (req.headers['x-tenant-id'] as string) ||
-        'brand-alpha'
-      );
-    }
-
-    const host = (
-      (req.headers['x-forwarded-host'] as string) ||
-      req.hostname ||
-      ''
-    )
-      .toLowerCase()
-      .split(':')[0];
-    const resolvedFromDb =
-      await FirestorePlatformService.resolveTenantByHostname(host);
-    if (resolvedFromDb) return resolvedFromDb;
-
+  if (!identifier) {
     throw new BFFError(
       'INTEGRATION_NOT_CONFIGURED',
-      `Inbound Deliverect webhook cannot be routed. identifier="${identifier || 'none'}", accountId="${payloadAccountId || 'none'}". Map the Deliverect account to a tenant first.`,
+      'Inbound Deliverect webhook requires a provisioned integration identifier in the URL.',
       404
     );
   }
 
+  // SEC-03: routing is resolved before any secret lookup and from the path
+  // identifier only. Payload account/location IDs, Host and tenant headers are
+  // never authentication inputs.
+  const tenantId =
+    await FirestorePlatformService.resolveTenantByIntegrationId(identifier);
+  if (!tenantId) {
+    throw new BFFError(
+      'INTEGRATION_NOT_CONFIGURED',
+      'Inbound Deliverect webhook integration identifier is not provisioned.',
+      404
+    );
+  }
   return tenantId;
+}
+
+function exactWebhookRawBody(req: Request): Buffer {
+  const raw = (req as Request & { rawBody?: Buffer }).rawBody;
+  if (!Buffer.isBuffer(raw)) {
+    throw new BFFError(
+      'VALIDATION_ERROR',
+      'Webhook raw body is required for signature verification.',
+      400
+    );
+  }
+  return raw;
 }
 
 function normalizeQuestPickingStatusPayload(payload: any): any {
@@ -2585,9 +2542,7 @@ async function handleQuestRetailCallback(
 ) {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody ||
-      Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = exactWebhookRawBody(req);
 
     if (kind === 'status') {
       const signatureHeader =
@@ -2601,21 +2556,13 @@ async function handleQuestRetailCallback(
           tenantId,
           req.body
         );
-      const canonicalBody = JSON.stringify(req.body ?? {});
-      const rawBodyText = Buffer.isBuffer(rawBody)
-        ? rawBody.toString('utf8')
-        : String(rawBody);
-
       const verified = await WebhookService.resolveTenantForWebhook(
         rawBody,
         signatureHeader,
         tenantId,
-        {
-          stagingTemporarySecrets,
-          stagingAlternateBodies:
-            canonicalBody !== rawBodyText ? [canonicalBody] : [],
-        }
+        { stagingTemporarySecrets }
       );
+      WebhookService.assertFreshWebhookTimestamp(req.body, req.headers);
 
       const payload = normalizeQuestPickingStatusPayload(req.body);
       await PickingStatusIngressService.acceptVerified({
@@ -2681,8 +2628,7 @@ async function handleDeliverectOperationalWebhook(
 ): Promise<void> {
   try {
     const candidateTenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = exactWebhookRawBody(req);
     const signatureHeader =
       (req.headers['x-server-authorization-hmac-sha256'] as string) ||
       (req.headers['x-deliverect-signature'] as string) ||
@@ -2695,21 +2641,13 @@ async function handleDeliverectOperationalWebhook(
         req.body
       );
 
-    const canonicalBody = JSON.stringify(req.body ?? {});
-    const rawBodyText = Buffer.isBuffer(rawBody)
-      ? rawBody.toString('utf8')
-      : String(rawBody);
-
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets,
-        stagingAlternateBodies:
-          canonicalBody !== rawBodyText ? [canonicalBody] : [],
-      }
+      { stagingTemporarySecrets }
     );
+    WebhookService.assertFreshWebhookTimestamp(req.body, req.headers);
 
     const mappedChannelLinkId =
       await WebhookService.resolveMappedOperationalChannelLinkId(
@@ -2777,8 +2715,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/busy_mode',
     '/webhooks/deliverect/:identifier/channel/busy-mode',
-    '/webhooks/deliverect/channel/busy_mode',
-    '/webhooks/deliverect/channel/busy-mode',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'busy_mode')
@@ -2788,8 +2724,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/store_status',
     '/webhooks/deliverect/:identifier/channel/store-status',
-    '/webhooks/deliverect/channel/store_status',
-    '/webhooks/deliverect/channel/store-status',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'store_status')
@@ -2798,7 +2732,6 @@ v1Router.post(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/snooze',
-    '/webhooks/deliverect/channel/snooze',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'snooze')
@@ -2808,8 +2741,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/menu_update',
     '/webhooks/deliverect/:identifier/channel/menu-update',
-    '/webhooks/deliverect/channel/menu_update',
-    '/webhooks/deliverect/channel/menu-update',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'menu_update')
@@ -2819,8 +2750,6 @@ v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/prep_time',
     '/webhooks/deliverect/:identifier/channel/prep-time',
-    '/webhooks/deliverect/channel/prep_time',
-    '/webhooks/deliverect/channel/prep-time',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectOperationalWebhook(req, res, 'prep_time')
@@ -2833,8 +2762,7 @@ async function handleDeliverectChannelProvisioning(
 ): Promise<void> {
   try {
     const candidateTenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = exactWebhookRawBody(req);
     const signatureHeader =
       (req.headers['x-server-authorization-hmac-sha256'] as string) ||
       (req.headers['x-deliverect-signature'] as string) ||
@@ -2847,21 +2775,13 @@ async function handleDeliverectChannelProvisioning(
         req.body
       );
 
-    const canonicalBody = JSON.stringify(req.body ?? {});
-    const rawBodyText = Buffer.isBuffer(rawBody)
-      ? rawBody.toString('utf8')
-      : String(rawBody);
-
     const { tenantId } = await WebhookService.resolveTenantForWebhook(
       rawBody,
       signatureHeader,
       candidateTenantId,
-      {
-        stagingTemporarySecrets,
-        stagingAlternateBodies:
-          canonicalBody !== rawBodyText ? [canonicalBody] : [],
-      }
+      { stagingTemporarySecrets }
     );
+    WebhookService.assertFreshWebhookTimestamp(req.body, req.headers);
 
     const result = await ChannelProvisioningService.process(
       tenantId,
@@ -2914,7 +2834,6 @@ async function handleDeliverectChannelProvisioning(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/provision',
-    '/webhooks/deliverect/channel/provision',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectChannelProvisioning(req, res, 'STORE_PROVISION')
@@ -2923,7 +2842,6 @@ v1Router.post(
 v1Router.post(
   [
     '/webhooks/deliverect/:identifier/channel/register',
-    '/webhooks/deliverect/channel/register',
   ],
   (req: Request, res: Response) =>
     void handleDeliverectChannelProvisioning(req, res, 'CHANNEL_REGISTRATION')
@@ -2931,13 +2849,13 @@ v1Router.post(
 
 /**
  * Deliverect Inbound Webhook Ingestion (WH-01, WH-02, WH-03)
- * Supports integration-specific routes (/webhooks/deliverect/:identifier) and global route with host/query resolution.
+ * Requires integration-specific routes (/webhooks/deliverect/:identifier); the path identifier is the sole tenant-routing input.
  * Enforces HMAC validation, event journaling, deduplication, and monotonic state progression.
  */
-v1Router.post(['/webhooks/deliverect', '/webhooks/deliverect/:identifier'], async (req: Request, res: Response) => {
+v1Router.post('/webhooks/deliverect/:identifier', async (req: Request, res: Response) => {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = exactWebhookRawBody(req);
 
     const result = await WebhookService.processWebhook(
       req.body,
