@@ -137,6 +137,10 @@ export async function resolveRequestTenant(
   const override = requestedTenantOverride(req);
   const admin = (req as any).adminUser;
   const isSuperAdmin = admin?.role === 'platformSuperAdmin' || admin?.isSuperAdmin === true;
+  const simulatedPublicRequest =
+    (req as any).simulatePublicRequest === true ||
+    (isTestMode() && firstHeaderValue(req.headers['x-test-simulate-public'] as string | string[] | undefined) === 'true');
+  const localTestHost = host === 'localhost' || host === '127.0.0.1';
 
   if (admin && !isSuperAdmin && admin.tenantId) {
     return {
@@ -147,8 +151,14 @@ export async function resolveRequestTenant(
     };
   }
 
+  // Local HTTP harnesses may select fixtures explicitly; remote managed
+  // preview hosts never accept this shortcut.
+  if (localTestHost && override && isTestMode() && !simulatedPublicRequest) {
+    return { tenantId: override, source: 'test', host, usedOverride: true };
+  }
+
   // Managed/preview infrastructure is pinned by server configuration. Do this
-  // before considering any caller override, including test-only overrides.
+  // before considering caller-controlled overrides.
   if (isManagedPreviewHost(host, env)) {
     const previewTenantId = String(env.PREVIEW_TENANT_ID || '').trim();
     if (previewTenantId) {
@@ -186,7 +196,7 @@ export async function resolveRequestTenant(
     return { tenantId: override, source: 'preview-token', host, usedOverride: true };
   }
 
-  if (override && isTestMode() && !(req as any).simulatePublicRequest) {
+  if (override && isTestMode() && !simulatedPublicRequest) {
     return { tenantId: override, source: 'test', host, usedOverride: true };
   }
 
