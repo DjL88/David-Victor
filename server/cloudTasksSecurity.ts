@@ -29,15 +29,15 @@ export function setCloudTasksTokenVerifierForTest(
 
 function isLiveMode(): boolean {
   const mode = getServerRuntimeMode();
-  return (
-    !isDemoMode() &&
-    !isTestMode() &&
-    process.env.NODE_ENV !== 'test' &&
-    (mode === 'staging' ||
-      mode === 'production' ||
-      process.env.APP_MODE === 'staging' ||
-      process.env.APP_MODE === 'production')
-  );
+  if (mode === 'staging' || mode === 'production') return true;
+  if (mode === 'demo' || isDemoMode()) return false;
+
+  // Explicit APP_MODE is authoritative even inside a behavioural test harness:
+  // tests must be able to prove that staging/production boot fails closed.
+  const envMode = String(process.env.APP_MODE || '').trim().toLowerCase();
+  if (envMode === 'staging' || envMode === 'production') return true;
+
+  return !isTestMode() && process.env.NODE_ENV !== 'test' && envMode !== 'demo';
 }
 
 function required(name: string, value: string): string {
