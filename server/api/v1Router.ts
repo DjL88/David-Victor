@@ -5409,6 +5409,46 @@ v1Router.get('/admin/assets/:tenantId', requireAdminAuth(), async (req: Request,
   }
 });
 
+v1Router.get(
+  '/admin/assets/:tenantId/:assetId/file',
+  requireAdminAuth(),
+  requireAdminCapability('assets.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const authAdmin = (req as AuthenticatedRequest).adminUser!;
+      const { tenantId, assetId } = req.params;
+      if (authAdmin.role !== 'platformSuperAdmin' && authAdmin.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
+      }
+
+      const asset = await AssetService.getAsset(assetId);
+      if (
+        !asset ||
+        asset.tenantId !== tenantId ||
+        asset.type !== 'BRAND_GUIDELINES' ||
+        asset.status !== 'READY'
+      ) {
+        return res.status(404).json({ error: 'Asset not found', code: 'ASSET_NOT_FOUND' });
+      }
+
+      const buffer = await AssetService.getAssetBinary(assetId);
+      if (!buffer) {
+        return res.status(404).json({ error: 'Asset file not available', code: 'ASSET_NOT_FOUND' });
+      }
+
+      const safeName = asset.fileName.replace(/[^a-zA-Z0-9._-]/g, '_') || 'brand-guidelines';
+      res.setHeader('Content-Type', asset.contentType || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+      res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(buffer);
+    } catch (err: any) {
+      handleCommerceError(res, err, 'Failed to retrieve private asset');
+    }
+  }
+);
+
 v1Router.get('/assets/:tenantId/:assetId', async (req: Request, res: Response) => {
   try {
     const { tenantId, assetId } = req.params;
@@ -5416,13 +5456,25 @@ v1Router.get('/assets/:tenantId/:assetId', async (req: Request, res: Response) =
     if (!asset || asset.tenantId !== tenantId || asset.status !== 'READY') {
       return res.status(404).json({ error: 'Asset not found or not ready', code: 'ASSET_NOT_FOUND' });
     }
+    // Private source documents never have a public retrieval path, even if an
+    // old record accidentally carries a tokenized URL.
+    if (asset.type === 'BRAND_GUIDELINES') {
+      return res.status(404).json({ error: 'Asset not found', code: 'ASSET_NOT_FOUND' });
+    }
     if (asset.publicUrl) {
       return res.redirect(302, asset.publicUrl);
     }
     const storage = getFirebaseStorage();
     if (storage && asset.storagePath) {
+      if ((asset.contentType || '').toLowerCase().split(';')[0] === 'image/svg+xml') {
+        return res.status(415).json({
+          error: 'Active SVG content is not served from the application origin.',
+          code: 'MEDIA_TYPE_NOT_PERMITTED',
+        });
+      }
       const file = storage.bucket().file(asset.storagePath);
       res.setHeader('Content-Type', asset.contentType || 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       return file.createReadStream().pipe(res);
     }
