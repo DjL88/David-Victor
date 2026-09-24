@@ -75,7 +75,12 @@ import {
   domainVerificationRecordValue,
   verifyDomainOwnershipTxt,
 } from '../domainVerificationService';
-import { resolveRequestTenant, type TenantResolution } from '../tenantResolution';
+import {
+  getTrustedRequestHost,
+  getTrustedRequestProtocol,
+  resolveRequestTenant,
+  type TenantResolution,
+} from '../tenantResolution';
 
 if (isDemoMode()) {
   CommerceDiscoveryService.setDataProvider(new DemoDiscoveryDataProvider());
@@ -339,7 +344,6 @@ function requireAdminAuth(requiredRole?: 'platformSuperAdmin' | 'tenantAdmin' | 
       return res.status(403).json({
         error: authResult.message || 'Forbidden: User authenticated but not authorized for this resource.',
         code: authResult.code || 'AUTHENTICATED_NOT_AUTHORIZED',
-        email: authResult.email,
       });
     }
 
@@ -417,7 +421,6 @@ function requirePlatformSuperAdmin() {
       return res.status(403).json({
         error: authResult.message || 'Forbidden: User authenticated but not authorized as Platform SuperAdmin.',
         code: authResult.code || 'AUTHENTICATED_NOT_AUTHORIZED',
-        email: authResult.email,
       });
     }
 
@@ -3990,7 +3993,6 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
     }
 
     const isAssigningSuperAdmin = requestedRole === 'platformSuperAdmin';
-
     if (isAssigningSuperAdmin && !authAdmin.isSuperAdmin) {
       return res.status(403).json({
         error: 'Forbidden: Only Platform SuperAdmins can assign platformSuperAdmin memberships.',
@@ -4003,33 +4005,61 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
       : (authAdmin.isSuperAdmin ? (requestedTenantId || authAdmin.tenantId) : authAdmin.tenantId);
 
     const docId = isAssigningSuperAdmin ? `${normalizedEmail}_platform` : `${normalizedEmail}_${targetTenant}`;
+    const now = new Date().toISOString();
     const membershipData = {
       email: normalizedEmail,
       role: requestedRole,
       tenantId: targetTenant,
       name: name || normalizedEmail.split('@')[0],
       status: 'active',
-      assignedBy: authAdmin.email,
-      assignedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      assignedBy: authAdmin.uid,
+      assignedAt: now,
+      updatedAt: now,
     };
+
+    const adminAuth = getFirebaseAdminAuth();
+    if (!adminAuth && isLiveMode()) {
+      return res.status(503).json({
+        error: 'Firebase Admin Auth is unavailable for secure administrator invitations.',
+        code: 'ADMIN_INVITE_AUTH_UNAVAILABLE',
+      });
+    }
+
+    let inviteLink: string | null = null;
+    if (adminAuth) {
+      const trustedHost = getTrustedRequestHost(req);
+      const trustedProtocol = getTrustedRequestProtocol(req);
+      if (!trustedHost && isLiveMode()) {
+        return res.status(500).json({
+          error: 'A trusted application host is required to generate administrator invitations.',
+          code: 'ADMIN_INVITE_HOST_UNAVAILABLE',
+        });
+      }
+
+      const continueUrl = trustedHost
+        ? `${trustedProtocol}://${trustedHost}/admin`
+        : 'http://localhost:5173/admin';
+      inviteLink = await adminAuth.generateSignInWithEmailLink(normalizedEmail, {
+        url: continueUrl,
+        handleCodeInApp: true,
+      });
+    }
 
     const db = getFirestoreDb();
     if (db) {
       await db.collection('tenantMemberships').doc(docId).set(membershipData, { merge: true });
     }
 
-    // Attempt to set custom claims if user already exists in Firebase Auth
-    const adminAuth = getFirebaseAdminAuth();
+    // Existing Firebase users are linked to a UID membership only after Firebase
+    // reports their email as verified. Unverified accounts never receive claims.
     if (adminAuth) {
       try {
         const userRecord = await adminAuth.getUserByEmail(normalizedEmail);
-        if (userRecord) {
-          if (isAssigningSuperAdmin) {
-            await adminAuth.setCustomUserClaims(userRecord.uid, { role: 'platformSuperAdmin', platformSuperAdmin: true });
-          } else {
-            await adminAuth.setCustomUserClaims(userRecord.uid, { role: requestedRole, tenantId: targetTenant });
-          }
+        if (userRecord?.emailVerified) {
+          const claims = isAssigningSuperAdmin
+            ? { role: 'platformSuperAdmin', platformSuperAdmin: true }
+            : { role: requestedRole, tenantId: targetTenant };
+          await adminAuth.setCustomUserClaims(userRecord.uid, claims);
           if (db) {
             const uidDocId = isAssigningSuperAdmin ? `${userRecord.uid}_platform` : `${userRecord.uid}_${targetTenant}`;
             await db.collection('tenantMemberships').doc(uidDocId).set({
@@ -4038,7 +4068,11 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
             }, { merge: true });
           }
         }
-      } catch (_) {}
+      } catch (lookupErr: any) {
+        if (lookupErr?.code !== 'auth/user-not-found') {
+          throw lookupErr;
+        }
+      }
     }
 
     await FirestorePlatformService.addAuditLog(targetTenant, {
@@ -4048,16 +4082,20 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
       tenantId: targetTenant,
       category: 'Tenant',
       action: 'ASSIGN_MEMBERSHIP',
-      details: `Assigned role ${requestedRole} to ${normalizedEmail} for tenant ${targetTenant}`,
+      details: `Assigned role ${requestedRole} for tenant ${targetTenant}`,
     });
 
     res.status(201).json({
       success: true,
       membershipId: docId,
       membership: membershipData,
+      inviteLink,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, code: 'MEMBERSHIP_CREATE_FAILED' });
+    res.status(500).json({
+      error: err?.message || 'Failed to create administrator invitation.',
+      code: err?.code || 'MEMBERSHIP_CREATE_FAILED',
+    });
   }
 });
 
@@ -4077,8 +4115,8 @@ v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapabi
       return res.status(404).json({ error: 'Membership not found', code: 'NOT_FOUND' });
     }
 
-    const data = doc.data();
-    const targetRole = String(data?.role || '');
+    const data = doc.data() || {};
+    const targetRole = String(data.role || '');
     const isTargetSuperAdmin = targetRole === 'platformSuperAdmin' || targetRole === 'PLATFORM_SUPER_ADMIN';
 
     if (!authAdmin.isSuperAdmin) {
@@ -4088,7 +4126,7 @@ v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapabi
           code: 'FORBIDDEN_SUPERADMIN_ONLY',
         });
       }
-      if (data?.tenantId !== authAdmin.tenantId) {
+      if (data.tenantId !== authAdmin.tenantId) {
         return res.status(403).json({
           error: 'Forbidden: You cannot remove memberships for other tenants.',
           code: 'TENANT_ISOLATION_ERROR',
@@ -4108,21 +4146,60 @@ v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapabi
       }
     }
 
-    await db.collection('tenantMemberships').doc(membershipId).delete();
+    const adminAuth = getFirebaseAdminAuth();
+    let targetUid = String(data.uid || '').trim();
+    if (!targetUid && adminAuth && data.email) {
+      try {
+        const userRecord = await adminAuth.getUserByEmail(String(data.email).trim().toLowerCase());
+        targetUid = userRecord?.uid || '';
+      } catch (lookupErr: any) {
+        if (lookupErr?.code !== 'auth/user-not-found') throw lookupErr;
+      }
+    }
 
-    await FirestorePlatformService.addAuditLog(data?.tenantId || 'platform', {
+    // Clear cached authorization and revoke refresh tokens before deleting the
+    // source-of-truth membership. If Firebase Auth is unavailable in live mode,
+    // fail closed and leave the membership untouched.
+    if (targetUid) {
+      if (!adminAuth && isLiveMode()) {
+        return res.status(503).json({
+          error: 'Firebase Admin Auth is unavailable; membership revocation was not applied.',
+          code: 'MEMBERSHIP_REVOCATION_AUTH_UNAVAILABLE',
+        });
+      }
+      if (adminAuth) {
+        await adminAuth.setCustomUserClaims(targetUid, null);
+        await adminAuth.revokeRefreshTokens(targetUid);
+      }
+    }
+
+    const scope = isTargetSuperAdmin ? 'platform' : String(data.tenantId || '');
+    const counterpartIds = new Set<string>([membershipId]);
+    if (data.email) {
+      const normalizedEmail = String(data.email).trim().toLowerCase();
+      counterpartIds.add(isTargetSuperAdmin ? `${normalizedEmail}_platform` : `${normalizedEmail}_${scope}`);
+    }
+    if (targetUid) {
+      counterpartIds.add(isTargetSuperAdmin ? `${targetUid}_platform` : `${targetUid}_${scope}`);
+    }
+
+    for (const id of counterpartIds) {
+      await db.collection('tenantMemberships').doc(id).delete();
+    }
+
+    await FirestorePlatformService.addAuditLog(data.tenantId || 'platform', {
       userId: authAdmin.uid,
       userName: authAdmin.name,
       userRole: authAdmin.role,
-      tenantId: data?.tenantId || 'platform',
+      tenantId: data.tenantId || 'platform',
       category: 'Tenant',
       action: 'REVOKE_MEMBERSHIP',
-      details: `Revoked membership ${membershipId} (${data?.email})`,
+      details: `Revoked ${targetRole || 'admin'} membership for ${scope || 'platform'}`,
     });
 
-    res.json({ success: true, message: `Membership ${membershipId} revoked.` });
+    res.json({ success: true, message: 'Membership revoked.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, code: 'MEMBERSHIP_DELETE_FAILED' });
+    res.status(500).json({ error: err?.message || 'Membership revocation failed', code: err?.code || 'MEMBERSHIP_DELETE_FAILED' });
   }
 });
 
