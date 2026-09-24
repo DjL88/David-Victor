@@ -106,6 +106,8 @@ describe('WP-10/11 production isolation foundations', () => {
     expect(yaml).toContain('secret: firebase_appcheck_site_key');
     expect(yaml).toContain('variable: VITE_FIREBASE_PROJECT_ID');
     expect(yaml).toContain('secret: firebase_project_id');
+    expect(yaml).toContain('variable: TRUSTED_EDGE_SECRET');
+    expect(yaml).toContain('secret: trusted_edge_secret');
   });
 
   it('uses tenant plus environment as the integration profile identity and deployment guard', () => {
