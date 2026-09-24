@@ -5,9 +5,6 @@ import { CmsPageView } from '../cms/CmsPageView';
 import { CmsPage } from '../../commerce/cmsModels';
 import { auth, onAuthStateChanged, User as FirebaseUser, signInWithGoogle, signOutUser } from '../../firebase';
 import {
-  MapPin,
-  CreditCard,
-  Bell,
   Phone,
   Mail,
   Settings,
@@ -37,11 +34,17 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
 
   const [activePageSlug, setActivePageSlug] = useState<string | null>(null);
   const [cmsPages, setCmsPages] = useState<CmsPage[]>([]);
-  const [accountPanel, setAccountPanel] = useState<'addresses' | 'payments' | 'notifications' | null>(null);
+  const [cmsError, setCmsError] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/v1/cms/pages')
-      .then((res) => res.ok ? res.json() : { pages: [] })
+  const loadCmsPages = () => {
+    setCmsError(false);
+    fetch('/api/v1/cms/pages', {
+      headers: tenant?.tenantId ? { 'x-tenant-id': tenant.tenantId } : undefined,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`CMS pages request failed with ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         const loaded = data.pages || [];
         setCmsPages(loaded);
@@ -51,7 +54,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           sessionStorage.removeItem('__cms_page_slug');
         }
       })
-      .catch(() => setCmsPages([]));
+      .catch((err) => {
+        console.warn('Failed to load account CMS pages:', err);
+        setCmsPages([]);
+        setCmsError(true);
+      });
+  };
+
+  useEffect(() => {
+    loadCmsPages();
   }, [tenant?.tenantId]);
 
   const localizedCmsPages = useMemo(() => {
@@ -174,20 +185,6 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           </div>
         </div>
   
-        {/* Account Links */}
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-2xs divide-y divide-gray-50 overflow-hidden text-xs font-semibold text-gray-800">
-          <button type="button" onClick={() => setAccountPanel('addresses')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-            <span className="flex items-center gap-3"><MapPin className="w-4 h-4 text-gray-400" />{t('account.savedAddresses')}</span><ChevronRight className="w-4 h-4 text-gray-400" />
-          </button>
-          <button type="button" onClick={() => setAccountPanel('payments')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-            <span className="flex items-center gap-3"><CreditCard className="w-4 h-4 text-gray-400" />{t('account.paymentMethods')}</span><ChevronRight className="w-4 h-4 text-gray-400" />
-          </button>
-          <button type="button" onClick={() => setAccountPanel('notifications')} className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-gray-50 text-left">
-            <span className="flex items-center gap-3"><Bell className="w-4 h-4 text-gray-400" />{t('account.notifications')}</span><ChevronRight className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-  
-  
         </div>
         <div className="space-y-5">
         {/* Brand CMS Pages (Information & Policies) */}
@@ -208,9 +205,14 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </button>
             ))}
-            {localizedCmsPages.length === 0 && (
+            {cmsError ? (
+              <div role="alert" className="py-2 text-xs text-rose-700">
+                <p>Brand information could not be loaded.</p>
+                <button type="button" onClick={loadCmsPages} className="mt-1 font-bold underline">Retry</button>
+              </div>
+            ) : localizedCmsPages.length === 0 ? (
               <p className="py-2 text-xs text-gray-400">{t('account.noPolicies')}</p>
-            )}
+            ) : null}
           </div>
         </div>
   
@@ -257,15 +259,6 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({ onOpenAdmin }) => 
           >
             {t('account.launchAdmin')}
           </button>
-        </div>
-      )}
-
-      {accountPanel && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div role="dialog" aria-modal="true" className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-            <button type="button" aria-label="Close" onClick={() => setAccountPanel(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center"><X className="w-4 h-4" /></button>
-            <div className="pr-10"><h3 className="text-lg font-bold text-gray-900">{accountPanel === 'addresses' ? t('account.savedAddresses') : accountPanel === 'payments' ? t('account.paymentMethods') : t('account.notifications')}</h3><p className="mt-2 text-sm text-gray-600">{!currentUser ? t('account.signInToManage') : accountPanel === 'addresses' ? t('account.noSavedAddresses') : accountPanel === 'payments' ? t('account.paymentProviderNote') : t('account.notificationNote')}</p>{!currentUser && <button type="button" onClick={() => signInWithGoogle().catch(() => undefined)} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">{t('account.signIn')}</button>}</div>
-          </div>
         </div>
       )}
 
