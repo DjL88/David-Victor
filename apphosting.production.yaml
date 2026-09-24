@@ -14,3 +14,59 @@ env:
 
   # Production credentials and webhook secrets are resolved server-side from
   # Secret Manager. Do not add PREVIEW_* or ALLOW_STAGING_CHANNEL_HMAC here.
+
+
+  # WP-10/11: production may only activate production tenant profiles.
+  - variable: ALLOWED_TENANT_ENVS
+    value: production
+    availability:
+      - RUNTIME
+
+  - variable: INTEGRATION_PROFILE_REQUIRED
+    value: "true"
+    availability:
+      - RUNTIME
+
+  # Dedicated project identity is deployment configuration. These references
+  # deliberately prevent the checked-in AI Studio fallback project from winning.
+  - variable: FIREBASE_PROJECT_ID
+    secret: firebase_project_id
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIREBASE_STORAGE_BUCKET
+    secret: firebase_storage_bucket
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIRESTORE_DATABASE_ID
+    secret: firestore_database_id
+    availability:
+      - RUNTIME
+
+  - variable: PUBLIC_BASE_URL
+    secret: public_base_url
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_SA_EMAIL
+    secret: cloud_tasks_sa_email
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_AUDIENCE
+    secret: cloud_tasks_audience
+    availability:
+      - RUNTIME
+
+  - variable: CHANNEL_MENU_TASKS_QUEUE
+    secret: channel_menu_tasks_queue
+    availability:
+      - RUNTIME
+
+  - variable: CHANNEL_REALTIME_TASKS_QUEUE
+    secret: channel_realtime_tasks_queue
+    availability:
+      - RUNTIME
