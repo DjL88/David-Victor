@@ -15,7 +15,7 @@
     "audit:gate": "bun run lint && bun run test:certification && bun run test:qc && bun run build",
     "prove:webhook-staging": "tsx scripts/prove_signed_webhook_staging.ts",
     "prove:catalog-scale-stub": "tsx scripts/prove_catalog_scale_stub.ts",
-    "test:qc": "vitest run src/__tests__/production_integration_isolation.test.ts src/__tests__/sprint5_rbac_acceptance.test.ts src/__tests__/storefront_router.test.ts src/__tests__/security_admin_routes.test.ts src/__tests__/domain_ownership_verification.test.ts src/__tests__/tenant_provisioning_and_assets.test.ts src/__tests__/tenant_resolution_security.test.ts"
+    "test:qc": "vitest run src/__tests__/production_integration_isolation.test.ts src/__tests__/sprint5_rbac_acceptance.test.ts src/__tests__/storefront_router.test.ts src/__tests__/security_admin_routes.test.ts src/__tests__/domain_ownership_verification.test.ts src/__tests__/tenant_provisioning_and_assets.test.ts src/__tests__/tenant_resolution_security.test.ts src/__tests__/billing_control_plane.test.ts"
   },
   "dependencies": {
     "@google-cloud/secret-manager": "^7.1.0",
