@@ -37,6 +37,7 @@ import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
 import { OrderReferenceService } from '../orderReferenceService';
+import { CheckoutLockService } from '../checkoutLockService';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
@@ -1657,11 +1658,13 @@ v1Router.post(
   checkoutAndPaymentRateLimiter.middleware(),
   validateBody(CheckoutBasketSchema),
   async (req: Request, res: Response) => {
+  let checkoutLockContext: { tenantId: string; basketId: string } | null = null;
   try {
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
     const callerUid = await getCallerUid(req);
     const integrationContext = await IntegrationContext.getContext(resolvedTenant);
+    const tenantConfig = await FirestorePlatformService.getTenantConfig(resolvedTenant);
     const checkoutOptions: any = {
       ...(options || {}),
       // One Deliverect basket can create one checkout session. Use a stable
@@ -1699,11 +1702,25 @@ v1Router.post(
       return res.status(200).json(existingBasketCheckout);
     }
 
+    // SEC-04b: unpaid ordering is an explicit tenant opt-in, never an implicit
+    // capability of the checkout route.
+    const allowUnpaidOrders =
+      tenantConfig.paymentPolicy?.allowUnpaidOrders === true;
+    if (
+      !checkoutOptions.paymentId &&
+      !checkoutOptions.paymentTokenRef &&
+      !allowUnpaidOrders
+    ) {
+      return res.status(402).json({
+        error: 'Payment authorization is required before checkout.',
+        code: 'PAYMENT_REQUIRED',
+      });
+    }
+
     // Allocate a compact human-facing Retail/Quest reference only after we know
     // this basket has not already produced a checkout. Reservations are durable
     // and basket-idempotent, so browser retries reuse the same visible order ID.
     if (orderRoute === 'retail_quest' && !checkoutOptions.channelOrderReference) {
-      const tenantConfig = await FirestorePlatformService.getTenantConfig(resolvedTenant);
       checkoutOptions.channelOrderReference = await OrderReferenceService.reserve({
         tenantId: resolvedTenant,
         basketId,
@@ -1983,6 +2000,31 @@ v1Router.post(
       }
     }
 
+    // Atomically claim the basket before the first upstream order-creation
+    // request. Concurrent browser retries therefore cannot both reach Deliverect.
+    const lockClaim = await CheckoutLockService.claim(
+      resolvedTenant,
+      basketId,
+      checkoutOptions.idempotencyKey
+    );
+    if (!lockClaim.claimed) {
+      const existing = await FirestorePlatformService.getCheckoutByBasketId(
+        basketId,
+        resolvedTenant
+      );
+      if (existing) {
+        assertCheckoutRecoveryOwnership(existing, callerUid);
+        return res.status(200).json(existing);
+      }
+      throw new BFFError(
+        'CHECKOUT_IN_PROGRESS',
+        'Checkout is already being created for this basket.',
+        409,
+        true
+      );
+    }
+    checkoutLockContext = { tenantId: resolvedTenant, basketId };
+
     const adapter = await getDeliverectAdapterAsync(resolvedTenant);
     let checkoutResult: CheckoutResult;
 
@@ -2114,8 +2156,14 @@ v1Router.post(
         checkoutOptions.idempotencyKey,
     };
 
-    // Persist CheckoutProjection in Firestore / in-memory
+    // Persist CheckoutProjection before marking the atomic basket lock complete.
     await FirestorePlatformService.saveCheckoutProjection(checkoutResult);
+    await CheckoutLockService.complete(
+      resolvedTenant,
+      basketId,
+      checkoutResult.checkoutId
+    );
+    checkoutLockContext = null;
 
     // Save GDPR-safe order projection in Firestore
     if (checkoutResult.order) {
@@ -2172,6 +2220,15 @@ v1Router.post(
     // Commerce Checkout remains asynchronous and returns 202 pending confirmation.
     res.status(orderRoute === 'retail_quest' ? 201 : 202).json(checkoutResult);
   } catch (err: any) {
+    if (checkoutLockContext) {
+      await CheckoutLockService.fail(
+        checkoutLockContext.tenantId,
+        checkoutLockContext.basketId,
+        err
+      ).catch((lockErr) => {
+        console.error('[Checkout Lock] Failed to mark checkout attempt failed:', lockErr);
+      });
+    }
     handleCommerceError(res, err, 'Failed to checkout basket');
   }
 });
