@@ -121,13 +121,24 @@ export function validateFileMagicBytes(buffer: Buffer, contentType: string): voi
     return;
   }
   if (mimeType === 'image/svg+xml') {
-    const text = buffer.toString('utf8', 0, Math.min(buffer.length, 4096));
-    if (!text.includes('<svg') && !text.includes('<?xml')) {
+    const svg = buffer.toString('utf8');
+    const head = svg.slice(0, 4096);
+    if (!/<svg(?:\s|>)/i.test(head)) {
       throw BFFError.invalidInput('Invalid SVG format: missing <svg> element.');
     }
-    const lower = buffer.toString('utf8').toLowerCase();
-    if (lower.includes('<script') || lower.includes('javascript:') || lower.includes('onload=') || lower.includes('onerror=')) {
-      throw BFFError.invalidInput('SVG sanitisation policy violation: embedded script or event handlers detected.');
+
+    // SVG is never served by the same-origin media proxy, but uploads are also
+    // rejected conservatively if they contain active/document embedding
+    // features. This catches the prior onbegin/foreignObject/xlink bypasses.
+    const unsafe =
+      /<\s*(script|foreignObject|iframe|object|embed)\b/i.test(svg) ||
+      /\son[a-z0-9:_-]+\s*=/i.test(svg) ||
+      /(?:href|xlink:href)\s*=\s*["']\s*(?:javascript:|data:text\/html|https?:\/\/|\/\/)/i.test(svg) ||
+      /url\s*\(\s*["']?\s*(?:javascript:|data:text\/html|https?:\/\/|\/\/)/i.test(svg) ||
+      /<!\s*(doctype|entity)\b/i.test(svg);
+
+    if (unsafe) {
+      throw BFFError.invalidInput('SVG security policy violation: active or external content is not permitted.');
     }
     return;
   }
@@ -189,7 +200,7 @@ export class AssetService {
     const fileBuffer = Buffer.from(base64Content, 'base64');
     validateFileMagicBytes(fileBuffer, params.contentType);
 
-    const assetId = `ast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const assetId = `ast_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     const typeFolder = params.type.toLowerCase().replace('_', '-');
@@ -316,7 +327,7 @@ export class AssetService {
   }): Promise<{ assetId: string; uploadUrl: string; storagePath: string; publicUrl: string }> {
     this.validateAssetUpload(params.type, params.contentType, params.byteSize);
 
-    const assetId = `ast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const assetId = `ast_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const typeFolder = params.type.toLowerCase().replace('_', '-');
     const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
