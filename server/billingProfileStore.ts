@@ -22,7 +22,16 @@ function validateProfile(profile: StoredTenantBillingProfile): void {
   }
 }
 
-/** Stores the current agreed commercial profile separately from commerce checkout state. */
+function versionId(tenantId: string, contractVersion: number): string {
+  return `${Buffer.from(tenantId, 'utf8').toString('base64url')}.v${contractVersion}`;
+}
+
+/**
+ * Stores the current commercial profile separately from checkout state and, once
+ * agreed, records that exact contract version in an immutable audit collection.
+ * A later commercial change must use a higher contractVersion rather than
+ * silently rewriting terms that were already agreed.
+ */
 export async function saveTenantBillingProfile(profile: StoredTenantBillingProfile): Promise<StoredTenantBillingProfile> {
   validateProfile(profile);
   const db = getFirestoreDb();
@@ -31,9 +40,25 @@ export async function saveTenantBillingProfile(profile: StoredTenantBillingProfi
   const existing = await ref.get();
   const previous = existing.data() as StoredTenantBillingProfile | undefined;
   if (previous && profile.contractVersion < previous.contractVersion) throw new Error('Billing contract version cannot move backwards.');
+  if (previous?.agreedAt && profile.contractVersion === previous.contractVersion) {
+    throw new Error('An agreed billing contract version is immutable; create a new contract version.');
+  }
   if (profile.status === 'ACTIVE' && (!profile.agreedAt || !profile.agreedBy)) {
     throw new Error('Active billing profiles require agreement timestamp and actor.');
   }
+
+  if (profile.agreedAt && profile.agreedBy) {
+    const historyRef = db.collection('billingContractVersions').doc(versionId(profile.tenantId, profile.contractVersion));
+    try {
+      await historyRef.create({ ...profile, recordedAt: new Date().toISOString() });
+    } catch (error: any) {
+      if (error?.code === 6 || error?.code === '6' || error?.code === 'already-exists' || error?.code === 'ALREADY_EXISTS') {
+        throw new Error('This billing contract version has already been agreed and cannot be replaced.');
+      }
+      throw error;
+    }
+  }
+
   await ref.set(profile, { merge: false });
   return profile;
 }
@@ -45,4 +70,13 @@ export async function getTenantBillingProfile(tenantId: string): Promise<StoredT
   if (!snapshot.exists) return null;
   const profile = snapshot.data() as StoredTenantBillingProfile;
   return profile.tenantId === tenantId ? profile : null;
+}
+
+export async function getBillingContractVersion(tenantId: string, contractVersion: number): Promise<StoredTenantBillingProfile | null> {
+  const db = getFirestoreDb();
+  if (!db) throw new Error('Firestore is required for durable billing profiles.');
+  const snapshot = await db.collection('billingContractVersions').doc(versionId(tenantId, contractVersion)).get();
+  if (!snapshot.exists) return null;
+  const profile = snapshot.data() as StoredTenantBillingProfile;
+  return profile.tenantId === tenantId && profile.contractVersion === contractVersion ? profile : null;
 }
