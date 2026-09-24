@@ -91,6 +91,23 @@ describe('WP-10/11 production isolation foundations', () => {
     ).toThrow(/refuses legacy Firebase project/i);
   });
 
+  it('production deployment config requires MFA and App Check against the dedicated client project', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const yaml = fs.readFileSync(
+      path.resolve(process.cwd(), 'apphosting.production.yaml'),
+      'utf8'
+    );
+
+    expect(yaml).toContain('variable: ADMIN_REQUIRE_MFA');
+    expect(yaml).toContain('variable: ADMIN_REQUIRE_APP_CHECK');
+    expect(yaml).toContain('variable: CHECKOUT_REQUIRE_APP_CHECK');
+    expect(yaml).toContain('variable: VITE_FIREBASE_APPCHECK_SITE_KEY');
+    expect(yaml).toContain('secret: firebase_appcheck_site_key');
+    expect(yaml).toContain('variable: VITE_FIREBASE_PROJECT_ID');
+    expect(yaml).toContain('secret: firebase_project_id');
+  });
+
   it('uses tenant plus environment as the integration profile identity and deployment guard', () => {
     expect(integrationProfileId('brand-alpha', 'staging')).toBe(
       'brand-alpha__staging'
