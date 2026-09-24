@@ -1657,6 +1657,9 @@ v1Router.post(
   checkoutAndPaymentRateLimiter.middleware(),
   validateBody(CheckoutBasketSchema),
   async (req: Request, res: Response) => {
+  let checkoutLockHeld = false;
+  let checkoutLockTenant = '';
+  let checkoutLockBasket = '';
   try {
     const { basketId, options } = req.body;
     const resolvedTenant = resolveTenant(req);
@@ -1699,11 +1702,26 @@ v1Router.post(
       return res.status(200).json(existingBasketCheckout);
     }
 
+    const tenantConfig = await FirestorePlatformService.getTenantConfig(resolvedTenant);
+    const hasPaymentIntent = Boolean(
+      checkoutOptions.paymentId || checkoutOptions.paymentTokenRef
+    );
+    if (
+      !hasPaymentIntent &&
+      tenantConfig.paymentPolicy?.allowUnpaidOrders !== true &&
+      !isDemoMode() &&
+      process.env.NODE_ENV !== 'test'
+    ) {
+      return res.status(402).json({
+        error: 'Payment is required before this order can be submitted.',
+        code: 'PAYMENT_REQUIRED',
+      });
+    }
+
     // Allocate a compact human-facing Retail/Quest reference only after we know
     // this basket has not already produced a checkout. Reservations are durable
     // and basket-idempotent, so browser retries reuse the same visible order ID.
     if (orderRoute === 'retail_quest' && !checkoutOptions.channelOrderReference) {
-      const tenantConfig = await FirestorePlatformService.getTenantConfig(resolvedTenant);
       checkoutOptions.channelOrderReference = await OrderReferenceService.reserve({
         tenantId: resolvedTenant,
         basketId,
@@ -1983,6 +2001,28 @@ v1Router.post(
       }
     }
 
+    const lock = await FirestorePlatformService.claimCheckoutLock(
+      resolvedTenant,
+      basketId
+    );
+    if (!lock.claimed) {
+      const recovered = await FirestorePlatformService.getCheckoutByBasketId(
+        basketId,
+        resolvedTenant
+      );
+      if (recovered) {
+        assertCheckoutRecoveryOwnership(recovered, callerUid);
+        return res.status(200).json(recovered);
+      }
+      return res.status(409).json({
+        error: 'Checkout for this basket is already being created. Retry order status instead of creating another checkout.',
+        code: 'CHECKOUT_IN_PROGRESS',
+      });
+    }
+    checkoutLockHeld = true;
+    checkoutLockTenant = resolvedTenant;
+    checkoutLockBasket = basketId;
+
     const adapter = await getDeliverectAdapterAsync(resolvedTenant);
     let checkoutResult: CheckoutResult;
 
@@ -2172,6 +2212,12 @@ v1Router.post(
     // Commerce Checkout remains asynchronous and returns 202 pending confirmation.
     res.status(orderRoute === 'retail_quest' ? 201 : 202).json(checkoutResult);
   } catch (err: any) {
+    if (checkoutLockHeld && checkoutLockTenant && checkoutLockBasket) {
+      await FirestorePlatformService.releaseCheckoutLock(
+        checkoutLockTenant,
+        checkoutLockBasket
+      );
+    }
     handleCommerceError(res, err, 'Failed to checkout basket');
   }
 });
