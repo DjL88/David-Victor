@@ -82,3 +82,22 @@ export interface DraftInvoice {
   total: Money;
   createdAt: string;
 }
+
+
+export interface BillingAdjustment {
+  id: string;
+  tenantId: string;
+  periodId: string;
+  description: string;
+  amount: Money;
+  kind: 'CREDIT' | 'ADJUSTMENT';
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface FinalizedInvoice extends DraftInvoice {
+  status: 'FINALIZED';
+  finalizedAt: string;
+  finalizedBy: string;
+  updatedAt: string;
+}
