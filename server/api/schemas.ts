@@ -480,6 +480,9 @@ export const CreateTenantSchema = z.object({
   orderCodePrefix: optionalOrderCodePrefix,
   supportDetails: z.record(z.string(), z.any()).optional(),
   featureFlags: z.record(z.string(), z.any()).optional(),
+  paymentPolicy: z.object({
+    allowUnpaidOrders: z.boolean().optional(),
+  }).strict().optional(),
 });
 
 export const UpdateTenantConfigSchema = z.object({
@@ -516,6 +519,9 @@ export const UpdateTenantConfigSchema = z.object({
   copyOverrides: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   supportDetails: z.record(z.string(), z.any()).optional(),
   featureFlags: z.record(z.string(), z.any()).optional(),
+  paymentPolicy: z.object({
+    allowUnpaidOrders: z.boolean().optional(),
+  }).strict().optional(),
 }).strict();
 
 const MarketingScheduleSchema = z.object({
