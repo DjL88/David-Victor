@@ -20,6 +20,12 @@ export interface ChannelProvisioningResult {
  * Deliverect provisioning/registration payload contracts can evolve. We keep
  * the raw contract boundary permissive, extract only stable identifiers, and
  * quarantine incomplete events rather than rejecting/retrying them forever.
+ *
+ * Tenant ownership is deliberately separate from operational channel state.
+ * Registering/provisioning a mapped channel establishes the durable Bwydi
+ * pairing; later Disable/Inactive events may stop ordering but must not silently
+ * unassign the location or erase the tenant catalogue. Explicit platform-admin
+ * unassignment remains the authority for breaking ownership.
  */
 export class ChannelProvisioningService {
   static async process(
@@ -98,7 +104,11 @@ export class ChannelProvisioningService {
         externalLocationId,
         lifecycleStatus,
         status: channelStatus === 'ACTIVE' ? 'ACTIVE' : channelStatus === 'INACTIVE' ? 'INACTIVE' : undefined,
-        assigned: channelStatus === 'INACTIVE' ? false : undefined,
+        // Registration/provisioning establishes tenant ownership. Operational
+        // INACTIVE/DISABLED state is represented above and never doubles as an
+        // ownership mutation; otherwise a Deliverect lifecycle callback can
+        // make the storefront lose its location/catalogue association.
+        assigned: true,
         provisioningState,
         provisioningSource: 'DELIVERECT_CHANNEL',
         lastProvisioningEventAt: new Date().toISOString(),
