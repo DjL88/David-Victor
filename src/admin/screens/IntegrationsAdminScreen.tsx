@@ -99,6 +99,10 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [testOrderError, setTestOrderError] = useState<string | null>(null);
   const [showRawTestOrderJson, setShowRawTestOrderJson] = useState<boolean>(false);
   const [copiedWebhookKey, setCopiedWebhookKey] = useState<string | null>(null);
+  const [retailBaseUrl, setRetailBaseUrl] = useState('');
+  const [retailPathTemplate, setRetailPathTemplate] = useState('');
+  const [retailVersion, setRetailVersion] = useState<'none' | 'retail' | 'stable' | 'rapid'>('none');
+  const [savingRetailEndpoint, setSavingRetailEndpoint] = useState(false);
 
   const addTestOrderItem = () => {
     setTestOrderAdditionalItems((prev) => [
@@ -243,6 +247,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       const data = await defaultAdminClient.getIntegration(tenantId);
       if (data) {
         setConfig(data);
+        setRetailBaseUrl(data.retailOrder?.baseUrl || '');
+        setRetailPathTemplate(data.retailOrder?.pathTemplate || '');
+        setRetailVersion((data.retailOrder?.headers?.['x-deliverect-version'] || 'none') as any);
         setCredentialMode(data.credentialMode === 'dedicated' ? 'dedicated' : 'platform');
         setClientIdInput('');
         setClientSecretInput('');
@@ -288,6 +295,27 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveRetailOrderEndpoint = async (reset = false) => {
+    if (!defaultAdminClient.updateIntegration) return;
+    setSavingRetailEndpoint(true);
+    setError(null);
+    try {
+      const retailOrder = reset ? {} : {
+        ...(retailBaseUrl.trim() ? { baseUrl: retailBaseUrl.trim() } : {}),
+        ...(retailPathTemplate.trim() ? { pathTemplate: retailPathTemplate.trim() } : {}),
+        ...(retailVersion !== 'none' ? { headers: { 'x-deliverect-version': retailVersion } } : {}),
+      };
+      await defaultAdminClient.updateIntegration(tenantId, { retailOrder });
+      await loadIntegration();
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save retail order endpoint.');
+    } finally {
+      setSavingRetailEndpoint(false);
     }
   };
 
@@ -1420,6 +1448,38 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               </p>
             </div>
           </div>
+
+          {config.canEditRetailOrderEndpoint && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Advanced</div>
+                <h3 className="text-sm font-bold text-white mt-1">Retail order endpoint</h3>
+                <p className="text-xs text-gray-400 mt-1">Platform superadmin only. Switch Deliverect Retail/Quest endpoint variants without a redeploy.</p>
+              </div>
+              <div className="grid gap-3">
+                <label className="text-[11px] text-gray-300">Base URL
+                  <input value={retailBaseUrl} onChange={(e) => setRetailBaseUrl(e.target.value)} placeholder="Environment default" className="mt-1 w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-mono text-gray-200" />
+                </label>
+                <label className="text-[11px] text-gray-300">Path template
+                  <input value={retailPathTemplate} onChange={(e) => setRetailPathTemplate(e.target.value)} placeholder="/{channelName}/order/{channelLinkId}" className="mt-1 w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-mono text-gray-200" />
+                </label>
+                <label className="text-[11px] text-gray-300">Send x-deliverect-version
+                  <select value={retailVersion} onChange={(e) => setRetailVersion(e.target.value as any)} className="mt-1 w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs text-gray-200">
+                    <option value="none">None</option><option value="retail">retail</option><option value="stable">stable</option><option value="rapid">rapid</option>
+                  </select>
+                </label>
+              </div>
+              <div className="p-3 rounded-xl bg-gray-950 border border-gray-800 text-[11px]">
+                <div className="text-gray-500">Resolved preview (first channel link)</div>
+                <div className="font-mono text-cyan-300 break-all mt-1">{config.retailOrderEndpoint?.url || config.retailOrderEndpoint?.error || 'Map a channel link to preview the resolved endpoint.'}</div>
+                {config.retailOrderEndpoint?.source && <div className="font-mono text-gray-500 mt-1">{JSON.stringify(config.retailOrderEndpoint.source)}</div>}
+              </div>
+              <div className="flex gap-2">
+                <button disabled={savingRetailEndpoint} onClick={() => saveRetailOrderEndpoint(false)} className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white">Save endpoint</button>
+                <button disabled={savingRetailEndpoint} onClick={() => saveRetailOrderEndpoint(true)} className="px-3 py-2 rounded-xl border border-gray-700 bg-gray-950 hover:bg-gray-800 disabled:opacity-50 text-xs font-semibold text-gray-300">Reset to default</button>
+              </div>
+            </div>
+          )}
 
           {/* Quest Retail callback provisioning */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
