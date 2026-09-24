@@ -83,3 +83,41 @@ export function buildDraftInvoice(params: {
     createdAt: params.createdAt || new Date().toISOString(),
   };
 }
+
+
+function addUtcMonths(date: Date, months: number): Date {
+  const result = new Date(date.getTime());
+  const targetDay = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+  result.setUTCDate(Math.min(targetDay, lastDay));
+  return result;
+}
+
+/** Resolves the billing period containing atTime from the contract anchor. */
+export function resolveBillingPeriod(profile: TenantBillingProfile, atTime: string | Date): { id: string; startsAt: string; endsAt: string } {
+  const anchor = new Date(profile.anchorDate);
+  const at = typeof atTime === 'string' ? new Date(atTime) : new Date(atTime.getTime());
+  if (!Number.isFinite(anchor.getTime()) || !Number.isFinite(at.getTime())) throw new Error('Valid billing anchor and time are required.');
+  if (at < anchor) throw new Error('Billing time cannot precede the contract anchor.');
+
+  let start = new Date(anchor.getTime());
+  let end: Date;
+  if (profile.cadence === 'MONTHLY') {
+    const monthDelta = (at.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + (at.getUTCMonth() - anchor.getUTCMonth());
+    start = addUtcMonths(anchor, Math.max(0, monthDelta));
+    if (start > at) start = addUtcMonths(start, -1);
+    end = addUtcMonths(start, 1);
+  } else {
+    const days = profile.cadence === 'FOUR_WEEKLY' ? 28 : 7;
+    const intervalMs = days * 24 * 60 * 60 * 1000;
+    const periods = Math.floor((at.getTime() - anchor.getTime()) / intervalMs);
+    start = new Date(anchor.getTime() + periods * intervalMs);
+    end = new Date(start.getTime() + intervalMs);
+  }
+
+  const startsAt = start.toISOString();
+  const endsAt = end.toISOString();
+  return { id: `${startsAt.slice(0, 10)}_${endsAt.slice(0, 10)}`, startsAt, endsAt };
+}

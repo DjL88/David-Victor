@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDraftInvoice } from '../../server/billingService';
+import { buildDraftInvoice, resolveBillingPeriod } from '../../server/billingService';
 import type { TenantBillingProfile, BillingMeterEvent } from '../commerce/billingModels';
 
 const profile: TenantBillingProfile = {
@@ -67,5 +67,16 @@ describe('commercial billing metering', () => {
       event({ idempotencyKey: 'ex-vat', type: 'REVENUE_SETTLED', amount: { amount: 8000, currency: 'GBP' }, metadata: { revenueBasis: 'SETTLED_MERCHANDISE_EX_VAT' } }),
     ] });
     expect(invoice.lines.find((l) => l.ruleId === 'share')?.amount.amount).toBe(250);
+  });
+  it('resolves contract-anchored monthly, weekly and four-weekly periods', () => {
+    expect(resolveBillingPeriod(profile, '2026-09-24T12:00:00.000Z')).toEqual({
+      id: '2026-09-01_2026-10-01',
+      startsAt: '2026-09-01T00:00:00.000Z',
+      endsAt: '2026-10-01T00:00:00.000Z',
+    });
+    const weekly = { ...profile, cadence: 'WEEKLY' as const };
+    expect(resolveBillingPeriod(weekly, '2026-09-15T12:00:00.000Z').startsAt).toBe('2026-09-15T00:00:00.000Z');
+    const fourWeekly = { ...profile, cadence: 'FOUR_WEEKLY' as const };
+    expect(resolveBillingPeriod(fourWeekly, '2026-09-29T00:00:00.000Z').startsAt).toBe('2026-09-29T00:00:00.000Z');
   });
 });
