@@ -1,3 +1,5 @@
+import { formatMinorCurrency, minorUnitFactor, normalizeCurrencyCode } from '../domain/currency';
+
 export interface MoneyLike {
   amount: number;
   currency?: string;
@@ -6,13 +8,7 @@ export interface MoneyLike {
 /**
  * Normalizes currency code / symbol
  */
-function resolveCurrencySymbol(symbolOrCode: string = 'GBP'): string {
-  const upper = (symbolOrCode || '').toUpperCase();
-  if (upper === 'GBP' || symbolOrCode === '£') return '£';
-  if (upper === 'EUR' || symbolOrCode === '€' || upper === 'E') return '€';
-  if (upper === 'USD' || symbolOrCode === '$') return '$';
-  return symbolOrCode || '£';
-}
+
 
 /**
  * Formats an authoritative commerce price in integer minor units (e.g. 25 = £0.25, 500 = £5.00).
@@ -32,48 +28,17 @@ export function formatCurrency(
   currencySymbolOrCode: string = 'GBP',
   locale: string = 'en-GB'
 ): string {
-  if (amount === undefined || amount === null) {
-    return 'Price unavailable';
-  }
+  if (amount === undefined || amount === null) return 'Price unavailable';
 
-  let minorUnits: number;
-  let currencyCode = currencySymbolOrCode;
+  const rawVal = typeof amount === 'object' ? amount.amount : amount;
+  if (typeof rawVal !== 'number' || !Number.isFinite(rawVal)) return 'Price unavailable';
 
-  if (typeof amount === 'object' && amount !== null && 'amount' in amount) {
-    const rawVal = (amount as any).amount;
-    if (typeof rawVal !== 'number' || isNaN(rawVal) || !isFinite(rawVal)) {
-      return 'Price unavailable';
-    }
-    minorUnits = !Number.isInteger(rawVal) ? Math.round(rawVal * 100) : Math.round(rawVal);
-    // Display currency is an explicit storefront setting. Upstream Money
-    // metadata is diagnostic/source provenance and must not override it here.
-    // This prevents a Deliverect EUR account leaking € into a GBP tenant UI.
-  } else if (typeof amount === 'number') {
-    if (isNaN(amount) || !isFinite(amount)) {
-      return 'Price unavailable';
-    }
-    minorUnits = !Number.isInteger(amount) ? Math.round(amount * 100) : Math.round(amount);
-  } else {
-    return 'Price unavailable';
-  }
-
-  const symbol = resolveCurrencySymbol(currencyCode);
-  const majorValue = minorUnits / 100;
-
-  const isEuro = symbol === '€' || currencyCode.toUpperCase() === 'EUR';
-  const isCommaDecimalLocale =
-    locale.toLowerCase().startsWith('de') ||
-    locale.toLowerCase().startsWith('fr') ||
-    locale.toLowerCase().startsWith('es') ||
-    locale.toLowerCase().startsWith('it') ||
-    locale.toLowerCase().startsWith('nl');
-
-  if (isEuro && isCommaDecimalLocale) {
-    const formattedNum = majorValue.toFixed(2).replace('.', ',');
-    return `${symbol}${formattedNum}`;
-  }
-
-  return `${symbol}${majorValue.toFixed(2)}`;
+  // The configured display currency is authoritative. This changes context,
+  // never value: no FX conversion occurs here.
+  const currencyCode = normalizeCurrencyCode(currencySymbolOrCode);
+  const factor = minorUnitFactor(currencyCode);
+  const minorUnits = Number.isInteger(rawVal) ? Math.round(rawVal) : Math.round(rawVal * factor);
+  return formatMinorCurrency(minorUnits, currencyCode, locale);
 }
 
 export function formatMoney(
@@ -120,13 +85,15 @@ export function formatPrice(
  */
 export function formatLegacyMajorUnits(
   majorUnits?: number | null,
-  currencySymbolOrCode: string = 'GBP'
+  currencySymbolOrCode: string = 'GBP',
+  locale: string = 'en-GB'
 ): string {
-  if (majorUnits === undefined || majorUnits === null || isNaN(majorUnits) || !isFinite(majorUnits)) {
+  if (majorUnits === undefined || majorUnits === null || !Number.isFinite(majorUnits)) {
     return 'Price unavailable';
   }
-  const symbol = resolveCurrencySymbol(currencySymbolOrCode);
-  return `${symbol}${majorUnits.toFixed(2)}`;
+  const currencyCode = normalizeCurrencyCode(currencySymbolOrCode);
+  const minor = Math.round(majorUnits * minorUnitFactor(currencyCode));
+  return formatMinorCurrency(minor, currencyCode, locale);
 }
 
 /**
