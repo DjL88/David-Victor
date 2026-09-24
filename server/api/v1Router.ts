@@ -2531,9 +2531,7 @@ async function handleQuestRetailCallback(
 ) {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody =
-      (req as any).rawBody ||
-      Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
 
     if (kind === 'status') {
       const signatureHeader =
@@ -2542,25 +2540,20 @@ async function handleQuestRetailCallback(
         (req.headers['x-signature'] as string) ||
         (req.headers['x-deliverect-hmac-sha256'] as string);
 
-      const stagingTemporarySecrets =
-        await WebhookService.getMappedStagingChannelLinkSecrets(
-          tenantId,
-          req.body
-        );
-      const canonicalBody = JSON.stringify(req.body ?? {});
-      const rawBodyText = Buffer.isBuffer(rawBody)
-        ? rawBody.toString('utf8')
-        : String(rawBody);
+      const allowStagingChannelHmac =
+        String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').toLowerCase() === 'true';
+      const stagingTemporarySecrets = allowStagingChannelHmac
+        ? await WebhookService.getMappedStagingChannelLinkSecrets(
+            tenantId,
+            req.body
+          )
+        : [];
 
       const verified = await WebhookService.resolveTenantForWebhook(
         rawBody,
         signatureHeader,
         tenantId,
-        {
-          stagingTemporarySecrets,
-          stagingAlternateBodies:
-            canonicalBody !== rawBodyText ? [canonicalBody] : [],
-        }
+        { stagingTemporarySecrets }
       );
 
       const payload = normalizeQuestPickingStatusPayload(req.body);
@@ -2858,7 +2851,7 @@ v1Router.post(
 v1Router.post('/webhooks/deliverect/:identifier', async (req: Request, res: Response) => {
   try {
     const tenantId = await resolveDeliverectWebhookTenant(req);
-    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body), 'utf8');
+    const rawBody = (req as any).rawBody as Buffer;
 
     const result = await WebhookService.processWebhook(
       req.body,
