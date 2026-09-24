@@ -758,7 +758,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             />
           )}
 
-          {activeTab === 'orders' && <OrdersScreen />}
+          {activeTab === 'orders' && (
+            <OrdersScreen
+              initialOrderId={activeRoute.kind === 'orders' ? activeRoute.orderId : undefined}
+              onOpenOrder={(orderId) => {
+                const path = `/orders/${encodeURIComponent(orderId)}`;
+                pushStorefrontUrl(path);
+                setActiveRoute({ kind: 'orders', orderId });
+              }}
+              onBackToList={() => {
+                pushStorefrontUrl('/orders');
+                setActiveRoute({ kind: 'orders' });
+              }}
+            />
+          )}
 
           {activeTab === 'account' && <AccountScreen onOpenAdmin={onOpenAdmin} />}
         </main>
