@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ChannelMenuIngestionService,
   type ChannelMenuIngressJob,
   type ChannelMenuQueueClient,
 } from '../../server/deliverect/ChannelMenuIngestionService';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { CommerceDiscoveryService } from '../../server/deliverect/CommerceDiscoveryService';
+import { DeliverectApiClient } from '../../server/deliverect/DeliverectApiClient';
+import { OAuthTokenManager } from '../../server/deliverect/OAuthTokenManager';
+import { FirestorePlatformService } from '../../server/firestoreService';
 
 class CapturingMenuQueue implements ChannelMenuQueueClient {
   jobs: ChannelMenuIngressJob[] = [];
@@ -109,6 +113,119 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       name: 'Water',
       priceMinor: 125,
     });
+  });
+
+  it('invalidates storefront catalogue caches only after worker processing', async () => {
+    const tenantId = `tenant-cache-refresh-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+    const clearCache = vi.spyOn(
+      CommerceDiscoveryService.getInstance(),
+      'clearCache'
+    );
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+
+    expect(clearCache).not.toHaveBeenCalled();
+
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    expect(clearCache).toHaveBeenCalledTimes(1);
+    clearCache.mockRestore();
+  });
+
+  it('serves the latest durable pushed menu back to storefront readers', async () => {
+    const tenantId = `tenant-storefront-truth-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1'
+    );
+
+    expect(hosted).toBeTruthy();
+    expect(hosted.source).toBe('DELIVERECT_CHANNEL_PUSH');
+    expect(hosted.menuId).toBe('menu-1');
+    expect(hosted.products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          plu: 'DRINK-1',
+          name: 'Water',
+          priceMinor: 125,
+        }),
+      ])
+    );
+  });
+
+  it('serves pushed menu truth through the real storefront adapter before calling Commerce', async () => {
+    const tenantId = `tenant-adapter-push-truth-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const tokenManager = new OAuthTokenManager({
+      environment: 'staging',
+      clientId: 'stub-client',
+      clientSecret: 'stub-secret',
+    });
+    const getAccessToken = vi
+      .spyOn(tokenManager, 'getAccessToken')
+      .mockRejectedValue(new Error('Commerce fallback must not be called'));
+
+    const client = new DeliverectApiClient(
+      tokenManager,
+      tenantId,
+      'account-1',
+      ['channel-1']
+    );
+    vi.spyOn(client as any, 'resolveAccountId').mockResolvedValue('account-1');
+    vi.spyOn(client as any, 'resolveStoreChannelLinkId').mockResolvedValue({
+      channelLinkId: 'channel-1',
+      store: { id: 'channel-1', channelLinkId: 'channel-1', name: 'Store' },
+    });
+    vi.spyOn(
+      FirestorePlatformService,
+      'getStoreProductSnoozes'
+    ).mockResolvedValue({});
+
+    const catalog = await client.getStoreCatalog('channel-1');
+
+    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(catalog.activeMenuId).toBe('menu-1');
+    expect(catalog.products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          plu: 'DRINK-1',
+          name: 'Water',
+          priceMinor: 125,
+        }),
+      ])
+    );
+    expect(catalog.diagnostics).toMatchObject({
+      channelLinkId: 'channel-1',
+      rawProductCount: 1,
+      parsedProductCount: 1,
+    });
+
+    vi.restoreAllMocks();
   });
 
   it('deduplicates retried Menu Pushes before creating another task', async () => {

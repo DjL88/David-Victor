@@ -4,6 +4,7 @@ import { BFFError } from '../errors';
 import { isDemoMode, isTestMode } from '../runtimeMode';
 import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
+import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
 
 export interface ChannelMenuIngressJob {
@@ -47,6 +48,13 @@ interface ChannelMenuIngressRecord {
 const memoryRaw = new Map<string, Buffer>();
 const memoryNormalized = new Map<string, Buffer>();
 const memoryIngress = new Map<string, ChannelMenuIngressRecord>();
+const memoryHostedIndex = new Map<string, {
+  tenantId: string;
+  channelLinkId: string;
+  menuId: string;
+  normalizedStoragePath: string;
+  updatedAt: string;
+}>();
 const pending = new Set<Promise<void>>();
 
 const liveEnvironment = () =>
@@ -469,6 +477,17 @@ export class ChannelMenuIngestionService {
           eventId: job.eventId,
         });
 
+        memoryHostedIndex.set(
+          `${job.tenantId}:${channelLinkId}:${menuId}`,
+          {
+            tenantId: job.tenantId,
+            channelLinkId,
+            menuId,
+            normalizedStoragePath: normalizedPath,
+            updatedAt: normalized.processedAt,
+          }
+        );
+
         if (db) {
           await db
             .collection('tenants')
@@ -510,6 +529,12 @@ export class ChannelMenuIngestionService {
         );
       }
 
+      // A successful Menu Push becomes the new catalogue truth. Invalidate the
+      // bounded storefront discovery/catalog caches only after the durable worker
+      // has finished normalising every menu, so the next customer read refreshes
+      // the combined catalogue instead of serving stale pre-publish data.
+      CommerceDiscoveryService.getInstance().clearCache();
+
       await this.saveIngressRecord({
         ...processing,
         menuIds: menus.map(menuIdOf).filter(Boolean),
@@ -528,6 +553,74 @@ export class ChannelMenuIngestionService {
         updatedAt: new Date().toISOString(),
       });
       throw err;
+    }
+  }
+
+  static async getLatestNormalizedMenu(
+    tenantId: string,
+    channelLinkId: string,
+    menuId?: string
+  ): Promise<any | null> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanChannelLinkId = String(channelLinkId || '').trim();
+    const cleanMenuId = String(menuId || '').trim();
+    if (!cleanTenantId || !cleanChannelLinkId) return null;
+
+    let normalizedStoragePath = '';
+
+    if (!liveEnvironment()) {
+      const candidates = Array.from(memoryHostedIndex.values())
+        .filter(
+          (entry) =>
+            entry.tenantId === cleanTenantId &&
+            entry.channelLinkId === cleanChannelLinkId &&
+            (!cleanMenuId || entry.menuId === cleanMenuId)
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      normalizedStoragePath = candidates[0]?.normalizedStoragePath || '';
+    } else {
+      const db = getFirestoreDb();
+      if (!db) return null;
+      const collection = db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelHostedMenus');
+
+      if (cleanMenuId) {
+        const snap = await collection
+          .doc(safeSegment(`${cleanChannelLinkId}_${cleanMenuId}`))
+          .get();
+        if (snap.exists) {
+          normalizedStoragePath = String(
+            snap.data()?.normalizedStoragePath || ''
+          );
+        }
+      } else {
+        const snap = await collection
+          .where('channelLinkId', '==', cleanChannelLinkId)
+          .limit(25)
+          .get();
+        const candidates = snap.docs
+          .map((doc) => doc.data())
+          .filter((entry) => entry?.normalizedStoragePath)
+          .sort((a, b) =>
+            String(b?.updatedAt || '').localeCompare(
+              String(a?.updatedAt || '')
+            )
+          );
+        normalizedStoragePath = String(
+          candidates[0]?.normalizedStoragePath || ''
+        );
+      }
+    }
+
+    if (!normalizedStoragePath) return null;
+    try {
+      const raw = await this.loadPrivateObject(normalizedStoragePath);
+      const parsed = JSON.parse(raw.toString('utf8'));
+      return parsed?.source === 'DELIVERECT_CHANNEL_PUSH' ? parsed : null;
+    } catch {
+      return null;
     }
   }
 

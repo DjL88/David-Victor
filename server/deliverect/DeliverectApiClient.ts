@@ -1336,6 +1336,108 @@ export class DeliverectApiClient implements DeliverectAdapter {
   ): Promise<Catalog> {
     const accountId = await this.resolveAccountId();
     const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
+
+    // Channel Menu Push is durable storefront truth. Prefer the latest verified
+    // normalized snapshot when one exists; fall back to the live Commerce read
+    // only for stores that have not published through the Channel integration.
+    // Dynamic import avoids a static module cycle because the ingestion worker
+    // itself reuses DeliverectApiClient.parseDeliverectMenu().
+    try {
+      const { ChannelMenuIngestionService } = await import(
+        './ChannelMenuIngestionService'
+      );
+      const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+        this.tenantId || 'brand-alpha',
+        channelLinkId,
+        menuId
+      );
+
+      if (hosted) {
+        const operationalSnoozes = await FirestorePlatformService
+          .getStoreProductSnoozes(this.tenantId || 'brand-alpha', channelLinkId)
+          .catch(() => ({}));
+
+        const hostedProducts = (Array.isArray(hosted.products)
+          ? hosted.products
+          : []
+        ).map((product: Product) => {
+          const snooze = operationalSnoozes[product.plu];
+          if (!snooze?.snoozed) return product;
+          return {
+            ...product,
+            snoozed: true,
+            isSnoozed: true,
+            snoozedUntil: snooze.snoozeEnd,
+            snoozeEndTime: snooze.snoozeEnd,
+            stockStatus: 'OUT_OF_STOCK' as const,
+          };
+        });
+
+        const activeCount = hostedProducts.filter(
+          (product: Product) => product.active !== false
+        ).length;
+        const snoozedCount = hostedProducts.filter(
+          (product: Product) => product.stockStatus === 'OUT_OF_STOCK'
+        ).length;
+        const selectedMenuId = String(hosted.menuId || menuId || '');
+        const selectedMenuName = String(hosted.menu || 'Store Menu');
+
+        const diagnostics: CatalogDiagnostics = {
+          accountId,
+          channelLinkId,
+          storeId,
+          menusReturned: 1,
+          selectedMenuId,
+          selectedMenuName,
+          rawProductCount: hostedProducts.length,
+          parsedProductCount: hostedProducts.length,
+          activeCount,
+          inactiveCount: hostedProducts.length - activeCount,
+          snoozedCount,
+          renderableCount: activeCount,
+          unmappedProductTagIds: Array.from(
+            new Set(
+              hostedProducts.flatMap(
+                (product: Product) => product.unmappedProductTags || []
+              )
+            )
+          ),
+          hiddenByRuleCount: 0,
+          timestamp: new Date().toISOString(),
+        };
+
+        return {
+          id: storeId,
+          type: 'STORE',
+          storeId,
+          menus: [
+            {
+              menuId: selectedMenuId,
+              name: selectedMenuName,
+              menuType: hosted.menuType,
+              productCount: hostedProducts.length,
+              categoryCount: Array.isArray(hosted.categories)
+                ? hosted.categories.length
+                : 0,
+            },
+          ],
+          activeMenuId: selectedMenuId,
+          categories: Array.isArray(hosted.categories)
+            ? hosted.categories
+            : [],
+          products: hostedProducts,
+          totalProducts: hostedProducts.length,
+          bundleCatalog: hosted.bundleCatalog,
+          updatedAt: String(hosted.processedAt || new Date().toISOString()),
+          diagnostics,
+        } as Catalog;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[DeliverectApiClient] Hosted Channel catalogue read unavailable for ${channelLinkId}; falling back to Commerce: ${err?.message || err}`
+      );
+    }
+
     const token = await this.tokenManager.getAccessToken();
 
     return await circuitBreakers.commerce.execute(async () => {
