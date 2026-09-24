@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+import { buildDraftInvoice } from '../../server/billingService';
+import type { TenantBillingProfile, BillingMeterEvent } from '../commerce/billingModels';
+
+const profile: TenantBillingProfile = {
+  tenantId: 'brand-alpha',
+  identity: { legalName: 'Alpha Retail Ltd' },
+  currency: 'GBP',
+  cadence: 'MONTHLY',
+  anchorDate: '2026-09-01T00:00:00.000Z',
+  status: 'ACTIVE',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  rules: [
+    { id: 'platform', type: 'FIXED_RECURRING', label: 'Platform fee', active: true, unitAmount: { amount: 10000, currency: 'GBP' }, effectiveFrom: '2026-01-01T00:00:00.000Z' },
+    { id: 'order', type: 'PER_SUCCESSFUL_ORDER', label: 'Orders', active: true, unitAmount: { amount: 20, currency: 'GBP' }, effectiveFrom: '2026-01-01T00:00:00.000Z' },
+    { id: 'location', type: 'PER_LOCATION', label: 'Active locations', active: true, unitAmount: { amount: 500, currency: 'GBP' }, effectiveFrom: '2026-01-01T00:00:00.000Z' },
+    { id: 'share', type: 'REVENUE_SHARE', label: 'Revenue share', active: true, basisPoints: 250, revenueBasis: 'SETTLED_ORDER_TOTAL', effectiveFrom: '2026-01-01T00:00:00.000Z' },
+  ],
+};
+
+function event(overrides: Partial<BillingMeterEvent>): BillingMeterEvent {
+  return { idempotencyKey: 'evt-1', tenantId: 'brand-alpha', type: 'SUCCESSFUL_ORDER', occurredAt: '2026-09-10T12:00:00.000Z', sourceType: 'ORDER', sourceId: 'order-1', quantity: 1, ...overrides };
+}
+
+describe('commercial billing metering', () => {
+  it('does not double-charge a retried event', () => {
+    const same = event({});
+    const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [same, { ...same }] });
+    expect(invoice.lines.find((l) => l.ruleId === 'order')?.amount.amount).toBe(20);
+  });
+
+  it('supports fixed, per-location, per-order and percentage-share rules without inventing tax', () => {
+    const events: BillingMeterEvent[] = [
+      event({ idempotencyKey: 'order-1' }),
+      event({ idempotencyKey: 'order-2', sourceId: 'order-2' }),
+      event({ idempotencyKey: 'loc-1', type: 'LOCATION_ACTIVE', sourceType: 'LOCATION', sourceId: 'store-a' }),
+      event({ idempotencyKey: 'loc-1-again', type: 'LOCATION_ACTIVE', sourceType: 'LOCATION', sourceId: 'store-a' }),
+      event({ idempotencyKey: 'revenue-1', type: 'REVENUE_SETTLED', amount: { amount: 10000, currency: 'GBP' } }),
+    ];
+    const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events, createdAt: '2026-10-01T00:00:00.000Z' });
+    expect(invoice.lines.find((l) => l.ruleId === 'platform')?.amount.amount).toBe(10000);
+    expect(invoice.lines.find((l) => l.ruleId === 'order')?.amount.amount).toBe(40);
+    expect(invoice.lines.find((l) => l.ruleId === 'location')?.amount.amount).toBe(500);
+    expect(invoice.lines.find((l) => l.ruleId === 'share')?.amount.amount).toBe(250);
+    expect(invoice.subtotal.amount).toBe(10790);
+    expect(invoice.tax).toBeUndefined();
+    expect(invoice.total.amount).toBe(10790);
+  });
+
+  it('ignores events from another tenant or outside the billing period', () => {
+    const invoice = buildDraftInvoice({ profile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [event({ tenantId: 'brand-beta' }), event({ idempotencyKey: 'old', occurredAt: '2026-08-31T23:59:59.000Z' })] });
+    expect(invoice.lines.some((l) => l.ruleId === 'order')).toBe(false);
+  });
+});
