@@ -38,3 +38,30 @@ export function assertWebhookSecurityStartupConfig(): void {
     );
   }
 }
+
+
+export async function assertNoLiveTenantUsesStagingWebhookFallback(db: any): Promise<void> {
+  const stagingFallback =
+    String(process.env.ALLOW_STAGING_CHANNEL_HMAC || '').trim().toLowerCase() === 'true';
+  if (!stagingFallback) return;
+
+  const mode = String(process.env.APP_MODE || '').trim().toLowerCase();
+  if (mode === 'demo' || process.env.NODE_ENV === 'test') return;
+
+  if (!db) {
+    throw new Error(
+      'ALLOW_STAGING_CHANNEL_HMAC requires Firestore at startup so live-tenant safety can be verified.'
+    );
+  }
+
+  const [lifecycleLive, statusLive] = await Promise.all([
+    db.collection('tenants').where('lifecycle.state', '==', 'live').limit(1).get(),
+    db.collection('tenants').where('status', '==', 'live').limit(1).get(),
+  ]);
+
+  if (!lifecycleLive.empty || !statusLive.empty) {
+    throw new Error(
+      'ALLOW_STAGING_CHANNEL_HMAC cannot be enabled while any tenant is live.'
+    );
+  }
+}
