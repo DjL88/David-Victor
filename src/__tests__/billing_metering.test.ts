@@ -57,7 +57,7 @@ describe('commercial billing metering', () => {
       ...profile,
       rules: [{ id: 'new-rate', type: 'PER_SUCCESSFUL_ORDER', label: 'New order rate', active: true, unitAmount: { amount: 50, currency: 'GBP' }, effectiveFrom: '2026-09-15T00:00:00.000Z' }],
     };
-    const invoice = buildDraftInvoice({ changedProfile, profile: changedProfile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [event({ idempotencyKey: 'before', occurredAt: '2026-09-10T12:00:00.000Z' }), event({ idempotencyKey: 'after', sourceId: 'order-2', occurredAt: '2026-09-20T12:00:00.000Z' })] } as any);
+    const invoice = buildDraftInvoice({ profile: changedProfile, periodId: '2026-09', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', events: [event({ idempotencyKey: 'before', occurredAt: '2026-09-10T12:00:00.000Z' }), event({ idempotencyKey: 'after', sourceId: 'order-2', occurredAt: '2026-09-20T12:00:00.000Z' })] });
     expect(invoice.lines.find((l) => l.ruleId === 'new-rate')?.amount.amount).toBe(50);
   });
 
