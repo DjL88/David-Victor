@@ -5,14 +5,24 @@ function money(amount: number, currency: string): Money {
   return { amount: Math.round(amount), currency };
 }
 
-function activeRule(rule: BillingRule, at: string): boolean {
-  return rule.active && rule.effectiveFrom <= at && (!rule.effectiveUntil || rule.effectiveUntil > at);
+function ruleOverlapsPeriod(rule: BillingRule, startsAt: string, endsAt: string): boolean {
+  return rule.active && rule.effectiveFrom < endsAt && (!rule.effectiveUntil || rule.effectiveUntil > startsAt);
+}
+
+function eventEligibleForRule(event: BillingMeterEvent, rule: BillingRule): boolean {
+  if (event.occurredAt < rule.effectiveFrom) return false;
+  if (rule.effectiveUntil && event.occurredAt >= rule.effectiveUntil) return false;
+  return true;
 }
 
 /**
- * Pure billing calculator. Persistence should store meter events by idempotencyKey,
+ * Pure billing calculator. Persistence stores meter events by idempotencyKey,
  * making ingestion create-only. This calculator defensively de-duplicates again so
  * webhook retries can never inflate an invoice.
+ *
+ * Usage is also constrained to each rule's effective window. This matters when a
+ * commercial agreement changes mid-period: historic events must never be priced by
+ * a new rule merely because that rule is active at invoice-generation time.
  */
 export function buildDraftInvoice(params: {
   profile: TenantBillingProfile;
@@ -32,23 +42,27 @@ export function buildDraftInvoice(params: {
   const events = [...unique.values()];
   const lines: InvoiceLineItem[] = [];
 
-  for (const rule of profile.rules.filter((r) => activeRule(r, endsAt))) {
+  for (const rule of profile.rules.filter((r) => ruleOverlapsPeriod(r, startsAt, endsAt))) {
+    const eligibleEvents = events.filter((event) => eventEligibleForRule(event, rule));
     let quantity = 0;
     let amount = 0;
     if (rule.type === 'FIXED_RECURRING') {
       quantity = 1;
       amount = rule.unitAmount?.amount || 0;
     } else if (rule.type === 'PER_SUCCESSFUL_ORDER') {
-      quantity = events.filter((e) => e.type === 'SUCCESSFUL_ORDER').reduce((sum, e) => sum + e.quantity, 0);
+      quantity = eligibleEvents.filter((e) => e.type === 'SUCCESSFUL_ORDER').reduce((sum, e) => sum + e.quantity, 0);
       amount = quantity * (rule.unitAmount?.amount || 0);
     } else if (rule.type === 'PER_LOCATION') {
-      quantity = new Set(events.filter((e) => e.type === 'LOCATION_ACTIVE').map((e) => e.sourceId)).size;
+      quantity = new Set(eligibleEvents.filter((e) => e.type === 'LOCATION_ACTIVE').map((e) => e.sourceId)).size;
       amount = quantity * (rule.unitAmount?.amount || 0);
     } else if (rule.type === 'PER_ACCOUNT') {
-      quantity = new Set(events.filter((e) => e.type === 'ACCOUNT_ACTIVE').map((e) => e.sourceId)).size;
+      quantity = new Set(eligibleEvents.filter((e) => e.type === 'ACCOUNT_ACTIVE').map((e) => e.sourceId)).size;
       amount = quantity * (rule.unitAmount?.amount || 0);
     } else if (rule.type === 'REVENUE_SHARE') {
-      const eligible = events.filter((e) => e.type === 'REVENUE_SETTLED').reduce((sum, e) => sum + (e.amount?.amount || 0), 0);
+      const eligible = eligibleEvents
+        .filter((e) => e.type === 'REVENUE_SETTLED')
+        .filter((e) => !rule.revenueBasis || e.metadata?.revenueBasis === rule.revenueBasis)
+        .reduce((sum, e) => sum + (e.amount?.amount || 0), 0);
       quantity = eligible;
       amount = Math.round(eligible * (rule.basisPoints || 0) / 10_000);
     }
