@@ -4017,6 +4017,14 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
       updatedAt: now,
     };
 
+    const db = getFirestoreDb();
+    if (!db && isLiveMode()) {
+      return res.status(503).json({
+        error: 'The membership store is unavailable; no administrator invitation was created.',
+        code: 'ADMIN_MEMBERSHIP_STORE_UNAVAILABLE',
+      });
+    }
+
     const adminAuth = getFirebaseAdminAuth();
     if (!adminAuth && isLiveMode()) {
       return res.status(503).json({
@@ -4045,7 +4053,6 @@ v1Router.post('/admin/memberships', requireAdminAuth(), requireAdminCapability('
       });
     }
 
-    const db = getFirestoreDb();
     if (db) {
       await db.collection('tenantMemberships').doc(docId).set(membershipData, { merge: true });
     }
@@ -4107,6 +4114,12 @@ v1Router.delete('/admin/memberships/:id', requireAdminAuth(), requireAdminCapabi
 
     const db = getFirestoreDb();
     if (!db) {
+      if (isLiveMode()) {
+        return res.status(503).json({
+          error: 'The membership store is unavailable; no membership was revoked.',
+          code: 'ADMIN_MEMBERSHIP_STORE_UNAVAILABLE',
+        });
+      }
       return res.json({ success: true });
     }
 
