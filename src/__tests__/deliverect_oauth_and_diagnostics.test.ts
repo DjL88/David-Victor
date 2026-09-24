@@ -107,6 +107,36 @@ describe('Phase 6: Deliverect OAuth & Token Lifecycle', () => {
 
     expect(managerA).not.toBe(managerB);
   });
+
+  it('WP-07: keys the shared cache by credential identity and audience, not tenant', () => {
+    const sharedA = OAuthTokenManager.getInstance('tenant-shared-a', {
+      clientId: 'shared-client',
+      clientSecret: 'shared-secret',
+      environment: 'staging',
+    });
+    const sharedB = OAuthTokenManager.getInstance('tenant-shared-b', {
+      clientId: 'shared-client',
+      clientSecret: 'shared-secret',
+      environment: 'staging',
+    });
+    const rotated = OAuthTokenManager.getInstance('tenant-rotated', {
+      clientId: 'shared-client',
+      clientSecret: 'rotated-secret',
+      environment: 'staging',
+    });
+    const production = OAuthTokenManager.getInstance('tenant-production', {
+      clientId: 'shared-client',
+      clientSecret: 'shared-secret',
+      environment: 'production',
+    });
+
+    const key = (manager: OAuthTokenManager) => (manager as any).sharedCacheKey as string;
+    expect(key(sharedA)).toBe(key(sharedB));
+    expect(key(rotated)).not.toBe(key(sharedA));
+    expect(key(production)).not.toBe(key(sharedA));
+    expect(key(sharedA)).not.toContain('shared-client');
+    expect(key(sharedA)).not.toContain('shared-secret');
+  });
 });
 
 describe('Phase 6: 503 INTEGRATION_NOT_CONFIGURED Strict Enforcement', () => {
