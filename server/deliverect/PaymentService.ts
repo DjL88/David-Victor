@@ -7,6 +7,7 @@ import {
 } from '../../src/domain/models';
 import { Money } from '../../src/domain/money';
 import { CommerceError, ErrorCode } from '../errors';
+import { getTenantCircuitBreaker } from '../circuitBreaker';
 import { DPayAdapter } from './DPayAdapter';
 import { DemoPaymentAdapter } from './DemoPaymentAdapter';
 import { DeliverectDPayAdapter } from './DeliverectDPayAdapter';
@@ -237,7 +238,7 @@ export class PaymentService {
     }
 
     const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.requestPayment(request);
+    const response = await getTenantCircuitBreaker(tenantId, 'dpay').execute(() => adapter.requestPayment(request));
 
     // Save payment projection
     const projection: DomainPaymentProjection = {
@@ -268,7 +269,7 @@ export class PaymentService {
    */
   static async getPayment(paymentId: string, tenantId?: string): Promise<DPayPaymentResponse> {
     const adapter = getDPayAdapter(tenantId);
-    return adapter.getPayment(paymentId);
+    return getTenantCircuitBreaker(tenantId || 'brand-alpha', 'dpay').execute(() => adapter.getPayment(paymentId));
   }
 
   /**
@@ -276,7 +277,7 @@ export class PaymentService {
    */
   static async capture(paymentId: string, finalAmountMinor: number, tenantId?: string): Promise<DPayPaymentResponse> {
     const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.capture(paymentId, finalAmountMinor);
+    const response = await getTenantCircuitBreaker(tenantId || 'brand-alpha', 'dpay').execute(() => adapter.capture(paymentId, finalAmountMinor));
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       status: response.status,
@@ -300,7 +301,7 @@ export class PaymentService {
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
     const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.refund(paymentId, refundAmountMinor, reason);
+    const response = await getTenantCircuitBreaker(tenantId || 'brand-alpha', 'dpay').execute(() => adapter.refund(paymentId, refundAmountMinor, reason));
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       status: response.status,
@@ -319,7 +320,7 @@ export class PaymentService {
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
     const adapter = getDPayAdapter(tenantId);
-    const response = await adapter.reauthorize(paymentId, additionalAmountMinor);
+    const response = await getTenantCircuitBreaker(tenantId || 'brand-alpha', 'dpay').execute(() => adapter.reauthorize(paymentId, additionalAmountMinor));
 
     await FirestorePlatformService.updatePaymentProjection(paymentId, {
       authorizedAmount: { amount: response.authorizedAmount, currency: response.currency },
