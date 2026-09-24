@@ -3,6 +3,8 @@ import { handleFirestoreError, OperationType } from './firestoreService';
 import { BFFError } from './errors';
 import { isDemoMode, isLiveMode, isTestMode } from './runtimeMode';
 import crypto from 'crypto';
+import createDOMPurify from 'dompurify';
+import { JSDOM } from 'jsdom';
 
 export type AssetType =
   | 'LOGO'
@@ -126,19 +128,8 @@ export function validateFileMagicBytes(buffer: Buffer, contentType: string): voi
     if (!/<svg(?:\s|>)/i.test(head)) {
       throw BFFError.invalidInput('Invalid SVG format: missing <svg> element.');
     }
-
-    // SVG is never served by the same-origin media proxy, but uploads are also
-    // rejected conservatively if they contain active/document embedding
-    // features. This catches the prior onbegin/foreignObject/xlink bypasses.
-    const unsafe =
-      /<\s*(script|foreignObject|iframe|object|embed)\b/i.test(svg) ||
-      /\son[a-z0-9:_-]+\s*=/i.test(svg) ||
-      /(?:href|xlink:href)\s*=\s*["']\s*(?:javascript:|data:text\/html|https?:\/\/|\/\/)/i.test(svg) ||
-      /url\s*\(\s*["']?\s*(?:javascript:|data:text\/html|https?:\/\/|\/\/)/i.test(svg) ||
-      /<!\s*(doctype|entity)\b/i.test(svg);
-
-    if (unsafe) {
-      throw BFFError.invalidInput('SVG security policy violation: active or external content is not permitted.');
+    if (/<!\s*(doctype|entity)\b/i.test(svg)) {
+      throw BFFError.invalidInput('SVG security policy violation: document type/entity declarations are not permitted.');
     }
     return;
   }
@@ -153,6 +144,45 @@ export function validateFileMagicBytes(buffer: Buffer, contentType: string): voi
       throw BFFError.invalidInput('Binary payload signature mismatch: expected WOFF header.');
     }
     return;
+  }
+}
+
+/**
+ * Sanitizes SVG uploads before any object can become READY/public.
+ * DOMPurify runs against a jsdom window using the SVG profile; active markup
+ * such as event handlers, scripts and foreignObject content is removed.
+ */
+export function sanitizeSvgBuffer(buffer: Buffer): Buffer {
+  const source = buffer.toString('utf8');
+  if (!/<svg(?:\s|>)/i.test(source.slice(0, 4096))) {
+    throw BFFError.invalidInput('Invalid SVG format: missing <svg> element.');
+  }
+  if (/<!\s*(doctype|entity)\b/i.test(source)) {
+    throw BFFError.invalidInput('SVG security policy violation: document type/entity declarations are not permitted.');
+  }
+
+  const window = new JSDOM('').window;
+  try {
+    const purifier = createDOMPurify(window as any);
+    const sanitized = String(
+      purifier.sanitize(source, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      })
+    );
+    const result = Buffer.from(sanitized, 'utf8');
+
+    validateFileMagicBytes(result, 'image/svg+xml');
+    if (
+      /<\s*(script|foreignObject|iframe|object|embed)\b/i.test(sanitized) ||
+      /\son[a-z0-9:_-]+\s*=/i.test(sanitized) ||
+      /javascript\s*:/i.test(sanitized)
+    ) {
+      throw BFFError.invalidInput('SVG sanitisation failed closed.');
+    }
+
+    return result;
+  } finally {
+    window.close();
   }
 }
 
@@ -197,7 +227,10 @@ export class AssetService {
     const base64Content = params.fileData.includes(';base64,')
       ? params.fileData.split(';base64,')[1]
       : params.fileData;
-    const fileBuffer = Buffer.from(base64Content, 'base64');
+    let fileBuffer = Buffer.from(base64Content, 'base64');
+    if (params.contentType.toLowerCase().split(';')[0].trim() === 'image/svg+xml') {
+      fileBuffer = sanitizeSvgBuffer(fileBuffer);
+    }
     validateFileMagicBytes(fileBuffer, params.contentType);
 
     const assetId = `ast_${crypto.randomUUID()}`;
@@ -207,7 +240,7 @@ export class AssetService {
     const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storageNamespace = params.type === 'BRAND_GUIDELINES' ? 'tenant-assets-private' : 'tenant-assets-public';
     const storagePath = `${storageNamespace}/tenants/${params.tenantId}/${typeFolder}/${assetId}_${safeName}`;
-    const calculatedSize = params.byteSize || fileBuffer.length;
+    const calculatedSize = fileBuffer.length;
 
     let publicUrl = '';
     const storage = getFirebaseStorage();
@@ -253,9 +286,7 @@ export class AssetService {
           publicUrl = '';
           inMemoryAssetBuffers[assetId] = fileBuffer;
         } else {
-          publicUrl = params.fileData.startsWith('data:')
-            ? params.fileData
-            : `data:${params.contentType};base64,${params.fileData}`;
+          publicUrl = `data:${params.contentType};base64,${fileBuffer.toString('base64')}`;
         }
       }
     } else {
@@ -271,9 +302,7 @@ export class AssetService {
         publicUrl = '';
         inMemoryAssetBuffers[assetId] = fileBuffer;
       } else {
-        publicUrl = params.fileData.startsWith('data:')
-          ? params.fileData
-          : `data:${params.contentType};base64,${params.fileData}`;
+        publicUrl = `data:${params.contentType};base64,${fileBuffer.toString('base64')}`;
       }
     }
 
@@ -418,13 +447,17 @@ export class AssetService {
       throw BFFError.notFound(`Asset "${assetId}" was not found.`);
     }
 
-    validateFileMagicBytes(buffer, contentType);
+    const normalizedContentType = contentType.toLowerCase().split(';')[0].trim();
+    const safeBuffer = normalizedContentType === 'image/svg+xml'
+      ? sanitizeSvgBuffer(buffer)
+      : buffer;
+    validateFileMagicBytes(safeBuffer, contentType);
 
     const storage = getFirebaseStorage();
     if (storage && asset.storagePath) {
       const bucket = storage.bucket();
       const file = bucket.file(asset.storagePath);
-      await file.save(buffer, {
+      await file.save(safeBuffer, {
         metadata: {
           contentType,
           metadata: {
@@ -437,11 +470,11 @@ export class AssetService {
     } else {
       inMemoryAssets[assetId] = {
         ...asset,
-        byteSize: buffer.length,
+        byteSize: safeBuffer.length,
         status: 'PROCESSING',
       };
       if (asset.type === 'BRAND_GUIDELINES') {
-        inMemoryAssetBuffers[assetId] = buffer;
+        inMemoryAssetBuffers[assetId] = safeBuffer;
       }
     }
 
@@ -552,7 +585,7 @@ export class AssetService {
 
           if (exists) {
             const [metadata] = await file.getMetadata();
-            const actualSize = Number(metadata.size || 0);
+            let actualSize = Number(metadata.size || 0);
             const actualContentType = (metadata.contentType || assetData.contentType || '').toLowerCase().split(';')[0].trim();
 
             // 1. Validate size boundaries
@@ -571,13 +604,25 @@ export class AssetService {
               );
             }
 
-            // 3. Inspect magic bytes / SVG sanitisation
+            // 3. Inspect magic bytes. SVG is sanitized as a complete object
+            // before it can leave the private incoming namespace.
             try {
-              const [fileHeader] = await file.download({ start: 0, end: 2048 });
-              validateFileMagicBytes(fileHeader, actualContentType);
+              if (actualContentType === 'image/svg+xml') {
+                const [uploadedSvg] = await file.download();
+                const sanitizedSvg = sanitizeSvgBuffer(uploadedSvg);
+                actualSize = sanitizedSvg.length;
+                await file.save(sanitizedSvg, {
+                  resumable: false,
+                  metadata: { contentType: actualContentType },
+                });
+              } else {
+                const [fileHeader] = await file.download({ start: 0, end: 2048 });
+                validateFileMagicBytes(fileHeader, actualContentType);
+              }
             } catch (validationErr: any) {
               if (validationErr instanceof BFFError) throw validationErr;
               console.warn('[AssetService] Magic byte validation warning:', validationErr.message);
+              if (!isDemoMode() && process.env.NODE_ENV !== 'test') throw validationErr;
             }
 
             // 4. Publish storefront assets, but keep brand-guideline source documents private.
