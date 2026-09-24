@@ -437,7 +437,7 @@ const optionalEmail = z.preprocess(
   z.string().trim().email('Enter a valid administrator email address').optional()
 );
 
-const optionalOrderCodePrefix = z.preprocess(
+const optionalOrderCodePrefix: z.ZodType<string | undefined> = z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
   z.string()
     .trim()
