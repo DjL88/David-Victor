@@ -23,6 +23,8 @@ export type AdminCapability =
   | 'domains.read'
   | 'domains.manage'
   | 'audit.read'
+  | 'billing.read'
+  | 'billing.manage'
   | 'assistant.use'
   | 'assistant.executeLowRisk'
   | 'assistant.approveHighRisk';
@@ -34,7 +36,7 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
     'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
-    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
+    'domains.read', 'domains.manage', 'audit.read', 'billing.read', 'billing.manage', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   tenantAdmin: new Set<AdminCapability>([
@@ -43,7 +45,7 @@ const ROLE_CAPABILITIES: Record<AdminRole, ReadonlySet<AdminCapability>> = {
     'rules.read', 'rules.write', 'fees.read', 'fees.write',
     'integrations.read', 'integrations.diagnostics', 'integrations.configure',
     'memberships.read', 'memberships.manage', 'assets.read', 'assets.write',
-    'domains.read', 'domains.manage', 'audit.read', 'assistant.use',
+    'domains.read', 'domains.manage', 'audit.read', 'billing.read', 'assistant.use',
     'assistant.executeLowRisk', 'assistant.approveHighRisk',
   ]),
   marketingEditor: new Set<AdminCapability>([
