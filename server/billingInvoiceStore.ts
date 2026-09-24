@@ -1,4 +1,4 @@
-import type { DraftInvoice } from '../src/commerce/billingModels';
+import type { DraftInvoice, FinalizedInvoice } from '../src/commerce/billingModels';
 import { getFirestoreDb } from './firebase';
 
 function safeKey(value: string): string {
@@ -54,4 +54,54 @@ export async function listBillingDrafts(tenantId: string, limit = 24): Promise<S
     .limit(Math.max(1, Math.min(limit, 100)))
     .get();
   return snapshot.docs.map((doc) => doc.data() as StoredDraftInvoice);
+}
+
+
+/**
+ * Finalizes the exact persisted draft in a Firestore transaction. Finalization
+ * is explicit, immutable and actor-attributed; subsequent draft recalculation
+ * cannot replace a finalized commercial record.
+ */
+export async function finalizeBillingInvoice(params: {
+  tenantId: string;
+  periodId: string;
+  actorId: string;
+  finalizedAt?: string;
+}): Promise<FinalizedInvoice> {
+  if (!params.tenantId || !params.periodId || !params.actorId) {
+    throw new Error('Billing invoice finalization requires tenantId, periodId and actorId.');
+  }
+  const db = getFirestoreDb();
+  if (!db) throw new Error('Firestore is required for durable billing invoices.');
+
+  const id = `${safeKey(params.tenantId)}.${safeKey(params.periodId)}`;
+  const ref = db.collection('billingInvoices').doc(id);
+  const finalizedAt = params.finalizedAt || new Date().toISOString();
+
+  return db.runTransaction(async (tx: any) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) {
+      throw new Error('Billing draft does not exist for this tenant and period.');
+    }
+    const existing = snapshot.data() as Record<string, any>;
+    if (existing.tenantId !== params.tenantId || existing.periodId !== params.periodId) {
+      throw new Error('Billing invoice tenant/period identity mismatch.');
+    }
+    if (existing.status === 'FINALIZED') {
+      return existing as FinalizedInvoice;
+    }
+    if (existing.status !== 'DRAFT') {
+      throw new Error('Only a draft billing invoice can be finalized.');
+    }
+
+    const finalized: FinalizedInvoice = {
+      ...(existing as DraftInvoice),
+      status: 'FINALIZED',
+      finalizedAt,
+      finalizedBy: params.actorId,
+      updatedAt: finalizedAt,
+    };
+    tx.set(ref, finalized, { merge: false });
+    return finalized;
+  });
 }
