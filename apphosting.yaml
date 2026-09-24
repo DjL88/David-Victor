@@ -29,3 +29,15 @@ env:
     value: DLeitch22@gmail.com
     availability:
       - RUNTIME
+
+  # Cloud Tasks worker identity and exact OIDC audience are injected from
+  # Secret Manager. The audience is also the canonical worker target origin.
+  - variable: CLOUD_TASKS_SA_EMAIL
+    secret: cloud_tasks_sa_email
+    availability:
+      - RUNTIME
+
+  - variable: CLOUD_TASKS_AUDIENCE
+    secret: cloud_tasks_audience
+    availability:
+      - RUNTIME
