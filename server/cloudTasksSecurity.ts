@@ -9,6 +9,20 @@ export interface CloudTasksSecurityConfig {
   appUrl: string;
 }
 
+export interface CloudTasksCapabilityHealth {
+  mode: 'in-memory' | 'cloud-tasks';
+  configured: boolean;
+  projectConfigured: boolean;
+  identityConfigured: boolean;
+  audienceConfigured: boolean;
+  appUrlConfigured: boolean;
+  queues: {
+    bulk: boolean;
+    realtime: boolean;
+  };
+  missing: string[];
+}
+
 type TokenPayload = {
   iss?: string;
   aud?: string | string[];
@@ -69,6 +83,74 @@ export function getCloudTasksSecurityConfig(): CloudTasksSecurityConfig {
 }
 
 export function assertCloudTasksSecurityConfigured(): void { void getCloudTasksSecurityConfig(); }
+
+export function getCloudTasksCapabilityHealth(
+  env: NodeJS.ProcessEnv = process.env,
+  live: boolean = isLiveMode()
+): CloudTasksCapabilityHealth {
+  const projectConfigured = Boolean(
+    String(env.GOOGLE_CLOUD_PROJECT || env.GCP_PROJECT || '').trim()
+  );
+  const identityConfigured = Boolean(String(env.CLOUD_TASKS_SA_EMAIL || '').trim());
+  const audienceConfigured = Boolean(String(env.CLOUD_TASKS_AUDIENCE || '').trim());
+  const appUrlConfigured = Boolean(
+    String(env.APP_URL || env.CLOUD_TASKS_AUDIENCE || '').trim()
+  );
+  const bulkQueueConfigured = Boolean(
+    String(
+      env.CHANNEL_MENU_TASKS_QUEUE ||
+      env.CLOUD_TASKS_BULK_QUEUE ||
+      env.CLOUD_TASKS_QUEUE ||
+      ''
+    ).trim()
+  );
+  const realtimeQueueConfigured = Boolean(
+    String(
+      env.CHANNEL_REALTIME_TASKS_QUEUE ||
+      env.CLOUD_TASKS_REALTIME_QUEUE ||
+      env.CLOUD_TASKS_QUEUE ||
+      ''
+    ).trim()
+  );
+
+  if (!live) {
+    return {
+      mode: 'in-memory',
+      configured: true,
+      projectConfigured,
+      identityConfigured,
+      audienceConfigured,
+      appUrlConfigured,
+      queues: {
+        bulk: bulkQueueConfigured,
+        realtime: realtimeQueueConfigured,
+      },
+      missing: [],
+    };
+  }
+
+  const missing: string[] = [];
+  if (!projectConfigured) missing.push('GOOGLE_CLOUD_PROJECT');
+  if (!identityConfigured) missing.push('CLOUD_TASKS_SA_EMAIL');
+  if (!audienceConfigured) missing.push('CLOUD_TASKS_AUDIENCE');
+  if (!appUrlConfigured) missing.push('APP_URL_OR_CLOUD_TASKS_AUDIENCE');
+  if (!bulkQueueConfigured) missing.push('CHANNEL_MENU_TASKS_QUEUE');
+  if (!realtimeQueueConfigured) missing.push('CHANNEL_REALTIME_TASKS_QUEUE');
+
+  return {
+    mode: 'cloud-tasks',
+    configured: missing.length === 0,
+    projectConfigured,
+    identityConfigured,
+    audienceConfigured,
+    appUrlConfigured,
+    queues: {
+      bulk: bulkQueueConfigured,
+      realtime: realtimeQueueConfigured,
+    },
+    missing,
+  };
+}
 
 function audienceMatches(actual: string | string[] | undefined, expected: string): boolean {
   if (typeof actual === 'string') return actual === expected;
