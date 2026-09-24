@@ -8,6 +8,7 @@ import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
 import { connectionHealthService } from '../deliverect/ConnectionHealthService';
 import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
+import { normalizeIntegrationEnvironment } from '../integrationProfile';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
 import {
   getFirestoreDb,
@@ -2838,7 +2839,30 @@ async function handleDeliverectChannelProvisioning(
     );
 
     if (type === 'CHANNEL_REGISTRATION') {
+      let profileOrigin = '';
+      try {
+        const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+        const environment = normalizeIntegrationEnvironment(
+          integration?.activeEnv ||
+            integration?.environment ||
+            process.env.DELIVERECT_ENV ||
+            'staging'
+        );
+        const profile = await FirestorePlatformService.getIntegrationProfile(
+          tenantId,
+          environment
+        );
+        if (profile?.status === 'ACTIVE' && profile.publicBaseUrl) {
+          profileOrigin = profile.publicBaseUrl;
+        }
+      } catch (err: any) {
+        console.warn(
+          `[Channel Registration] Could not resolve tenant public base URL for ${tenantId}: ${err?.message || err}`
+        );
+      }
+
       const configuredOrigin =
+        profileOrigin ||
         process.env.CHANNEL_PUBLIC_BASE_URL ||
         process.env.PUBLIC_BASE_URL ||
         '';
