@@ -109,3 +109,26 @@ env:
     secret: firebase_web_app_id
     availability:
       - BUILD
+
+
+  # Privileged production boundaries fail closed. Provision Identity Platform
+  # TOTP and Firebase App Check in the dedicated production project before deploy.
+  - variable: ADMIN_REQUIRE_MFA
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: ADMIN_REQUIRE_APP_CHECK
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: CHECKOUT_REQUIRE_APP_CHECK
+    value: "true"
+    availability:
+      - RUNTIME
+
+  - variable: VITE_FIREBASE_APPCHECK_SITE_KEY
+    secret: firebase_appcheck_site_key
+    availability:
+      - BUILD
