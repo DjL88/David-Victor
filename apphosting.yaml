@@ -2,7 +2,6 @@
 # Section 5 & Published Runtime Requirements:
 # APP_MODE=staging
 # DELIVERECT_ENV=staging
-# PLATFORM_SUPERADMIN_EMAILS=DLeitch22@gmail.com
 
 env:
   - variable: APP_MODE
@@ -25,7 +24,10 @@ env:
       - RUNTIME
       - BUILD
 
-  - variable: PLATFORM_SUPERADMIN_EMAILS
-    value: DLeitch22@gmail.com
-    availability:
-      - RUNTIME
+  # SEC-02a/02b: PLATFORM_SUPERADMIN_EMAILS is resolved from Secret Manager,
+  # never committed here. After Identity Platform TOTP + App Check are enabled
+  # for the Firebase project, set these runtime flags to "required":
+  # ADMIN_MFA_ENFORCEMENT=required
+  # APP_CHECK_ENFORCEMENT=required
+  # and provide VITE_FIREBASE_APPCHECK_SITE_KEY at build time (the site key is
+  # public configuration; do not place private reCAPTCHA credentials here).
