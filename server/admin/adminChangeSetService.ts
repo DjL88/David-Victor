@@ -192,11 +192,29 @@ function auditEventForApproved(changeSet: AssistantChangeSet, actorId: string): 
   };
 }
 
-function requiredApprovalCapability(changeSet: AssistantChangeSet): ServerAdminCapability {
-  const highRisk = changeSet.actions.some(
+function isHighRiskChangeSet(changeSet: AssistantChangeSet): boolean {
+  return changeSet.actions.some(
     (action) => action.risk === 'HIGH_WRITE' || action.risk === 'RESTRICTED'
   );
-  return highRisk ? 'assistant.approveHighRisk' : 'assistant.executeLowRisk';
+}
+
+function requiredApprovalCapability(changeSet: AssistantChangeSet): ServerAdminCapability {
+  return isHighRiskChangeSet(changeSet)
+    ? 'assistant.approveHighRisk'
+    : 'assistant.executeLowRisk';
+}
+
+function assertIndependentHighRiskApprover(
+  changeSet: AssistantChangeSet,
+  actorId: string
+): void {
+  if (isHighRiskChangeSet(changeSet) && changeSet.requestedBy === actorId) {
+    throw error(
+      'ADMIN_CHANGESET_SECOND_APPROVER_REQUIRED',
+      'High-risk assistant changes require approval from a different administrator.',
+      403
+    );
+  }
 }
 
 export class AdminChangeSetService {
@@ -364,6 +382,7 @@ export class AdminChangeSetService {
       if (!hasServerAdminCapability(args.actorRole, requiredApprovalCapability(current))) {
         throw error('ADMIN_CHANGESET_APPROVAL_FORBIDDEN', 'Your role cannot approve this change set.', 403);
       }
+      assertIndependentHighRiskApprover(current, args.actorId);
       if (current.status === 'APPROVED') return current;
       if (current.status !== 'APPROVAL_REQUIRED') {
         throw error(
@@ -399,6 +418,7 @@ export class AdminChangeSetService {
       if (!hasServerAdminCapability(args.actorRole, requiredApprovalCapability(current))) {
         throw error('ADMIN_CHANGESET_APPROVAL_FORBIDDEN', 'Your role cannot approve this change set.', 403);
       }
+      assertIndependentHighRiskApprover(current, args.actorId);
       if (current.status === 'APPROVED') return current;
       if (current.status !== 'APPROVAL_REQUIRED') {
         throw error(
