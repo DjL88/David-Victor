@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ChannelMenuIngestionService,
   type ChannelMenuIngressJob,
   type ChannelMenuQueueClient,
 } from '../../server/deliverect/ChannelMenuIngestionService';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
+import { CommerceDiscoveryService } from '../../server/deliverect/CommerceDiscoveryService';
 
 class CapturingMenuQueue implements ChannelMenuQueueClient {
   jobs: ChannelMenuIngressJob[] = [];
@@ -109,6 +110,29 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       name: 'Water',
       priceMinor: 125,
     });
+  });
+
+  it('invalidates storefront catalogue caches only after worker processing', async () => {
+    const tenantId = `tenant-cache-refresh-${Date.now()}`;
+    const payload = sampleMenu();
+    const rawBody = JSON.stringify(payload);
+    const clearCache = vi.spyOn(
+      CommerceDiscoveryService.getInstance(),
+      'clearCache'
+    );
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody,
+    });
+
+    expect(clearCache).not.toHaveBeenCalled();
+
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    expect(clearCache).toHaveBeenCalledTimes(1);
+    clearCache.mockRestore();
   });
 
   it('deduplicates retried Menu Pushes before creating another task', async () => {
