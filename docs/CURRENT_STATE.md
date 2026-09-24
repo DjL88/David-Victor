@@ -101,3 +101,7 @@ The following cannot be live-executed until Deliverect staging credentials (`cli
 6. Live Quest picking webhook simulation from staging environment.
 
 *Mitigation:* Clean adapter interfaces (`CommerceAdapter`, `PaymentService`, `DispatchAdapter`) implemented with typed `503 INTEGRATION_NOT_CONFIGURED` responses in staging/production, enabling complete frontend and BFF testing without falsifying integration success.
+
+
+## Audit II work packages
+- SEC-00 — Express composition extracted to `server/app.ts`; Supertest behavioural harness covers health plus authenticated admin access. (2026-09-24)
