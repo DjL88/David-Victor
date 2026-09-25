@@ -25,6 +25,17 @@ export interface DomainMapping {
   verificationRecordValue?: string;
   ownershipVerifiedAt?: string;
   tlsStatus?: 'pending' | 'ready' | 'failed';
+  provisioningProvider?: 'firebase_app_hosting';
+  providerHostState?: string;
+  providerOwnershipState?: string;
+  providerCertState?: string;
+  requiredDnsRecords?: Array<{
+    domainName: string;
+    type: string;
+    rdata: string;
+    action: string;
+  }>;
+  provisioningIssues?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -136,6 +147,27 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     }
   };
 
+  const refreshAllStatuses = async () => {
+    const pending = domains.filter((domain) => domain.status !== 'active');
+    if (pending.length === 0) {
+      await loadDomains();
+      return;
+    }
+    setVerifyingId('all');
+    setErrorMessage(null);
+    try {
+      const client = getAdminClient();
+      if (!client.verifyDomainOwnership) throw new Error('Domain status checks are not available in this Admin client.');
+      await Promise.all(pending.map((domain) => client.verifyDomainOwnership!(domain.domainId || domain.hostname)));
+      await loadDomains();
+    } catch (error: any) {
+      setErrorMessage(error?.message || 'One or more domain status checks failed.');
+      await loadDomains();
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
   const handleDeleteDomain = async (domainId: string, hostname: string) => {
     if (!window.confirm(`Remove "${hostname}" from this tenant? The site content itself will not be deleted.`)) return;
     setDeletingId(domainId);
@@ -172,11 +204,11 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         </div>
         <button
           type="button"
-          onClick={() => void loadDomains()}
-          disabled={isLoading}
+          onClick={() => void refreshAllStatuses()}
+          disabled={isLoading || verifyingId === 'all'}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-2xs hover:bg-gray-50 disabled:opacity-50"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading || verifyingId === 'all' ? 'animate-spin' : ''}`} />
           Refresh status
         </button>
       </div>
@@ -211,7 +243,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             Connect a custom domain
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Claim the hostname first. The platform then gives you the exact TXT ownership record to add at your DNS provider.
+            Enter the hostname once. Firebase App Hosting then returns the exact DNS changes, provisions HTTPS, and enables Firebase sign-in when the domain is live.
           </p>
         </div>
 
@@ -320,7 +352,46 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                     ))}
                   </div>
 
-                  {!ownershipReady && domain.verificationRecordName && domain.verificationRecordValue && (
+                  {domain.requiredDnsRecords && domain.requiredDnsRecords.length > 0 && !active && (
+                    <div className="space-y-3 bg-amber-50/60 p-4">
+                      <div>
+                        <p className="text-xs font-bold text-amber-950">DNS changes supplied by Firebase App Hosting</p>
+                        <p className="mt-1 text-[11px] text-amber-900/70">Give these records to the retailer or add them at their DNS provider. Records marked Remove must be deleted before HTTPS can become active.</p>
+                      </div>
+                      {domain.requiredDnsRecords.map((record, index) => (
+                        <div key={`${record.domainName}-${record.type}-${index}`} className="grid gap-2 rounded-xl border border-amber-200 bg-white p-3 sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,2fr)]">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-wide text-gray-400">Action / type</p>
+                            <p className={`mt-1 text-[11px] font-black ${record.action === 'REMOVE' ? 'text-red-700' : 'text-emerald-700'}`}>{record.action} {record.type}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wide text-gray-400">Name / host</p>
+                            <code className="mt-1 block break-all text-[11px] text-gray-800">{record.domainName}</code>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wide text-gray-400">Value</p>
+                            <div className="mt-1 flex items-start gap-2">
+                              <code className="min-w-0 flex-1 break-all text-[11px] text-gray-800">{record.rdata}</code>
+                              <button type="button" onClick={() => void copyValue(record.rdata)} className="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50" aria-label={`Copy ${record.type} value`}>
+                                {copiedValue === record.rdata ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => void handleVerifyDomain(id, domain.hostname)}
+                        disabled={verifyingId === id || verifyingId === 'all'}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        {verifyingId === id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                        Check DNS & certificate
+                      </button>
+                    </div>
+                  )}
+
+                  {!domain.provisioningProvider && !ownershipReady && domain.verificationRecordName && domain.verificationRecordValue && (
                     <div className="space-y-3 bg-amber-50/60 p-4">
                       <div>
                         <p className="text-xs font-bold text-amber-950">Add this exact TXT record</p>

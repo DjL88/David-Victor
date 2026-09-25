@@ -76,6 +76,7 @@ import { AdminAssistantChatService } from '../admin/adminAssistantChatService';
 import { AdminChangeSetService } from '../admin/adminChangeSetService';
 import { AdminResourceAdapterRegistry } from '../admin/adminResourceAdapters';
 import { FirebaseAuthDomainService } from '../firebaseAuthDomainService';
+import { AppHostingDomainService } from '../appHostingDomainService';
 import {
   createDomainVerificationToken,
   domainVerificationRecordName,
@@ -4411,6 +4412,34 @@ v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validate
   try {
     const newTenant = req.body;
     const provisioned = await FirestorePlatformService.createTenant(newTenant);
+    let domainProvisioning: { status: string; hostname?: string; error?: string } | undefined;
+    const defaultDomain = String(provisioned.defaultDomain || '').trim().toLowerCase();
+    if (defaultDomain && AppHostingDomainService.isConfigured() && !defaultDomain.endsWith('.retail.platform')) {
+      try {
+        const provider = await AppHostingDomainService.create(defaultDomain);
+        await FirestorePlatformService.addOrUpdateDomain({
+          hostname: defaultDomain,
+          tenantId: provisioned.tenantId,
+          isPrimary: true,
+          status: provider.active ? 'active' : provider.ownershipState === 'OWNERSHIP_ACTIVE' ? 'verified' : 'pending',
+          tlsStatus: provider.active ? 'ready' : 'pending',
+          provisioningProvider: 'firebase_app_hosting',
+          providerResourceName: provider.resourceName,
+          providerHostState: provider.hostState,
+          providerOwnershipState: provider.ownershipState,
+          providerCertState: provider.certState,
+          requiredDnsRecords: provider.requiredDnsRecords,
+          provisioningIssues: provider.issues,
+        });
+        domainProvisioning = { status: provider.active ? 'active' : 'awaiting_dns', hostname: defaultDomain };
+      } catch (error: any) {
+        domainProvisioning = {
+          status: 'action_required',
+          hostname: defaultDomain,
+          error: error?.message || 'App Hosting domain provisioning failed.',
+        };
+      }
+    }
 
     // The tenant commit is authoritative. A secondary audit write must never
     // turn a successfully-created brand into a misleading provisioning error.
@@ -4432,6 +4461,7 @@ v1Router.post('/admin/tenants', requireAdminAuth('platformSuperAdmin'), validate
       success: true,
       message: `Tenant ${provisioned.brandName} provisioned successfully in Firestore.`,
       tenant: provisioned,
+      domainProvisioning,
     });
   } catch (err: any) {
     const statusCode = err.statusCode || (err.name === 'BFFError' ? 400 : 500);
@@ -4553,8 +4583,11 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
       await FirestorePlatformService.deleteDomain(existing.domainId);
     }
 
-    // Custom domains never become live on creation. Generate a tenant-bound TXT
-    // challenge so ownership can be proven without a support/admin console step.
+    // Ask App Hosting for exact DNS records and managed-certificate state. The
+    // local TXT challenge remains as an offline/demo fallback only.
+    const appHosting = AppHostingDomainService.isConfigured()
+      ? await AppHostingDomainService.create(cleanHost)
+      : null;
     const verificationToken =
       existing?.tenantId === tenantId && existing.verificationToken
         ? existing.verificationToken
@@ -4571,8 +4604,15 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
           verificationToken,
           verificationRecordName,
           verificationRecordValue,
-          tlsStatus: existing.tlsStatus || 'pending',
+          tlsStatus: appHosting?.active ? 'ready' : existing.tlsStatus || 'pending',
           ownershipVerifiedAt: existing.ownershipVerifiedAt,
+          provisioningProvider: appHosting ? 'firebase_app_hosting' : existing.provisioningProvider,
+          providerResourceName: appHosting?.resourceName || existing.providerResourceName,
+          providerHostState: appHosting?.hostState || existing.providerHostState,
+          providerOwnershipState: appHosting?.ownershipState || existing.providerOwnershipState,
+          providerCertState: appHosting?.certState || existing.providerCertState,
+          requiredDnsRecords: appHosting?.requiredDnsRecords || existing.requiredDnsRecords,
+          provisioningIssues: appHosting?.issues || existing.provisioningIssues,
         })
       : await FirestorePlatformService.addOrUpdateDomain({
           hostname: cleanHost,
@@ -4582,7 +4622,14 @@ v1Router.post('/admin/domains', requireAdminAuth('tenantAdmin'), async (req: Req
           verificationToken,
           verificationRecordName,
           verificationRecordValue,
-          tlsStatus: 'pending',
+          tlsStatus: appHosting?.active ? 'ready' : 'pending',
+          provisioningProvider: appHosting ? 'firebase_app_hosting' : undefined,
+          providerResourceName: appHosting?.resourceName,
+          providerHostState: appHosting?.hostState,
+          providerOwnershipState: appHosting?.ownershipState,
+          providerCertState: appHosting?.certState,
+          requiredDnsRecords: appHosting?.requiredDnsRecords,
+          provisioningIssues: appHosting?.issues,
         });
 
     await FirestorePlatformService.addAuditLog(tenantId, {
@@ -4621,6 +4668,45 @@ v1Router.post('/admin/domains/:domainId/verify', requireAdminAuth('tenantAdmin')
       return res.status(403).json({
         error: 'Tenant administrators may only verify domains owned by their own tenant.',
         code: 'TENANT_ISOLATION_ERROR',
+      });
+    }
+
+    if (existing.provisioningProvider === 'firebase_app_hosting' && AppHostingDomainService.isConfigured()) {
+      const provider = await AppHostingDomainService.get(existing.hostname);
+      const ownershipReady = provider.ownershipState === 'OWNERSHIP_ACTIVE';
+      const nextStatus = provider.active ? 'active' : ownershipReady ? 'verified' : 'pending';
+      const authSync = provider.active
+        ? await FirebaseAuthDomainService.ensureAuthorizedDomain(existing.hostname)
+        : null;
+      const updated = await FirestorePlatformService.addOrUpdateDomain({
+        hostname: existing.hostname,
+        tenantId: existing.tenantId,
+        isPrimary: existing.isPrimary,
+        status: nextStatus,
+        verificationToken: existing.verificationToken,
+        verificationRecordName: existing.verificationRecordName,
+        verificationRecordValue: existing.verificationRecordValue,
+        ownershipVerifiedAt: ownershipReady
+          ? existing.ownershipVerifiedAt || new Date().toISOString()
+          : existing.ownershipVerifiedAt,
+        tlsStatus: provider.active ? 'ready' : provider.certState === 'CERT_EXPIRED' ? 'failed' : 'pending',
+        provisioningProvider: 'firebase_app_hosting',
+        providerResourceName: provider.resourceName,
+        providerHostState: provider.hostState,
+        providerOwnershipState: provider.ownershipState,
+        providerCertState: provider.certState,
+        requiredDnsRecords: provider.requiredDnsRecords,
+        provisioningIssues: provider.issues,
+      });
+
+      return res.json({
+        success: true,
+        domain: updated,
+        provider,
+        authSync,
+        nextStep: provider.active
+          ? 'Domain is live with managed HTTPS and Firebase sign-in enabled.'
+          : 'Apply the required DNS changes and check again while App Hosting provisions HTTPS.',
       });
     }
 
@@ -4780,6 +4866,9 @@ v1Router.delete('/admin/domains/:domainId', requireAdminAuth('tenantAdmin'), asy
       });
     }
 
+    if (existing.provisioningProvider === 'firebase_app_hosting' && AppHostingDomainService.isConfigured()) {
+      await AppHostingDomainService.delete(existing.hostname);
+    }
     await FirestorePlatformService.deleteDomain(domainId);
 
     await FirestorePlatformService.addAuditLog(existing.tenantId, {

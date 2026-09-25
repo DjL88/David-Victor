@@ -383,6 +383,18 @@ export interface DomainRecord {
   verificationRecordValue?: string;
   ownershipVerifiedAt?: string;
   tlsStatus?: 'pending' | 'ready' | 'failed';
+  provisioningProvider?: 'firebase_app_hosting';
+  providerResourceName?: string;
+  providerHostState?: string;
+  providerOwnershipState?: string;
+  providerCertState?: string;
+  requiredDnsRecords?: Array<{
+    domainName: string;
+    type: string;
+    rdata: string;
+    action: string;
+  }>;
+  provisioningIssues?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -718,6 +730,13 @@ export class FirestoreService {
     verificationRecordValue?: string;
     ownershipVerifiedAt?: string;
     tlsStatus?: 'pending' | 'ready' | 'failed';
+    provisioningProvider?: 'firebase_app_hosting';
+    providerResourceName?: string;
+    providerHostState?: string;
+    providerOwnershipState?: string;
+    providerCertState?: string;
+    requiredDnsRecords?: DomainRecord['requiredDnsRecords'];
+    provisioningIssues?: string[];
   }): Promise<DomainRecord> {
     const cleanHost = (params.hostname || '').toLowerCase().trim().split(':')[0];
     if (!cleanHost) {
@@ -739,6 +758,13 @@ export class FirestoreService {
       verificationRecordValue: params.verificationRecordValue ?? inMemoryDomains[cleanHost]?.verificationRecordValue,
       ownershipVerifiedAt: params.ownershipVerifiedAt ?? inMemoryDomains[cleanHost]?.ownershipVerifiedAt,
       tlsStatus: params.tlsStatus ?? inMemoryDomains[cleanHost]?.tlsStatus,
+      provisioningProvider: params.provisioningProvider ?? inMemoryDomains[cleanHost]?.provisioningProvider,
+      providerResourceName: params.providerResourceName ?? inMemoryDomains[cleanHost]?.providerResourceName,
+      providerHostState: params.providerHostState ?? inMemoryDomains[cleanHost]?.providerHostState,
+      providerOwnershipState: params.providerOwnershipState ?? inMemoryDomains[cleanHost]?.providerOwnershipState,
+      providerCertState: params.providerCertState ?? inMemoryDomains[cleanHost]?.providerCertState,
+      requiredDnsRecords: params.requiredDnsRecords ?? inMemoryDomains[cleanHost]?.requiredDnsRecords,
+      provisioningIssues: params.provisioningIssues ?? inMemoryDomains[cleanHost]?.provisioningIssues,
       createdAt: inMemoryDomains[cleanHost]?.createdAt || now,
       updatedAt: now,
     };
@@ -801,6 +827,13 @@ export class FirestoreService {
             verificationRecordValue: record.verificationRecordValue,
             ownershipVerifiedAt: record.ownershipVerifiedAt,
             tlsStatus: record.tlsStatus,
+            provisioningProvider: record.provisioningProvider,
+            providerResourceName: record.providerResourceName,
+            providerHostState: record.providerHostState,
+            providerOwnershipState: record.providerOwnershipState,
+            providerCertState: record.providerCertState,
+            requiredDnsRecords: record.requiredDnsRecords,
+            provisioningIssues: record.provisioningIssues,
             createdAt: record.createdAt,
             updatedAt: now,
           },
@@ -820,6 +853,13 @@ export class FirestoreService {
             verificationRecordValue: record.verificationRecordValue,
             ownershipVerifiedAt: record.ownershipVerifiedAt,
             tlsStatus: record.tlsStatus,
+            provisioningProvider: record.provisioningProvider,
+            providerResourceName: record.providerResourceName,
+            providerHostState: record.providerHostState,
+            providerOwnershipState: record.providerOwnershipState,
+            providerCertState: record.providerCertState,
+            requiredDnsRecords: record.requiredDnsRecords,
+            provisioningIssues: record.provisioningIssues,
             createdAt: record.createdAt,
             updatedAt: now,
           },
