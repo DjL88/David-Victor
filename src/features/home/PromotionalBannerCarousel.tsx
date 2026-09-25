@@ -209,6 +209,10 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
     return shoppingListProducts.reduce((sum, p) => sum + moneyToMinor(p.price), 0);
   }, [shoppingListProducts]);
 
+  const bannerLayout = activeBanner?.layout || 'BACKGROUND';
+  const isArtworkBanner = bannerLayout === 'ARTWORK';
+  const isSplitBanner = bannerLayout === 'SPLIT';
+
   const bannerSubtitle = useMemo(() => {
     if (!activeBanner) return '';
 
@@ -434,15 +438,16 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.5, ease: 'easeOut' }}
-                  className="absolute inset-0 w-full h-full bg-cover bg-center"
+                  className={`absolute inset-0 w-full h-full bg-center ${isArtworkBanner || isSplitBanner ? 'bg-contain bg-no-repeat' : 'bg-cover'}`}
                   style={{
                     backgroundImage: `url(${activeBanner.backgroundImageUrl})`,
+                    backgroundPosition: isSplitBanner ? 'right center' : 'center',
                   }}
                 />
               )}
             </AnimatePresence>
 
-            <div className="absolute inset-0 bg-gradient-to-r from-gray-950/90 via-gray-950/70 to-gray-950/20" />
+            <div className={`absolute inset-0 ${isArtworkBanner ? 'bg-gradient-to-t from-gray-950/70 via-transparent to-black/20' : isSplitBanner ? 'bg-gradient-to-r from-gray-950 via-gray-950/95 to-gray-950/5 md:via-gray-950/80' : 'bg-gradient-to-r from-gray-950/90 via-gray-950/70 to-gray-950/20'}`} />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-transparent to-black/30" />
 
             <div className="relative h-full flex flex-col justify-between p-6 sm:p-8 md:p-10 z-10">
@@ -486,7 +491,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
               </div>
 
               {/* MAIN PROMO HEADLINE & COPY */}
-              <div className="max-w-xl space-y-3 py-2">
+              <div className={`${isSplitBanner ? 'max-w-[52%] min-w-[16rem]' : 'max-w-xl'} ${isArtworkBanner ? 'bg-gray-950/55 backdrop-blur-sm rounded-2xl p-4 -m-1' : ''} space-y-3 py-2`}>
                 <motion.h2
                   key={`title-${activeBanner.id}`}
                   initial={{ opacity: 0, y: 10 }}
