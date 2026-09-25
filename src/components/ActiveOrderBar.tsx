@@ -74,7 +74,7 @@ export const ActiveOrderBar: React.FC<ActiveOrderBarProps> = ({ order, onOpenTra
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1 text-xs font-extrabold">
-                <span>Track</span>
+                <span>{t('tracking.track')}</span>
                 <ArrowRight className="h-4 w-4" />
               </div>
             </div>
