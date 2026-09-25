@@ -23,6 +23,7 @@ import {
   Monitor,
   Tablet,
   Smartphone,
+  ArrowRight,
 } from 'lucide-react';
 
 interface PagesAdminScreenProps {
