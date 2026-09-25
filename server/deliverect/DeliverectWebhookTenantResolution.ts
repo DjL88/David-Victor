@@ -33,9 +33,9 @@ export function extractDeliverectWebhookAccountIds(payload: any): string[] {
 
 /**
  * Deliverect can keep an older integration slug in a callback URL after the
- * account has been assigned to a final tenant. Prefer the uniquely mapped
- * account in the signed payload, while retaining the route mapping as the safe
- * fallback when the provider omits accountId.
+ * account has been assigned to a final tenant. A handover is allowed only from
+ * an already-provisioned webhook route; accountId may refine that trusted route
+ * but must never activate an arbitrary/unregistered callback URL.
  */
 export async function resolveDeliverectWebhookTenantHandover(params: {
   routeIdentifier: string;
@@ -44,6 +44,10 @@ export async function resolveDeliverectWebhookTenantHandover(params: {
   resolveByAccountId: (accountId: string) => Promise<string | null>;
 }): Promise<DeliverectWebhookTenantResolution | null> {
   const routeTenantId = await params.resolveByIdentifier(params.routeIdentifier);
+  if (!routeTenantId) {
+    return null;
+  }
+
   const accountIds = extractDeliverectWebhookAccountIds(params.payload);
 
   if (accountIds.length === 1) {
@@ -58,7 +62,5 @@ export async function resolveDeliverectWebhookTenantHandover(params: {
     }
   }
 
-  return routeTenantId
-    ? { tenantId: routeTenantId, routeTenantId, source: 'ROUTE' }
-    : null;
+  return { tenantId: routeTenantId, routeTenantId, source: 'ROUTE' };
 }
