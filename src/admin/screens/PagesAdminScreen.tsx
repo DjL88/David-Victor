@@ -19,6 +19,10 @@ import {
   ShoppingBag,
   Store,
   Sparkles,
+  Copy,
+  Monitor,
+  Tablet,
+  Smartphone,
 } from 'lucide-react';
 
 interface PagesAdminScreenProps {
@@ -35,6 +39,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [error, setError] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [tenantLocales, setTenantLocales] = useState(SUPPORTED_LOCALES);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     defaultAdminClient.getBranding(tenantId)
@@ -61,6 +68,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     if (!response.ok) throw new Error('Failed to save CMS page');
     const saved = await response.json();
     setSelectedPage(saved);
+    setDirty(false);
     setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
     setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
@@ -173,6 +181,19 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     }));
   };
 
+  const updatePage = (next: CmsPage) => { setSelectedPage(next); setDirty(true); };
+  const duplicateBlock = (id: string) => {
+    const source = selectedPage.blocks.find((block) => block.id === id);
+    if (!source) return;
+    const index = selectedPage.blocks.findIndex((block) => block.id === id);
+    const clone = { ...source, id: `b_${Date.now()}` } as CmsBlock;
+    const blocks = [...selectedPage.blocks];
+    blocks.splice(index + 1, 0, clone);
+    blocks.forEach((block, order) => { block.order = order + 1; });
+    updatePage({ ...selectedPage, blocks });
+    setSelectedBlockId(clone.id);
+  };
+
   const moveBlock = (index: number, direction: 'up' | 'down') => {
     const newBlocks = [...selectedPage.blocks];
     const targetIdx = direction === 'up' ? index - 1 : index + 1;
@@ -188,6 +209,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     });
 
     setSelectedPage((prev) => ({ ...prev, blocks: newBlocks }));
+    setDirty(true);
   };
 
   return (
@@ -222,6 +244,26 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
             <Check className="w-4 h-4" />
             <span>{saving ? 'Saving…' : saveSuccess ? 'Saved' : 'Save Page'}</span>
           </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-xs">
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`h-2 w-2 rounded-full ${dirty ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+          <span className="font-bold text-gray-900">{dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+          <span className="rounded-full bg-gray-100 px-2 py-1 font-bold capitalize text-gray-600">{selectedPage.status}</span>
+        </div>
+        <div className="inline-flex rounded-xl bg-gray-100 p-1" role="group" aria-label="Canvas preview size">
+          {([
+            ['desktop', Monitor, 'Desktop'],
+            ['tablet', Tablet, 'Tablet'],
+            ['mobile', Smartphone, 'Mobile'],
+          ] as const).map(([value, Icon, label]) => (
+            <button key={value} type="button" onClick={() => setPreviewViewport(value)} aria-pressed={previewViewport === value}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${previewViewport === value ? 'bg-white text-indigo-700 shadow-xs' : 'text-gray-500'}`}>
+              <Icon className="h-3.5 w-3.5" /><span>{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -443,12 +485,21 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
               </div>
             )}
 
+            {/* VISUAL BUILDER CANVAS */}
+            <div className="rounded-2xl bg-gray-100 p-3 sm:p-5 overflow-x-auto">
+              <div className={`mx-auto space-y-3 bg-white p-3 sm:p-4 shadow-sm transition-[max-width] ${previewViewport === 'mobile' ? 'max-w-[390px]' : previewViewport === 'tablet' ? 'max-w-[768px]' : 'max-w-none'}`}>
+                <div className="border-b border-dashed border-gray-200 pb-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Storefront canvas · {previewViewport}</p>
+                  <h3 className="mt-1 truncate text-lg font-black text-gray-900">{selectedPage.title || 'Untitled page'}</h3>
+                </div>
+
             {/* BLOCK LIST */}
             <div className="space-y-3">
               {selectedPage.blocks.map((block, idx) => (
                 <div
                   key={block.id}
-                  className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white transition-all space-y-3"
+                  onClick={() => setSelectedBlockId(block.id)}
+                  className={`p-4 rounded-xl border bg-white transition-all space-y-3 cursor-pointer ${selectedBlockId === block.id ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-gray-200 hover:border-indigo-300'}`}
                 >
                   <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                     <div className="flex items-center gap-2">
@@ -476,6 +527,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                         className="p-1 text-gray-400 hover:text-gray-900 disabled:opacity-30"
                       >
                         <MoveDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); duplicateBlock(block.id); }} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600" title="Duplicate section" aria-label="Duplicate section">
+                        <Copy className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -581,6 +635,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                   )}
                 </div>
               ))}
+            </div>
+              </div>
             </div>
           </div>
         </div>
