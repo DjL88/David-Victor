@@ -758,7 +758,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             />
           )}
 
-          {activeTab === 'orders' && <OrdersScreen />}
+          {activeTab === 'orders' && <OrdersScreen initialOrderId={activeRoute.kind === 'orders' ? activeRoute.orderId : undefined} />}
 
           {activeTab === 'account' && <AccountScreen onOpenAdmin={onOpenAdmin} />}
         </main>
@@ -1042,9 +1042,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           onOpenDealPopup={(deal) => {
             setActiveDealForModal(deal);
           }}
-          onOrderSuccess={() => {
+          onOrderSuccess={(orderId) => {
             clearAllBaskets();
-            closeRoutedOverlay('checkout');
+            setIsCheckoutOpen(false);
+            setIsCartOpen(false);
+            const orderPath = `/orders/${encodeURIComponent(orderId)}`;
+            replaceStorefrontUrl(orderPath);
+            setActiveRoute({ kind: 'orders', orderId });
+            setActiveTab('orders');
           }}
         />
         </Suspense>
