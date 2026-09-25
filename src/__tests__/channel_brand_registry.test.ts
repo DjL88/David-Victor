@@ -55,7 +55,14 @@ describe('official channel identity registry', () => {
       const source = manifest.entries.find((item: any) => item.id === entry.key);
       expect(source.asset).toBe(entry.iconUrl);
       expect(source.sourcePage).toMatch(/^https:\/\//);
-      const bytes = readFileSync(resolve('public', entry.iconUrl!.slice(1)));
+      const filePath = resolve('public', entry.iconUrl!.slice(1));
+      const rawBytes = readFileSync(filePath);
+      // Git may materialise text SVGs with CRLF on Windows while the reviewed
+      // repository/deployment bytes use LF. Normalise text line endings before
+      // checking provenance; raster assets remain byte-for-byte verified.
+      const bytes = entry.iconUrl!.endsWith('.svg')
+        ? Buffer.from(rawBytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8')
+        : rawBytes;
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.assetSha256);
     }
     expect(CHANNEL_BRAND_REGISTRY.deliveroo.maxIconPixels).toBe(32);
