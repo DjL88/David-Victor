@@ -6,7 +6,7 @@ import { setStoreOverride } from '../deliverect/DeliverectApiClient';
 import { CommerceDiscoveryService } from '../deliverect/CommerceDiscoveryService';
 import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
 import { connectionHealthService } from '../deliverect/ConnectionHealthService';
-import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
+import { LinkedAccountsAdapter, linkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { normalizeIntegrationEnvironment } from '../integrationProfile';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
@@ -6739,6 +6739,49 @@ v1Router.get('/admin/tenants/:id/integration/menu-inspector/:storeId', requireAd
  * physical location and store counts, chosen root/store menu, raw/parsed/renderable product counts,
  * last successful sync, and exact failure stage/error code without exposing secrets.
  */
+v1Router.get('/admin/connection/readiness', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const requestedTenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
+    const tenantId =
+      authAdmin.role === 'platformSuperAdmin'
+        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
+        : authAdmin.tenantId || 'brand-alpha';
+
+    // Readiness is intentionally derived only from persisted mappings/review state.
+    // Do not call Deliverect or fetch catalogues here: Admin navigation must remain responsive.
+    const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId).catch(() => ({
+      accounts: [],
+      locations: [],
+      stores: [],
+    }));
+    const heldReviews = await ChannelMenuIngestionService.listHeldReviews(tenantId).catch(() => []);
+
+    const counts = {
+      accounts: mappings.accounts?.length || 0,
+      physicalLocations: mappings.locations?.length || 0,
+      commerceStores: mappings.stores?.length || 0,
+      heldCatalogueReviews: heldReviews.length,
+    };
+    const issues: import('../../src/commerce/models').OperationalReadinessIssue[] = [];
+    if (counts.accounts === 0) issues.push({ code: 'ACCOUNT_NOT_MAPPED', severity: 'CRITICAL', count: 1, message: 'No Deliverect account is mapped to this tenant.' });
+    if (counts.physicalLocations === 0) issues.push({ code: 'NO_LOCATIONS', severity: 'CRITICAL', count: 1, message: 'No physical locations are mapped to this tenant.' });
+    if (counts.commerceStores === 0) issues.push({ code: 'NO_COMMERCE_STORES', severity: 'CRITICAL', count: 1, message: 'No commerce stores are mapped to this tenant.' });
+    if (counts.heldCatalogueReviews > 0) issues.push({ code: 'CATALOGUE_REVIEW_REQUIRED', severity: 'WARNING', count: counts.heldCatalogueReviews, message: `${counts.heldCatalogueReviews} catalogue change${counts.heldCatalogueReviews === 1 ? '' : 's'} require review.` });
+
+    const issueCount = issues.reduce((sum, issue) => sum + issue.count, 0);
+    const status = issues.some((issue) => issue.severity === 'CRITICAL')
+      ? 'NOT_READY'
+      : issueCount > 0
+        ? 'NEEDS_ATTENTION'
+        : 'HEALTHY';
+
+    res.json({ tenantId, status, issueCount, checkedAt: new Date().toISOString(), counts, issues });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve operational readiness');
+  }
+});
+
 v1Router.get('/admin/connection/health', requireAdminAuth(), async (req: Request, res: Response) => {
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;

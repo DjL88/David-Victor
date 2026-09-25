@@ -400,6 +400,9 @@ export interface AdminClient {
    */
   getConnectionHealth?(tenantId?: string): Promise<any>;
 
+  /** Lightweight persisted operational readiness; never performs live provider catalogue calls. */
+  getOperationalReadiness?(tenantId?: string): Promise<import('./models').OperationalReadinessSummary>;
+
   /** Lists destructive Deliverect Menu Pushes held for authorised review. */
   listHeldCatalogueReviews?(tenantId?: string): Promise<{ reviews: any[]; issueCount: number }>;
 
