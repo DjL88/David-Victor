@@ -1254,6 +1254,20 @@ export class HttpAdminClient implements AdminClient {
     return res.json();
   }
 
+  async getOperationalReadiness(tenantId?: string): Promise<import('./models').OperationalReadinessSummary> {
+    const tId = tenantId || this.currentTenantId;
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(`${this.baseUrl}/admin/connection/readiness`, {
+      method: 'GET',
+      headers: { ...headers, 'x-tenant-id': tId },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to fetch operational readiness: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
   async listHeldCatalogueReviews(tenantId?: string): Promise<{ reviews: any[]; issueCount: number }> {
     const tId = tenantId || this.currentTenantId;
     const headers = await this.getHeadersAsync();
