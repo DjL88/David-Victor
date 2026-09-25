@@ -8,6 +8,7 @@ import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDen
 import { FirestorePlatformService, cleanUndefined } from '../firestoreService';
 import { circuitBreakers } from '../circuitBreaker';
 import { detectDeliveryMarketplace } from '../../src/commerce/deliveryMarketplace';
+import { mergeCommerceStoreDiscoverySnapshot } from './storeDiscoveryReliability';
 
 function getLocalMappingPath(tenantId: string): string {
   if (!isDemoMode()) {
@@ -219,6 +220,12 @@ export interface CommerceStoresDiscoveryResult {
   persistenceStatus: 'SUCCESS' | 'FAILED' | 'SKIPPED';
   persistenceError?: string;
   persistenceCode?: string;
+  /**
+   * Previously known channel links absent from the latest successful discovery.
+   * Discovery is observational: absence here never changes tenant assignment.
+   */
+  temporarilyMissingChannelLinkIds?: string[];
+  /** @deprecated Missing upstream visibility is not an unassignment/orphan event. */
   orphanedChannelLinkIds?: string[];
   message?: string;
 }
@@ -1080,8 +1087,8 @@ export class LinkedAccountsAdapter {
     // transiently return an empty collection during deployment/restart or eventual
     // consistency windows. Preserve the last-known-good projection and skip all
     // destructive reconciliation. Explicit admin disconnect/reassignment remains the
-    // authority for removal; a later non-empty authoritative response may reconcile
-    // individual missing channel links.
+    // authority for removal; later non-empty responses update visibility but never
+    // silently change tenant ownership.
     if (!storesDiscovered) {
       const lastKnown = inMemoryMappings.get(tenantId) || await this.loadFromFirestore(tenantId);
       if (lastKnown) {
@@ -1174,7 +1181,21 @@ export class LinkedAccountsAdapter {
         ...normalizedFreshLocs,
       ];
     }
-    existing.stores = [...existing.stores.filter(store => store.accountLinkId !== 'acclink_' + accountId), ...stores];
+    // Discovery is observational, not ownership. Preserve previously known
+    // channel links missing from a partial response and mark visibility separately.
+    const now = new Date().toISOString();
+    const {
+      temporarilyMissingStores,
+      effectiveStores,
+    } = mergeCommerceStoreDiscoverySnapshot(existing.stores, stores, accountId, now);
+
+    existing.stores = [
+      ...existing.stores.filter((store) => {
+        const existingAccount = String(store.accountLinkId || '');
+        return existingAccount !== accountId && existingAccount !== `acclink_${accountId}`;
+      }),
+      ...effectiveStores,
+    ];
     inMemoryMappings.set(tenantId, existing);
 
     // Keep local disk snapshot synchronized
@@ -1183,14 +1204,15 @@ export class LinkedAccountsAdapter {
       fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
     } catch {}
 
-    // Persist and reconcile discovered stores in Firestore. A successful upstream
-    // response is authoritative for this account: channel links that existed in our
-    // projection but are no longer returned are ORPHANED, never allowed to block
-    // account provisioning, and retained for history until an admin hard-deletes them.
+    // Persist discovery observations without mutating ownership. The canonical
+    // assignment set lives in integrations/{tenantId}.allowedChannelLinkIds and
+    // changes only through explicit admin assignment/unassignment.
     let firestorePersisted = false;
     let persistenceError: string | undefined = undefined;
     let persistenceCode: string | undefined = undefined;
-    const orphanedChannelLinkIds: string[] = [];
+    const temporarilyMissingChannelLinkIds = temporarilyMissingStores.map((store) =>
+      String(store.channelLinkId)
+    );
 
     try {
       const db = getFirestoreDb();
@@ -1199,19 +1221,35 @@ export class LinkedAccountsAdapter {
         const storesRef = tenantRef.collection('commerceStores');
         const activeIds = new Set(stores.map((store) => String(store.channelLinkId)));
         const existingSnap = await storesRef.get();
-        const now = new Date().toISOString();
+
+        let canonicalAssignedIds: Set<string> | null = null;
+        try {
+          const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+          canonicalAssignedIds = new Set(
+            Array.isArray(integration.allowedChannelLinkIds)
+              ? integration.allowedChannelLinkIds.map(String).filter(Boolean)
+              : []
+          );
+        } catch {
+          canonicalAssignedIds = null;
+        }
 
         const operations: Array<{ ref: any; data: any }> = [];
         for (const st of stores) {
+          const channelLinkId = String(st.channelLinkId);
           operations.push({
-            ref: storesRef.doc(st.channelLinkId),
+            ref: storesRef.doc(channelLinkId),
             data: cleanUndefined({
               ...st,
               tenantId,
               lifecycleStatus: 'ACTIVE',
-              assigned: true,
+              upstreamVisibility: 'VISIBLE',
+              lastUpstreamMissingAt: null,
               orphanedAt: null,
               orphanReason: null,
+              ...(canonicalAssignedIds
+                ? { assigned: canonicalAssignedIds.has(channelLinkId) }
+                : {}),
               lastSeenAt: st.lastSeenAt || now,
             }),
           });
@@ -1225,18 +1263,19 @@ export class LinkedAccountsAdapter {
             existingAccount === `acclink_${accountId}`;
           const channelLinkId = String(data.channelLinkId || doc.id);
           if (belongsToAccount && channelLinkId && !activeIds.has(channelLinkId)) {
-            orphanedChannelLinkIds.push(channelLinkId);
+            if (!temporarilyMissingChannelLinkIds.includes(channelLinkId)) {
+              temporarilyMissingChannelLinkIds.push(channelLinkId);
+            }
             operations.push({
               ref: doc.ref,
-              data: {
-                lifecycleStatus: 'ORPHANED',
-                status: 'INACTIVE',
-                stateProjection: 'closed',
-                assigned: false,
-                orphanedAt: data.orphanedAt || now,
-                orphanReason: 'UPSTREAM_CHANNEL_LINK_MISSING',
+              data: cleanUndefined({
+                upstreamVisibility: 'MISSING',
+                lastUpstreamMissingAt: data.lastUpstreamMissingAt || now,
+                ...(canonicalAssignedIds
+                  ? { assigned: canonicalAssignedIds.has(channelLinkId) }
+                  : {}),
                 updatedAt: now,
-              },
+              }),
             });
           }
         });
@@ -1270,22 +1309,25 @@ export class LinkedAccountsAdapter {
       }
     }
     console.info(`[Commerce Stores] FIRESTORE_PERSISTED: ${firestorePersisted}`);
-    if (orphanedChannelLinkIds.length) {
-      console.info(`[Commerce Stores] ORPHANED_CHANNEL_LINKS: ${orphanedChannelLinkIds.join(',')}`);
+    if (temporarilyMissingChannelLinkIds.length) {
+      console.info(
+        `[Commerce Stores] TEMPORARILY_MISSING_CHANNEL_LINKS: ${temporarilyMissingChannelLinkIds.join(',')}`
+      );
     }
 
     return {
       success: true,
-      stores,
-      count: stores.length,
+      stores: effectiveStores,
+      count: effectiveStores.length,
       status: storesDiscovered ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED',
       persistenceStatus: firestorePersisted ? 'SUCCESS' : 'FAILED',
       persistenceError,
       persistenceCode,
-      orphanedChannelLinkIds,
+      temporarilyMissingChannelLinkIds,
+      orphanedChannelLinkIds: [],
       message: storesDiscovered
-        ? (orphanedChannelLinkIds.length
-          ? `${orphanedChannelLinkIds.length} previously linked channel(s) were orphaned because Deliverect no longer returns them.`
+        ? (temporarilyMissingChannelLinkIds.length
+          ? `${temporarilyMissingChannelLinkIds.length} previously known channel(s) were absent from this discovery response; tenant assignment and last-known-good mapping were preserved.`
           : undefined)
         : 'No commerce stores were returned by Deliverect for this account.',
     };
