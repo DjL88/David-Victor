@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { TRANSLATIONS, LocaleTranslations } from './translations';
 import { useTenant } from '../tenant/TenantContext';
-import { SUPPORTED_LOCALES, resolveEnabledLocales } from './locales';
+import { SUPPORTED_LOCALES, normaliseSupportedLocale, resolveEnabledLocales } from './locales';
 import { resolveStorefrontCopy, StorefrontCopyOverrides } from './copy';
 
 interface I18nContextValue {
@@ -21,20 +21,14 @@ const I18nContext = createContext<I18nContextValue | undefined>(undefined);
 export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { tenant } = useTenant();
 
-  const defaultLocale = tenant?.locale || 'en-GB';
+  const defaultLocale = normaliseSupportedLocale(tenant?.locale, 'en-GB');
   const fallbackLocale = 'en-GB';
   const availableLocales = useMemo(
     () => resolveEnabledLocales(tenant?.enabledLocales, defaultLocale),
     [tenant?.enabledLocales, defaultLocale]
   );
 
-  const [currentLocale, setCurrentLocale] = useState<string>(() => {
-    try {
-      return localStorage.getItem('__pa_locale') || defaultLocale;
-    } catch {
-      return defaultLocale;
-    }
-  });
+  const [currentLocale, setCurrentLocale] = useState<string>(() => defaultLocale);
 
   useEffect(() => {
     let persistedLocale: string | null = null;
@@ -61,11 +55,15 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentLocale(newLocale);
     try {
       localStorage.setItem('__pa_locale', newLocale);
-      document.documentElement.lang = newLocale;
     } catch {
       // Ignored in restricted environments
     }
+    document.documentElement.lang = newLocale;
   };
+
+  useEffect(() => {
+    document.documentElement.lang = currentLocale;
+  }, [currentLocale]);
 
   const t = useMemo(() => {
     return (key: keyof LocaleTranslations, fallback?: string): string =>
