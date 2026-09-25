@@ -8,6 +8,7 @@ import {
 } from './bundleModels';
 
 export * from './bundleModels';
+import type { EntityTranslations } from '../i18n/entityTranslations';
 
 // ==========================================
 // MONEY & CURRENCY (INTEGER MINOR UNITS)
@@ -544,6 +545,7 @@ export interface Product {
   gtins?: string[];
   name: string;
   description?: string;
+  translations?: EntityTranslations;
   imageUrl?: string;
   images?: string[];
   brand?: string;
@@ -624,6 +626,7 @@ export interface Category {
   id: string;
   name: string;
   description?: string;
+  translations?: EntityTranslations;
   imageUrl?: string;
   iconName?: string;
   parentId?: string | null;
@@ -636,6 +639,7 @@ export interface StoreMenuSummary {
   menuId: string;
   name: string;
   description?: string;
+  translations?: EntityTranslations;
   imageUrl?: string;
   menuType?: number;
   productCount?: number;
