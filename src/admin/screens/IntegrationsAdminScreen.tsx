@@ -320,8 +320,14 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   };
 
   const handleSaveCredentials = async () => {
-    if (credentialMode === 'dedicated' && (!clientIdInput.trim() || !clientSecretInput.trim())) {
-      setError('Client ID and Client Secret are required for dedicated tenant credentials.');
+    const hasConfiguredClientId = Boolean(config.credentials?.maskedClientId);
+    const hasConfiguredClientSecret = Boolean(config.credentials?.hasClientSecret);
+    if (credentialMode === 'dedicated' && !clientIdInput.trim() && !hasConfiguredClientId) {
+      setError('Client ID is required for the first dedicated tenant connection.');
+      return;
+    }
+    if (credentialMode === 'dedicated' && !clientSecretInput.trim() && !hasConfiguredClientSecret) {
+      setError('Client Secret is required for the first dedicated tenant connection.');
       return;
     }
     setSavingCredentials(true);
@@ -329,11 +335,12 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     try {
       await defaultAdminClient.updateIntegrationCredentials!(tenantId, {
         credentialMode,
-        clientId: credentialMode === 'dedicated' ? clientIdInput.trim() : undefined,
-        clientSecret: credentialMode === 'dedicated' ? clientSecretInput.trim() : undefined,
+        clientId: credentialMode === 'dedicated' ? clientIdInput.trim() || undefined : undefined,
+        clientSecret: credentialMode === 'dedicated' ? clientSecretInput.trim() || undefined : undefined,
         webhookSecret: credentialMode === 'dedicated' ? webhookSecretInput.trim() || undefined : undefined,
         environment: config.environment || 'staging',
       });
+      setClientIdInput('');
       setClientSecretInput('');
       setWebhookSecretInput('');
       setSavedSuccess(true);
@@ -668,22 +675,42 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
         </div>
 
         {credentialMode === 'dedicated' && (
-          <div className="grid gap-3 rounded-xl border border-gray-800 bg-gray-950 p-4 sm:grid-cols-2">
+          <div className="space-y-4 rounded-xl border border-gray-800 bg-gray-950 p-4">
+            <div className="flex items-start gap-3 rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-3">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              <div>
+                <p className="text-xs font-bold text-emerald-200">Write-only tenant secrets</p>
+                <p className="mt-1 text-[11px] leading-5 text-gray-400">
+                  Values go directly to Google Secret Manager under this tenant and environment. They are never returned to the browser. Leave a configured field blank to keep its current value.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-xs text-gray-400">
-              Client ID
+              <span className="flex items-center justify-between gap-2">
+                Client ID
+                {config.credentials?.maskedClientId && <span className="text-emerald-400">Configured</span>}
+              </span>
               <input type="text" autoComplete="off" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)}
-                placeholder={config.credentials?.maskedClientId || 'Client ID'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
+                placeholder={config.credentials?.maskedClientId ? `${config.credentials.maskedClientId} — enter to replace` : 'Client ID'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
             </label>
             <label className="space-y-1 text-xs text-gray-400">
-              Client secret
+              <span className="flex items-center justify-between gap-2">
+                Client secret
+                {config.credentials?.hasClientSecret && <span className="text-emerald-400">Configured</span>}
+              </span>
               <input type="password" autoComplete="new-password" value={clientSecretInput} onChange={(e) => setClientSecretInput(e.target.value)}
                 placeholder={config.credentials?.hasClientSecret ? 'Configured — enter to replace' : 'Client secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
             </label>
             <label className="space-y-1 text-xs text-gray-400 sm:col-span-2">
-              Webhook HMAC secret <span className="text-gray-600">(optional until provisioned)</span>
+              <span className="flex items-center justify-between gap-2">
+                <span>Webhook HMAC secret <span className="text-gray-600">(optional until provisioned)</span></span>
+                {config.credentials?.hasWebhookSecret && <span className="text-emerald-400">Configured</span>}
+              </span>
               <input type="password" autoComplete="new-password" value={webhookSecretInput} onChange={(e) => setWebhookSecretInput(e.target.value)}
                 placeholder={config.credentials?.hasWebhookSecret ? 'Configured — enter to replace' : 'Webhook HMAC secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
             </label>
+            </div>
           </div>
         )}
 
@@ -846,3 +873,4 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     </div>
   );
 };
+
