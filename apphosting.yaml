@@ -42,6 +42,13 @@ env:
     availability:
       - RUNTIME
 
+  # New secrets created through the tenant Admin UI keep their payload replicas
+  # with the App Hosting runtime in the Netherlands.
+  - variable: SECRET_MANAGER_REPLICATION_LOCATIONS
+    value: europe-west4
+    availability:
+      - RUNTIME
+
   - variable: DELIVERECT_ENV
     value: staging
     availability:
@@ -78,3 +85,4 @@ env:
     value: staging
     availability:
       - RUNTIME
+
