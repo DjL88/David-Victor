@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TenantFeatureFlags, AdminUser } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { Sliders, Check, RefreshCw } from 'lucide-react';
+import { TENANT_FEATURE_DEFINITIONS } from '../featureSwitchRegistry';
 
 interface FeatureSwitchesPanelProps {
   tenantId: string;
@@ -81,52 +82,8 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     return <div role="alert" className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800">{error || 'Feature switches are unavailable.'} <button type="button" onClick={loadFlags} className="ml-2 font-bold underline">Retry</button></div>;
   }
 
-  const featureDefinitions: Array<{
-    key: keyof TenantFeatureFlags;
-    title: string;
-    description: string;
-  }> = [
-    {
-      key: 'enableStories',
-      title: 'Instagram-Style Stories Drops',
-      description: 'Display interactive top story circles connecting products and editorial content.',
-    },
-    {
-      key: 'enableSearchSuggestions',
-      title: 'Search Auto-Suggestions',
-      description: 'Show live query autocomplete and popular search terms in search modal.',
-    },
-    {
-      key: 'enableRootCatalogBrowse',
-      title: 'Root Catalog Browse (Pre-Store Selection)',
-      description: 'Permit customers to explore entire catalog before selecting fulfilling location.',
-    },
-    {
-      key: 'enableCollection',
-      title: 'Click & Collect (Pickup)',
-      description: 'Allow customers to toggle between courier delivery and in-store collection.',
-    },
-    {
-      key: 'enableDepositReturnScheme',
-      title: 'Deposit Return Scheme (DRS)',
-      description: 'Automatically enforce container deposit calculation and line items.',
-    },
-    {
-      key: 'enableAgeVerification',
-      title: 'Age Gating & Challenge 25',
-      description: 'Mandate customer age acknowledgement and trigger courier door ID check flags.',
-    },
-    {
-      key: 'enableTipCourier',
-      title: 'Courier Tipping',
-      description: 'Display tip shortcuts during checkout that pass 100% of tips to courier.',
-    },
-    {
-      key: 'enableSequentialCategoryGrouping',
-      title: 'Sequential Empty-Category Grouping',
-      description: 'Treat empty sequential Deliverect categories as parent headers for subsequent populated categories.',
-    },
-  ];
+  const featureDefinitions = TENANT_FEATURE_DEFINITIONS;
+
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6'}>
@@ -134,10 +91,10 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
         <div>
           <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
             <Sliders className="w-4 h-4 text-indigo-600" />
-            <span>Tenant Feature Flags ({tenantId})</span>
+            <span>Features ({tenantId})</span>
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Toggle platform capabilities enabled for this tenant's storefront and checkout.
+            Only genuine tenant capabilities live here. Market, compliance and integration configuration remain owned by their respective settings.
           </p>
         </div>
 
@@ -158,6 +115,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
               <div className="space-y-0.5">
                 <span className="text-xs font-bold text-gray-900 block">{f.title}</span>
                 <span className="text-[11px] text-gray-500 block leading-snug">{f.description}</span>
+                <span className="text-[10px] uppercase tracking-wide text-gray-400">Owned by {f.owner.toLowerCase()}</span>
               </div>
 
               <button
