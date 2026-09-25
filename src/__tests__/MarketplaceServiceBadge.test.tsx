@@ -22,33 +22,41 @@ function show(name: string, marketplace?: string, url?: string) {
 }
 
 describe('real marketplace service badge', () => {
-  it('uses local, aspect-ratio-preserving artwork with a visible accessible label', () => {
+  it('uses the local 32px round artwork with a visible accessible label', () => {
     show('Uber Eats');
     const image = host.querySelector('img')!;
-    expect(image.getAttribute('src')).toBe('/brand/channels/uber-eats.webp');
+    expect(image.getAttribute('src')).toBe('/brand/channels/round/uber-eats.svg');
+    expect(image.getAttribute('width')).toBe('32');
+    expect(image.getAttribute('height')).toBe('32');
     expect(image.style.objectFit).toBe('contain');
     expect(image.alt).toBe('');
+    expect(host.querySelector('[data-channel-icon]')).not.toBeNull();
     expect(host.textContent).toContain('Uber Eats');
   });
-  it('caps the small official Deliveroo source rather than claiming a high-res asset', () => {
+  it('uses the same 32px presentation baseline for Deliveroo', () => {
     show('Deliveroo');
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('/brand/channels/round/deliveroo.svg');
     expect(host.querySelector('img')?.getAttribute('width')).toBe('32');
   });
-  it('shows a real text fallback after an image error and recovers on brand change', () => {
+  it('shows a text fallback after an image error and recovers on brand change', () => {
     show('Deliveroo');
     act(() => host.querySelector('img')!.dispatchEvent(new Event('error')));
     expect(host.querySelector('img')).toBeNull();
-    expect(host.querySelector('[data-channel-icon-fallback]')?.textContent).toBe('D');
+    expect(host.querySelector('[data-channel-icon-fallback]')?.textContent).toContain('D');
     expect(host.textContent).toContain('Deliveroo');
     show('Wolt');
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('/brand/channels/wolt.webp');
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('/brand/channels/round/wolt.svg');
     expect(host.querySelector('[data-channel-icon-fallback]')).toBeNull();
   });
-  it.each(['Uber Direct', 'JET Go', 'Just Eat Go'])('shows %s as direct delivery, without false marketplace artwork', name => {
+  it.each([
+    ['Uber Direct', '/brand/channels/round/uber-direct.svg'],
+    ['JET Go', '/brand/channels/round/jet-go.svg'],
+    ['Just Eat Go', '/brand/channels/round/jet-go.svg'],
+  ])('shows %s as direct delivery with the mapped round presentation icon', (name, icon) => {
     show(name);
     expect(host.textContent).toContain('Direct delivery');
-    expect(host.querySelector('img')).toBeNull();
-    expect(host.querySelector('[data-channel-icon-fallback]')).not.toBeNull();
+    expect(host.querySelector('img')?.getAttribute('src')).toBe(icon);
+    expect(host.querySelector('[data-channel-icon-fallback]')).toBeNull();
   });
   it('keeps the actual unknown-channel name visible', () => {
     show('Independent local delivery');
