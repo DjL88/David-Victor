@@ -225,7 +225,7 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
       expect(data.code).toBe('UNKNOWN_DELIVERECT_ACCOUNT');
     });
 
-    it('orphans requested channelLinkIds that Deliverect no longer returns instead of failing the account connection', async () => {
+    it('preserves requested channelLinkIds that Deliverect temporarily does not return', async () => {
       setServerRuntimeMode('staging');
       setMockAdminAuthForTest({
         verifyIdToken: vi.fn().mockResolvedValue({
@@ -244,7 +244,11 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
           { channelLinkId: 'chn_store_1', accountLinkId: 'acclink_acc_123', name: 'Store 1' },
         ],
       } as any);
-      const orphanSpy = vi.spyOn(FirestorePlatformService, 'markTenantStoreOrphaned').mockResolvedValue({} as any);
+      vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+        tenantId: 'brand-alpha',
+        allowedChannelLinkIds: ['chn_store_1'],
+      } as any);
+      const saveStoreSpy = vi.spyOn(FirestorePlatformService, 'saveTenantStore').mockResolvedValue({} as any);
       vi.spyOn(FirestorePlatformService, 'updateIntegrationConfig').mockResolvedValue({} as any);
       vi.spyOn(FirestorePlatformService, 'addAuditLog').mockResolvedValue({} as any);
 
@@ -263,13 +267,16 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
 
       expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.allowedChannelLinkIds).toEqual(['chn_store_1']);
-      expect(data.orphanedChannelLinkIds).toEqual(['chn_deleted_99']);
+      expect(data.allowedChannelLinkIds).toEqual(['chn_store_1', 'chn_deleted_99']);
+      expect(data.temporarilyMissingChannelLinkIds).toEqual(['chn_deleted_99']);
       expect(data.storesCount).toBe(1);
-      expect(orphanSpy).toHaveBeenCalledWith(
+      expect(saveStoreSpy).toHaveBeenCalledWith(
         'brand-alpha',
-        'chn_deleted_99',
-        'CHANNEL_LINK_NOT_RETURNED_FOR_SELECTED_ACCOUNT'
+        expect.objectContaining({
+          channelLinkId: 'chn_deleted_99',
+          assigned: true,
+          upstreamVisibility: 'MISSING',
+        })
       );
     });
   });
