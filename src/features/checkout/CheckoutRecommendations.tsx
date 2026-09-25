@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BasketItem, Product } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { ProductImage } from '../../components/media/Media';
 import { defaultAnalyticsClient } from '../../analytics';
+import { AnalyticsEventType } from '../../analytics/analyticsModels';
 import { ShoppingBag, Plus, Check, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { isHfssTagged } from '../../commerce/reverseDealEngine';
@@ -38,6 +39,7 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
   const { t } = useI18n();
   const [addingPlu, setAddingPlu] = useState<string | null>(null);
   const [addedPlus, setAddedPlus] = useState<Set<string>>(new Set());
+  const recommendationIds = useMemo(() => new Map<string, string>(), []);
 
   // Normalize candidate products and current basket PLUs safely
   const candidatePool: Product[] = (candidateProducts && candidateProducts.length > 0)
@@ -89,6 +91,25 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
     return true;
   }).slice(0, 4);
 
+  useEffect(() => {
+    for (const [rank, product] of eligibleRecommendations.entries()) {
+      if (!recommendationIds.has(product.plu)) {
+        recommendationIds.set(product.plu, `rec_checkout_${product.plu}_${Date.now().toString(36)}_${rank}`);
+      }
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.ARTIE_RECOMMENDATION_PRESENTED,
+        productPlu: product.plu,
+        storeId: currentStoreId,
+        properties: {
+          recommendationId: recommendationIds.get(product.plu),
+          surface: 'BASKET_COMPLETION',
+          rank,
+          reasonCode: 'CHECKOUT_COMPLETION',
+        },
+      });
+    }
+  }, [currentStoreId, eligibleRecommendations.map((p) => p.plu).join('|'), recommendationIds]);
+
   if (eligibleRecommendations.length === 0) {
     return null;
   }
@@ -99,11 +120,19 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
       await Promise.resolve(addHandler(product));
       setAddedPlus((prev) => new Set(prev).add(product.plu));
 
+      const recommendationId = recommendationIds.get(product.plu);
+      defaultAnalyticsClient.track({
+        type: AnalyticsEventType.ARTIE_RECOMMENDATION_ACCEPTED,
+        productPlu: product.plu,
+        storeId: currentStoreId,
+        properties: { recommendationId, surface: 'BASKET_COMPLETION', reasonCode: 'CHECKOUT_COMPLETION' },
+      });
+
       defaultAnalyticsClient.track({
         type: 'ADD_TO_BASKET',
         productPlu: product.plu,
         storeId: currentStoreId,
-        properties: { source: 'checkout_recommendations' },
+        properties: { source: 'checkout_recommendations', recommendationId },
       });
     } catch (err) {
       console.error('Failed to add recommendation to basket', err);
