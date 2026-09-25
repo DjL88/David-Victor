@@ -657,18 +657,13 @@ export const TestConnectionSchema = z.object({
 
 export const UpdateIntegrationCredentialsSchema = z.object({
   credentialMode: z.enum(['platform', 'dedicated']).default('dedicated'),
-  clientId: z.string().trim().optional(),
-  clientSecret: z.string().trim().optional(),
-  webhookSecret: z.string().trim().optional(),
+  clientId: z.string().trim().min(1).max(512).optional(),
+  clientSecret: z.string().trim().min(1).max(4096).optional(),
+  webhookSecret: z.string().trim().min(1).max(4096).optional(),
   environment: z.enum(['staging', 'production']).optional(),
   deliverectAccountId: z.string().optional(),
   channelLinkId: z.string().optional(),
-}).superRefine((value, ctx) => {
-  if (value.credentialMode === 'dedicated') {
-    if (!value.clientId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['clientId'], message: 'Client ID is required for dedicated credentials' });
-    if (!value.clientSecret) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['clientSecret'], message: 'Client Secret is required for dedicated credentials' });
-  }
-});
+}).strict();
 
 export const AssetUploadSchema = z.object({
   tenantId: z.string().optional(),
@@ -761,3 +756,4 @@ export const AdminAssistantChangeSetSchema = z.object({
   idempotencyKey: z.string().min(1).max(200).optional(),
   conversationId: z.string().min(1).max(200).optional(),
 }).strict();
+
