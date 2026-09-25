@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "size": 32,
+  "shape": "circle",
+  "basePath": "/brand/channels/round/",
+  "channels": {
+    "deliveroo": "deliveroo.svg",
+    "doordash": "doordash.svg",
+    "just-eat": "just-eat.svg",
+    "thuisbezorgd": "thuisbezorgd.svg",
+    "lieferando": "lieferando.svg",
+    "takeaway": "takeaway.svg",
+    "grubhub": "grubhub.svg",
+    "uber-eats": "uber-eats.svg",
+    "glovo": "glovo.svg",
+    "wolt": "wolt.svg",
+    "snappy-shopper": "snappy-shopper.svg",
+    "uber-direct": "uber-direct.svg",
+    "jet-go": "jet-go.svg"
+  },
+  "aliases": {
+    "door dash": "doordash",
+    "justeat": "just-eat",
+    "just eat": "just-eat",
+    "thuisbezorgd.nl": "thuisbezorgd",
+    "lieferando.de": "lieferando",
+    "lieferando.at": "lieferando",
+    "takeaway.com": "takeaway",
+    "ubereats": "uber-eats",
+    "uber eats": "uber-eats",
+    "snappy": "snappy-shopper",
+    "snappy shopper": "snappy-shopper",
+    "uber direct": "uber-direct",
+    "just eat go": "jet-go",
+    "jet go": "jet-go"
+  },
+  "notes": {
+    "snappy-shopper": "Uses Snappy Shopper's official red basket favicon artwork on the round aqua background requested for the UI.",
+    "jet-go": "Intentionally uses the same Just Eat presentation artwork as Just Eat, per product UI requirement.",
+    "uber-direct": "Compact round Uber Direct presentation lockup for 32px UI use."
+  }
+}
