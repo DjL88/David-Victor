@@ -22,7 +22,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-export const OrdersScreen: React.FC = () => {
+export const OrdersScreen: React.FC<{ initialOrderId?: string }> = ({ initialOrderId }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
   const { t } = useI18n();
   const { appMode } = useTenant();
@@ -100,6 +100,10 @@ export const OrdersScreen: React.FC = () => {
     try {
       const history = await defaultCommerceClient.getOrderHistory();
       setOrders(history);
+      if (initialOrderId) {
+        const routedOrder = history.find((order) => order.id === initialOrderId);
+        if (routedOrder) setSelectedOrder(routedOrder);
+      }
       // If there are orders and none selected, or to sync
       if (selectedOrder) {
         const found = history.find((o) => o.id === selectedOrder.id);
@@ -114,7 +118,7 @@ export const OrdersScreen: React.FC = () => {
 
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [initialOrderId]);
 
   const handleCreateDemo = async (scenario: DemoScenario) => {
     setLoading(true);
