@@ -12,19 +12,21 @@ interface MarketplaceService {
 
 function BrandTile({ identity, label }: { identity: DeliveryMarketplaceIdentity; label: string }) {
   const [failed, setFailed] = useState(false);
-  const pixels = identity.maxIconPixels || 40;
+  const iconUrl = identity.badgeIconUrl || identity.iconUrl;
   const initials = label.trim().split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase() || '?';
   return (
-    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white p-2" aria-hidden="true">
-      {identity.iconUrl && !failed ? (
+    <span data-channel-icon className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white" aria-hidden="true">
+      {iconUrl && !failed ? (
         <img
-          src={identity.iconUrl} alt="" width={pixels} height={pixels}
-          className="max-h-full max-w-full object-contain"
-          style={{ width: pixels, height: pixels, objectFit: 'contain' }}
+          src={iconUrl} alt="" width={32} height={32}
+          className="h-8 w-8 object-contain"
+          style={{ width: 32, height: 32, objectFit: 'contain' }}
           onError={() => setFailed(true)}
         />
       ) : (
-        <span data-channel-icon-fallback className="text-xs font-semibold text-slate-500">{initials}</span>
+        <span data-channel-icon-fallback className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-slate-50 text-[10px] font-semibold text-slate-500">
+          {initials}
+        </span>
       )}
     </span>
   );
@@ -45,8 +47,8 @@ export const MarketplaceServiceBadge: React.FC<{ service: MarketplaceService }> 
   const href = externalUrl(service.url);
   const content = (
     <>
-      <span className="flex min-w-0 items-center gap-3">
-        <BrandTile key={`${marketplace.key}:${marketplace.iconUrl || ''}`} identity={marketplace} label={label} />
+      <span className="flex min-w-0 items-center gap-2.5">
+        <BrandTile key={`${marketplace.key}:${marketplace.badgeIconUrl || marketplace.iconUrl || ''}`} identity={marketplace} label={label} />
         <span className="min-w-0">
           <span className="block truncate">{label}</span>
           {marketplace.serviceKind === 'direct-delivery' && (
