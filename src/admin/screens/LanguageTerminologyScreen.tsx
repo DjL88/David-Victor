@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Languages, RefreshCw } from 'lucide-react';
 import { AdminUser, TenantConfig } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
-import { SUPPORTED_LOCALES } from '../../i18n/locales';
+import { SUPPORTED_LOCALES, isSupportedLocale, normaliseSupportedLocale } from '../../i18n/locales';
 import {
   BRAND_COPY_FIELDS,
   resolveStorefrontCopy,
@@ -35,14 +35,16 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
     setError('');
     try {
       const next = await defaultAdminClient.getBranding(tenantId);
-      const locales = next.enabledLocales?.length
-        ? next.enabledLocales
+      const safeDefault = normaliseSupportedLocale(next.locale, 'en-GB');
+      const configuredLocales = (next.enabledLocales || []).filter(isSupportedLocale);
+      const locales = configuredLocales.length
+        ? Array.from(new Set([safeDefault, ...configuredLocales]))
         : SUPPORTED_LOCALES.map((locale) => locale.code);
       setConfig(next);
-      setDefaultLocale(next.locale || 'en-GB');
+      setDefaultLocale(safeDefault);
       setEnabledLocales(locales);
       setCopyLocale((current) =>
-        locales.includes(current) ? current : (next.locale || locales[0] || 'en-GB')
+        locales.includes(current) ? current : (safeDefault || locales[0] || 'en-GB')
       );
       setCopyOverrides((next.copyOverrides || {}) as StorefrontCopyOverrides);
     } catch (err: any) {
@@ -60,14 +62,14 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
     onAdminAiPrefill('languages', ({ prefill }) => {
       if (!prefill) return;
 
-      if (typeof prefill.defaultLocale === 'string') {
+      if (typeof prefill.defaultLocale === 'string' && isSupportedLocale(prefill.defaultLocale)) {
         const locale = prefill.defaultLocale;
         setDefaultLocale(locale);
         setEnabledLocales((current) => current.includes(locale) ? current : [...current, locale]);
         setCopyLocale(locale);
       }
 
-      if (typeof prefill.copyLocale === 'string') {
+      if (typeof prefill.copyLocale === 'string' && isSupportedLocale(prefill.copyLocale)) {
         const locale = prefill.copyLocale;
         setEnabledLocales((current) => current.includes(locale) ? current : [...current, locale]);
         setCopyLocale(locale);
