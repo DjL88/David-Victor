@@ -28,6 +28,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
   page,
   products = [],
   categories = [],
+  stories = [],
   onSelectProduct = () => {},
   onSelectCategory = () => {},
   onAddToCart = () => {},
@@ -280,6 +281,61 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                   })}
                 </div>
               </div>
+            );
+
+          case 'Image':
+            return (
+              <figure key={block.id} className="space-y-2">
+                <img
+                  src={block.imageUrl}
+                  alt={block.altText}
+                  className={`w-full rounded-2xl object-cover ${block.aspectRatio === '1:1' ? 'aspect-square' : block.aspectRatio === '4:3' ? 'aspect-[4/3]' : 'aspect-video'}`}
+                />
+                {block.caption && <figcaption className="text-xs text-gray-500">{block.caption}</figcaption>}
+              </figure>
+            );
+
+          case 'Video':
+            return (
+              <figure key={block.id} className="space-y-2">
+                <video
+                  src={block.videoUrl}
+                  poster={block.posterUrl}
+                  autoPlay={block.autoplay === true}
+                  muted={block.autoplay === true}
+                  playsInline
+                  controls
+                  className="w-full rounded-2xl bg-black"
+                />
+                {block.caption && <figcaption className="text-xs text-gray-500">{block.caption}</figcaption>}
+              </figure>
+            );
+
+          case 'Stories':
+            return (
+              <section key={block.id} className="space-y-3">
+                {block.title && <h3 className="text-lg font-bold text-gray-900">{block.title}</h3>}
+                {stories.length > 0 ? (
+                  <div className="flex gap-3 overflow-x-auto pb-2">
+                    {stories.map((story) => (
+                      <div key={story.id} className="min-w-28 max-w-28">
+                        <div className="aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100">
+                          {story.thumbnailUrl || (story.mediaType !== 'video' && story.mediaUrl) ? (
+                            <img
+                              src={story.thumbnailUrl || story.mediaUrl}
+                              alt={story.title || 'Story'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                        </div>
+                        {story.title && <p className="mt-1 line-clamp-2 text-xs font-bold text-gray-800">{story.title}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">No stories are currently available.</p>
+                )}
+              </section>
             );
 
           case 'CTA':
