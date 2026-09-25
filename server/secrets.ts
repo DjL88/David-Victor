@@ -109,6 +109,7 @@ export class SecretManager {
    */
   static async setSecret(secretName: string, value: string, persistToGcp: boolean = false): Promise<boolean> {
     const trimmed = value.trim();
+    const previousCachedValue = secretCache.get(secretName);
     secretCache.set(secretName, { value: trimmed, cachedAt: Date.now() });
 
     if (persistToGcp) {
@@ -122,12 +123,16 @@ export class SecretManager {
       }
       const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || firebaseProjectId;
       if (!projectId) {
+        if (previousCachedValue) secretCache.set(secretName, previousCachedValue);
+        else secretCache.delete(secretName);
         console.warn(`[SecretManager] GCP Project ID unavailable; cannot persist secret ${secretName} to Secret Manager.`);
         return false;
       }
 
       const client = getGcpSecretClient();
       if (!client) {
+        if (previousCachedValue) secretCache.set(secretName, previousCachedValue);
+        else secretCache.delete(secretName);
         console.warn(`[SecretManager] GCP Secret Manager client unavailable; cannot persist secret ${secretName}.`);
         return false;
       }
@@ -143,13 +148,23 @@ export class SecretManager {
           });
         } catch (err: any) {
           if (err.code === 5 /* NOT_FOUND */) {
+            const replicationLocations = String(
+              process.env.SECRET_MANAGER_REPLICATION_LOCATIONS || ''
+            )
+              .split(',')
+              .map((location) => location.trim())
+              .filter((location) => /^[a-z][a-z0-9-]{1,62}$/.test(location));
             await client.createSecret({
               parent,
               secretId: secretName,
               secret: {
-                replication: {
-                  automatic: {},
-                },
+                replication: replicationLocations.length > 0
+                  ? {
+                      userManaged: {
+                        replicas: replicationLocations.map((location) => ({ location })),
+                      },
+                    }
+                  : { automatic: {} },
               },
             });
             await client.addSecretVersion({
@@ -164,6 +179,8 @@ export class SecretManager {
         }
         return true;
       } catch (err: any) {
+        if (previousCachedValue) secretCache.set(secretName, previousCachedValue);
+        else secretCache.delete(secretName);
         console.warn(`[SecretManager] Failed to persist secret ${secretName} to GCP:`, err.message);
         return false;
       }
@@ -179,3 +196,4 @@ export class SecretManager {
     secretCache.clear();
   }
 }
+
