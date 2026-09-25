@@ -40,6 +40,25 @@ describe('audit follow-up security and routing closures', () => {
     expect(source).toContain('FirebaseAuthDomainService.ensureAuthorizedDomain');
   });
 
+  it('returns Firebase App Hosting DNS and certificate fields from the domain registry', () => {
+    const source = read('server/firestoreService.ts');
+    const listProjection = source.slice(
+      source.indexOf('static async listAllDomains'),
+      source.indexOf('static async getDomainsForTenant')
+    );
+    for (const field of [
+      'provisioningProvider',
+      'providerResourceName',
+      'providerHostState',
+      'providerOwnershipState',
+      'providerCertState',
+      'requiredDnsRecords',
+      'provisioningIssues',
+    ]) {
+      expect(listProjection).toContain(`${field}: data.${field}`);
+    }
+  });
+
   it('code-splits admin and checkout and renders CMS routes', () => {
     const app = read('src/App.tsx');
     const layout = read('src/app/AppLayout.tsx');

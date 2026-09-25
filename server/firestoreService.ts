@@ -667,6 +667,13 @@ export class FirestoreService {
               verificationRecordValue: data.verificationRecordValue,
               ownershipVerifiedAt: data.ownershipVerifiedAt,
               tlsStatus: data.tlsStatus,
+              provisioningProvider: data.provisioningProvider,
+              providerResourceName: data.providerResourceName,
+              providerHostState: data.providerHostState,
+              providerOwnershipState: data.providerOwnershipState,
+              providerCertState: data.providerCertState,
+              requiredDnsRecords: data.requiredDnsRecords,
+              provisioningIssues: data.provisioningIssues,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
             });
