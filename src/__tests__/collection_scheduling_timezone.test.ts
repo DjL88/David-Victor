@@ -44,7 +44,6 @@ describe('collection scheduling timezone handling', () => {
     const payload = projectRetailQuestOrder({
       channelOrderId: 'LT-TZ-001',
       channelOrderDisplayId: 'LT-TZ-001',
-      placedTime: '2026-07-01T12:00:00.000Z',
       fulfillmentType: 'pickup',
       fulfillmentTime: pickupTime,
       totalMinor: 100,

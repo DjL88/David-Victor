@@ -3786,7 +3786,6 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const payload: any = projectRetailQuestOrder({
       channelOrderId: channelOrderReference,
       channelOrderDisplayId,
-      placedTime: now,
       fulfillmentType: basket.fulfillmentType === 'delivery' ? 'delivery' : 'pickup',
       fulfillmentTime: scheduledFulfillmentTime,
       totalMinor: basket.total.amount,

@@ -28,12 +28,10 @@ async function main() {
   const parsed = new URL(url);
   if (parsed.protocol !== 'https:') throw new Error('Retail staging proof requires an https URL.');
 
-  const now = new Date().toISOString();
   const proofId = `LT-CERT-${Date.now()}`;
   const payload = projectRetailQuestOrder({
     channelOrderId: proofId,
     channelOrderDisplayId: proofId,
-    placedTime: now,
     fulfillmentType: 'pickup',
     totalMinor: 155,
     hasOnlineAuthorization: false,
