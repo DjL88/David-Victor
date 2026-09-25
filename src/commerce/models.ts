@@ -1200,6 +1200,29 @@ export interface ConnectionTraceResult {
   }>;
 }
 
+export type OperationalReadinessStatus = 'HEALTHY' | 'NEEDS_ATTENTION' | 'NOT_READY';
+
+export interface OperationalReadinessIssue {
+  code: 'ACCOUNT_NOT_MAPPED' | 'NO_LOCATIONS' | 'NO_COMMERCE_STORES' | 'CATALOGUE_REVIEW_REQUIRED';
+  severity: 'WARNING' | 'CRITICAL';
+  count: number;
+  message: string;
+}
+
+export interface OperationalReadinessSummary {
+  tenantId: string;
+  status: OperationalReadinessStatus;
+  issueCount: number;
+  checkedAt: string;
+  counts: {
+    accounts: number;
+    physicalLocations: number;
+    commerceStores: number;
+    heldCatalogueReviews: number;
+  };
+  issues: OperationalReadinessIssue[];
+}
+
 export interface ConnectionHealthData {
   runtimeMode: 'demo' | 'staging' | 'production' | 'unknown';
   resolvedTenant: {
