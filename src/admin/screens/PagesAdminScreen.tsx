@@ -41,7 +41,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [tenantLocales, setTenantLocales] = useState(SUPPORTED_LOCALES);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [dirty, setDirty] = useState(false);
+  const [savedPageSignature, setSavedPageSignature] = useState<string>('');
+  const pageSignature = (page: CmsPage) => JSON.stringify(page);
+  const dirty = savedPageSignature !== pageSignature(selectedPage);
 
   useEffect(() => {
     defaultAdminClient.getBranding(tenantId)
@@ -54,7 +56,14 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     setError('');
     auth.currentUser?.getIdToken().then((token) => fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } }))
       .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to load pages')))
-      .then((data) => { const loaded = data.pages || []; setPages(loaded); setSelectedPage(loaded[0] || blankPage()); })
+      .then((data) => {
+        const loaded = data.pages || [];
+        const initialPage = loaded[0] || blankPage();
+        setPages(loaded);
+        setSelectedPage(initialPage);
+        setSavedPageSignature(loaded[0] ? pageSignature(initialPage) : '');
+        setSelectedBlockId(null);
+      })
       .catch((err) => { console.error(err); setPages([]); setSelectedPage(blankPage()); setError('Could not load CMS pages. Check your admin session and try again.'); })
       .finally(() => setLoading(false));
   }, [tenantId]);
@@ -68,7 +77,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     if (!response.ok) throw new Error('Failed to save CMS page');
     const saved = await response.json();
     setSelectedPage(saved);
-    setDirty(false);
+    setSavedPageSignature(pageSignature(saved));
     setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
     setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
@@ -78,14 +87,28 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const variant = pageVariantMetadata(selectedPage);
   const updateVariant = (patch: Partial<NonNullable<CmsPage['variant']>>) => setSelectedPage((page) => ({ ...page, variant: { ...pageVariantMetadata(page), ...patch } }));
 
-  const createPage = () => setSelectedPage(blankPage());
-  const duplicatePage = () => setSelectedPage({ ...selectedPage, id: `page_${Date.now()}`, title: `${selectedPage.title} copy`, slug: `${selectedPage.slug}-copy`, status: 'draft', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const createPage = () => {
+    const page = blankPage();
+    setSelectedPage(page);
+    setSavedPageSignature('');
+    setSelectedBlockId(null);
+  };
+  const duplicatePage = () => {
+    setSelectedPage({ ...selectedPage, id: `page_${Date.now()}`, title: `${selectedPage.title} copy`, slug: `${selectedPage.slug}-copy`, status: 'draft', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    setSavedPageSignature('');
+    setSelectedBlockId(null);
+  };
   const deletePage = async () => {
     if (!pages.some((page) => page.id === selectedPage.id) || !window.confirm(`Delete “${selectedPage.title}”?`)) return;
     const token = await auth.currentUser?.getIdToken();
     const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } });
     if (!response.ok) throw new Error('Failed to delete CMS page');
-    const next = pages.filter((page) => page.id !== selectedPage.id); setPages(next); setSelectedPage(next[0] || blankPage());
+    const next = pages.filter((page) => page.id !== selectedPage.id);
+    const nextPage = next[0] || blankPage();
+    setPages(next);
+    setSelectedPage(nextPage);
+    setSavedPageSignature(next[0] ? pageSignature(nextPage) : '');
+    setSelectedBlockId(null);
   };
 
   const addBlock = (type: CmsBlockType) => {
@@ -181,7 +204,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     }));
   };
 
-  const updatePage = (next: CmsPage) => { setSelectedPage(next); setDirty(true); };
+  const updatePage = (next: CmsPage) => { setSelectedPage(next); };
   const duplicateBlock = (id: string) => {
     const source = selectedPage.blocks.find((block) => block.id === id);
     if (!source) return;
@@ -209,7 +232,6 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     });
 
     setSelectedPage((prev) => ({ ...prev, blocks: newBlocks }));
-    setDirty(true);
   };
 
   return (
@@ -274,7 +296,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-3">
             <div className="flex items-center justify-between"><h3 className="text-xs font-bold">Site pages</h3><button type="button" onClick={createPage} className="text-xs font-bold text-indigo-700 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />New</button></div>
-            <div className="space-y-1 max-h-48 overflow-auto">{pages.map((page) => <button type="button" key={page.id} onClick={() => setSelectedPage(page)} className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPage.id === page.id ? 'bg-indigo-50 text-indigo-800 font-bold' : 'hover:bg-gray-50'}`}>{page.navigationLabel || page.title}<span className="float-right text-[10px] opacity-60">{page.status}</span></button>)}</div>
+            <div className="space-y-1 max-h-48 overflow-auto">{pages.map((page) => <button type="button" key={page.id} onClick={() => { setSelectedPage(page); setSavedPageSignature(pageSignature(page)); setSelectedBlockId(null); }} className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPage.id === page.id ? 'bg-indigo-50 text-indigo-800 font-bold' : 'hover:bg-gray-50'}`}>{page.navigationLabel || page.title}<span className="float-right text-[10px] opacity-60">{page.status}</span></button>)}</div>
             <div className="flex gap-2"><button type="button" onClick={duplicatePage} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-bold">Duplicate</button><button type="button" onClick={deletePage} className="px-2 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold">Delete</button></div>
           </div>
           <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
