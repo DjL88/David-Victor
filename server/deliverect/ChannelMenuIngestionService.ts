@@ -737,7 +737,7 @@ export class ChannelMenuIngestionService {
     const record = await this.getIngressRecord(params.tenantId, params.eventId);
     if (!record || record.status !== 'REVIEW_REQUIRED') {
       throw new BFFError(
-        'RESOURCE_NOT_FOUND',
+        'MENU_NOT_AVAILABLE',
         'No held catalogue change was found for this tenant and event.',
         404
       );
