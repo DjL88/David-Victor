@@ -22,7 +22,10 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-export const OrdersScreen: React.FC<{ initialOrderId?: string }> = ({ initialOrderId }) => {
+export const OrdersScreen: React.FC<{
+  initialOrderId?: string;
+  onNavigateOrder?: (orderId?: string) => void;
+}> = ({ initialOrderId, onNavigateOrder }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
   const { t } = useI18n();
   const { appMode } = useTenant();
@@ -117,7 +120,8 @@ export const OrdersScreen: React.FC<{ initialOrderId?: string }> = ({ initialOrd
   };
 
   useEffect(() => {
-    loadOrders();
+    if (!initialOrderId) setSelectedOrder(null);
+    void loadOrders();
   }, [initialOrderId]);
 
   const handleCreateDemo = async (scenario: DemoScenario) => {
@@ -140,7 +144,10 @@ export const OrdersScreen: React.FC<{ initialOrderId?: string }> = ({ initialOrd
             setSelectedOrder(updated);
             setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
           }}
-          onBackToList={() => setSelectedOrder(null)}
+          onBackToList={() => {
+            setSelectedOrder(null);
+            onNavigateOrder?.();
+          }}
         />
       </div>
     );
@@ -263,7 +270,10 @@ export const OrdersScreen: React.FC<{ initialOrderId?: string }> = ({ initialOrd
             return (
               <div
                 key={order.id}
-                onClick={() => setSelectedOrder(order)}
+                onClick={() => {
+                  setSelectedOrder(order);
+                  onNavigateOrder?.(order.id);
+                }}
                 className="p-4 rounded-3xl bg-white border border-gray-100 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-3 group"
               >
                 <div className="flex items-center justify-between">
