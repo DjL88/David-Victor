@@ -1,6 +1,6 @@
 {
   "projects": {
-    "nonprod": "lt-nonprod",
+    "nonprod": "leitch-tech-nonprod",
     "prod": "lt-prod"
   }
 }

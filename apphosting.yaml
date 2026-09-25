@@ -11,11 +11,34 @@ env:
       - RUNTIME
       - BUILD
 
-  # This deployment currently serves the provisioned brand-alpha tenant on the
-  # Firebase-managed *.hosted.app origin. Custom domains still resolve from the
-  # verified domain registry; this value is only the managed-host default.
+  # The managed staging origin is pinned to the provisioned Leitch Tech tenant.
+  # Custom domains still resolve through the verified domain registry.
   - variable: PREVIEW_TENANT_ID
-    value: brand-alpha
+    value: 68517fde1c3ddaa7f6d0275c
+    availability:
+      - RUNTIME
+
+  - variable: INTEGRATION_PROFILE_REQUIRED
+    value: "true"
+    availability:
+      - RUNTIME
+
+  # Keep the staging runtime pinned to the dedicated LT Firebase project. These
+  # identifiers are public deployment configuration, not credentials.
+  - variable: FIREBASE_PROJECT_ID
+    value: leitch-tech-nonprod
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: leitch-tech-nonprod.firebasestorage.app
+    availability:
+      - RUNTIME
+      - BUILD
+
+  - variable: FIRESTORE_DATABASE_ID
+    value: (default)
     availability:
       - RUNTIME
 
@@ -45,18 +68,9 @@ env:
   # and provide VITE_FIREBASE_APPCHECK_SITE_KEY at BUILD time. The site key is
   # public web configuration; private reCAPTCHA credentials do not belong here.
 
-  # Cloud Tasks worker identity and exact OIDC audience are injected from
-  # Secret Manager. The audience is also the canonical worker target origin.
-  - variable: CLOUD_TASKS_SA_EMAIL
-    secret: cloud_tasks_sa_email
-    availability:
-      - RUNTIME
-
-  - variable: CLOUD_TASKS_AUDIENCE
-    secret: cloud_tasks_audience
-    availability:
-      - RUNTIME
-
+  # Cloud Tasks remains disabled during the first non-production rollout. Add
+  # CLOUD_TASKS_SA_EMAIL, CLOUD_TASKS_AUDIENCE and queue names only after the
+  # dedicated service account, queues and final hosted origin are provisioned.
 
   # Non-production deployment guard. Tenant integration profiles cannot switch
   # this service to production endpoints or production secrets.
