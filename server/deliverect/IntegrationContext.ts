@@ -95,13 +95,17 @@ export class IntegrationContext {
   /**
    * Resolves the full integration context for a given tenant.
    */
-  static async getContext(tenantId: string): Promise<TenantIntegrationConfig> {
+  static async getContext(
+    tenantId: string,
+    options?: { allowDraftProfile?: boolean }
+  ): Promise<TenantIntegrationConfig> {
     if (!tenantId) {
       throw new BFFError('INVALID_INPUT', 'Cannot resolve Deliverect integration context without a valid tenant ID', 400);
     }
 
+    const allowDraftProfile = options?.allowDraftProfile === true;
     const cached = this.contextCache.get(tenantId);
-    if (cached && Date.now() - cached.cachedAt < this.TTL_MS) {
+    if (!allowDraftProfile && cached && Date.now() - cached.cachedAt < this.TTL_MS) {
       return cached.config;
     }
 
@@ -140,9 +144,12 @@ export class IntegrationContext {
       if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true') throw err;
     }
 
-    const activeProfile =
-      integrationProfile?.status === 'ACTIVE' ? integrationProfile : null;
-    if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true' && !activeProfile) {
+    const effectiveProfile =
+      integrationProfile?.status === 'ACTIVE' ||
+      (allowDraftProfile && integrationProfile?.status === 'DRAFT')
+        ? integrationProfile
+        : null;
+    if (process.env.INTEGRATION_PROFILE_REQUIRED === 'true' && !effectiveProfile) {
       throw new BFFError(
         'INTEGRATION_NOT_CONFIGURED',
         `Active integration profile "${tenantId}__${environment}" is required for this deployment.`,
@@ -153,35 +160,42 @@ export class IntegrationContext {
     // 2. Resolve credentials according to the tenant's explicit credential mode.
     // Existing tenants default to platform credentials for backwards compatibility.
     const configuredCredentialMode =
-      activeProfile?.credentialMode || integrationRecord?.credentialMode;
+      effectiveProfile?.credentialMode || integrationRecord?.credentialMode;
     const resolutionMode: 'legacy' | 'platform' | 'dedicated' =
       configuredCredentialMode === 'dedicated'
         ? 'dedicated'
         : configuredCredentialMode === 'platform'
           ? 'platform'
           : 'legacy';
+    const platformEnvironmentSuffix = environment.toUpperCase();
+    const environmentPlatformClientId = resolutionMode === 'platform'
+      ? await SecretManager.getSecret(`DELIVERECT_CLIENT_ID_${platformEnvironmentSuffix}`)
+      : null;
+    const environmentPlatformClientSecret = resolutionMode === 'platform'
+      ? await SecretManager.getSecret(`DELIVERECT_CLIENT_SECRET_${platformEnvironmentSuffix}`)
+      : null;
 
     const clientId =
-      (activeProfile?.secretRefs?.deliverectClientId
-        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectClientId)
-        : await TenantSecretResolver.resolveTenantSecret(
+      (effectiveProfile?.secretRefs?.deliverectClientId
+        ? await SecretManager.getSecret(effectiveProfile.secretRefs.deliverectClientId)
+        : environmentPlatformClientId || await TenantSecretResolver.resolveTenantSecret(
             tenantId,
             'DELIVERECT_CLIENT_ID',
             resolutionMode
           )) || '';
 
     const clientSecret =
-      (activeProfile?.secretRefs?.deliverectClientSecret
-        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectClientSecret)
-        : await TenantSecretResolver.resolveTenantSecret(
+      (effectiveProfile?.secretRefs?.deliverectClientSecret
+        ? await SecretManager.getSecret(effectiveProfile.secretRefs.deliverectClientSecret)
+        : environmentPlatformClientSecret || await TenantSecretResolver.resolveTenantSecret(
             tenantId,
             'DELIVERECT_CLIENT_SECRET',
             resolutionMode
           )) || '';
 
     const webhookSecret =
-      (activeProfile?.secretRefs?.deliverectWebhookSecret
-        ? await SecretManager.getSecret(activeProfile.secretRefs.deliverectWebhookSecret)
+      (effectiveProfile?.secretRefs?.deliverectWebhookSecret
+        ? await SecretManager.getSecret(effectiveProfile.secretRefs.deliverectWebhookSecret)
         : await SecretManager.getSecret(`deliverect-webhook-${tenantId}`)) || '';
 
     // Legacy records preserve their old resolution behaviour, but expose which
@@ -208,7 +222,7 @@ export class IntegrationContext {
     });
 
     let deliverectAccountId =
-      activeProfile?.deliverect?.accountId || integrationRecord?.deliverectAccountId;
+      effectiveProfile?.deliverect?.accountId || integrationRecord?.deliverectAccountId;
     if (!deliverectAccountId) {
       try {
         const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId);
@@ -220,12 +234,12 @@ export class IntegrationContext {
     }
 
     const channelName =
-      activeProfile?.deliverect?.channelName ||
+      effectiveProfile?.deliverect?.channelName ||
       integrationRecord?.channelName ||
       process.env.DELIVERECT_CHANNEL_NAME ||
       undefined;
     const configuredOrderRoute = String(
-      activeProfile?.deliverect?.orderRoute ||
+      effectiveProfile?.deliverect?.orderRoute ||
       integrationRecord?.orderRoute ||
       process.env.DELIVERECT_ORDER_ROUTE ||
       'retail_quest'
@@ -243,22 +257,26 @@ export class IntegrationContext {
       clientSecret,
       webhookSecret,
       deliverectAccountId,
-      allowedChannelLinkIds: activeProfile
-        ? activeProfile.allowedChannelLinkIds.map(String)
+      allowedChannelLinkIds: effectiveProfile
+        ? effectiveProfile.allowedChannelLinkIds.map(String)
         : Array.isArray(integrationRecord?.allowedChannelLinkIds)
           ? integrationRecord.allowedChannelLinkIds.map(String)
           : [],
       channelName,
-      retailOrder: activeProfile?.deliverect?.retailOrder || integrationRecord?.retailOrder,
+      retailOrder: effectiveProfile?.deliverect?.retailOrder || integrationRecord?.retailOrder,
       orderRoute,
-      publicBaseUrl: activeProfile?.publicBaseUrl,
-      profileVersion: activeProfile?.version,
-      dpay: activeProfile?.dpay,
+      publicBaseUrl: effectiveProfile?.publicBaseUrl,
+      profileVersion: effectiveProfile?.version,
+      dpay: effectiveProfile?.dpay,
       tokenManager,
       isConfigured,
     };
 
-    this.contextCache.set(tenantId, { config: context, cachedAt: Date.now() });
+    // Draft contexts are only for Admin onboarding/diagnostics. Never place one
+    // in the runtime cache where workers could accidentally consume it.
+    if (!allowDraftProfile) {
+      this.contextCache.set(tenantId, { config: context, cachedAt: Date.now() });
+    }
     return context;
   }
 

@@ -5554,7 +5554,9 @@ v1Router.get('/admin/integrations/:id', requireAdminAuth('tenantAdmin'), async (
   try {
     const tenantId = req.params.id;
     const config = await FirestorePlatformService.getIntegrationConfig(tenantId);
-    const context = await IntegrationContext.getContext(tenantId);
+    const context = await IntegrationContext.getContext(tenantId, {
+      allowDraftProfile: true,
+    });
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const firstChannelLinkId = config.allowedChannelLinkIds?.[0] || config.channelLinkId;
     let retailOrderEndpoint: any = null;
@@ -6125,6 +6127,23 @@ v1Router.post('/admin/tenants/:id/integration/test-oauth', requireAdminAuth(), r
     actor: { uid: authAdmin.uid, name: authAdmin.name, role: authAdmin.role },
   });
 
+  // A saved profile remains DRAFT until its credential source has completed a
+  // genuine Deliverect OAuth exchange. Runtime workers still reject DRAFT.
+  if (result.success) {
+    const profile = await FirestorePlatformService.getIntegrationProfile(
+      tenantId,
+      result.environment
+    );
+    if (profile && profile.status === 'DRAFT') {
+      await FirestorePlatformService.updateIntegrationProfile({
+        ...profile,
+        status: 'ACTIVE',
+        version: profile.version + 1,
+      });
+      IntegrationContext.invalidate(tenantId);
+    }
+  }
+
   console.log(`[Deliverect OAuth] Test OAuth completed for "${tenantId}": status=${result.status}, success=${result.success}, latency=${result.latencyMs}ms`);
   res.status(result.success ? 200 : (result.status === 'UNCONFIGURED' ? 400 : 401)).json(result);
 });
@@ -6214,7 +6233,9 @@ v1Router.get('/admin/tenants/:id/integration', requireAdminAuth(), async (req: R
   try {
     const tenantId = req.params.id;
     const integration = await FirestorePlatformService.getTenantIntegration(tenantId);
-    const context = await IntegrationContext.getContext(tenantId);
+    const context = await IntegrationContext.getContext(tenantId, {
+      allowDraftProfile: true,
+    });
 
     res.json({
       integration,
@@ -6256,6 +6277,16 @@ v1Router.post(
         code: 'DELIVERECT_ASSIGNMENT_FORBIDDEN',
       });
     }
+    if (
+      credentialMode === 'platform' &&
+      !isPlatformSuperAdmin &&
+      (clientId !== undefined || clientSecret !== undefined)
+    ) {
+      return res.status(403).json({
+        error: 'Only a Platform Super Admin can update the shared LT Deliverect partner credentials.',
+        code: 'DELIVERECT_PLATFORM_CREDENTIALS_FORBIDDEN',
+      });
+    }
 
     const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
     const existingProfile = await FirestorePlatformService.getIntegrationProfile(
@@ -6269,8 +6300,12 @@ v1Router.post(
       webhookSecret: `${prefix}deliverect-webhook-secret`,
     };
     const existingRefs = existingProfile?.secretRefs || {};
-    const clientIdSecretName = existingRefs.deliverectClientId || secretNames.clientId;
-    const clientSecretSecretName = existingRefs.deliverectClientSecret || secretNames.clientSecret;
+    const clientIdSecretName = credentialMode === 'platform'
+      ? `DELIVERECT_CLIENT_ID_${resolvedEnvironment.toUpperCase()}`
+      : existingRefs.deliverectClientId || secretNames.clientId;
+    const clientSecretSecretName = credentialMode === 'platform'
+      ? `DELIVERECT_CLIENT_SECRET_${resolvedEnvironment.toUpperCase()}`
+      : existingRefs.deliverectClientSecret || secretNames.clientSecret;
     const webhookSecretName = existingRefs.deliverectWebhookSecret || secretNames.webhookSecret;
 
     // Secret values are write-only. Empty inputs retain the currently configured
@@ -6290,6 +6325,14 @@ v1Router.post(
         code: 'DELIVERECT_CLIENT_SECRET_REQUIRED',
       });
     }
+    if (credentialMode === 'platform' && (!hasExistingClientId && !clientId || !hasExistingClientSecret && !clientSecret)) {
+      return res.status(400).json({
+        error: isPlatformSuperAdmin
+          ? 'Enter the shared LT Deliverect partner Client ID and Client Secret before using the platform connection.'
+          : 'The shared LT Deliverect partner connection has not been configured by a Platform Super Admin.',
+        code: 'DELIVERECT_PLATFORM_CREDENTIALS_REQUIRED',
+      });
+    }
 
     const savedId = clientId
       ? await SecretManager.setSecret(clientIdSecretName, clientId, true)
@@ -6301,22 +6344,22 @@ v1Router.post(
       ? await SecretManager.setSecret(webhookSecretName, webhookSecret, true)
       : true;
 
-    if (credentialMode === 'dedicated') {
+    if (credentialMode === 'dedicated' || credentialMode === 'platform') {
       if ((!savedId || !savedSecret || !savedWebhook) && isLiveMode()) {
         return res.status(500).json({
-          error: 'Failed to persist dedicated credentials in Google Cloud Secret Manager.',
+          error: 'Failed to persist Deliverect credentials in Google Cloud Secret Manager.',
           code: 'SECRET_PERSISTENCE_FAILED',
         });
       }
-    } else if (!savedWebhook && isLiveMode()) {
-      return res.status(500).json({
-        error: 'Failed to persist the tenant webhook secret in Google Cloud Secret Manager.',
-        code: 'SECRET_PERSISTENCE_FAILED',
-      });
     }
 
+    const {
+      deliverectClientId: _oldClientIdRef,
+      deliverectClientSecret: _oldClientSecretRef,
+      ...nonCredentialRefs
+    } = existingRefs;
     const nextSecretRefs = {
-      ...existingRefs,
+      ...nonCredentialRefs,
       ...(credentialMode === 'dedicated'
         ? {
             deliverectClientId: clientIdSecretName,
@@ -6327,11 +6370,13 @@ v1Router.post(
         ? { deliverectWebhookSecret: webhookSecretName }
         : {}),
     };
+    const credentialSourceChanged =
+      existingProfile?.credentialMode !== credentialMode || Boolean(clientId || clientSecret);
     await FirestorePlatformService.updateIntegrationProfile({
       id: integrationProfileId(tenantId, resolvedEnvironment),
       tenantId,
       environment: resolvedEnvironment,
-      status: existingProfile?.status || 'DRAFT',
+      status: credentialSourceChanged ? 'DRAFT' : existingProfile?.status || 'DRAFT',
       version: (existingProfile?.version || 0) + 1,
       publicBaseUrl: existingProfile?.publicBaseUrl,
       credentialMode,
@@ -6376,7 +6421,7 @@ v1Router.post(
             clientSecret ? 'clientSecret' : null,
             webhookSecret ? 'webhookSecret' : null,
           ].filter(Boolean).join(', ') || 'mode only'}.`
-        : `Switched Deliverect credential source to platform credentials for ${resolvedEnvironment}${webhookSecret ? ' and rotated the tenant webhook secret' : ''}.`,
+        : `Configured the shared LT Deliverect partner credential source for ${resolvedEnvironment}${clientId || clientSecret ? ' and rotated platform credentials' : ''}${webhookSecret ? ' and rotated the tenant webhook secret' : ''}.`,
     });
 
     res.json({
@@ -6385,8 +6430,8 @@ v1Router.post(
       credentials: {
         configured: credentialMode === 'platform' || Boolean((clientId || hasExistingClientId) && (clientSecret || hasExistingClientSecret)),
         mode: credentialMode,
-        hasClientId: credentialMode === 'dedicated' && Boolean(clientId || hasExistingClientId),
-        hasClientSecret: credentialMode === 'dedicated' && Boolean(clientSecret || hasExistingClientSecret),
+        hasClientId: Boolean(clientId || hasExistingClientId),
+        hasClientSecret: Boolean(clientSecret || hasExistingClientSecret),
         hasWebhookSecret: Boolean(webhookSecret || existingRefs.deliverectWebhookSecret),
       },
     });

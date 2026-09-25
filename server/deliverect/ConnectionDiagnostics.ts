@@ -2,9 +2,10 @@ import { DeliverectIntegration } from '../../src/domain/models';
 import { OAuthTokenManager, DeliverectEnvironmentName } from './OAuthTokenManager';
 import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
 import { FirestorePlatformService } from '../firestoreService';
-import { TenantSecretResolver } from './IntegrationContext';
+import { IntegrationContext, TenantSecretResolver } from './IntegrationContext';
 import { getFirestoreDb } from '../firebase';
 import { isDemoMode } from '../runtimeMode';
+import { SecretManager } from '../secrets';
 
 export interface DiagnosticResult {
   success: boolean;
@@ -57,11 +58,15 @@ export class ConnectionDiagnostics {
 
     const clientId =
       options?.clientId ||
+      (await SecretManager.getSecret(`DELIVERECT_CLIENT_ID_${env.toUpperCase()}`)) ||
+      (await SecretManager.getSecret('DELIVERECT_CLIENT_ID')) ||
       process.env.DELIVERECT_CLIENT_ID ||
       '';
 
     const clientSecret =
       options?.clientSecret ||
+      (await SecretManager.getSecret(`DELIVERECT_CLIENT_SECRET_${env.toUpperCase()}`)) ||
+      (await SecretManager.getSecret('DELIVERECT_CLIENT_SECRET')) ||
       process.env.DELIVERECT_CLIENT_SECRET ||
       '';
 
@@ -153,19 +158,32 @@ export class ConnectionDiagnostics {
     }
   ): Promise<OAuthDiagnosticResult> {
     const startTime = Date.now();
+    let draftContext: Awaited<ReturnType<typeof IntegrationContext.getContext>> | null = null;
+    try {
+      draftContext = await IntegrationContext.getContext(tenantId, {
+        allowDraftProfile: true,
+      });
+    } catch {
+      // An unconfigured tenant should produce the safe UNCONFIGURED result below,
+      // rather than turning an onboarding check into a 500 response.
+    }
+
     const env: DeliverectEnvironmentName =
       options?.environment ||
+      draftContext?.environment ||
       (process.env.DELIVERECT_ENV as DeliverectEnvironmentName) ||
       'staging';
 
     const clientId =
       options?.clientId ||
+      draftContext?.clientId ||
       (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_ID')) ||
       process.env.DELIVERECT_CLIENT_ID ||
       '';
 
     const clientSecret =
       options?.clientSecret ||
+      draftContext?.clientSecret ||
       (await TenantSecretResolver.resolveTenantSecret(tenantId, 'DELIVERECT_CLIENT_SECRET')) ||
       process.env.DELIVERECT_CLIENT_SECRET ||
       '';
@@ -443,7 +461,11 @@ export class ConnectionDiagnostics {
     try {
       await FirestorePlatformService.updateIntegrationConfig(tenantId, {
         environment: diagnostic.environment,
-        status: diagnostic.status === 'CONNECTED' ? 'connected' : (diagnostic.status.toLowerCase() as any),
+        status: diagnostic.status === 'CONNECTED'
+          ? 'connected'
+          : diagnostic.status === 'ERROR' || diagnostic.status === 'DEGRADED' || diagnostic.status === 'CHECKING'
+            ? 'error'
+            : diagnostic.status,
         lastSyncAt: diagnostic.timestamp,
       });
     } catch {
