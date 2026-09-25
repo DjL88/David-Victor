@@ -435,8 +435,12 @@ export class ChannelMenuIngestionService {
     const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
     if (previousProducts.length < 20) return undefined;
 
-    const previousKeys = new Set(previousProducts.map(this.productKey).filter(Boolean));
-    const nextKeys = new Set(params.nextProducts.map(this.productKey).filter(Boolean));
+    const previousKeys = new Set<string>(
+      previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
+    );
+    const nextKeys = new Set<string>(
+      params.nextProducts.map((product: any) => this.productKey(product)).filter(Boolean)
+    );
     const removed = Array.from(previousKeys).filter((key) => !nextKeys.has(key));
     const removedPercent = previousKeys.size
       ? Math.round((removed.length / previousKeys.size) * 10000) / 100
@@ -733,7 +737,7 @@ export class ChannelMenuIngestionService {
     const record = await this.getIngressRecord(params.tenantId, params.eventId);
     if (!record || record.status !== 'REVIEW_REQUIRED') {
       throw new BFFError(
-        'REVIEW_NOT_FOUND',
+        'RESOURCE_NOT_FOUND',
         'No held catalogue change was found for this tenant and event.',
         404
       );
