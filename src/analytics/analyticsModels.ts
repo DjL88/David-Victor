@@ -34,7 +34,9 @@ export type FrontendAnalyticsEventType =
   | 'BASKET_ABANDONED'
   | 'BASKET_VIEWED'
   | 'CATEGORY_BROWSED'
-  | 'SEARCH_PERFORMED';
+  | 'SEARCH_PERFORMED'
+  | 'ARTIE_RECOMMENDATION_PRESENTED'
+  | 'ARTIE_RECOMMENDATION_ACCEPTED';
 
 export type BackendAnalyticsEventType =
   | 'ORDER_ACCEPTED'
@@ -47,7 +49,8 @@ export type BackendAnalyticsEventType =
   | 'PAYMENT_CAPTURED'
   | 'COURIER_ASSIGNED'
   | 'ORDER_DELIVERED'
-  | 'ORDER_CANCELLED';
+  | 'ORDER_CANCELLED'
+  | 'ARTIE_RECOMMENDATION_PAID';
 
 export type AnalyticsEventType = FrontendAnalyticsEventType | BackendAnalyticsEventType;
 
@@ -82,6 +85,8 @@ export const AnalyticsEventType = {
   BASKET_VIEWED: 'BASKET_VIEWED',
   CATEGORY_BROWSED: 'CATEGORY_BROWSED',
   SEARCH_PERFORMED: 'SEARCH_PERFORMED',
+  ARTIE_RECOMMENDATION_PRESENTED: 'ARTIE_RECOMMENDATION_PRESENTED',
+  ARTIE_RECOMMENDATION_ACCEPTED: 'ARTIE_RECOMMENDATION_ACCEPTED',
   ORDER_ACCEPTED: 'ORDER_ACCEPTED',
   PICKING_STARTED: 'PICKING_STARTED',
   ITEM_PICKED: 'ITEM_PICKED',
@@ -93,6 +98,7 @@ export const AnalyticsEventType = {
   COURIER_ASSIGNED: 'COURIER_ASSIGNED',
   ORDER_DELIVERED: 'ORDER_DELIVERED',
   ORDER_CANCELLED: 'ORDER_CANCELLED',
+  ARTIE_RECOMMENDATION_PAID: 'ARTIE_RECOMMENDATION_PAID',
 } as const;
 
 /**
@@ -201,6 +207,16 @@ export interface AbandonedBasketMetric {
   topAbandonedPlus: Array<{ plu: string; name: string; frequency: number }>;
 }
 
+export interface ArtieRecommendationMetric {
+  presented: number;
+  accepted: number;
+  paid: number;
+  presentedToAcceptedRate: number;
+  presentedToPaidRate: number;
+  acceptedToPaidRate: number;
+  attributedRevenue: number;
+}
+
 export interface InsightsDashboardData {
   timeframe: '7d' | '30d' | '90d';
   totalSessions: number;
@@ -217,4 +233,5 @@ export interface InsightsDashboardData {
   searches: SearchQueryMetric[];
   regions: RegionalMetric[];
   abandonedBasket: AbandonedBasketMetric[];
+  artieRecommendations: ArtieRecommendationMetric;
 }
