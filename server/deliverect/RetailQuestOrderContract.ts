@@ -9,7 +9,6 @@ import { buildQuestItemUnavailableActions } from './DeliverectBasketMapper';
 export interface RetailQuestContractInput {
   channelOrderId: string;
   channelOrderDisplayId: string;
-  placedTime: string;
   fulfillmentType: 'pickup' | 'delivery';
   fulfillmentTime?: string;
   totalMinor: number;
@@ -83,7 +82,6 @@ export function projectRetailQuestOrder(input: RetailQuestContractInput): any {
         ? { deliveryTime: new Date(input.fulfillmentTime).toISOString() }
         : { pickupTime: new Date(input.fulfillmentTime).toISOString() }
       : {}),
-    placedTime: input.placedTime,
     courier: 'restaurant',
     decimalDigits: 2,
     payment: {

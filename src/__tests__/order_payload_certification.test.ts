@@ -54,7 +54,6 @@ describe('WP-05 order payload certification', () => {
     const payload = projectRetailQuestOrder({
       channelOrderId: 'LT-WP05-1',
       channelOrderDisplayId: 'LT-WP05-1',
-      placedTime: '2026-09-24T20:00:00.000Z',
       fulfillmentType: 'pickup',
       totalMinor: 1250,
       hasOnlineAuthorization: true,
@@ -70,7 +69,6 @@ describe('WP-05 order payload certification', () => {
     const payload = projectRetailQuestOrder({
       channelOrderId: 'LT-WP05-2',
       channelOrderDisplayId: 'LT-WP05-2',
-      placedTime: '2026-09-24T20:00:00.000Z',
       fulfillmentType: 'pickup',
       totalMinor: 1250,
       hasOnlineAuthorization: false,
@@ -90,7 +88,6 @@ describe('WP-05 order payload certification', () => {
     const payload = projectRetailQuestOrder({
       channelOrderId: 'LT-WP05-3',
       channelOrderDisplayId: 'LT-WP05-3',
-      placedTime: '2026-09-24T20:00:00.000Z',
       fulfillmentType: 'pickup',
       totalMinor: 500,
       hasOnlineAuthorization: false,

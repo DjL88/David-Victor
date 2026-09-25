@@ -5,7 +5,6 @@ describe('WP-03 Retail/Quest deterministic certification contract', () => {
   const base = {
     channelOrderId: 'LT-CERT-0001',
     channelOrderDisplayId: 'LT-0001',
-    placedTime: '2026-09-24T18:00:00.000Z',
     fulfillmentType: 'pickup' as const,
     totalMinor: 2205,
     hasOnlineAuthorization: true,
@@ -26,6 +25,7 @@ describe('WP-03 Retail/Quest deterministic certification contract', () => {
       payment: { amount: 2205, due: 0, rebate: 0, type: 0 },
       orderIsAlreadyPaid: true,
     });
+    expect(payload).not.toHaveProperty('placedTime');
     expect(payload.items[0].itemUnavailableActions).toEqual([
       'ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION', 'ITEM_SUBSTITUTION_CATALOG',
     ]);
