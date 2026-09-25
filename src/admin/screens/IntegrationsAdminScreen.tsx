@@ -34,9 +34,13 @@ import {
 
 interface IntegrationsAdminScreenProps {
   tenantId?: string;
+  canManagePlatformCredentials?: boolean;
 }
 
-export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = ({ tenantId = DEFAULT_TENANT_ID }) => {
+export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = ({
+  tenantId = DEFAULT_TENANT_ID,
+  canManagePlatformCredentials = false,
+}) => {
   const [config, setConfig] = useState<any>({
     status: 'UNCONFIGURED',
     environment: 'staging',
@@ -322,12 +326,18 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const handleSaveCredentials = async () => {
     const hasConfiguredClientId = Boolean(config.credentials?.maskedClientId);
     const hasConfiguredClientSecret = Boolean(config.credentials?.hasClientSecret);
-    if (credentialMode === 'dedicated' && !clientIdInput.trim() && !hasConfiguredClientId) {
-      setError('Client ID is required for the first dedicated tenant connection.');
+    const canEditSelectedCredentials =
+      credentialMode === 'dedicated' || canManagePlatformCredentials;
+    if (canEditSelectedCredentials && !clientIdInput.trim() && !hasConfiguredClientId) {
+      setError(credentialMode === 'platform'
+        ? 'Enter the LT partner Client ID for the first platform connection.'
+        : 'Client ID is required for the first dedicated tenant connection.');
       return;
     }
-    if (credentialMode === 'dedicated' && !clientSecretInput.trim() && !hasConfiguredClientSecret) {
-      setError('Client Secret is required for the first dedicated tenant connection.');
+    if (canEditSelectedCredentials && !clientSecretInput.trim() && !hasConfiguredClientSecret) {
+      setError(credentialMode === 'platform'
+        ? 'Enter the LT partner Client Secret for the first platform connection.'
+        : 'Client Secret is required for the first dedicated tenant connection.');
       return;
     }
     setSavingCredentials(true);
@@ -335,9 +345,9 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     try {
       await defaultAdminClient.updateIntegrationCredentials!(tenantId, {
         credentialMode,
-        clientId: credentialMode === 'dedicated' ? clientIdInput.trim() || undefined : undefined,
-        clientSecret: credentialMode === 'dedicated' ? clientSecretInput.trim() || undefined : undefined,
-        webhookSecret: credentialMode === 'dedicated' ? webhookSecretInput.trim() || undefined : undefined,
+        clientId: canEditSelectedCredentials ? clientIdInput.trim() || undefined : undefined,
+        clientSecret: canEditSelectedCredentials ? clientSecretInput.trim() || undefined : undefined,
+        webhookSecret: webhookSecretInput.trim() || undefined,
         environment: config.environment || 'staging',
       });
       setClientIdInput('');
@@ -353,25 +363,17 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
     }
   };
 
-  /**
-   * STEP 2: Genuine Platform Deliverect OAuth Verification (Platform Scope)
-   * Calls POST /api/v1/admin/platform/integrations/deliverect/test-oauth protected by platformSuperAdmin.
-   * Tests only https://api.staging.deliverect.com/oauth/token with audience https://api.staging.deliverect.com.
-   * Does NOT mark any Bwydi tenant as connected.
-   */
+  /** Tests the credential source selected for this tenant and activates the
+   * draft profile only after Deliverect accepts a real OAuth exchange. */
   const handleTestOAuth = async () => {
     setTestingOAuth(true);
     setError(null);
     setOauthResult(null);
 
     try {
-      const res = credentialMode === 'dedicated'
-        ? await defaultAdminClient.testDeliverectOAuth!(tenantId, {
-            environment: config.environment || 'staging',
-          })
-        : await defaultAdminClient.testPlatformDeliverectOAuth!({
-            environment: config.environment || 'staging',
-          });
+      const res = await defaultAdminClient.testDeliverectOAuth!(tenantId, {
+        environment: config.environment || 'staging',
+      });
 
       setOauthResult({
         success: res.success,
@@ -383,7 +385,6 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       });
 
       if (res.success) {
-        // Show OAUTH_VERIFIED for platform partner OAuth, but do not mark any Bwydi tenant as connected
         setPlatformOauthVerified(true);
       } else {
         setError(res.message || 'OAuth token handshake failed with Deliverect.');
@@ -660,13 +661,23 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">
-          <button type="button" onClick={() => setCredentialMode('platform')} className={`rounded-xl border p-3 text-left text-xs ${
+          <button type="button" onClick={() => {
+            setCredentialMode('platform');
+            setError(null);
+            setOauthResult(null);
+            setPlatformOauthVerified(false);
+          }} className={`rounded-xl border p-3 text-left text-xs ${
             credentialMode === 'platform' ? 'border-emerald-600 bg-emerald-950/30 text-white' : 'border-gray-800 bg-gray-950 text-gray-400'
           }`}>
             <span className="block font-bold">Platform connection</span>
             <span className="mt-1 block text-[11px] opacity-75">Recommended when this tenant uses the shared LT Deliverect integration.</span>
           </button>
-          <button type="button" onClick={() => setCredentialMode('dedicated')} className={`rounded-xl border p-3 text-left text-xs ${
+          <button type="button" onClick={() => {
+            setCredentialMode('dedicated');
+            setError(null);
+            setOauthResult(null);
+            setPlatformOauthVerified(false);
+          }} className={`rounded-xl border p-3 text-left text-xs ${
             credentialMode === 'dedicated' ? 'border-emerald-600 bg-emerald-950/30 text-white' : 'border-gray-800 bg-gray-950 text-gray-400'
           }`}>
             <span className="block font-bold">Dedicated connection</span>
@@ -674,45 +685,53 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
           </button>
         </div>
 
-        {credentialMode === 'dedicated' && (
-          <div className="space-y-4 rounded-xl border border-gray-800 bg-gray-950 p-4">
-            <div className="flex items-start gap-3 rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-3">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-              <div>
-                <p className="text-xs font-bold text-emerald-200">Write-only tenant secrets</p>
-                <p className="mt-1 text-[11px] leading-5 text-gray-400">
-                  Values go directly to Google Secret Manager under this tenant and environment. They are never returned to the browser. Leave a configured field blank to keep its current value.
-                </p>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs text-gray-400">
-              <span className="flex items-center justify-between gap-2">
-                Client ID
-                {config.credentials?.maskedClientId && <span className="text-emerald-400">Configured</span>}
-              </span>
-              <input type="text" autoComplete="off" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)}
-                placeholder={config.credentials?.maskedClientId ? `${config.credentials.maskedClientId} — enter to replace` : 'Client ID'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
-            </label>
-            <label className="space-y-1 text-xs text-gray-400">
-              <span className="flex items-center justify-between gap-2">
-                Client secret
-                {config.credentials?.hasClientSecret && <span className="text-emerald-400">Configured</span>}
-              </span>
-              <input type="password" autoComplete="new-password" value={clientSecretInput} onChange={(e) => setClientSecretInput(e.target.value)}
-                placeholder={config.credentials?.hasClientSecret ? 'Configured — enter to replace' : 'Client secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
-            </label>
-            <label className="space-y-1 text-xs text-gray-400 sm:col-span-2">
-              <span className="flex items-center justify-between gap-2">
-                <span>Webhook HMAC secret <span className="text-gray-600">(optional until provisioned)</span></span>
-                {config.credentials?.hasWebhookSecret && <span className="text-emerald-400">Configured</span>}
-              </span>
-              <input type="password" autoComplete="new-password" value={webhookSecretInput} onChange={(e) => setWebhookSecretInput(e.target.value)}
-                placeholder={config.credentials?.hasWebhookSecret ? 'Configured — enter to replace' : 'Webhook HMAC secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
-            </label>
+        <div className="space-y-4 rounded-xl border border-gray-800 bg-gray-950 p-4">
+          <div className="flex items-start gap-3 rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-3">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+            <div>
+              <p className="text-xs font-bold text-emerald-200">
+                {credentialMode === 'platform' ? 'Shared LT partner connection' : 'Write-only tenant secrets'}
+              </p>
+              <p className="mt-1 text-[11px] leading-5 text-gray-400">
+                {credentialMode === 'platform'
+                  ? canManagePlatformCredentials
+                    ? 'Configure the Deliverect partner Client ID and Secret once for LT. Every tenant can then be limited to its assigned accounts and locations. Values are write-only in Google Secret Manager.'
+                    : 'This tenant uses the shared LT partner connection. A Platform Super Admin manages the credentials; this tenant only receives its assigned accounts and locations.'
+                  : 'Values go directly to Google Secret Manager under this tenant and environment. They are never returned to the browser. Leave a configured field blank to keep its current value.'}
+              </p>
             </div>
           </div>
-        )}
+          <div className="grid gap-3 sm:grid-cols-2">
+          {(credentialMode === 'dedicated' || canManagePlatformCredentials) && (
+            <>
+              <label className="space-y-1 text-xs text-gray-400">
+                <span className="flex items-center justify-between gap-2">
+                  Client ID
+                  {config.credentials?.maskedClientId && <span className="text-emerald-400">Configured</span>}
+                </span>
+                <input type="text" autoComplete="off" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)}
+                  placeholder={config.credentials?.maskedClientId ? `${config.credentials.maskedClientId} — enter to replace` : 'Client ID'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
+              </label>
+              <label className="space-y-1 text-xs text-gray-400">
+                <span className="flex items-center justify-between gap-2">
+                  Client secret
+                  {config.credentials?.hasClientSecret && <span className="text-emerald-400">Configured</span>}
+                </span>
+                <input type="password" autoComplete="new-password" value={clientSecretInput} onChange={(e) => setClientSecretInput(e.target.value)}
+                  placeholder={config.credentials?.hasClientSecret ? 'Configured — enter to replace' : 'Client secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
+              </label>
+            </>
+          )}
+          <label className="space-y-1 text-xs text-gray-400 sm:col-span-2">
+            <span className="flex items-center justify-between gap-2">
+              <span>Tenant webhook HMAC secret <span className="text-gray-600">(optional until provisioned)</span></span>
+              {config.credentials?.hasWebhookSecret && <span className="text-emerald-400">Configured</span>}
+            </span>
+            <input type="password" autoComplete="new-password" value={webhookSecretInput} onChange={(e) => setWebhookSecretInput(e.target.value)}
+              placeholder={config.credentials?.hasWebhookSecret ? 'Configured — enter to replace' : 'Webhook HMAC secret'} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white" />
+          </label>
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={handleSaveCredentials} disabled={savingCredentials}

@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TenantSecretResolver } from '../../server/deliverect/IntegrationContext';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IntegrationContext, TenantSecretResolver } from '../../server/deliverect/IntegrationContext';
 import { SecretManager } from '../../server/secrets';
+import { FirestorePlatformService } from '../../server/firestoreService';
 
 describe('tenant Deliverect credential isolation', () => {
   const keys = [
@@ -11,11 +12,15 @@ describe('tenant Deliverect credential isolation', () => {
   ];
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    IntegrationContext.clearAll();
     SecretManager.clearCache();
     for (const key of keys) delete process.env[key];
   });
 
   afterEach(() => {
+    delete process.env.INTEGRATION_PROFILE_REQUIRED;
+    IntegrationContext.clearAll();
     SecretManager.clearCache();
     for (const key of keys) delete process.env[key];
   });
@@ -52,5 +57,44 @@ describe('tenant Deliverect credential isolation', () => {
     expect(
       await TenantSecretResolver.resolveTenantSecret('brand-alpha', 'DELIVERECT_CLIENT_ID', 'legacy')
     ).toBe('legacy-tenant-client');
+  });
+
+  it('allows Admin diagnostics to resolve a DRAFT profile without exposing it to runtime workers', async () => {
+    process.env.INTEGRATION_PROFILE_REQUIRED = 'true';
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      credentialMode: 'dedicated',
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue({
+      id: 'brand-alpha__staging',
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      status: 'DRAFT',
+      version: 1,
+      credentialMode: 'dedicated',
+      allowedChannelLinkIds: [],
+      deliverect: {},
+      secretRefs: {
+        deliverectClientId: 'lt--brand-alpha--staging--deliverect-client-id',
+        deliverectClientSecret: 'lt--brand-alpha--staging--deliverect-client-secret',
+      },
+    });
+    vi.spyOn(SecretManager, 'getSecret').mockImplementation(async (name) => {
+      if (name.endsWith('client-id')) return 'draft-client';
+      if (name.endsWith('client-secret')) return 'draft-secret';
+      return null;
+    });
+
+    const adminContext = await IntegrationContext.getContext('brand-alpha', {
+      allowDraftProfile: true,
+    });
+    expect(adminContext.clientId).toBe('draft-client');
+    expect(adminContext.isConfigured).toBe(true);
+    expect(IntegrationContext.getCachedContext('brand-alpha')).toBeNull();
+
+    await expect(IntegrationContext.getContext('brand-alpha')).rejects.toMatchObject({
+      code: 'INTEGRATION_NOT_CONFIGURED',
+    });
   });
 });

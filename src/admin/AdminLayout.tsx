@@ -558,7 +558,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             )}
             {activeTab === 'catalog' && <CatalogAdminScreen tenantId={currentTenantId} />}
             {activeTab === 'connection_health' && <ConnectionHealthScreen tenantId={currentTenantId} />}
-            {activeTab === 'integrations' && <IntegrationsAdminScreen tenantId={currentTenantId} />}
+            {activeTab === 'integrations' && (
+              <IntegrationsAdminScreen
+                tenantId={currentTenantId}
+                canManagePlatformCredentials={currentUser.role === 'platformSuperAdmin'}
+              />
+            )}
             {activeTab === 'insights' && <InsightsScreen tenantId={currentTenantId} />}
             {activeTab === 'branding' && (
               <BrandingScreen

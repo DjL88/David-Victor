@@ -27,6 +27,9 @@ describe('TEN-00 public tenant trust boundaries', () => {
     previewToken: process.env.PREVIEW_AUTH_TOKEN,
     edgeSecret: process.env.TRUSTED_EDGE_SECRET,
     edgeHeader: process.env.TRUSTED_EDGE_HEADER,
+    appHostingBackendId: process.env.APP_HOSTING_BACKEND_ID,
+    appHostingProjectId: process.env.FIREBASE_PROJECT_ID,
+    appHostingLocation: process.env.APP_HOSTING_LOCATION,
   };
 
   beforeEach(() => {
@@ -37,6 +40,9 @@ describe('TEN-00 public tenant trust boundaries', () => {
     delete process.env.PREVIEW_AUTH_TOKEN;
     delete process.env.TRUSTED_EDGE_SECRET;
     delete process.env.TRUSTED_EDGE_HEADER;
+    process.env.APP_HOSTING_BACKEND_ID = 'leitch-store-staging';
+    process.env.FIREBASE_PROJECT_ID = 'leitch-tech-nonprod';
+    process.env.APP_HOSTING_LOCATION = 'europe-west4';
 
     vi.spyOn(FirestorePlatformService, 'getTenantConfig').mockImplementation(async (id: string) => tenant(id) as any);
     vi.spyOn(FirestorePlatformService, 'getTenantSearchConfig').mockResolvedValue({} as any);
@@ -52,6 +58,9 @@ describe('TEN-00 public tenant trust boundaries', () => {
     restore('PREVIEW_AUTH_TOKEN', original.previewToken);
     restore('TRUSTED_EDGE_SECRET', original.edgeSecret);
     restore('TRUSTED_EDGE_HEADER', original.edgeHeader);
+    restore('APP_HOSTING_BACKEND_ID', original.appHostingBackendId);
+    restore('FIREBASE_PROJECT_ID', original.appHostingProjectId);
+    restore('APP_HOSTING_LOCATION', original.appHostingLocation);
     setServerRuntimeMode(null);
     vi.restoreAllMocks();
   });
@@ -83,6 +92,35 @@ describe('TEN-00 public tenant trust boundaries', () => {
 
     expect(response.body.code).toBe('TENANT_NOT_FOUND');
     expect(FirestorePlatformService.resolveTenantByHostname).toHaveBeenCalledWith('unknown.example.test');
+  });
+
+  it('resolves an active custom domain forwarded by this exact Firebase App Hosting origin', async () => {
+    vi.spyOn(FirestorePlatformService, 'resolveTenantByHostname').mockImplementation(async (host: string) =>
+      host === 'test1.leitch.shop' ? 'test1' : null
+    );
+
+    const app = await createApp({ serveFrontend: false, initializeDependencies: false });
+    const response = await request(app)
+      .get('/api/v1/bootstrap')
+      .set('Host', 'leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app')
+      .set('X-Forwarded-Host', 'test1.leitch.shop')
+      .expect(200);
+
+    expect(response.body.tenant.tenantId).toBe('test1');
+    expect(response.headers.vary).toContain('X-Forwarded-Host');
+  });
+
+  it('ignores an unregistered custom hostname forwarded to the App Hosting origin', async () => {
+    vi.spyOn(FirestorePlatformService, 'resolveTenantByHostname').mockResolvedValue(null);
+
+    const app = await createApp({ serveFrontend: false, initializeDependencies: false });
+    const response = await request(app)
+      .get('/api/v1/bootstrap')
+      .set('Host', 'leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app')
+      .set('X-Forwarded-Host', 'unclaimed.example.test')
+      .expect(200);
+
+    expect(response.body.tenant.tenantId).toBe('brand-alpha');
   });
 
   it('honours X-Forwarded-Host only when the edge secret matches', async () => {
