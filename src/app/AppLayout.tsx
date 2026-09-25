@@ -10,6 +10,7 @@ import { useProductSearch } from '../hooks/useProductSearch';
 import { Header } from '../components/Header';
 import { MobileNav, MobileTab } from '../components/MobileNav';
 import { FloatingCartBar } from '../components/FloatingCartBar';
+import { ActiveOrderBar } from '../components/ActiveOrderBar';
 import { HomeScreen } from '../features/home/HomeScreen';
 import { SearchScreen } from '../features/search/SearchScreen';
 import { OrdersScreen } from '../features/orders/OrdersScreen';
@@ -33,7 +34,9 @@ import { MealDealDialog } from '../components/deals/MealDealDialog';
 import { BundleSelectionDialog } from '../components/deals/BundleSelectionDialog';
 import { DeliverectDeal, getDealForStory } from '../commerce/dealModels';
 import { BundleProduct } from '../commerce/bundleModels';
-import { Product, StoryAction } from '../commerce/models';
+import { Order, Product, StoryAction } from '../commerce/models';
+import { getCommerceClient } from '../commerce/CommerceClientFactory';
+import { isTerminalOrderStatus } from '../features/orders/orderTrackingPresentation';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../analytics';
 import { Loader2, BadgePercent, X, Store as StoreIcon, AlertTriangle } from 'lucide-react';
 import {
@@ -52,6 +55,8 @@ import {
 interface AppLayoutProps {
   onOpenAdmin?: () => void;
 }
+
+const storefrontCommerceClient = getCommerceClient() as any;
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const { tenant, loading: tenantLoading, error: tenantError, appMode } = useTenant();
@@ -111,6 +116,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
   // Checkout modal
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+  // Persist only the opaque active order id locally. The order itself is always
+  // reloaded from the authoritative commerce client so no customer/order PII is
+  // cached in browser storage.
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+
   // Aisles Directory Modal
   const [isAislesModalOpen, setIsAislesModalOpen] = useState<boolean>(false);
   const [catalogFilterState, setCatalogFilterState] = useState<CatalogFilterState>({
@@ -179,6 +190,63 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
       }
     }
   }, [showSplash, entryStage, hasLocation, setIsLocationModalOpen]);
+
+  const activeOrderStorageKey = tenant?.tenantId
+    ? `active-order:${tenant.tenantId}`
+    : null;
+
+  const rememberActiveOrder = useCallback((orderId: string | null) => {
+    setActiveOrderId(orderId);
+    if (!activeOrderStorageKey || typeof window === 'undefined') return;
+    if (orderId) {
+      window.localStorage.setItem(activeOrderStorageKey, orderId);
+    } else {
+      window.localStorage.removeItem(activeOrderStorageKey);
+    }
+  }, [activeOrderStorageKey]);
+
+  useEffect(() => {
+    if (!activeOrderStorageKey || typeof window === 'undefined') {
+      setActiveOrderId(null);
+      setActiveOrder(null);
+      return;
+    }
+    const persisted = window.localStorage.getItem(activeOrderStorageKey);
+    setActiveOrderId(persisted || null);
+  }, [activeOrderStorageKey]);
+
+  useEffect(() => {
+    if (!activeOrderId || !activeOrderStorageKey) {
+      setActiveOrder(null);
+      return;
+    }
+
+    let cancelled = false;
+    const refreshActiveOrder = async () => {
+      try {
+        const fresh = await storefrontCommerceClient.getOrder(activeOrderId);
+        if (cancelled || !fresh) return;
+        if (isTerminalOrderStatus(String(fresh.status))) {
+          window.localStorage.removeItem(activeOrderStorageKey);
+          setActiveOrderId(null);
+          setActiveOrder(null);
+          return;
+        }
+        setActiveOrder(fresh);
+      } catch (error) {
+        // Keep the last known active order id. A transient connectivity failure
+        // must not make tracking disappear; the next poll will retry.
+        console.warn('[AppLayout] Could not refresh active order:', error);
+      }
+    };
+
+    void refreshActiveOrder();
+    const interval = window.setInterval(refreshActiveOrder, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeOrderId, activeOrderStorageKey]);
 
   // Track SESSION_STARTED and BRAND_VIEW when tenant is loaded
   React.useEffect(() => {
@@ -415,6 +483,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     setActiveRoute({ kind: 'search', query });
     setActiveTab('search');
   }, [setSearchQuery]);
+
+  const routeToOrder = useCallback((orderId: string) => {
+    const orderPath = `/orders/${encodeURIComponent(orderId)}`;
+    pushStorefrontUrl(orderPath);
+    setActiveRoute({ kind: 'orders', orderId });
+    setActiveTab('orders');
+    setIsCartOpen(false);
+    setIsCheckoutOpen(false);
+  }, [setIsCartOpen]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -762,9 +839,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             <OrdersScreen
               initialOrderId={activeRoute.kind === 'orders' ? activeRoute.orderId : undefined}
               onNavigateOrder={(orderId) => {
-                const orderPath = orderId ? `/orders/${encodeURIComponent(orderId)}` : '/orders';
-                pushStorefrontUrl(orderPath);
-                setActiveRoute({ kind: 'orders', orderId });
+                if (orderId) {
+                  routeToOrder(orderId);
+                  return;
+                }
+                pushStorefrontUrl('/orders');
+                setActiveRoute({ kind: 'orders' });
+                setActiveTab('orders');
               }}
             />
           )}
@@ -781,6 +862,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         itemCount={totalItemsCount}
         onOpenCart={routeToBasket}
       />
+
+      {/* When checkout clears the basket, keep the live order one tap away. */}
+      {activeOrder &&
+        totalItemsCount === 0 &&
+        !(activeRoute.kind === 'orders' && activeRoute.orderId === activeOrder.id) && (
+          <ActiveOrderBar
+            order={activeOrder}
+            onOpenTracking={() => routeToOrder(activeOrder.id)}
+          />
+        )}
 
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav
@@ -1053,6 +1144,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           }}
           onOrderSuccess={(orderId) => {
             clearAllBaskets();
+            rememberActiveOrder(orderId);
             setIsCheckoutOpen(false);
             setIsCartOpen(false);
             const orderPath = `/orders/${encodeURIComponent(orderId)}`;
