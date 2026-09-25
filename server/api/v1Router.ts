@@ -8,7 +8,11 @@ import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
 import { connectionHealthService } from '../deliverect/ConnectionHealthService';
 import { LinkedAccountsAdapter, linkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
-import { normalizeIntegrationEnvironment } from '../integrationProfile';
+import {
+  integrationProfileId,
+  integrationSecretPrefix,
+  normalizeIntegrationEnvironment,
+} from '../integrationProfile';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
 import {
   getFirestoreDb,
@@ -6141,6 +6145,7 @@ v1Router.post(
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const tenantId = req.params.id;
     const { credentialMode, clientId, clientSecret, webhookSecret, environment, deliverectAccountId, channelLinkId } = req.body;
+    const resolvedEnvironment = normalizeIntegrationEnvironment(environment || 'staging');
 
     // Account/channel assignment is a platform control-plane decision. Tenant
     // administrators may maintain credentials, but cannot repoint their brand
@@ -6154,34 +6159,105 @@ v1Router.post(
       });
     }
 
-    // Secrets are written only to server-side Secret Manager. Firestore receives
-    // mode/status metadata, never credential values. Webhook HMAC is always
-    // tenant-canonical even when OAuth credentials use platform mode.
-    const savedCanonicalWebhook = webhookSecret
-      ? await SecretManager.setSecret(`deliverect-webhook-${tenantId}`, webhookSecret, true)
+    const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const existingProfile = await FirestorePlatformService.getIntegrationProfile(
+      tenantId,
+      resolvedEnvironment
+    );
+    const prefix = integrationSecretPrefix(tenantId, resolvedEnvironment);
+    const secretNames = {
+      clientId: `${prefix}deliverect-client-id`,
+      clientSecret: `${prefix}deliverect-client-secret`,
+      webhookSecret: `${prefix}deliverect-webhook-secret`,
+    };
+    const existingRefs = existingProfile?.secretRefs || {};
+    const clientIdSecretName = existingRefs.deliverectClientId || secretNames.clientId;
+    const clientSecretSecretName = existingRefs.deliverectClientSecret || secretNames.clientSecret;
+    const webhookSecretName = existingRefs.deliverectWebhookSecret || secretNames.webhookSecret;
+
+    // Secret values are write-only. Empty inputs retain the currently configured
+    // version, allowing one credential to be rotated without exposing or retyping
+    // the other value.
+    const hasExistingClientId = Boolean(await SecretManager.getSecret(clientIdSecretName));
+    const hasExistingClientSecret = Boolean(await SecretManager.getSecret(clientSecretSecretName));
+    if (credentialMode === 'dedicated' && !clientId && !hasExistingClientId) {
+      return res.status(400).json({
+        error: 'Client ID is required for the first dedicated credential setup.',
+        code: 'DELIVERECT_CLIENT_ID_REQUIRED',
+      });
+    }
+    if (credentialMode === 'dedicated' && !clientSecret && !hasExistingClientSecret) {
+      return res.status(400).json({
+        error: 'Client Secret is required for the first dedicated credential setup.',
+        code: 'DELIVERECT_CLIENT_SECRET_REQUIRED',
+      });
+    }
+
+    const savedId = clientId
+      ? await SecretManager.setSecret(clientIdSecretName, clientId, true)
+      : true;
+    const savedSecret = clientSecret
+      ? await SecretManager.setSecret(clientSecretSecretName, clientSecret, true)
+      : true;
+    const savedWebhook = webhookSecret
+      ? await SecretManager.setSecret(webhookSecretName, webhookSecret, true)
       : true;
 
     if (credentialMode === 'dedicated') {
-      const savedId = await SecretManager.setSecret(`DELIVERECT_CLIENT_ID_${tenantId}`, clientId, true);
-      const savedSecret = await SecretManager.setSecret(`DELIVERECT_CLIENT_SECRET_${tenantId}`, clientSecret, true);
-      if ((!savedId || !savedSecret || !savedCanonicalWebhook) && isLiveMode()) {
+      if ((!savedId || !savedSecret || !savedWebhook) && isLiveMode()) {
         return res.status(500).json({
           error: 'Failed to persist dedicated credentials in Google Cloud Secret Manager.',
           code: 'SECRET_PERSISTENCE_FAILED',
         });
       }
-    } else if (!savedCanonicalWebhook && isLiveMode()) {
+    } else if (!savedWebhook && isLiveMode()) {
       return res.status(500).json({
         error: 'Failed to persist the tenant webhook secret in Google Cloud Secret Manager.',
         code: 'SECRET_PERSISTENCE_FAILED',
       });
     }
 
+    const nextSecretRefs = {
+      ...existingRefs,
+      ...(credentialMode === 'dedicated'
+        ? {
+            deliverectClientId: clientIdSecretName,
+            deliverectClientSecret: clientSecretSecretName,
+          }
+        : {}),
+      ...(webhookSecret || existingRefs.deliverectWebhookSecret
+        ? { deliverectWebhookSecret: webhookSecretName }
+        : {}),
+    };
+    await FirestorePlatformService.updateIntegrationProfile({
+      id: integrationProfileId(tenantId, resolvedEnvironment),
+      tenantId,
+      environment: resolvedEnvironment,
+      status: existingProfile?.status || 'DRAFT',
+      version: (existingProfile?.version || 0) + 1,
+      publicBaseUrl: existingProfile?.publicBaseUrl,
+      credentialMode,
+      allowedChannelLinkIds:
+        existingProfile?.allowedChannelLinkIds || integration.allowedChannelLinkIds || [],
+      deliverect: {
+        ...(existingProfile?.deliverect || {}),
+        ...(integration.deliverectAccountId
+          ? { accountId: integration.deliverectAccountId }
+          : {}),
+        ...(integration.channelName ? { channelName: integration.channelName } : {}),
+        ...(integration.orderRoute ? { orderRoute: integration.orderRoute } : {}),
+        ...(integration.retailOrder ? { retailOrder: integration.retailOrder } : {}),
+      },
+      dpay: existingProfile?.dpay,
+      secretRefs: nextSecretRefs,
+      createdAt: existingProfile?.createdAt,
+    });
+
     // Explicit platform mode ignores any historical tenant secret versions.
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
       credentialMode,
       credentialsConfigured: true,
-      environment: environment || 'staging',
+      environment: resolvedEnvironment,
       deliverectAccountId: deliverectAccountId || undefined,
       channelLinkId: channelLinkId || undefined,
       status: 'standalone',
@@ -6197,13 +6273,24 @@ v1Router.post(
       category: 'Integration',
       action: 'UPDATE_INTEGRATION_CREDENTIALS',
       details: credentialMode === 'dedicated'
-        ? `Updated dedicated Deliverect credentials for environment ${environment || 'staging'} (Client ID: ${clientId.slice(0, 4)}...).`
-        : `Switched Deliverect credential source to platform credentials for environment ${environment || 'staging'}.`,
+        ? `Updated write-only dedicated Deliverect credential configuration for ${resolvedEnvironment}. Fields changed: ${[
+            clientId ? 'clientId' : null,
+            clientSecret ? 'clientSecret' : null,
+            webhookSecret ? 'webhookSecret' : null,
+          ].filter(Boolean).join(', ') || 'mode only'}.`
+        : `Switched Deliverect credential source to platform credentials for ${resolvedEnvironment}${webhookSecret ? ' and rotated the tenant webhook secret' : ''}.`,
     });
 
     res.json({
       success: true,
-      message: `Credentials updated for tenant ${tenantId}. Run connection test to verify.`,
+      message: `Credentials updated for tenant ${tenantId}. Secret values remain write-only. Run connection test to verify.`,
+      credentials: {
+        configured: credentialMode === 'platform' || Boolean((clientId || hasExistingClientId) && (clientSecret || hasExistingClientSecret)),
+        mode: credentialMode,
+        hasClientId: credentialMode === 'dedicated' && Boolean(clientId || hasExistingClientId),
+        hasClientSecret: credentialMode === 'dedicated' && Boolean(clientSecret || hasExistingClientSecret),
+        hasWebhookSecret: Boolean(webhookSecret || existingRefs.deliverectWebhookSecret),
+      },
     });
   }
 );
