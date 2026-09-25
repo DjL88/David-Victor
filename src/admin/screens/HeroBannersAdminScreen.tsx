@@ -109,6 +109,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   });
 
   const [productSearch, setProductSearch] = useState<string>('');
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
 
   const commerceClient = useMemo(() => getCommerceClient(tenantId) as any, [tenantId]);
 
@@ -496,19 +497,34 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
               </button>
             </div>
 
-            {/* LIVE PREVIEW HERO CARD */}
+            {/* RESPONSIVE LIVE PREVIEW */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-purple-600" />
-                <span>Live Hero Banner Preview</span>
-              </label>
-              <div className="relative rounded-2xl h-44 sm:h-52 bg-gray-950 overflow-hidden border border-gray-200">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Live banner preview</span>
+                </label>
+                <div className="inline-flex rounded-xl bg-gray-100 p-1" role="group" aria-label="Preview viewport">
+                  {(['desktop', 'mobile'] as const).map((viewport) => (
+                    <button
+                      key={viewport}
+                      type="button"
+                      onClick={() => setPreviewViewport(viewport)}
+                      aria-pressed={previewViewport === viewport}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-bold capitalize transition-colors ${previewViewport === viewport ? 'bg-white text-purple-700 shadow-xs' : 'text-gray-500'}`}
+                    >
+                      {viewport}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={`mx-auto relative rounded-2xl bg-gray-950 overflow-hidden border border-gray-200 transition-all ${previewViewport === 'mobile' ? 'h-64 w-[min(100%,20rem)]' : 'h-44 sm:h-52 w-full'}`}>
                 <img
                   src={currentEditingBanner.backgroundImageUrl}
                   alt={currentEditingBanner.title}
-                  className="w-full h-full object-cover opacity-80"
+                  className={`w-full h-full opacity-80 ${(currentEditingBanner.layout || 'BACKGROUND') === 'BACKGROUND' ? 'object-cover' : 'object-contain'}`}
                 />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent p-5 flex flex-col justify-between text-white">
+                <div className={`absolute inset-0 p-5 flex flex-col justify-between text-white ${(currentEditingBanner.layout || 'BACKGROUND') === 'ARTWORK' ? 'bg-gradient-to-t from-black/80 via-transparent to-black/20' : (currentEditingBanner.layout || 'BACKGROUND') === 'SPLIT' ? 'bg-gradient-to-r from-black via-black/90 to-transparent' : 'bg-gradient-to-r from-black/90 via-black/60 to-transparent'}`}>
                   <div className="space-y-2">
                     <span className="inline-block bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
                       {currentEditingBanner.badge || 'PROMOTION'}
