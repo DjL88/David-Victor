@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   Server,
   Layers,
-  Sparkles,
   ArrowRight,
   Info,
 } from 'lucide-react';
@@ -224,7 +223,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                 <h1 className="text-xl font-bold text-gray-900">Domains</h1>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Route each published hostname or custom domain to the correct storefront brand.
+                Publish a storefront to a verified retailer-owned hostname with guided DNS and secure serving status.
               </p>
             </div>
           </div>
@@ -252,7 +251,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
               How domain routing works
             </p>
             <p>
-              New custom domains stay pending until ownership and serving are verified. Only active domains resolve storefront traffic; the platform domain lifecycle will also synchronize Firebase Authentication authorization when activation completes.
+              1. Enter a hostname. 2. Add the exact DNS records returned by the platform. 3. Verify ownership. 4. Wait for secure serving. 5. Open the live storefront. Existing site content is unaffected if a domain is removed.
             </p>
           </div>
         </div>
@@ -278,7 +277,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Plus className="w-4 h-4 text-indigo-600" />
-            <span>Claim a domain for a brand</span>
+            <span>Connect a custom domain</span>
           </h2>
           <button
             type="button"
@@ -291,31 +290,8 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
         {showDnsHelp && (
           <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-2 text-gray-600">
-            <p className="font-bold text-gray-900">Configuring Custom Domains at your DNS Registrar:</p>
-            <p>To point a domain like <code>www.shop1.com</code> to this application:</p>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left font-mono text-[11px] bg-white border border-gray-200 rounded-lg">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-700">
-                    <th className="p-2">Type</th>
-                    <th className="p-2">Host / Name</th>
-                    <th className="p-2">Target / Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  <tr>
-                    <td className="p-2 text-indigo-600 font-bold">CNAME</td>
-                    <td className="p-2">www (or subdomain)</td>
-                    <td className="p-2">Your published storefront hostname</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 text-indigo-600 font-bold">A</td>
-                    <td className="p-2">@ (root/apex)</td>
-                    <td className="p-2">Your Cloud Run or reverse-proxy IP</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <p className="font-bold text-gray-900">DNS setup is generated after you claim the hostname</p>
+            <p>Enter the hostname first. The platform will return the exact ownership and routing records for that domain. We do not guess provider IP addresses or generic DNS targets.</p>
           </div>
         )}
 
@@ -391,6 +367,8 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             <span>Configured domains ({domains.length})</span>
           </h2>
         </div>
+
+        {domains.length > 0 && <div className="grid grid-cols-2 md:grid-cols-4 gap-2">{[['Claimed', domains.length], ['DNS verified', domains.filter(d => d.status === 'verified' || d.status === 'active').length], ['Secure & live', domains.filter(d => d.status === 'active').length], ['Primary', domains.filter(d => d.isPrimary).length]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-gray-200 bg-white px-3 py-2"><div className="text-lg font-extrabold text-gray-900">{value}</div><div className="text-[10px] font-bold text-gray-500">{label}</div></div>)}</div>}
 
         {isLoading ? (
           <div className="p-8 text-center bg-white rounded-2xl border border-gray-200 space-y-2">
