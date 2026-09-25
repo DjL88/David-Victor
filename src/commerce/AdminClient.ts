@@ -8,6 +8,7 @@ import {
   AdminUser,
   AuditLogEntry,
   Store,
+  Catalog,
   TenantFeatureFlags,
 } from './models';
 import { MediaHealth, MediaHealthSummary } from './mediaHealthModels';
@@ -160,6 +161,13 @@ export interface AdminClient {
    * Retrieves stores belonging to the tenant.
    */
   getStores(tenantId?: string): Promise<Store[]>;
+
+  /** Retrieves the live, tenant-scoped Deliverect projection for Admin. */
+  getCommerceCatalog?(tenantId: string, storeId?: string): Promise<{
+    tenantId: string;
+    stores: Store[];
+    catalog: Catalog;
+  }>;
 
   /**
    * Updates store status / settings.

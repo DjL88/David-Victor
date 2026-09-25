@@ -5388,6 +5388,25 @@ v1Router.get('/admin/tenants/:id/stores', requireAdminAuth(), async (req: Reques
   }
 });
 
+// Tenant-scoped live commerce projection for the Admin catalogue. The Admin
+// app runs on a shared managed hostname, so public storefront routes would
+// otherwise resolve PREVIEW_TENANT_ID instead of the tenant selected in Admin.
+v1Router.get('/admin/tenants/:id/commerce/catalog', requireAdminAuth(), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const adapter = await getDeliverectAdapterAsync(tenantId);
+    const stores = await adapter.getStores();
+    const requestedStoreId = typeof req.query.storeId === 'string' ? req.query.storeId.trim() : '';
+    const catalog = requestedStoreId
+      ? await adapter.getStoreCatalog(requestedStoreId)
+      : await adapter.getRootCatalog();
+
+    res.json({ tenantId, stores, catalog });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to retrieve tenant commerce catalogue');
+  }
+});
+
 v1Router.put('/admin/tenants/:id/stores/:storeId', requireAdminAuth(), requireAdminCapability('stores.write'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.params.id;
@@ -6620,6 +6639,28 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       status: newStatus as any,
       lastSyncAt: new Date().toISOString(),
     });
+
+    // Keep the activated environment profile aligned with mutable account and
+    // channel assignments. Runtime reads the active profile for credentials,
+    // while the integration record remains the control-plane source of truth.
+    const assignmentEnvironment = normalizeIntegrationEnvironment(
+      existingIntegration.activeEnv || existingIntegration.environment || 'staging'
+    );
+    const existingProfile = await FirestorePlatformService.getIntegrationProfile(
+      tenantId,
+      assignmentEnvironment
+    );
+    if (existingProfile) {
+      await FirestorePlatformService.updateIntegrationProfile({
+        ...existingProfile,
+        version: existingProfile.version + 1,
+        allowedChannelLinkIds: requestedChannelLinkIds,
+        deliverect: {
+          ...existingProfile.deliverect,
+          accountId,
+        },
+      });
+    }
     IntegrationContext.invalidate(tenantId);
 
     await FirestorePlatformService.addAuditLog(tenantId, {

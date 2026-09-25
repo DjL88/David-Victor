@@ -221,8 +221,14 @@ export class IntegrationContext {
       clientSecret,
     });
 
+    // Account and channel ownership are mutable control-plane state. The Admin
+    // assignment flow writes them to the tenant integration record after an
+    // integration profile may already have been activated, so the integration
+    // record must win over the profile snapshot. Otherwise runtime commerce can
+    // stay pinned to an old account/empty channel list even though Admin shows
+    // the newly saved assignment.
     let deliverectAccountId =
-      effectiveProfile?.deliverect?.accountId || integrationRecord?.deliverectAccountId;
+      integrationRecord?.deliverectAccountId || effectiveProfile?.deliverect?.accountId;
     if (!deliverectAccountId) {
       try {
         const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId);
@@ -257,10 +263,10 @@ export class IntegrationContext {
       clientSecret,
       webhookSecret,
       deliverectAccountId,
-      allowedChannelLinkIds: effectiveProfile
-        ? effectiveProfile.allowedChannelLinkIds.map(String)
-        : Array.isArray(integrationRecord?.allowedChannelLinkIds)
-          ? integrationRecord.allowedChannelLinkIds.map(String)
+      allowedChannelLinkIds: Array.isArray(integrationRecord?.allowedChannelLinkIds)
+        ? integrationRecord.allowedChannelLinkIds.map(String)
+        : effectiveProfile
+          ? effectiveProfile.allowedChannelLinkIds.map(String)
           : [],
       channelName,
       retailOrder: effectiveProfile?.deliverect?.retailOrder || integrationRecord?.retailOrder,

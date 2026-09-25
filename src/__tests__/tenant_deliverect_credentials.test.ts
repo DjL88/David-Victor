@@ -97,4 +97,35 @@ describe('tenant Deliverect credential isolation', () => {
       code: 'INTEGRATION_NOT_CONFIGURED',
     });
   });
+
+  it('uses the latest control-plane account and channel assignments over an older active profile snapshot', async () => {
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      credentialMode: 'platform',
+      deliverectAccountId: 'account-current',
+      allowedChannelLinkIds: ['channel-current'],
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue({
+      id: 'brand-alpha__staging',
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      status: 'ACTIVE',
+      version: 1,
+      credentialMode: 'platform',
+      allowedChannelLinkIds: ['channel-stale'],
+      deliverect: { accountId: 'account-stale' },
+      secretRefs: {},
+    } as any);
+    vi.spyOn(SecretManager, 'getSecret').mockImplementation(async (name) => {
+      if (name.includes('CLIENT_ID')) return 'platform-client';
+      if (name.includes('CLIENT_SECRET')) return 'platform-secret';
+      return null;
+    });
+
+    const context = await IntegrationContext.getContext('brand-alpha');
+
+    expect(context.deliverectAccountId).toBe('account-current');
+    expect(context.allowedChannelLinkIds).toEqual(['channel-current']);
+  });
 });

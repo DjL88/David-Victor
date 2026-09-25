@@ -39,4 +39,16 @@ describe('StoreConfigScreen Admin Provisioning Helpers', () => {
 
     expect(isUnassignedStore(assignedStore)).toBe(false);
   });
+
+  it('honours the durable assignment flag when optional POS metadata is absent', () => {
+    const assignedStore: Store = {
+      ...baseStore,
+      assigned: true,
+      physicalLocationId: 'loc-12345',
+      channelLinkId: 'cl-67890',
+      brandStoreId: undefined,
+    };
+
+    expect(isUnassignedStore(assignedStore)).toBe(false);
+  });
 });

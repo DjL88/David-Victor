@@ -7,6 +7,7 @@ import {
   TenantSchedulingPolicy,
   VisualRule,
   Store,
+  Catalog,
   AuditLogEntry,
   AdminUser,
   TenantFeatureFlags,
@@ -786,6 +787,24 @@ export class HttpAdminClient implements AdminClient {
     const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/stores`, { headers });
     if (res.ok) return res.json();
     return [];
+  }
+
+  async getCommerceCatalog(tenantId: string, storeId?: string): Promise<{
+    tenantId: string;
+    stores: Store[];
+    catalog: Catalog;
+  }> {
+    const headers = await this.getHeadersAsync();
+    const query = storeId ? `?storeId=${encodeURIComponent(storeId)}` : '';
+    const res = await fetch(
+      `${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/commerce/catalog${query}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `Failed to load tenant catalogue (HTTP ${res.status})`);
+    }
+    return res.json();
   }
 
   async getSearchConfig(tenantId?: string): Promise<any> {

@@ -3,7 +3,7 @@ import { catalogStore } from '../../commerce/catalogStore';
 import { Product, ProductStockStatus, formatMoney, moneyToMajor, Category, Store } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
 import { DEFAULT_TENANT_ID } from '../../tenant/constants';
-import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
 import {
   Package,
@@ -34,7 +34,6 @@ interface CatalogAdminScreenProps {
 export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId = DEFAULT_TENANT_ID }) => {
   const { appMode } = useTenant();
   const isDemoMode = appMode === 'demo';
-  const commerceClient = useMemo(() => getCommerceClient(tenantId), [tenantId]);
 
   const [products, setProducts] = useState<Product[]>(() => isDemoMode ? catalogStore.getProducts() : []);
   const [categories, setCategories] = useState<Category[]>(() => isDemoMode ? catalogStore.getCategories() : []);
@@ -53,7 +52,6 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
 
 
 
-  // Load store locations for dropdown
   useEffect(() =>
     onAdminAiPrefill('catalog', ({ prefill }) => {
       if (typeof prefill?.searchQuery === 'string') {
@@ -62,23 +60,6 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
       }
     }),
   []);
-
-  useEffect(() => {
-    let isMounted = true;
-    commerceClient.getStores()
-      .then((fetchedStores) => {
-        if (isMounted && fetchedStores) {
-          setStores(fetchedStores);
-        }
-      })
-      .catch((err) => {
-        console.warn('Failed to load stores for catalog filter:', err);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [commerceClient]);
 
   // Load products and categories from commerce client (handling location change)
   useEffect(() => {
@@ -95,22 +76,20 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
     let isMounted = true;
     setLoading(true);
 
-    const loadPromise = selectedLocationId === 'all'
-      ? Promise.all([
-          commerceClient.searchProducts('', undefined),
-          commerceClient.getRootCatalog(),
-        ]).then(([searchRes, rootCat]) => ({
-          products: searchRes.products || rootCat.products || [],
-          categories: rootCat.categories || [],
-        }))
-      : commerceClient.getStoreCatalog(selectedLocationId).then((storeCat) => ({
-          products: storeCat.products || [],
-          categories: storeCat.categories || [],
-        }));
+    const loadPromise = defaultAdminClient.getCommerceCatalog
+      ? defaultAdminClient
+          .getCommerceCatalog(tenantId, selectedLocationId === 'all' ? undefined : selectedLocationId)
+          .then(({ stores: tenantStores, catalog }) => ({
+            stores: tenantStores || [],
+            products: catalog.products || [],
+            categories: catalog.categories || [],
+          }))
+      : Promise.reject(new Error('Tenant-scoped Admin catalogue endpoint is unavailable.'));
 
     loadPromise
       .then((res) => {
         if (!isMounted) return;
+        setStores(res.stores);
         setProducts(res.products);
         setCategories(res.categories || []);
       })
@@ -125,7 +104,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
     return () => {
       isMounted = false;
     };
-  }, [isDemoMode, selectedLocationId, commerceClient, reloadVersion]);
+  }, [isDemoMode, selectedLocationId, tenantId, reloadVersion]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
