@@ -1,12 +1,11 @@
 {
-  "projectId": "hi-domino-d0abb",
-  "appId": "1:7304736818:web:8d675e69fe7db1f17ecc2b",
-  "apiKey": "AIzaSyDOaTg34H47zvGvbMOPoEzhWrXPxU_qS1U",
-  "authDomain": "hi-domino-d0abb.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-retailstorefront-94d6f13b-2728-44ae-81f7-336ea211333f",
-  "storageBucket": "hi-domino-d0abb.firebasestorage.app",
-  "messagingSenderId": "7304736818",
+  "projectId": "leitch-tech-nonprod",
+  "appId": "1:45523163205:web:6723a0c1a5b3add999ab2c",
+  "apiKey": "AIzaSyA4jltR3TFqE1yKIvPkf24Olp2xKgrnt9o",
+  "authDomain": "leitch-tech-nonprod.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "leitch-tech-nonprod.firebasestorage.app",
+  "messagingSenderId": "45523163205",
   "measurementId": "",
-  "oAuthClientId": "7304736818-tc3iv4cs365gs6eqjtk1ieg8h8dnajau.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
