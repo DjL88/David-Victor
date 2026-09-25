@@ -1,54 +1,77 @@
-# Official channel artwork resource pack
+# Channel brand asset library
 
-Prepared 25 September 2026. This is official-source artwork for review, not a statement of trademark permission, commercial approval, provider integration certification or deployment.
+Prepared 25 September 2026.
+
+## Final compact icon library
+
+The app now has a dedicated 32×32 circular presentation library in `public/brand/channels/round/`.
+
+Each channel has an individual SVG and the canonical mapping lives in `public/brand/channels/round/map.json`. The round SVGs embed the locally retained source artwork, so they remain standalone when copied or downloaded individually.
+
+The compact set is:
+
+| Key | Display name | Kind | 32×32 icon |
+| --- | --- | --- | --- |
+| deliveroo | Deliveroo | Marketplace | round/deliveroo.svg |
+| doordash | DoorDash | Marketplace | round/doordash.svg |
+| just-eat | Just Eat | Marketplace | round/just-eat.svg |
+| thuisbezorgd | Thuisbezorgd.nl | Marketplace | round/thuisbezorgd.svg |
+| lieferando | Lieferando | Marketplace | round/lieferando.svg |
+| takeaway | Takeaway.com | Marketplace | round/takeaway.svg |
+| grubhub | Grubhub | Marketplace | round/grubhub.svg |
+| uber-eats | Uber Eats | Marketplace | round/uber-eats.svg |
+| glovo | Glovo | Marketplace | round/glovo.svg |
+| wolt | Wolt | Marketplace | round/wolt.svg |
+| snappy-shopper | Snappy Shopper | Marketplace | round/snappy-shopper.svg |
+| uber-direct | Uber Direct | Direct delivery | round/uber-direct.svg |
+| jet-go | JET Go | Direct delivery | round/jet-go.svg |
+
+### Final corrections
+
+- **Snappy Shopper** uses the official red basket/favicon artwork on the aqua circular background requested for the UI.
+- **JET Go / Just Eat Go** intentionally uses the same Just Eat presentation artwork as Just Eat.
+- All compact icons share the same 32×32 circular footprint so they align cleanly when shown side by side.
+- The original source assets remain separately retained under `public/brand/channels/`; the presentation layer does not replace provenance.
 
 ## Live app pathway
 
-`src/components/MarketplaceServiceBadge.tsx` already renders store-service badges. It now uses the extended existing `src/commerce/deliveryMarketplace.ts` registry, locally vendored assets and consistent 56px white tiles. The image is proportionally contained, never cropped or recoloured. The name stays visible and accessible. Image failure produces a text fallback instead of an empty tile. A new service resets failed-image state. External links accept only HTTP(S) URLs without credentials.
+`src/components/MarketplaceServiceBadge.tsx` uses `badgeIconUrl` from the existing `src/commerce/deliveryMarketplace.ts` registry and renders the icon on a 32×32 circular baseline. If a presentation icon fails, the component falls back to initials while keeping the channel name visible.
 
-`marketplaceForStore` retains the canonical assigned service and own-platform flags. Display identities are NOT Deliverect numeric channel IDs, routing permissions or proof of service availability. No Deliverect login, database access or live third-party icon request has been added. Unknown IDs remain unknown; explicit names/aliases are mapped without concatenating unrelated fields.
+`marketplaceForStore` continues to preserve canonical assigned-service identity. Display identities are not Deliverect numeric channel IDs, routing permissions or proof of service availability. Unknown numeric IDs are not guessed.
 
-## Identity map
+## Original source artwork
 
-| Key | Display name | Kind | Local asset |
-| --- | --- | --- | --- |
-| deliveroo | Deliveroo | Marketplace | deliveroo.png (32px source only) |
-| doordash | DoorDash | Marketplace | doordash.svg |
-| just-eat | Just Eat | Marketplace | just-eat.webp |
-| thuisbezorgd | Thuisbezorgd.nl | Marketplace | thuisbezorgd.webp |
-| lieferando | Lieferando | Marketplace | lieferando.webp |
-| takeaway | Takeaway.com | Marketplace | takeaway.webp |
-| grubhub | Grubhub | Marketplace | grubhub.svg |
-| uber-eats | Uber Eats | Marketplace | uber-eats.webp |
-| glovo | Glovo | Marketplace | glovo.svg |
-| wolt | Wolt | Marketplace | wolt.webp |
-| snappy-shopper | Snappy Shopper | Marketplace | snappy-shopper.webp |
-| uber-direct | Uber Direct | Direct delivery | No standalone official product artwork verified; neutral text fallback |
-| jet-go | JET Go | Direct delivery | No standalone official product artwork verified; neutral text fallback |
+The retained source assets and source manifest remain in `public/brand/channels/` and `public/brand/channels/sources.json`.
 
-`CHANNEL_NAME_ALIASES` records accepted spellings, including `Just Eat Go` -> `jet-go`, `Thuisbezorgd.nl`, `Lieferando.de/.at` and `Takeaway.com`. Regional brands and Grubhub remain distinct identities. Bare Uber/Go/Drive and generic phrases such as 'My takeaway' do not pick a logo. Unmapped DoorDash Drive and Wolt Drive are not mistaken for their marketplace products.
+Those source files were fetched from the companies' own public sites or linked media-kit CDNs. The new round SVGs are presentation wrappers built from those retained files.
 
-## Sources and quality
+Deliveroo's retained source is still the official 32px developer-site favicon. Uber Eats uses its published green app-icon artwork. Snappy Shopper uses the basket favicon from its own site.
 
-Assets live in `public/brand/channels/`. `sources.json` records source page, original asset URL/archive member, original SHA256, vendored SHA256 and transformation for every logo. Originals were fetched from the companies' own public sites or their linked media-kit CDNs, not Simple Icons or AI-generated/traced copies.
+## Aliases
 
-Most app rasters are proportionally reduced within 256px and encoded as lossless WebP, retaining the source canvas and colour. SVG paths are preserved. DoorDash's inline SVG CSS variable is resolved to the exact official header CSS value, not a selected replacement colour. Deliveroo is currently an unchanged 32px official developer favicon: adequate for small badges, NOT a high-resolution master. Uber Eats uses its published green app-icon artwork, not a recoloured/obsolete two-tone wordmark. Snappy Shopper uses the cart icon from its own official site.
+`CHANNEL_NAME_ALIASES` and `round/map.json` include common accepted names such as:
 
-JET Go and Uber Direct have verified product names but no reviewed standalone product mark in this pack. Do not silently substitute Just Eat or Uber Eats artwork. Their fallback initials are ordinary UI text, not official logos.
+- `Just Eat Go` → `jet-go`
+- `Thuisbezorgd.nl` → `thuisbezorgd`
+- `Lieferando.de` / `Lieferando.at` → `lieferando`
+- `Takeaway.com` → `takeaway`
+- `Snappy Shopper` → `snappy-shopper`
+- `Uber Direct` → `uber-direct`
 
-## Usage review before publishing
+Regional JET identities and Grubhub remain separate channel keys. Bare `Uber`, `Go`, `Drive`, DoorDash Drive and Wolt Drive are not silently mapped to a marketplace product.
 
-Public availability does not grant commercial use. JET's media kit asks for permission; Uber's co-marketing guidance requests Brand Desk approval and imposes clear-space/colour rules. Confirm the applicable partner agreement/brand rules for the intended in-app use before publishing. Do not imply endorsement. Keep the original source/provenance record when replacing an asset.
+## Usage note
 
-- JET permission notice: https://newsroom.justeattakeaway.com/en-WW/assets/233818/
-- Uber guidelines: https://merchants.ubereats.com/us/en/resources/learning-center/co-marketing-tools/
-- Glovo press kit: https://about.glovoapp.com/press/
-- Wolt media kit: https://press.wolt.com/en-WW/assets/225299/
-- Uber Direct: https://merchants.ubereats.com/gb/en/services/uber-direct/
-- JET Go: https://developers.just-eat.com/documentation/jet-go
+Public availability of a logo is not the same as trademark permission. Applicable partner brand rules and agreements still govern production use. The library keeps original artwork/provenance separate so assets can be reviewed or replaced without changing the channel identity map.
 
-## Verification and boundaries
+## Verification
 
-New tests exercise the actual registry, asset/provenance checksums and the real React badge's image/error/direct/unknown/link behaviour. Run `bun run lint`, `bun run test`, `bun run test:certification`, `bun run build` through PR CI. Authored tests are not executed-test evidence until CI finishes. Browser/device review and brand permission review remain separate gates.
+Regression coverage now checks:
 
-The temporary public asset discovery and SHA-pinned draft-branch import workflows/scripts have been removed. No recurring download job, repository-write workflow, new dependency, production deployment or automatic merge is retained.
+- all 11 original sourced assets and their provenance hashes;
+- all 13 compact round icon mappings;
+- Snappy Shopper's round presentation contains the retained Snappy source artwork and aqua background;
+- JET Go contains the retained Just Eat source artwork;
+- the React badge uses the 32×32 round icon path;
+- direct-service classification remains distinct from marketplace classification;
+- safe-link and failed-image behaviour remains intact.
