@@ -646,7 +646,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                     const type = e.target.value;
                     setEditingStory({
                       ...editingStory,
-                      action: type === 'NONE' ? undefined : { type: type as NonNullable<Story['action']>['type'], label: editingStory.action?.label || 'Shop now' },
+                      action: type === 'NONE' ? undefined : { type: type as NonNullable<Story['action']>['type'], buttonLabel: editingStory.action?.buttonLabel || 'Shop now' },
                     });
                   }}
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold"
@@ -654,7 +654,6 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 >
                   <option value="NONE">No CTA</option>
                   <option value="PRODUCT">Open product</option>
-                  <option value="STORE_PICKER">Choose store / location</option>
                 </select>
                 {editingStory.action?.type === 'PRODUCT' && (
                   <select
@@ -677,8 +676,8 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 )}
                 {editingStory.action && (
                   <input
-                    value={editingStory.action.label || ''}
-                    onChange={(e) => setEditingStory({ ...editingStory, action: { ...editingStory.action!, label: e.target.value } })}
+                    value={editingStory.action.buttonLabel || ''}
+                    onChange={(e) => setEditingStory({ ...editingStory, action: { ...editingStory.action!, buttonLabel: e.target.value } })}
                     placeholder="Button label"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"
                     aria-label="Story CTA label"
