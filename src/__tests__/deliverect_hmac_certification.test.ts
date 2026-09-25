@@ -9,6 +9,7 @@ const sign = (raw: string, secret: string) =>
 
 describe('Deliverect HMAC certification contract', () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     delete process.env.APP_MODE;
     delete process.env.DELIVERECT_ENV;
     vi.restoreAllMocks();
@@ -173,6 +174,45 @@ describe('Deliverect HMAC certification contract', () => {
         { stagingTemporarySecrets: temporarySecrets }
       )
     ).resolves.toMatchObject({ tenantId: 'tenant-a', secret: 'cl-manual-123' });
+  });
+
+  it('verifies a configured partner HMAC through the active integration profile secret reference', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.APP_MODE = 'staging';
+    process.env.DELIVERECT_ENV = 'staging';
+    const raw = '[{"menu":"Lunch","products":{}}]';
+    const profileSecret = 'partner-hmac-secret';
+
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'tenant-a',
+      environment: 'staging',
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue({
+      id: 'tenant-a__staging',
+      tenantId: 'tenant-a',
+      environment: 'staging',
+      status: 'ACTIVE',
+      version: 1,
+      credentialMode: 'platform',
+      allowedChannelLinkIds: ['cl-manual-123'],
+      deliverect: {},
+      secretRefs: {
+        deliverectWebhookSecret: 'lt--tenant-a--staging--deliverect-webhook-secret',
+      },
+    } as any);
+    vi.spyOn(SecretManager, 'getSecret').mockImplementation(async (name: string) =>
+      name === 'lt--tenant-a--staging--deliverect-webhook-secret'
+        ? profileSecret
+        : undefined as any
+    );
+
+    await expect(
+      WebhookService.resolveTenantForWebhook(
+        Buffer.from(raw),
+        sign(raw, profileSecret),
+        'tenant-a'
+      )
+    ).resolves.toMatchObject({ tenantId: 'tenant-a', secret: profileSecret });
   });
 
   it('never accepts channelLink/location temporary secrets in production', async () => {
