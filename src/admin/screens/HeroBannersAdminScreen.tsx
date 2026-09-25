@@ -109,6 +109,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   });
 
   const [productSearch, setProductSearch] = useState<string>('');
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
 
   const commerceClient = useMemo(() => getCommerceClient(tenantId) as any, [tenantId]);
 
@@ -496,19 +497,34 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
               </button>
             </div>
 
-            {/* LIVE PREVIEW HERO CARD */}
+            {/* RESPONSIVE LIVE PREVIEW */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-purple-600" />
-                <span>Live Hero Banner Preview</span>
-              </label>
-              <div className="relative rounded-2xl h-44 sm:h-52 bg-gray-950 overflow-hidden border border-gray-200">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Live banner preview</span>
+                </label>
+                <div className="inline-flex rounded-xl bg-gray-100 p-1" role="group" aria-label="Preview viewport">
+                  {(['desktop', 'mobile'] as const).map((viewport) => (
+                    <button
+                      key={viewport}
+                      type="button"
+                      onClick={() => setPreviewViewport(viewport)}
+                      aria-pressed={previewViewport === viewport}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-bold capitalize transition-colors ${previewViewport === viewport ? 'bg-white text-purple-700 shadow-xs' : 'text-gray-500'}`}
+                    >
+                      {viewport}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={`mx-auto relative rounded-2xl bg-gray-950 overflow-hidden border border-gray-200 transition-all ${previewViewport === 'mobile' ? 'h-64 w-[min(100%,20rem)]' : 'h-44 sm:h-52 w-full'}`}>
                 <img
                   src={currentEditingBanner.backgroundImageUrl}
                   alt={currentEditingBanner.title}
-                  className="w-full h-full object-cover opacity-80"
+                  className={`w-full h-full opacity-80 ${(currentEditingBanner.layout || 'BACKGROUND') === 'BACKGROUND' ? 'object-cover' : 'object-contain'}`}
                 />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent p-5 flex flex-col justify-between text-white">
+                <div className={`absolute inset-0 p-5 flex flex-col justify-between text-white ${(currentEditingBanner.layout || 'BACKGROUND') === 'ARTWORK' ? 'bg-gradient-to-t from-black/80 via-transparent to-black/20' : (currentEditingBanner.layout || 'BACKGROUND') === 'SPLIT' ? 'bg-gradient-to-r from-black via-black/90 to-transparent' : 'bg-gradient-to-r from-black/90 via-black/60 to-transparent'}`}>
                   <div className="space-y-2">
                     <span className="inline-block bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
                       {currentEditingBanner.badge || 'PROMOTION'}
@@ -650,27 +666,89 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label className="font-extrabold text-gray-800">Banner layout</label>
+                <p className="text-[11px] text-gray-500">Choose how artwork and copy are composed. Targeting, stock rules and the CTA stay unchanged.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {([
+                    ['BACKGROUND', 'Background', 'Image fills the banner with copy over it'],
+                    ['ARTWORK', 'Artwork', 'Keep supplied artwork visible with a readable copy panel'],
+                    ['SPLIT', 'Split', 'Copy on the left, image weighted to the right'],
+                  ] as const).map(([value, label, help]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setCurrentEditingBanner((prev) => ({ ...prev, layout: value }))}
+                      className={`rounded-xl border p-3 text-left transition-colors ${(currentEditingBanner.layout || 'BACKGROUND') === value ? 'border-purple-500 bg-purple-50 text-purple-950' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                      aria-pressed={(currentEditingBanner.layout || 'BACKGROUND') === value}
+                    >
+                      <span className="block text-xs font-extrabold">{label}</span>
+                      <span className="mt-1 block text-[10px] leading-snug opacity-75">{help}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <MarketingScheduleEditor value={currentEditingBanner.schedule} onChange={(schedule) => setCurrentEditingBanner((prev) => ({ ...prev, schedule }))} />
 
               {/* Action Type & Category / Store Target */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1">
-                  <label className="font-extrabold text-gray-800">CTA Button Action</label>
+                <div className="space-y-2">
+                  <label className="font-extrabold text-gray-800">CTA destination</label>
+                  <p className="text-[10px] text-gray-500">Choose what customers should reach. Only relevant destination fields are shown.</p>
                   <select
                     value={currentEditingBanner.actionType}
                     onChange={(e) =>
                       setCurrentEditingBanner((prev) => ({
                         ...prev,
-                        actionType: e.target.value as any,
+                        actionType: e.target.value as CategoryPromoBanner['actionType'],
+                        targetPlu: undefined,
+                        targetCategoryId: undefined,
+                        searchQuery: undefined,
                       }))
                     }
                     className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-900"
                   >
-                    <option value="STORE_PICKER">🏪 Open Store Picker / Location</option>
-                    <option value="CATEGORY">📂 Filter to Specific Category</option>
-                    <option value="PRODUCT">🛒 Open Target Product PLU</option>
-                    <option value="SEARCH">🔍 Trigger Product Search</option>
+                    <option value="STORE_PICKER">Store / location picker</option>
+                    <option value="CATEGORY">Category</option>
+                    <option value="PRODUCT">Product</option>
+                    <option value="SEARCH">Search results</option>
                   </select>
+                  {currentEditingBanner.actionType === 'CATEGORY' && (
+                    <select
+                      value={currentEditingBanner.targetCategoryId || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, targetCategoryId: e.target.value || undefined }))}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA category"
+                    >
+                      <option value="">Choose category…</option>
+                      {flattenedCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.depth > 0 ? `${'— '.repeat(category.depth)}↳ ` : ''}{category.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {currentEditingBanner.actionType === 'PRODUCT' && (
+                    <select
+                      value={currentEditingBanner.targetPlu || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, targetPlu: e.target.value || undefined }))}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA product"
+                    >
+                      <option value="">Choose product…</option>
+                      {products.map((product) => <option key={product.plu} value={product.plu}>{product.name} ({product.plu})</option>)}
+                    </select>
+                  )}
+                  {currentEditingBanner.actionType === 'SEARCH' && (
+                    <input
+                      value={currentEditingBanner.searchQuery || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, searchQuery: e.target.value }))}
+                      placeholder="Search phrase customers should see"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA search phrase"
+                    />
+                  )}
                 </div>
 
                 <div data-admin-ai-target="hero-banner-placement" className="space-y-1">
