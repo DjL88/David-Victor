@@ -4483,6 +4483,24 @@ v1Router.get('/admin/tenants/:id', requireAdminAuth(), async (req: Request, res:
 // 9.4 Update Tenant Branding
 v1Router.patch('/admin/tenants/:id', requireAdminAuth(), requireAdminCapability('branding.write'), validateBody(UpdateTenantConfigSchema), async (req: Request, res: Response) => {
   try {
+    const authAdmin = (req as AuthenticatedRequest).adminUser!;
+    const platformOnlyFeatureKeys = ['showLtLaunchSplash', 'showLtFooterWatermark'] as const;
+    const requestedFeatureFlags = req.body?.featureFlags as Record<string, unknown> | undefined;
+    const changesPlatformOnlyFeature = platformOnlyFeatureKeys.some((key) =>
+      Object.prototype.hasOwnProperty.call(requestedFeatureFlags || {}, key)
+    );
+
+    if (
+      changesPlatformOnlyFeature &&
+      !authAdmin.isSuperAdmin &&
+      authAdmin.role !== 'platformSuperAdmin'
+    ) {
+      return res.status(403).json({
+        error: 'Only a Platform SuperAdmin can change LT platform branding.',
+        code: 'PLATFORM_FEATURE_FLAG_FORBIDDEN',
+      });
+    }
+
     const updated = await FirestorePlatformService.updateTenantConfig(req.params.id, req.body);
 
     await FirestorePlatformService.addAuditLog(req.params.id, {

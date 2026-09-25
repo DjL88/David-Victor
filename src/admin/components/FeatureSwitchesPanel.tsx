@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TenantFeatureFlags, AdminUser } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { Sliders, Check, RefreshCw } from 'lucide-react';
-import { TENANT_FEATURE_DEFINITIONS } from '../featureSwitchRegistry';
+import { TENANT_FEATURE_DEFINITIONS, TenantFeatureDefinition } from '../featureSwitchRegistry';
 
 interface FeatureSwitchesPanelProps {
   tenantId: string;
@@ -41,9 +41,15 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     }
   };
 
-  const handleToggle = (key: keyof TenantFeatureFlags) => {
+  const isPlatformSuperAdmin = currentUser.isSuperAdmin === true || currentUser.role === 'platformSuperAdmin';
+
+  const isFeatureEnabled = (definition: TenantFeatureDefinition): boolean =>
+    Boolean(flags?.[definition.key] ?? definition.defaultEnabled ?? false);
+
+  const handleToggle = (definition: TenantFeatureDefinition) => {
     if (!flags) return;
-    setFlags({ ...flags, [key]: !flags[key] });
+    if (definition.platformOnly && !isPlatformSuperAdmin) return;
+    setFlags({ ...flags, [definition.key]: !isFeatureEnabled(definition) });
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -54,7 +60,14 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     setError('');
 
     try {
-      const updated = await defaultAdminClient.updateFeatureFlags(tenantId, flags, currentUser);
+      const flagsToSave: Partial<TenantFeatureFlags> = { ...flags };
+      if (!isPlatformSuperAdmin) {
+        TENANT_FEATURE_DEFINITIONS
+          .filter((definition) => definition.platformOnly)
+          .forEach((definition) => delete flagsToSave[definition.key]);
+      }
+
+      const updated = await defaultAdminClient.updateFeatureFlags(tenantId, flagsToSave, currentUser);
       setFlags(updated);
       setSaveSuccess(true);
       if (onFlagsUpdated) {
@@ -82,7 +95,9 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     return <div role="alert" className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800">{error || 'Feature switches are unavailable.'} <button type="button" onClick={loadFlags} className="ml-2 font-bold underline">Retry</button></div>;
   }
 
-  const featureDefinitions = TENANT_FEATURE_DEFINITIONS;
+  const featureDefinitions = TENANT_FEATURE_DEFINITIONS.filter(
+    (definition) => !definition.platformOnly || isPlatformSuperAdmin
+  );
 
 
   return (
@@ -120,16 +135,16 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
 
               <button
                 type="button"
-                onClick={() => handleToggle(f.key)}
+                onClick={() => handleToggle(f)}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors shrink-0 ${
-                  flags[f.key] ? 'bg-indigo-600' : 'bg-gray-200'
+                  isFeatureEnabled(f) ? 'bg-indigo-600' : 'bg-gray-200'
                 }`}
                 aria-label={`Toggle ${f.title}`}
-                aria-pressed={Boolean(flags[f.key])}
+                aria-pressed={isFeatureEnabled(f)}
               >
                 <div
                   className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                    flags[f.key] ? 'translate-x-5' : 'translate-x-0'
+                    isFeatureEnabled(f) ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
               </button>
