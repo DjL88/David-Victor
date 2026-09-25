@@ -10,11 +10,9 @@ import {
   Trash2,
   ExternalLink,
   ShieldCheck,
-  Server,
   Layers,
-  Sparkles,
-  ArrowRight,
   Info,
+  Copy,
 } from 'lucide-react';
 
 export interface DomainMapping {
@@ -39,7 +37,6 @@ interface DomainsScreenProps {
 
 export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenants = [] }) => {
   const [domains, setDomains] = useState<DomainMapping[]>([]);
-  const [tenantsList, setTenantsList] = useState<TenantConfig[]>(allTenants);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -49,44 +46,15 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
   // Form State
   const [newHostname, setNewHostname] = useState('');
-  const [selectedTenantId, setSelectedTenantId] = useState(tenantId || 'brand-alpha');
   const [isPrimary, setIsPrimary] = useState(false);
-  const [showDnsHelp, setShowDnsHelp] = useState(false);
 
   useEffect(() => {
-    if (allTenants && allTenants.length > 0) {
-      const seen = new Set<string>();
-      const deduped = (allTenants || []).filter((t: any) => {
-        if (!t?.tenantId || seen.has(t.tenantId)) return false;
-        seen.add(t.tenantId);
-        return true;
-      });
-      setTenantsList(deduped);
-    } else {
-      loadTenants();
-    }
-    setSelectedTenantId(tenantId);
-
-    loadDomains();
+    void loadDomains();
   }, [tenantId]);
 
-  const loadTenants = async () => {
-    try {
-      const client = getAdminClient();
-      const list = await client.listAllTenants();
-      if (list && list.length > 0) {
-        const seen = new Set<string>();
-        const deduped = (list || []).filter((t: any) => {
-          if (!t?.tenantId || seen.has(t.tenantId)) return false;
-          seen.add(t.tenantId);
-          return true;
-        });
-        setTenantsList(deduped);
-      }
-    } catch (e) {
-      console.warn('Could not fetch tenants list:', e);
-    }
-  };
+  const tenantConfig = allTenants.find((tenant) => tenant.tenantId === tenantId);
+  const tenantName = tenantConfig?.brandName || tenantId;
+  const tenantColour = tenantConfig?.primaryColour || '#059669';
 
   const loadDomains = async () => {
     setIsLoading(true);
@@ -97,7 +65,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         throw new Error('Domain management is not available in this Admin client.');
       }
       const data = await client.listAllDomains();
-      setDomains(data || []);
+      setDomains((data || []).filter((domain: DomainMapping) => domain.tenantId === tenantId));
     } catch (e: any) {
       console.error('Failed to load domains:', e);
       setErrorMessage(e.message || 'Failed to load domain mappings.');
@@ -125,12 +93,12 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       }
       await client.addOrUpdateDomain({
         hostname: cleanHost,
-        tenantId: selectedTenantId,
+        tenantId,
         isPrimary,
       });
 
       setSuccessMessage(
-        `Domain "${cleanHost}" has been claimed for ${getTenantName(selectedTenantId)} and is pending ownership/TLS verification.`
+        `Domain "${cleanHost}" has been claimed for ${tenantName} and is pending ownership/TLS verification.`
       );
       setNewHostname('');
       setIsPrimary(false);
@@ -200,14 +168,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     }
   };
 
-  const getTenantName = (tId: string): string => {
-    const found = tenantsList.find((t) => t.tenantId === tId);
-    return found?.brandName || tId;
-  };
-
-  const getTenantColor = (tId: string): string => {
-    const found = tenantsList.find((t) => t.tenantId === tId);
-    return found?.primaryColour || '#059669';
+  const copyDnsValue = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setSuccessMessage(`${label} copied to clipboard.`);
+    } catch {
+      setErrorMessage(`Could not copy ${label.toLowerCase()}. Select the value and copy it manually.`);
+    }
   };
 
   return (
@@ -224,7 +191,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                 <h1 className="text-xl font-bold text-gray-900">Domains</h1>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Route each published hostname or custom domain to the correct storefront brand.
+                Connect and verify domains for the current brand workspace.
               </p>
             </div>
           </div>
@@ -252,7 +219,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
               How domain routing works
             </p>
             <p>
-              New custom domains stay pending until ownership and serving are verified. Only active domains resolve storefront traffic; the platform domain lifecycle will also synchronize Firebase Authentication authorization when activation completes.
+              This page only manages domains for the current brand. We show DNS records only when they are issued by the platform; we never guess routing IPs or provider values. Ownership verification is required before secure serving can be activated.
             </p>
           </div>
         </div>
@@ -275,49 +242,18 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
 
       {/* ADD / MAP DOMAIN FORM */}
       <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Plus className="w-4 h-4 text-indigo-600" />
-            <span>Claim a domain for a brand</span>
+            <span>Connect a domain</span>
           </h2>
-          <button
-            type="button"
-            onClick={() => setShowDnsHelp(!showDnsHelp)}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-          >
-            {showDnsHelp ? 'Hide DNS Setup Guide' : 'View DNS Records Guide'}
-          </button>
+          <span className="text-[11px] font-semibold text-gray-500">
+            Current brand: <span className="text-gray-800">{tenantName}</span>
+          </span>
         </div>
-
-        {showDnsHelp && (
-          <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-2 text-gray-600">
-            <p className="font-bold text-gray-900">Configuring Custom Domains at your DNS Registrar:</p>
-            <p>To point a domain like <code>www.shop1.com</code> to this application:</p>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left font-mono text-[11px] bg-white border border-gray-200 rounded-lg">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-700">
-                    <th className="p-2">Type</th>
-                    <th className="p-2">Host / Name</th>
-                    <th className="p-2">Target / Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  <tr>
-                    <td className="p-2 text-indigo-600 font-bold">CNAME</td>
-                    <td className="p-2">www (or subdomain)</td>
-                    <td className="p-2">Your published storefront hostname</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 text-indigo-600 font-bold">A</td>
-                    <td className="p-2">@ (root/apex)</td>
-                    <td className="p-2">Your Cloud Run or reverse-proxy IP</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        <p className="text-xs text-gray-500">
+          Enter the hostname you own. After it is claimed, copy the exact TXT verification record shown below. Routing records will only be shown when the configured hosting layer provides them.
+        </p>
 
         <form onSubmit={handleAddDomain} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
           <div className="md:col-span-5 space-y-1">
@@ -335,20 +271,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
           </div>
 
           <div className="md:col-span-4 space-y-1">
-            <label className="block text-xs font-bold text-gray-700">
-              Assigned Brand
-            </label>
-            <select
-              value={selectedTenantId}
-              onChange={(e) => setSelectedTenantId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:outline-indigo-600 focus:border-indigo-600 font-semibold"
-            >
-              {tenantsList.map((t, idx) => (
-                <option key={`domain-brand-opt-${t.tenantId}-${idx}`} value={t.tenantId}>
-                  {t.brandName} ({t.tenantId})
-                </option>
-              ))}
-            </select>
+            <label className="block text-xs font-bold text-gray-700">Brand</label>
+            <div className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-gray-50 font-semibold text-gray-700 truncate">
+              {tenantName}
+            </div>
           </div>
 
           <div className="md:col-span-3 flex items-center justify-between gap-3">
@@ -410,8 +336,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs divide-y divide-gray-100">
             {domains.map((dom) => {
-              const brand = tenantsList.find((t) => t.tenantId === dom.tenantId);
-              const brandColor = brand?.primaryColour || '#059669';
+              const brandColor = tenantColour;
               const isDeleting = deletingId === dom.domainId || deletingId === dom.hostname;
 
               return (
@@ -461,19 +386,25 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                           className="font-semibold px-2 py-0.5 rounded-md text-[11px] text-white"
                           style={{ backgroundColor: brandColor }}
                         >
-                          {brand?.brandName || dom.tenantId}
+                          {tenantName}
                         </span>
-                        <span className="text-gray-400 font-mono text-[10px]">
-                          ({dom.tenantId})
+                        <span className="text-gray-400 text-[10px]">
+                          Current workspace
                         </span>
                       </div>
 
                       {dom.status !== 'active' && dom.verificationRecordName && dom.verificationRecordValue && (
                         <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px] text-gray-600">
                           <p className="font-extrabold uppercase tracking-wide text-gray-500">DNS ownership TXT record</p>
-                          <div className="mt-1.5 grid gap-1 font-mono break-all">
-                            <p><span className="font-bold text-gray-800">Name:</span> {dom.verificationRecordName}</p>
-                            <p><span className="font-bold text-gray-800">Value:</span> {dom.verificationRecordValue}</p>
+                          <div className="mt-1.5 grid gap-2">
+                            <div className="flex items-start gap-2">
+                              <p className="min-w-0 flex-1 font-mono break-all"><span className="font-bold text-gray-800">Name:</span> {dom.verificationRecordName}</p>
+                              <button type="button" onClick={() => void copyDnsValue('DNS record name', dom.verificationRecordName!)} className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 hover:text-indigo-700" aria-label="Copy DNS record name" title="Copy name"><Copy className="h-3.5 w-3.5" /></button>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <p className="min-w-0 flex-1 font-mono break-all"><span className="font-bold text-gray-800">Value:</span> {dom.verificationRecordValue}</p>
+                              <button type="button" onClick={() => void copyDnsValue('DNS record value', dom.verificationRecordValue!)} className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 hover:text-indigo-700" aria-label="Copy DNS record value" title="Copy value"><Copy className="h-3.5 w-3.5" /></button>
+                            </div>
                           </div>
                           {dom.ownershipVerifiedAt && (
                             <p className="mt-1.5 font-sans font-semibold text-blue-700">
