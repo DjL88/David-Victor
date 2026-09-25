@@ -11,6 +11,7 @@ import { useTenant } from '../../tenant/TenantContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { OrderProgressHero } from './OrderProgressHero';
 
 const defaultCommerceClient = getCommerceClient() as any;
 import {
@@ -245,6 +246,9 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Customer-first tracker summary. Detailed grocery picking/payment truth remains below. */}
+      <OrderProgressHero order={order} />
 
       {/* Top Header Card */}
       <div className="p-5 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-3">
