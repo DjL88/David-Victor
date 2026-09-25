@@ -96,6 +96,18 @@ describe('DV-07a retail order endpoint resolver', () => {
     expect(resolved.source.headers).toBe('default');
   });
 
+  it('keeps the required retail header when the environment headers override is an empty object', () => {
+    const resolved = resolveRetailOrderEndpoint({
+      ...base,
+      env: {
+        ...base.env,
+        DELIVERECT_RETAIL_ORDER_HEADERS: '{}',
+      },
+    });
+    expect(resolved.headers).toEqual({ 'x-deliverect-version': 'retail' });
+    expect(resolved.source.headers).toBe('default');
+  });
+
   it('still fails closed for an unknown environment without tenant or env configuration', () => {
     try {
       resolveRetailOrderEndpoint({ ...base, environment: 'custom', env: {} });

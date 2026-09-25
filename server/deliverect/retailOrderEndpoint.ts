@@ -109,9 +109,10 @@ export function resolveRetailOrderEndpoint(args: {
 
   const parsedEnvHeaders = envHeaders(args.env.DELIVERECT_RETAIL_ORDER_HEADERS);
   const hasTenantHeaders = tenant.headers !== undefined && Object.keys(tenant.headers).length > 0;
+  const hasEnvHeaders = parsedEnvHeaders !== undefined && Object.keys(parsedEnvHeaders).length > 0;
   const selectedHeaders = hasTenantHeaders
     ? tenant.headers
-    : parsedEnvHeaders !== undefined
+    : hasEnvHeaders
       ? parsedEnvHeaders
       : DEFAULT_HEADERS;
   const headers = validateRetailOrderHeaders(selectedHeaders);
@@ -131,7 +132,7 @@ export function resolveRetailOrderEndpoint(args: {
     source: {
       baseUrl: tenant.baseUrl ? 'tenant' : envBase ? 'env' : 'default',
       pathTemplate: tenant.pathTemplate ? 'tenant' : envTemplate ? 'env' : 'default',
-      headers: hasTenantHeaders ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'default',
+      headers: hasTenantHeaders ? 'tenant' : hasEnvHeaders ? 'env' : 'default',
     },
   };
 }
