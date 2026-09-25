@@ -677,23 +677,62 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
               {/* Action Type & Category / Store Target */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1">
-                  <label className="font-extrabold text-gray-800">CTA Button Action</label>
+                <div className="space-y-2">
+                  <label className="font-extrabold text-gray-800">CTA destination</label>
+                  <p className="text-[10px] text-gray-500">Choose what customers should reach. Only relevant destination fields are shown.</p>
                   <select
                     value={currentEditingBanner.actionType}
                     onChange={(e) =>
                       setCurrentEditingBanner((prev) => ({
                         ...prev,
-                        actionType: e.target.value as any,
+                        actionType: e.target.value as CategoryPromoBanner['actionType'],
+                        targetPlu: undefined,
+                        targetCategoryId: undefined,
+                        searchQuery: undefined,
                       }))
                     }
                     className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-900"
                   >
-                    <option value="STORE_PICKER">🏪 Open Store Picker / Location</option>
-                    <option value="CATEGORY">📂 Filter to Specific Category</option>
-                    <option value="PRODUCT">🛒 Open Target Product PLU</option>
-                    <option value="SEARCH">🔍 Trigger Product Search</option>
+                    <option value="STORE_PICKER">Store / location picker</option>
+                    <option value="CATEGORY">Category</option>
+                    <option value="PRODUCT">Product</option>
+                    <option value="SEARCH">Search results</option>
                   </select>
+                  {currentEditingBanner.actionType === 'CATEGORY' && (
+                    <select
+                      value={currentEditingBanner.targetCategoryId || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, targetCategoryId: e.target.value || undefined }))}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA category"
+                    >
+                      <option value="">Choose category…</option>
+                      {flattenedCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.depth > 0 ? `${'— '.repeat(category.depth)}↳ ` : ''}{category.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {currentEditingBanner.actionType === 'PRODUCT' && (
+                    <select
+                      value={currentEditingBanner.targetPlu || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, targetPlu: e.target.value || undefined }))}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA product"
+                    >
+                      <option value="">Choose product…</option>
+                      {products.map((product) => <option key={product.plu} value={product.plu}>{product.name} ({product.plu})</option>)}
+                    </select>
+                  )}
+                  {currentEditingBanner.actionType === 'SEARCH' && (
+                    <input
+                      value={currentEditingBanner.searchQuery || ''}
+                      onChange={(e) => setCurrentEditingBanner((prev) => ({ ...prev, searchQuery: e.target.value }))}
+                      placeholder="Search phrase customers should see"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs"
+                      aria-label="CTA search phrase"
+                    />
+                  )}
                 </div>
 
                 <div data-admin-ai-target="hero-banner-placement" className="space-y-1">
