@@ -124,7 +124,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 min-w-0">
+    <div className="p-4 sm:p-4 sm:p-6 max-w-7xl mx-auto space-y-6 min-w-0 min-w-0">
       {/* HEADER & TIMEFRAME SELECTOR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
