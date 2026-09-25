@@ -33,17 +33,19 @@ export function resolveCustomerLifecycleStage(
 
   if (order.includes('CANCEL')) return 'CANCELLED';
   if (order === 'FAILED' || dispatch === 'FAILED') return 'FAILED';
+  if (dispatch === 'CANCELLED' || dispatch === 'CANCEL_PENDING') return order.includes('CANCEL') ? 'CANCELLED' : 'READY';
   if (order === 'DELIVERED' || dispatch === 'DELIVERED') return 'DELIVERED';
 
   if (fulfillmentType === 'delivery') {
-    if (['OUT_FOR_DELIVERY', 'DISPATCHING'].includes(order) || ['PICKED_UP', 'PICKUP_EN_ROUTE'].includes(dispatch)) return 'ON_THE_WAY';
+    if (['OUT_FOR_DELIVERY', 'DISPATCHING'].includes(order) || dispatch === 'PICKED_UP') return 'ON_THE_WAY';
+    if (dispatch === 'PICKUP_EN_ROUTE') return 'COURIER_ASSIGNED';
     if (order === 'COURIER_ASSIGNED' || dispatch === 'ASSIGNED' || dispatch === 'ASSIGNING') return 'COURIER_ASSIGNED';
   } else if (['PICKED_UP', 'COLLECTED'].includes(order) || dispatch === 'PICKED_UP') {
     return 'COLLECTED';
   }
 
-  if (['READY', 'READY_FOR_PICKUP', 'READY_FOR_COURIER', 'PICKUP_READY'].includes(order)) return 'READY';
-  if (['PICKING', 'PICKING_STARTED', 'PICKING_WITH_CHANGES', 'PICKED', 'PICKING_COMPLETE', 'PICKING_COMPLETED', 'PREPARING'].includes(order)) return 'PREPARING';
+  if (['READY', 'READY_FOR_PICKUP', 'READY_FOR_COURIER', 'PICKUP_READY', 'PICKED', 'PICKING_COMPLETE', 'PICKING_COMPLETED'].includes(order)) return 'READY';
+  if (['PICKING', 'PICKING_STARTED', 'PICKING_WITH_CHANGES', 'PREPARING'].includes(order)) return 'PREPARING';
   if (['ORDER_CONFIRMED', 'CONFIRMED', 'STORE_ACCEPTED', 'ACCEPTED', 'ORDERACCEPTED'].includes(order)) return 'CONFIRMED';
   return 'PLACED';
 }
