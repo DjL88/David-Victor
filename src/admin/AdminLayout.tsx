@@ -174,6 +174,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     setShowBackToTop(false);
   }, [activeTab, currentTenantId]);
 
+  // Altie guidance is identity-scoped. Tenant/user/role changes must discard any
+  // pending walkthrough before the new identity can see or act on stale context.
+  useEffect(() => {
+    setAssistantGuide(null);
+    setIsAssistantOpen(false);
+  }, [currentTenantId, currentUser.id, currentUser.role, currentUser.tenantId]);
+
   const loadAllTenants = async () => {
     try {
       const list = await defaultAdminClient.listAllTenants();
