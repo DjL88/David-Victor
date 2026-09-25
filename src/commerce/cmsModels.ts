@@ -135,6 +135,19 @@ export type CmsBlock =
 
 export type NavigationVisibility = 'header' | 'footer' | 'both' | 'hidden';
 
+export interface CmsPageVariant {
+  familyId: string;
+  sourceLocale?: string;
+  translationState?: 'source' | 'draft' | 'reviewed';
+  showFallbackNotice?: boolean;
+  markets?: string[];
+  regions?: string[];
+  locationIds?: string[];
+  timeZone?: string;
+  unpublishAt?: string;
+  social?: { title?: string; description?: string; imageUrl?: string };
+}
+
 export interface CmsPage {
   id: string;
   tenantId: string;
@@ -143,6 +156,8 @@ export interface CmsPage {
   seoTitle: string;
   seoDescription: string;
   locale: string; // e.g. "en-GB"
+  /** Locale/market variant metadata authored by the retailer. Empty targeting means globally eligible. */
+  variant?: CmsPageVariant;
   status: 'draft' | 'published' | 'archived';
   publishDate?: string;
   navigationVisibility: NavigationVisibility;
