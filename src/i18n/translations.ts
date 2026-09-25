@@ -361,6 +361,19 @@ export interface LocaleTranslations {
   'tracking.pending': string;
   'tracking.by': string;
   'tracking.eta': string;
+  'tracking.collected': string;
+  'tracking.liveCourier': string;
+  'tracking.track': string;
+  'tracking.progressLabel': string;
+
+  // CMS platform chrome (retailer-authored block copy remains untouched)
+  'cms.add': string;
+  'cms.exploreOffer': string;
+  'cms.locateStores': string;
+  'cms.noStories': string;
+  'cms.productFallback': string;
+  'cms.categoryFallback': string;
+  'cms.storyFallback': string;
 
   // Errors & Fallbacks
   'error.general': string;
@@ -753,6 +766,17 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.pending': 'Pending',
     'tracking.by': 'by',
     'tracking.eta': 'ETA',
+    'tracking.collected': 'Collected',
+    'tracking.liveCourier': 'Live courier tracking',
+    'tracking.track': 'Track',
+    'tracking.progressLabel': 'Order progress',
+    'cms.add': 'Add',
+    'cms.exploreOffer': 'Explore Offer',
+    'cms.locateStores': 'Locate Stores',
+    'cms.noStories': 'No stories are currently available.',
+    'cms.productFallback': 'Product',
+    'cms.categoryFallback': 'Category',
+    'cms.storyFallback': 'Story',
 
     'error.general': 'An unexpected error occurred. Please try again.',
     'error.stockDepleted': 'Selected product is out of stock in this store.',
@@ -1140,6 +1164,17 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.pending': 'Pendiente',
     'tracking.by': 'por',
     'tracking.eta': 'Hora estimada',
+    'tracking.collected': 'Recogido',
+    'tracking.liveCourier': 'Seguimiento del repartidor en directo',
+    'tracking.track': 'Seguir',
+    'tracking.progressLabel': 'Progreso del pedido',
+    'cms.add': 'Añadir',
+    'cms.exploreOffer': 'Ver oferta',
+    'cms.locateStores': 'Buscar tiendas',
+    'cms.noStories': 'No hay historias disponibles en este momento.',
+    'cms.productFallback': 'Producto',
+    'cms.categoryFallback': 'Categoría',
+    'cms.storyFallback': 'Historia',
 
     'error.general': 'Ocurrió un error inesperado. Inténtalo de nuevo.',
     'error.stockDepleted': 'El producto seleccionado está agotado en esta tienda.',
@@ -1527,6 +1562,17 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.pending': 'En attente',
     'tracking.by': 'de',
     'tracking.eta': 'Heure estimée',
+    'tracking.collected': 'Retirée',
+    'tracking.liveCourier': 'Suivi du livreur en direct',
+    'tracking.track': 'Suivre',
+    'tracking.progressLabel': 'Suivi de la commande',
+    'cms.add': 'Ajouter',
+    'cms.exploreOffer': 'Voir l’offre',
+    'cms.locateStores': 'Trouver des magasins',
+    'cms.noStories': 'Aucune story n’est disponible pour le moment.',
+    'cms.productFallback': 'Produit',
+    'cms.categoryFallback': 'Catégorie',
+    'cms.storyFallback': 'Story',
 
     'error.general': 'Une erreur inattendue est survenue.',
     'error.stockDepleted': 'Le produit sélectionné est en rupture de stock.',
@@ -1914,6 +1960,17 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'tracking.pending': 'Ausstehend',
     'tracking.by': 'um',
     'tracking.eta': 'Voraussichtliche Zeit',
+    'tracking.collected': 'Abgeholt',
+    'tracking.liveCourier': 'Kurier live verfolgen',
+    'tracking.track': 'Verfolgen',
+    'tracking.progressLabel': 'Bestellfortschritt',
+    'cms.add': 'Hinzufügen',
+    'cms.exploreOffer': 'Angebot ansehen',
+    'cms.locateStores': 'Filialen finden',
+    'cms.noStories': 'Derzeit sind keine Stories verfügbar.',
+    'cms.productFallback': 'Produkt',
+    'cms.categoryFallback': 'Kategorie',
+    'cms.storyFallback': 'Story',
 
     'error.general': 'Ein unerwarteter Fehler ist aufgetreten.',
     'error.stockDepleted': 'Artikel in dieser Filiale ausverkauft.',
