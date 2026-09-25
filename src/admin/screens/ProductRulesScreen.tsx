@@ -280,7 +280,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6 min-w-0">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -391,8 +391,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
           )}
 
           {/* Trigger & Timing Card */}
-          <div className="p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-6">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="p-4 sm:p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div>
                 <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-indigo-600" />
@@ -616,7 +616,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   return (
                     <label
                       key={prov}
-                      className={`px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer flex items-center justify-between transition-colors ${
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer flex flex-wrap items-center justify-between gap-2 transition-colors ${
                         isChecked
                           ? 'border-indigo-600 bg-indigo-50/60 text-indigo-900'
                           : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -674,7 +674,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </div>
           )}
 
-          <div className="p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-4">
+          <div className="p-4 sm:p-6 bg-white border border-gray-200 rounded-2xl shadow-xs space-y-4">
             <div className="border-b border-gray-100 pb-3">
               <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <CalendarClock className="w-4 h-4 text-indigo-600" />
@@ -856,7 +856,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {/* EDIT MODAL */}
       {editingRule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto min-w-0">
             <div><h3 className="text-base font-bold text-gray-900">{rules.some((r) => r.id === editingRule.id) ? 'Edit product rule' : 'Create product rule'}</h3><p className="text-xs text-gray-500 mt-1">When the <strong>Where</strong> condition matches, the selected <strong>Action</strong> is applied.</p></div>
             {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">{ruleError}</div>}
 
@@ -922,7 +922,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
               {/* Where Editor */}
               <div data-admin-ai-target="product-rule-conditions" className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
-                <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
                 {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
                   <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
                   <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
@@ -955,12 +955,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               </div>
 
               <div data-admin-ai-target="product-rule-actions" className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">
-                <div className="flex items-center justify-between"><span className="font-bold text-gray-700">Actions <span className="font-normal text-gray-400">apply all</span></span><button type="button" onClick={()=>setEditingRule({...editingRule,actions:[...editingRule.actions,{type:'HIDE_PRODUCT'}]})} className="text-[11px] font-bold text-indigo-700">+ Add action</button></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold text-gray-700">Actions <span className="font-normal text-gray-400">apply all</span></span><button type="button" onClick={()=>setEditingRule({...editingRule,actions:[...editingRule.actions,{type:'HIDE_PRODUCT'}]})} className="text-[11px] font-bold text-indigo-700">+ Add action</button></div>
                 {editingRule.actions.map((action,index)=><div key={index} className="rounded-xl bg-white border border-indigo-100 p-2 space-y-2">
                   <div className="flex gap-2"><select value={action.type} onChange={(e)=>{const a=[...editingRule.actions];a[index]=createAction(e.target.value);setEditingRule({...editingRule,actions:a})}} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white font-semibold"><option value="HIDE_PRODUCT">Hide product</option><option value="PREVENT_PURCHASE">Prevent purchase</option><option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option><option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option><option value="MINIMUM_AGE">Require minimum age</option><option value="PREVENT_UPSELL">Exclude from upsells</option><option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option><option value="EXCLUDE_FROM_DISCOUNTS">Exclude from discounts</option><option value="PREVENT_STORY_PLACEMENT">Exclude from stories</option><option value="PREVENT_CAROUSEL_PLACEMENT">Exclude from carousels</option><option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option><option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option><option value="BADGE">Show badge</option><option value="WARNING">Show warning</option></select><button type="button" disabled={editingRule.actions.length===1} onClick={()=>setEditingRule({...editingRule,actions:editingRule.actions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></div>
                   {action.type==='MAX_QUANTITY_PER_ORDER'&&<input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
                   {action.type==='MINIMUM_AGE'&&<input type="number" min="1" max="100" value={(action as any).minimumAge||18} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],minimumAge:Math.max(1,Number(e.target.value)||18)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
-                  {action.type==='COMBINED_GROUP_LIMIT'&&<div className="grid grid-cols-2 gap-2"><input value={(action as any).groupId||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],groupId:e.target.value};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Group ID"/><input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Limit"/></div>}
+                  {action.type==='COMBINED_GROUP_LIMIT'&&<div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input value={(action as any).groupId||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],groupId:e.target.value};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Group ID"/><input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Limit"/></div>}
                   {action.type==='PREVENT_PURCHASE'&&<input value={(action as any).reason||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],reason:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Reason shown to customer"/>}
                   {action.type==='BADGE'&&<input value={(action as any).label||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],label:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Badge text"/>}
                   {action.type==='WARNING'&&<input value={(action as any).text||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],text:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Warning message"/>}

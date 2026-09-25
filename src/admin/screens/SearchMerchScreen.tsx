@@ -230,7 +230,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6 min-w-0">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -305,7 +305,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* TYPO ALIASES */}
       {activeTab === 'typos' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Typo Aliases</h3>
             <span className="text-xs text-gray-500">Maps common misspellings directly to correct catalog terms</span>
           </div>
@@ -338,7 +338,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.typoAliases.map((t) => (
-              <div key={t.id} className="p-3 flex items-center justify-between text-xs bg-white">
+              <div key={t.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                 <div className="flex items-center gap-3">
                   <span className="font-mono font-bold text-rose-600">"{t.typo}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
@@ -360,7 +360,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* SYNONYMS */}
       {activeTab === 'synonyms' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Search Synonyms</h3>
             <span className="text-xs text-gray-500">Expands matching tokens for colloquial terms</span>
           </div>
@@ -392,7 +392,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.synonyms.map((s) => (
-              <div key={s.id} className="p-3 flex items-center justify-between text-xs bg-white">
+              <div key={s.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-gray-900">"{s.term}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
@@ -416,7 +416,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* QUERY REWRITES */}
       {activeTab === 'rewrites' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Query Rewrites</h3>
             <span className="text-xs text-gray-500">Maps concept queries to specific multi-item searches</span>
           </div>
@@ -449,7 +449,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.queryRewrites.map((r) => (
-              <div key={r.id} className="p-3 flex items-center justify-between text-xs bg-white">
+              <div key={r.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-indigo-900">"{r.incomingQuery}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
@@ -471,7 +471,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* PINNED PRODUCTS */}
       {activeTab === 'pins' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <Pin className="w-4 h-4 text-indigo-600" />
               <span>Pinned Search Products</span>
@@ -515,7 +515,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.pinnedProducts.map((p) => (
-              <div key={p.id} className="p-3 flex items-center justify-between text-xs bg-white">
+              <div key={p.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                 <div className="flex items-center gap-3">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                     Pos #{p.position}
@@ -540,7 +540,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* BOOST RULES */}
       {activeTab === 'boosts' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4 text-indigo-600" />
               <span>Product, Category & Brand Boost Rules</span>
@@ -596,7 +596,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.boostRules.map((b) => (
-              <div key={b.id} className="p-3 flex items-center justify-between text-xs bg-white">
+              <div key={b.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                 <div className="flex items-center gap-3">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 uppercase">
                     {b.type}
@@ -629,7 +629,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       {/* EXCLUSIONS */}
       {activeTab === 'exclusions' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <Ban className="w-4 h-4 text-rose-600" />
               <span>Excluded Search Products</span>
@@ -657,10 +657,10 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.excludedProductPlus.length === 0 ? (
-              <div className="p-6 text-center text-xs text-gray-400">No products excluded from search.</div>
+              <div className="p-4 sm:p-6 text-center text-xs text-gray-400">No products excluded from search.</div>
             ) : (
               config.excludedProductPlus.map((plu) => (
-                <div key={plu} className="p-3 flex items-center justify-between text-xs bg-white">
+                <div key={plu} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                   <span className="font-mono font-bold text-rose-700">{plu}</span>
                   <button
                     type="button"
