@@ -124,7 +124,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 min-w-0">
       {/* HEADER & TIMEFRAME SELECTOR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -342,7 +342,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: CONVERSION FUNNEL */}
       {(activeTab === 'overview' || activeTab === 'funnel') && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <Filter className="w-4 h-4 text-indigo-600" />
               <span>End-to-End Grocery Conversion Funnel</span>
@@ -355,7 +355,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           <div className="space-y-3 pt-2">
             {data.funnel.map((f, idx) => (
               <div key={f.stage} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="font-bold text-gray-800">
                     {idx + 1}. {f.label}
                   </span>
@@ -390,7 +390,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: STORIES ANALYTICS */}
       {(activeTab === 'overview' || activeTab === 'stories') && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <Film className="w-4 h-4 text-indigo-600" />
@@ -463,7 +463,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: PRODUCTS PERFORMANCE */}
       {(activeTab === 'overview' || activeTab === 'products') && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <Package className="w-4 h-4 text-indigo-600" />
               <span>Product Performance & Quest Fulfillment Metrics</span>
@@ -530,7 +530,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: SEARCH ANALYTICS */}
       {activeTab === 'search' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <Search className="w-4 h-4 text-indigo-600" />
               <span>Search Queries & Zero-Result Telemetry</span>
@@ -586,7 +586,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: COARSE REGIONAL ANALYTICS */}
       {activeTab === 'regions' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-indigo-600" />
@@ -644,7 +644,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: BASKET ABANDONMENT */}
       {activeTab === 'abandonment' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-indigo-600" />
               <span>Basket Abandonment Telemetry</span>
@@ -681,7 +681,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             <h4 className="text-xs font-bold text-gray-800 mb-2">Most Frequently Abandoned Items</h4>
             <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
               {data.abandonedBasket[0]?.topAbandonedPlus.map((item) => (
-                <div key={item.plu} className="p-3 flex items-center justify-between text-xs bg-white">
+                <div key={item.plu} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                   <div>
                     <span className="font-bold text-gray-900">{item.name}</span>
                     <span className="text-gray-400 font-mono ml-2">({item.plu})</span>
@@ -699,7 +699,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {/* TAB CONTENT: LIVE TELEMETRY FEED */}
       {activeTab === 'telemetry' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-indigo-600" />
