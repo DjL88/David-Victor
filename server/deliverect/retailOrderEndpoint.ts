@@ -16,10 +16,10 @@ export interface ResolvedRetailOrderEndpoint {
   };
 }
 
-// Deliverect Retail/Quest orders must use the retail-routed endpoint. The
-// legacy /{channelName}/order path can create an order record that remains
-// read-only in Quest.
-const DEFAULT_TEMPLATE = '/generic/order/{channelLinkId}';
+// Deliverect Retail/Quest orders use the tenant's assigned generic-channel
+// scope (currently "leitchtech") plus the retail version header. Keeping the
+// channel name configurable avoids coupling other tenants to that scope.
+const DEFAULT_TEMPLATE = '/{channelName}/order/{channelLinkId}';
 const DEFAULT_HEADERS = { 'x-deliverect-version': 'retail' } as const;
 const ALLOWED_HEADERS = new Set(['x-deliverect-version']);
 const ALLOWED_VERSIONS = new Set(['retail', 'stable', 'rapid']);
