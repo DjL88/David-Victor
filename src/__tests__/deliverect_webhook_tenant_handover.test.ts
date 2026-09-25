@@ -21,6 +21,19 @@ describe('Deliverect webhook tenant handover', () => {
     });
   });
 
+  it('does not let an account mapping activate an unprovisioned route', async () => {
+    const resolveByAccountId = vi.fn().mockResolvedValue('tenant-b');
+    const result = await resolveDeliverectWebhookTenantHandover({
+      routeIdentifier: 'unknown-route',
+      payload: { accountId: 'account-b' },
+      resolveByIdentifier: vi.fn().mockResolvedValue(null),
+      resolveByAccountId,
+    });
+
+    expect(result).toBeNull();
+    expect(resolveByAccountId).not.toHaveBeenCalled();
+  });
+
   it('keeps the provisioned route when the provider omits accountId', async () => {
     const resolveByAccountId = vi.fn();
     const result = await resolveDeliverectWebhookTenantHandover({
