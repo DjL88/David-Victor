@@ -52,6 +52,16 @@
 
 ## 3. Staging Test Matrix Plan & Live Onboarding Workflow
 
+### Certification follow-up: menu translations
+
+- [ ] Ingest Deliverect translation maps for menu categories, products, modifier groups, modifiers, names, and descriptions.
+- [ ] Normalize incoming and customer-selected locale tags (for example, `en-GB` and `cy-GB`) without discarding regional variants.
+- [ ] Render translated menu content using the customer's selected app language.
+- [ ] Fall back in order to the tenant default language and then the source-language value when a translation is absent.
+- [ ] Preserve translations through persistence and caching so a locale change does not require another Deliverect menu push.
+- [ ] Add automated coverage for category, product, modifier, description, locale normalization, and fallback behavior.
+- [ ] Verify the behavior with a translated staging menu, then complete Deliverect's **Menu with translations** checklist item before requesting certification.
+
 The Admin UI provides a guided 3-stage live onboarding flow under **Integrations → Deliverect**:
 1. **Credentials & OAuth Test (`Test Deliverect OAuth`):** Acquires and caches staging OAuth token with safe diagnostic latency and token expiration reporting. Emits `OAUTH_VERIFIED` without assuming or faking account connectivity.
 2. **Account Link Discovery & Selection:** Discovers all linked accounts directly from Deliverect without manual entry of Account IDs. Selection persists the mapping as `ACCOUNT_MAPPED`.
