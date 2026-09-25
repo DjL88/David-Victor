@@ -24,6 +24,11 @@ import { StorePickerModal } from '../features/stores/StorePickerModal';
 import { StoreSwitchDiffModal } from '../features/stores/StoreSwitchDiffModal';
 import { CartDrawerModal } from '../features/cart/CartDrawerModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
+import { LtPlatformWatermark } from '../components/LtPlatformWatermark';
+import {
+  consumeLtSplashEligibility,
+  isLtFooterWatermarkEnabled,
+} from '../components/ltPlatformBranding';
 
 const CheckoutModal = lazy(() =>
   import('../features/checkout/CheckoutModal').then((module) => ({ default: module.CheckoutModal }))
@@ -61,8 +66,33 @@ const storefrontCommerceClient = getCommerceClient() as any;
 export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
   const { tenant, loading: tenantLoading, error: tenantError, appMode } = useTenant();
 
-  // Branded initial splash screen state
-  const [showSplash, setShowSplash] = useState<boolean>(true);
+  // Platform launch branding is decided only after tenant resolution, preventing
+  // the retailer UI from flashing before the first-launch film.
+  const [showSplash, setShowSplash] = useState<boolean>(false);
+  const [splashDecisionMade, setSplashDecisionMade] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (tenantLoading) {
+      setSplashDecisionMade(false);
+      return;
+    }
+
+    if (!tenant) {
+      setShowSplash(false);
+      setSplashDecisionMade(true);
+      return;
+    }
+
+    let browserStorage: Storage | undefined;
+    try {
+      browserStorage = window.localStorage;
+    } catch {
+      // Locked-down webviews may deny storage access; the helper safely falls
+      // back to showing the film for this mount.
+    }
+    setShowSplash(consumeLtSplashEligibility(tenant.tenantId, tenant.featureFlags, browserStorage));
+    setSplashDecisionMade(true);
+  }, [tenantLoading, tenant?.tenantId, tenant?.featureFlags?.showLtLaunchSplash]);
 
   // URL-backed storefront navigation. Route state is intentionally dependency-free
   // so branded web, Capacitor and notification deep links share the same URL contract.
@@ -718,11 +748,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     );
   }
 
-  // Initial Branded Splash Loading State
+  if (tenantLoading || !splashDecisionMade) {
+    return <div className="min-h-screen w-full bg-[#073d49]" aria-label="Loading storefront" />;
+  }
+
+  // LT first-launch film. A per-tenant browser marker prevents repeated playback.
   if (showSplash) {
     return (
       <BrandSplashScreen
-        tenant={tenant}
         onFinish={() => setShowSplash(false)}
       />
     );
@@ -853,6 +886,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
           {activeTab === 'account' && <AccountScreen onOpenAdmin={onOpenAdmin} />}
         </main>
       </div>
+
+      {isLtFooterWatermarkEnabled(tenant?.featureFlags) && <LtPlatformWatermark />}
 
       {/* Floating Persistent Cart Bar (when items in cart) */}
       <FloatingCartBar

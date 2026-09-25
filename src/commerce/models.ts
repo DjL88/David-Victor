@@ -149,6 +149,10 @@ export interface TenantFeatureFlags {
   enableSequentialCategoryGrouping?: boolean;
   /** When true, Retail/Quest orders project frozen bundle savings into final item prices. Basket pricing remains order_flat_off. */
   sendBundleDiscountAsItemPrice?: boolean;
+  /** Platform-only control. Defaults on and shows the LT film once per browser and tenant. */
+  showLtLaunchSplash?: boolean;
+  /** Platform-only control. Defaults on until a commercial unbranded agreement applies. */
+  showLtFooterWatermark?: boolean;
 }
 
 export type FeatureFlags = TenantFeatureFlags;
