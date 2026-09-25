@@ -23,6 +23,7 @@ export interface CheckoutRecommendationsProps {
   basketItems?: BasketItem[];
   candidateProducts?: Product[];
   onAddRecommendation?: (product: Product) => void;
+  onRecommendationAccepted?: (attribution: { recommendationId: string; productPlu: string; surface: 'BASKET_COMPLETION'; reasonCode: string }) => void;
 }
 
 const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = ({
@@ -34,6 +35,7 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
   basketItems,
   candidateProducts,
   onAddRecommendation,
+  onRecommendationAccepted,
 }) => {
   const { tenant } = useTenant();
   const { t } = useI18n();
@@ -121,6 +123,9 @@ const CheckoutRecommendationsInternal: React.FC<CheckoutRecommendationsProps> = 
       setAddedPlus((prev) => new Set(prev).add(product.plu));
 
       const recommendationId = recommendationIds.get(product.plu);
+      if (recommendationId) {
+        onRecommendationAccepted?.({ recommendationId, productPlu: product.plu, surface: 'BASKET_COMPLETION', reasonCode: 'CHECKOUT_COMPLETION' });
+      }
       defaultAnalyticsClient.track({
         type: AnalyticsEventType.ARTIE_RECOMMENDATION_ACCEPTED,
         productPlu: product.plu,
