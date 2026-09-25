@@ -14,7 +14,7 @@ describe('CMS locale variants', () => {
   });
 
   it('preserves retailer-authored targeting, timezone and translation review metadata', () => {
-    const configured = { ...page, variant: { familyId: 'homepage', sourceLocale: 'en-GB', translationState: 'reviewed', showFallbackNotice: true, markets: ['NL'], regions: ['west'], locationIds: ['ams-1'], timeZone: 'Europe/Amsterdam' } } as CmsPage;
+    const configured = { ...page, variant: { familyId: 'homepage', sourceLocale: 'en-GB', translationState: 'reviewed', showFallbackNotice: true, markets: ['NL'], regions: ['west'], locationIds: ['ams-1'], timeZone: 'Europe/Amsterdam' } };
     expect(pageVariantMetadata(configured)).toMatchObject({ familyId: 'homepage', sourceLocale: 'en-GB', translationState: 'reviewed', markets: ['NL'], regions: ['west'], locationIds: ['ams-1'], timeZone: 'Europe/Amsterdam' });
   });
 });
