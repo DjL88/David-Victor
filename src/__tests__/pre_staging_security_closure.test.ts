@@ -94,9 +94,10 @@ describe('Pre-Staging Security Closure & Hardening', () => {
       const success = await SecretManager.setSecret('DELIVERECT_TEST_SECRET', 'super_secret', true);
       expect(success).toBe(false);
 
-      // In-memory fallback still stores for transient session
+      // Failed durable writes must not leave a process-local credential that
+      // disappears on restart while the UI reports persistence failure.
       const retrieved = await SecretManager.getSecret('DELIVERECT_TEST_SECRET');
-      expect(retrieved).toBe('super_secret');
+      expect(retrieved).toBeNull();
     });
   });
 
