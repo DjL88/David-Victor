@@ -730,6 +730,8 @@ export interface Story {
   createdAt?: string;
 }
 
+export type PromoBannerLayout = 'BACKGROUND' | 'ARTWORK' | 'SPLIT';
+
 export interface CategoryPromoBanner {
   id: string;
   categoryId?: string; // If undefined or 'all', shows on all/home
@@ -738,6 +740,8 @@ export interface CategoryPromoBanner {
   subtitle: string;
   badge?: string;
   backgroundImageUrl: string;
+  /** Visual treatment only; CTA, stock and targeting semantics stay unchanged. */
+  layout?: PromoBannerLayout;
   buttonLabel: string;
   actionType: 'CATEGORY' | 'PRODUCT' | 'SEARCH' | 'STORE_PICKER';
   targetPlu?: string;
