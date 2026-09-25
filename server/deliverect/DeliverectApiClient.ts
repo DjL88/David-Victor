@@ -398,6 +398,103 @@ export class DeliverectApiClient implements DeliverectAdapter {
     return this.tokenManager.isConfigured;
   }
 
+  private async usesLocalChannelBaskets(): Promise<boolean> {
+    const context = await IntegrationContext.getContext(this.tenantId);
+    return context.orderRoute !== 'commerce_checkout';
+  }
+
+  private async requireLocalChannelBasket(basketId: string): Promise<Basket> {
+    const basket = await FirestorePlatformService.getChannelBasket(this.tenantId, basketId);
+    if (!basket) {
+      throw new CommerceError('VALIDATION_ERROR', `Basket ${basketId} was not found.`, 404);
+    }
+    const preferences = await FirestorePlatformService.getBasketSubstitutionPreferences(
+      this.tenantId,
+      basketId
+    );
+    return {
+      ...basket,
+      items: basket.items.map((item) => {
+        const preference = preferences[item.plu];
+        return preference
+          ? {
+              ...item,
+              substitutionPreference: preference.preference,
+              substituteCandidatePlus: preference.substituteCandidatePlus,
+              preferredSubstitutePlu: preference.preferredSubstitutePlu,
+              preferredSubstituteName: preference.preferredSubstituteName,
+              preferredSubstitutePrice: preference.preferredSubstitutePrice,
+            }
+          : item;
+      }),
+    };
+  }
+
+  private productPriceMinor(product: Product): number {
+    const raw = product.price ?? product.priceMinor ?? product.basePrice;
+    const amount = typeof raw === 'number' ? raw : raw?.amount;
+    if (!Number.isInteger(amount) || amount < 0) {
+      throw new CommerceError(
+        'PRODUCT_NOT_AVAILABLE',
+        `${product.name || product.plu} does not have a valid store price.`,
+        422
+      );
+    }
+    return amount;
+  }
+
+  private priceLocalChannelBasket(basket: Basket): Basket {
+    const currency = basket.currency || 'GBP';
+    const subtotalMinor = basket.items.reduce(
+      (sum, item) => sum + item.price.amount * item.quantity,
+      0
+    );
+    const discountMinor = (basket.discounts || []).reduce(
+      (sum, discount) => sum + Math.max(0, discount.amount.amount),
+      0
+    );
+    const chargesMinor = (basket.charges || []).reduce(
+      (sum, charge) => sum + charge.amount.amount,
+      0
+    );
+    const tipMinor = basket.tip?.amount || 0;
+    const totalMinor = Math.max(0, subtotalMinor - discountMinor + chargesMinor + tipMinor);
+    return {
+      ...basket,
+      subtotal: toMoney(subtotalMinor, currency),
+      discountTotal: toMoney(discountMinor, currency),
+      total: toMoney(totalMinor, currency),
+      totalPrice: toMoney(totalMinor, currency),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async saveLocalChannelBasket(basket: Basket): Promise<Basket> {
+    return FirestorePlatformService.saveChannelBasket(
+      this.tenantId,
+      this.priceLocalChannelBasket(basket)
+    );
+  }
+
+  private toLocalChannelBasketItem(product: Product, quantity: number): Basket['items'][number] {
+    const currency = (product.price && typeof product.price === 'object' && product.price.currency) || 'GBP';
+    const price = toMoney(this.productPriceMinor(product), currency);
+    return {
+      id: product.plu,
+      plu: product.plu,
+      name: product.name,
+      brand: product.brand,
+      price,
+      unitPrice: price,
+      itemPrice: price,
+      totalPrice: toMoney(price.amount * quantity, price.currency),
+      quantity,
+      imageUrl: product.imageUrl || product.image || product.images?.[0],
+      substitutionPreference: 'BEST_MATCH',
+      allowQuantityAmendment: true,
+    };
+  }
+
   /**
    * Staging / production guard:
    * When an endpoint contract is awaiting verified staging confirmation,
@@ -2035,6 +2132,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
 
     const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
+
+    if (await this.usesLocalChannelBaskets()) {
+      const currency = store?.currency || 'GBP';
+      const now = new Date().toISOString();
+      return this.saveLocalChannelBasket({
+        id: `bsk_${randomUUID()}`,
+        tenantId: this.tenantId,
+        channelLinkId,
+        storeId: channelLinkId,
+        storeName: store?.name || channelLinkId,
+        fulfillmentType: 'pickup',
+        items: [],
+        subtotal: toMoney(0, currency),
+        discounts: [],
+        charges: [],
+        total: toMoney(0, currency),
+        discountTotal: toMoney(0, currency),
+        currency,
+        validationErrors: [],
+        restrictions: [],
+        updatedAt: now,
+      });
+    }
+
     const api = await this.getCommerceBasketApi();
 
     // If the store is closed right now, target its next real opening instead of
@@ -2061,8 +2182,14 @@ export class DeliverectApiClient implements DeliverectAdapter {
   }
 
   async getBasket(basketId: string): Promise<Basket | null> {
-    if (!basketId || basketId.startsWith('bsk_')) {
-      return null;
+    if (!basketId) return null;
+    if (basketId.startsWith('bsk_')) {
+      try {
+        return await this.requireLocalChannelBasket(basketId);
+      } catch (error: any) {
+        if (error?.status === 404 || error?.statusCode === 404) return null;
+        throw error;
+      }
     }
 
     try {
@@ -2078,6 +2205,58 @@ export class DeliverectApiClient implements DeliverectAdapter {
     productId: string,
     quantity: number
   ): Promise<Basket> {
+    if (basketId.startsWith('bsk_')) {
+      const current = await this.requireLocalChannelBasket(basketId);
+      const catalog = await this.getStoreCatalog(current.storeId, current.fulfillmentType);
+      const items = [...current.items];
+      const existingIndex = items.findIndex((item) => item.plu === productId);
+
+      if (quantity <= 0) {
+        if (existingIndex >= 0) items.splice(existingIndex, 1);
+      } else {
+        const product = (catalog.products || []).find(
+          (candidate) => candidate.plu === productId || candidate.id === productId
+        );
+        if (
+          !product ||
+          product.active === false ||
+          product.snoozed === true ||
+          product.isSnoozed === true ||
+          product.inStock === false ||
+          product.stockStatus === 'OUT_OF_STOCK'
+        ) {
+          throw new CommerceError(
+            'PRODUCT_NOT_AVAILABLE',
+            `Product ${productId} is not available in the selected store catalogue.`,
+            422
+          );
+        }
+        if (product.multiMax && quantity > product.multiMax) {
+          throw new CommerceError(
+            'RULE_VIOLATION',
+            `${product.name} is limited to ${product.multiMax} per order.`,
+            422
+          );
+        }
+        const nextItem = this.toLocalChannelBasketItem(product, quantity);
+        if (existingIndex >= 0) {
+          const existing = items[existingIndex];
+          items[existingIndex] = {
+            ...nextItem,
+            substitutionPreference: existing.substitutionPreference || nextItem.substitutionPreference,
+            substituteCandidatePlus: existing.substituteCandidatePlus,
+            preferredSubstitutePlu: existing.preferredSubstitutePlu,
+            preferredSubstituteName: existing.preferredSubstituteName,
+            preferredSubstitutePrice: existing.preferredSubstitutePrice,
+          };
+        } else {
+          items.push(nextItem);
+        }
+      }
+
+      return this.saveLocalChannelBasket({ ...current, items });
+    }
+
     const current = await this.getMappedCommerceBasket(basketId);
     const desired = toCommerceItemInputs(current);
 
@@ -2188,6 +2367,41 @@ export class DeliverectApiClient implements DeliverectAdapter {
       price?: Money;
     }>
   ): Promise<Basket> {
+    if (basketId.startsWith('bsk_')) {
+      let basket = await this.requireLocalChannelBasket(basketId);
+      for (const item of items) {
+        basket = await this.updateBasketItem(basketId, item.plu, item.quantity);
+        if (item.substitutionPreference) {
+          const index = basket.items.findIndex((candidate) => candidate.plu === item.plu);
+          if (index >= 0) {
+            const nextItems = [...basket.items];
+            nextItems[index] = {
+              ...nextItems[index],
+              substitutionPreference: item.substitutionPreference,
+              substituteCandidatePlus: item.substituteCandidatePlus,
+              preferredSubstitutePlu: item.preferredSubstitutePlu,
+              preferredSubstituteName: item.preferredSubstituteName,
+              preferredSubstitutePrice: item.preferredSubstitutePrice,
+            };
+            basket = await this.saveLocalChannelBasket({ ...basket, items: nextItems });
+            await FirestorePlatformService.saveBasketItemSubstitutionPreference(
+              this.tenantId,
+              basketId,
+              item.plu,
+              {
+                preference: item.substitutionPreference,
+                substituteCandidatePlus: item.substituteCandidatePlus,
+                preferredSubstitutePlu: item.preferredSubstitutePlu,
+                preferredSubstituteName: item.preferredSubstituteName,
+                preferredSubstitutePrice: item.preferredSubstitutePrice,
+              }
+            );
+          }
+        }
+      }
+      return basket;
+    }
+
     const current = await this.getMappedCommerceBasket(basketId);
 
     for (const item of items) {
@@ -2428,6 +2642,92 @@ export class DeliverectApiClient implements DeliverectAdapter {
     basketId: string,
     request: AddBundleToBasketRequest
   ): Promise<Basket> {
+    if (basketId.startsWith('bsk_')) {
+      let basket = await this.requireLocalChannelBasket(basketId);
+      const catalog = await this.getStoreCatalog(basket.storeId, basket.fulfillmentType);
+      const bundle = catalog.bundleCatalog?.bundles.find(
+        (candidate) =>
+          (request.bundleId && candidate.id === request.bundleId) ||
+          (request.bundlePlu && candidate.plu === request.bundlePlu)
+      );
+      if (!bundle || bundle.stockStatus === 'OUT_OF_STOCK') {
+        throw new CommerceError(
+          'PRODUCT_NOT_AVAILABLE',
+          bundle?.outOfStockReason || 'The selected bundle is not available in the current store catalogue.',
+          422
+        );
+      }
+
+      const products = catalog.products || [];
+      const selected: SelectedBundleModifier[] = request.selections.map((selection) => {
+        const section = (bundle.sections || bundle.modifierGroups || []).find(
+          (candidate) => candidate.id === selection.sectionId
+        );
+        const modifier = section?.modifiers.find(
+          (candidate) => candidate.id === selection.modifierId
+        );
+        const declaredPlu = String(modifier?.standalonePlu || modifier?.plu || '').trim();
+        const product = products.find((candidate) => candidate.plu === declaredPlu);
+        if (
+          !section ||
+          !modifier ||
+          !product ||
+          product.active === false ||
+          product.stockStatus === 'OUT_OF_STOCK'
+        ) {
+          throw new CommerceError(
+            'INVALID_BUNDLE_SELECTION',
+            'One or more selected bundle components are not available in the current store catalogue.',
+            422
+          );
+        }
+        return {
+          modifierId: modifier.id,
+          plu: modifier.plu,
+          name: modifier.name,
+          quantity: selection.quantity,
+          price: modifier.priceMinor ?? modifier.price ?? 0,
+          priceMinor: modifier.priceMinor ?? modifier.price ?? 0,
+          standalonePlu: product.plu,
+          standalonePriceMinor: this.productPriceMinor(product),
+          sectionId: section.id,
+          sectionName: section.name,
+        };
+      });
+      const quantity = Math.max(1, request.quantity || 1);
+      const allocation = allocateProtectedBundlePrices(bundle, selected, quantity);
+
+      for (const selection of selected) {
+        const plu = String(selection.standalonePlu || '').trim();
+        const currentQuantity = basket.items.find((item) => item.plu === plu)?.quantity || 0;
+        basket = await this.updateBasketItem(
+          basketId,
+          plu,
+          currentQuantity + selection.quantity * quantity
+        );
+      }
+
+      const bundleInstanceId = `bundle_${randomUUID()}`;
+      await FirestorePlatformService.saveBasketBundleAllocation(this.tenantId, basketId, {
+        ...allocation,
+        bundleInstanceId,
+        createdAt: new Date().toISOString(),
+      });
+      const discount = {
+        id: bundleInstanceId,
+        code: `bwydi-bundle:${bundleInstanceId}`,
+        title: `Combo Deal: ${bundle.name}`,
+        amount: toMoney(allocation.discountTotalMinor, basket.currency),
+      };
+      return this.saveLocalChannelBasket({
+        ...basket,
+        discounts: [
+          ...(basket.discounts || []).filter((entry) => entry.code !== discount.code),
+          discount,
+        ],
+      });
+    }
+
     const api = await this.getCommerceBasketApi();
     const rawBefore = await api.getBasket(basketId);
     const current = await this.mapLiveCommerceBasket(rawBefore);
@@ -2604,6 +2904,19 @@ export class DeliverectApiClient implements DeliverectAdapter {
       notes?: string;
     }
   ): Promise<Basket> {
+    if (basketId.startsWith('bsk_')) {
+      const basket = await this.requireLocalChannelBasket(basketId);
+      return this.saveLocalChannelBasket({
+        ...basket,
+        customer: {
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          companyName: customer.companyName,
+        },
+      });
+    }
+
     const api = await this.getCommerceBasketApi();
     const raw = await api.updateCustomer(basketId, {
       name: customer.name,
@@ -2621,6 +2934,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
     const requestedType = fulfillment.type || fulfillment.fulfillmentType || 'pickup';
     if (requestedType !== 'pickup') {
       return this.unsupportedLiveCapability('Basket fulfillment update for delivery');
+    }
+
+    if (basketId.startsWith('bsk_')) {
+      const basket = await this.requireLocalChannelBasket(basketId);
+      return this.saveLocalChannelBasket({
+        ...basket,
+        fulfillmentType: 'pickup',
+        fulfillmentSlot: fulfillment.slot,
+      });
     }
 
     const api = await this.getCommerceBasketApi();
@@ -2728,6 +3050,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
     storeId: string,
     _options?: { confirmMigration?: boolean }
   ): Promise<{ basket: Basket; storeSwitchDiff: any }> {
+    if (basketId.startsWith('bsk_')) {
+      const before = await this.requireLocalChannelBasket(basketId);
+      const { channelLinkId, store } = await this.resolveStoreChannelLinkId(storeId);
+      const moved = await this.saveLocalChannelBasket({
+        ...before,
+        storeId: channelLinkId,
+        channelLinkId,
+        storeName: store?.name || channelLinkId,
+        currency: store?.currency || before.currency,
+      });
+      const reconciled = await this.reconcileBasket(basketId, channelLinkId);
+      return {
+        basket: reconciled.basket,
+        storeSwitchDiff: {
+          fromStoreId: before.storeId,
+          toStoreId: moved.storeId,
+          changed: before.storeId !== moved.storeId,
+          priceChanges: reconciled.changes.filter((change) => change.type === 'PRICE_CHANGED'),
+          unavailableItems: reconciled.changes.filter((change) => change.type === 'ITEM_REMOVED'),
+          quantityAdjusted: reconciled.changes.filter((change) => change.type === 'QUANTITY_ADJUSTED'),
+        },
+      };
+    }
+
     const before = await this.getMappedCommerceBasket(basketId);
     const { channelLinkId } = await this.resolveStoreChannelLinkId(storeId);
     const api = await this.getCommerceBasketApi();
@@ -2790,6 +3136,13 @@ export class DeliverectApiClient implements DeliverectAdapter {
   async validateBasket(
     basketId: string
   ): Promise<{ valid: boolean; issues: string[]; errors?: any[] }> {
+    if (basketId.startsWith('bsk_')) {
+      const reconciled = await this.reconcileBasket(basketId);
+      const issues = reconciled.changes.map((change) => change.message);
+      if (reconciled.basket.items.length === 0) issues.push('Basket must contain at least one available item.');
+      return { valid: issues.length === 0, issues, errors: [] };
+    }
+
     const api = await this.getCommerceBasketApi();
     const raw = await api.validateBasket(basketId);
 
@@ -2823,6 +3176,84 @@ export class DeliverectApiClient implements DeliverectAdapter {
       message: string;
     }>;
   }> {
+    if (basketId.startsWith('bsk_')) {
+      const before = await this.requireLocalChannelBasket(basketId);
+      const catalog = await this.getStoreCatalog(before.storeId, before.fulfillmentType);
+      const productsByPlu = new Map((catalog.products || []).map((product) => [product.plu, product]));
+      const changes: Array<{
+        plu: string;
+        name: string;
+        type: 'PRICE_CHANGED' | 'OUT_OF_STOCK' | 'ITEM_REMOVED' | 'QUANTITY_ADJUSTED';
+        oldPrice?: Money;
+        newPrice?: Money;
+        oldQuantity?: number;
+        newQuantity?: number;
+        message: string;
+      }> = [];
+      const nextItems: Basket['items'] = [];
+
+      for (const item of before.items) {
+        const product = productsByPlu.get(item.plu);
+        if (
+          !product ||
+          product.active === false ||
+          product.snoozed === true ||
+          product.isSnoozed === true ||
+          product.inStock === false ||
+          product.stockStatus === 'OUT_OF_STOCK'
+        ) {
+          changes.push({
+            plu: item.plu,
+            name: item.name,
+            type: 'ITEM_REMOVED',
+            oldQuantity: item.quantity,
+            message: `${item.name} is no longer available in the selected store catalogue and was removed.`,
+          });
+          continue;
+        }
+
+        const allowedQuantity = product.multiMax
+          ? Math.min(item.quantity, product.multiMax)
+          : item.quantity;
+        const refreshed = this.toLocalChannelBasketItem(product, allowedQuantity);
+        const nextItem = {
+          ...refreshed,
+          substitutionPreference: item.substitutionPreference || refreshed.substitutionPreference,
+          substituteCandidatePlus: item.substituteCandidatePlus,
+          preferredSubstitutePlu: item.preferredSubstitutePlu,
+          preferredSubstituteName: item.preferredSubstituteName,
+          preferredSubstitutePrice: item.preferredSubstitutePrice,
+        };
+        if (refreshed.price.amount !== item.price.amount) {
+          changes.push({
+            plu: item.plu,
+            name: item.name,
+            type: 'PRICE_CHANGED',
+            oldPrice: item.price,
+            newPrice: refreshed.price,
+            message: `${item.name}'s price has changed.`,
+          });
+        }
+        if (allowedQuantity !== item.quantity) {
+          changes.push({
+            plu: item.plu,
+            name: item.name,
+            type: 'QUANTITY_ADJUSTED',
+            oldQuantity: item.quantity,
+            newQuantity: allowedQuantity,
+            message: `${item.name} quantity was adjusted from ${item.quantity} to ${allowedQuantity}.`,
+          });
+        }
+        nextItems.push(nextItem);
+      }
+
+      return {
+        reconciled: true,
+        basket: await this.saveLocalChannelBasket({ ...before, items: nextItems }),
+        changes,
+      };
+    }
+
     const before = await this.getMappedCommerceBasket(basketId).catch(() => null);
     const api = await this.getCommerceBasketApi();
     const raw = await api.reconcileBasket(basketId);
@@ -3077,14 +3508,37 @@ export class DeliverectApiClient implements DeliverectAdapter {
       tenantId?: string;
     }
   ): Promise<CheckoutResult> {
-    const api = await this.getCommerceBasketApi();
-    const reconciledRaw = await api.reconcileBasket(basketId);
-    const basket = await this.mapLiveCommerceBasket(reconciledRaw);
-    const rawFulfillmentTime = String(
-      reconciledRaw?.fulfillment?.time ||
-      reconciledRaw?.pickupTime ||
-      ''
-    ).trim();
+    let basket: Basket;
+    let rawFulfillmentTime = '';
+    if (basketId.startsWith('bsk_')) {
+      const reconciled = await this.reconcileBasket(basketId);
+      basket = reconciled.basket;
+      if (basket.items.length === 0) {
+        throw new CommerceError(
+          'BASKET_VALIDATION_FAILED',
+          'The order cannot be submitted because no catalogue items remain in the basket.',
+          422
+        );
+      }
+      if (basket.fulfillmentSlot?.dateString && basket.fulfillmentSlot?.startTime) {
+        const store = await this.getStore(basket.storeId);
+        const scheduled = zonedLocalDateTimeToUtc(
+          basket.fulfillmentSlot.dateString,
+          basket.fulfillmentSlot.startTime,
+          resolveStoreTimeZone(store)
+        );
+        rawFulfillmentTime = scheduled?.toISOString() || '';
+      }
+    } else {
+      const api = await this.getCommerceBasketApi();
+      const reconciledRaw = await api.reconcileBasket(basketId);
+      basket = await this.mapLiveCommerceBasket(reconciledRaw);
+      rawFulfillmentTime = String(
+        reconciledRaw?.fulfillment?.time ||
+        reconciledRaw?.pickupTime ||
+        ''
+      ).trim();
+    }
     const parsedFulfillmentTime = rawFulfillmentTime ? new Date(rawFulfillmentTime) : null;
     const scheduledFulfillmentTime =
       parsedFulfillmentTime && !Number.isNaN(parsedFulfillmentTime.getTime())
