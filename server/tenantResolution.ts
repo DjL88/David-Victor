@@ -109,6 +109,19 @@ export function isManagedPreviewHost(
   );
 }
 
+function isConfiguredAppHostingOrigin(
+  hostname: string,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const backendId = normalizeHostname(env.APP_HOSTING_BACKEND_ID || '');
+  const projectId = normalizeHostname(
+    env.FIREBASE_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || ''
+  );
+  const location = normalizeHostname(env.APP_HOSTING_LOCATION || '');
+  if (!backendId || !projectId || !location) return false;
+  return normalizeHostname(hostname) === `${backendId}--${projectId}.${location}.hosted.app`;
+}
+
 function requestedTenantOverride(req: Request): string | undefined {
   const header = firstHeaderValue(req.headers['x-tenant-id'] as string | string[] | undefined);
   const query = typeof req.query?.tenantId === 'string' ? req.query.tenantId.trim() : '';
@@ -141,6 +154,28 @@ export async function resolveRequestTenant(
     (req as any).simulatePublicRequest === true ||
     (isTestMode() && firstHeaderValue(req.headers['x-test-simulate-public'] as string | string[] | undefined) === 'true');
   const localTestHost = host === 'localhost' || host === '127.0.0.1';
+
+  // Firebase App Hosting terminates the custom hostname at its edge and sends
+  // the backend its managed hosted.app origin plus X-Forwarded-Host. Accept
+  // that forwarded hostname only from this deployment's exact configured
+  // origin, and only when it resolves to an ACTIVE domain registry record.
+  // A forged/unknown hostname therefore cannot choose an arbitrary tenant.
+  if (isConfiguredAppHostingOrigin(host, env)) {
+    const forwardedHost = normalizeHostname(
+      firstHeaderValue(req.headers['x-forwarded-host'] as string | string[] | undefined)
+    );
+    if (forwardedHost && forwardedHost !== host && !isManagedPreviewHost(forwardedHost, env)) {
+      const forwardedTenant = await FirestorePlatformService.resolveTenantByHostname(forwardedHost);
+      if (forwardedTenant) {
+        return {
+          tenantId: forwardedTenant,
+          source: 'host',
+          host: forwardedHost,
+          usedOverride: false,
+        };
+      }
+    }
+  }
 
   if (admin && !isSuperAdmin && admin.tenantId) {
     return {
@@ -216,7 +251,7 @@ export function applyTenantResolutionCacheHeaders(
   res: { setHeader(name: string, value: string): unknown; getHeader?(name: string): unknown },
   resolution?: TenantResolution
 ): void {
-  res.setHeader('Vary', 'Host');
+  res.setHeader('Vary', 'Host, X-Forwarded-Host');
   if (resolution?.usedOverride) {
     res.setHeader('Cache-Control', 'private, no-store');
   }

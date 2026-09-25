@@ -256,14 +256,14 @@ v1Router.use(async (req: Request, res: Response, next) => {
     const resolution = await resolveRequestTenant(req);
     (req as any).resolvedTenantId = resolution.tenantId;
     (req as any).tenantResolution = resolution satisfies TenantResolution;
-    res.setHeader('Vary', 'Host');
+    res.setHeader('Vary', 'Host, X-Forwarded-Host');
     if (resolution.usedOverride) {
       res.setHeader('Cache-Control', 'private, no-store');
     }
     return next();
   } catch (err: any) {
     if (err instanceof BFFError) {
-      res.setHeader('Vary', 'Host');
+      res.setHeader('Vary', 'Host, X-Forwarded-Host');
       return res.status(err.statusCode).json({
         code: err.code,
         message: err.message,
@@ -288,7 +288,7 @@ function sendConditionalJson(
   const etag = `"${hash}"`;
 
   res.setHeader('ETag', etag);
-  res.setHeader('Vary', 'Host');
+  res.setHeader('Vary', 'Host, X-Forwarded-Host');
   const resolution = (req as any).tenantResolution as TenantResolution | undefined;
   res.setHeader('Cache-Control', resolution?.usedOverride ? 'private, no-store' : cacheControl);
 
