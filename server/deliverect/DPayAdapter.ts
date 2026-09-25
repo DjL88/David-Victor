@@ -4,7 +4,43 @@ import {
   PaymentGatewayProfile,
 } from '../../src/domain/models';
 
-export interface DPayAdapter {
+export type PaymentProviderId = 'deliverect_dpay';
+
+export interface PaymentGatewayCapabilities {
+  gatewayDiscovery: boolean;
+  tokenizedAuthorization: boolean;
+  hostedCheckout: boolean;
+  paymentStatus: boolean;
+  manualCapture: boolean;
+  voidAuthorization: boolean;
+  refunds: boolean;
+  reauthorization: boolean;
+  webhookStatusUpdates: boolean;
+  idempotentAuthorization: boolean;
+}
+
+/**
+ * Capabilities describe the operations implemented and verified by LTx, not
+ * every feature an upstream payment provider may offer.
+ */
+export const DPAY_IMPLEMENTED_CAPABILITIES: PaymentGatewayCapabilities = {
+  gatewayDiscovery: true,
+  tokenizedAuthorization: true,
+  hostedCheckout: false,
+  paymentStatus: true,
+  manualCapture: false,
+  voidAuthorization: false,
+  refunds: true,
+  reauthorization: false,
+  webhookStatusUpdates: false,
+  idempotentAuthorization: false,
+};
+
+/**
+ * Provider-neutral lifecycle contract. DPay remains one implementation while
+ * checkout and settlement can migrate away from provider-specific selection.
+ */
+export interface PaymentGatewayAdapter {
   readonly adapterName: string;
 
   /**
@@ -47,3 +83,6 @@ export interface DPayAdapter {
    */
   reauthorize(paymentId: string, additionalAmountMinor: number): Promise<DPayPaymentResponse>;
 }
+
+/** @deprecated Prefer PaymentGatewayAdapter for provider-neutral code. */
+export interface DPayAdapter extends PaymentGatewayAdapter {}
