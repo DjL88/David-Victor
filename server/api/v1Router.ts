@@ -6857,7 +6857,12 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
     // passed the Admin connection test. Constructing a fresh adapter here used
     // only process-level environment variables, so tenants backed by Secret
     // Manager (platform or dedicated mode) incorrectly appeared unconfigured.
-    const integrationContext = await IntegrationContext.getContext(tenantId);
+    // Store discovery is part of Admin onboarding, so it must be able to use a
+    // credential profile that has been verified but is still DRAFT. Runtime
+    // order and webhook paths continue to require an ACTIVE profile.
+    const integrationContext = await IntegrationContext.getContext(tenantId, {
+      allowDraftProfile: true,
+    });
     const adapter = new LinkedAccountsAdapter({
       environment: integrationContext.environment,
       tokenManager: integrationContext.tokenManager,
