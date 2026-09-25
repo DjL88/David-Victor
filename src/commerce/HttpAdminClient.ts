@@ -95,6 +95,8 @@ export class HttpAdminClient implements AdminClient {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      // Keep one canonical casing across base and tenant-selectable requests.
+      // A differently-cased override makes Fetch combine both tenant values.
       'X-Tenant-ID': this.currentTenantId,
     };
 
@@ -1263,7 +1265,7 @@ export class HttpAdminClient implements AdminClient {
       method: 'GET',
       headers: {
         ...headers,
-        'x-tenant-id': tId,
+        'X-Tenant-ID': tId,
       },
     });
     if (!res.ok) {
@@ -1278,7 +1280,7 @@ export class HttpAdminClient implements AdminClient {
     const headers = await this.getHeadersAsync();
     const res = await fetch(`${this.baseUrl}/admin/connection/readiness`, {
       method: 'GET',
-      headers: { ...headers, 'x-tenant-id': tId },
+      headers: { ...headers, 'X-Tenant-ID': tId },
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1292,7 +1294,7 @@ export class HttpAdminClient implements AdminClient {
     const headers = await this.getHeadersAsync();
     const res = await fetch(`${this.baseUrl}/admin/integrations/deliverect/menu-reviews`, {
       method: 'GET',
-      headers: { ...headers, 'x-tenant-id': tId },
+      headers: { ...headers, 'X-Tenant-ID': tId },
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1307,7 +1309,7 @@ export class HttpAdminClient implements AdminClient {
       `${this.baseUrl}/admin/integrations/deliverect/menu-reviews/${encodeURIComponent(eventId)}/approve`,
       {
         method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        headers: { ...headers, 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId },
       }
     );
     if (!res.ok) {
@@ -1330,7 +1332,7 @@ export class HttpAdminClient implements AdminClient {
       headers: {
         ...headers,
         'Content-Type': 'application/json',
-        'x-tenant-id': tId,
+        'X-Tenant-ID': tId,
       },
       body: JSON.stringify({
         storeId: params.storeId,
@@ -1353,7 +1355,7 @@ export class HttpAdminClient implements AdminClient {
       method: 'GET',
       headers: {
         ...headers,
-        'x-tenant-id': tId,
+        'X-Tenant-ID': tId,
       },
     });
     if (!res.ok) {

@@ -12,11 +12,15 @@ export interface ResolvedRetailOrderEndpoint {
   source: {
     baseUrl: 'tenant' | 'env' | 'default';
     pathTemplate: 'tenant' | 'env' | 'default';
-    headers: 'tenant' | 'env' | 'none';
+    headers: 'tenant' | 'env' | 'default';
   };
 }
 
+// Deliverect Retail/Quest orders use the tenant's assigned generic-channel
+// scope (currently "leitchtech") plus the retail version header. Keeping the
+// channel name configurable avoids coupling other tenants to that scope.
 const DEFAULT_TEMPLATE = '/{channelName}/order/{channelLinkId}';
+const DEFAULT_HEADERS = { 'x-deliverect-version': 'retail' } as const;
 const ALLOWED_HEADERS = new Set(['x-deliverect-version']);
 const ALLOWED_VERSIONS = new Set(['retail', 'stable', 'rapid']);
 const ALLOWED_PLACEHOLDERS = new Set(['channelName', 'channelLinkId', 'accountId']);
@@ -104,7 +108,12 @@ export function resolveRetailOrderEndpoint(args: {
   if (template.includes('{accountId}') && !args.accountId) invalid('Retail order path template requires an accountId.');
 
   const parsedEnvHeaders = envHeaders(args.env.DELIVERECT_RETAIL_ORDER_HEADERS);
-  const selectedHeaders = tenant.headers !== undefined ? tenant.headers : parsedEnvHeaders;
+  const hasTenantHeaders = tenant.headers !== undefined && Object.keys(tenant.headers).length > 0;
+  const selectedHeaders = hasTenantHeaders
+    ? tenant.headers
+    : parsedEnvHeaders !== undefined
+      ? parsedEnvHeaders
+      : DEFAULT_HEADERS;
   const headers = validateRetailOrderHeaders(selectedHeaders);
 
   const values: Record<string, string | undefined> = {
@@ -122,7 +131,7 @@ export function resolveRetailOrderEndpoint(args: {
     source: {
       baseUrl: tenant.baseUrl ? 'tenant' : envBase ? 'env' : 'default',
       pathTemplate: tenant.pathTemplate ? 'tenant' : envTemplate ? 'env' : 'default',
-      headers: tenant.headers !== undefined ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'none',
+      headers: hasTenantHeaders ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'default',
     },
   };
 }

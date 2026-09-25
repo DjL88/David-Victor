@@ -119,7 +119,7 @@ describe('Deliverect Channel registration callback', () => {
     const body = await res.json();
     expect(body.registration.tenantId).toBe('brand-alpha');
   });
-  it('prefers the deployment-wide callback origin over a tenant publicBaseUrl', async () => {
+  it('uses the trusted profile origin and ignores attacker-controlled forwarded hosts', async () => {
     vi.mocked(FirestorePlatformService.getIntegrationProfile).mockResolvedValue({
       id: 'brand-alpha__staging',
       tenantId: 'brand-alpha',
@@ -133,11 +133,22 @@ describe('Deliverect Channel registration callback', () => {
       secretRefs: {},
     } as any);
 
-    const res = await postRegister('/webhooks/deliverect/account-123/channel/register');
+    const rawBody = JSON.stringify(registerPayload);
+    const signature = WebhookService.computeHmacSignature(rawBody, registerPayload.channelLinkId);
+    const res = await fetch(`${baseUrl}/webhooks/deliverect/account-123/channel/register`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-server-authorization-hmac-sha256': signature,
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'attacker.example.test',
+      },
+      body: rawBody,
+    });
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    const expectedBase = 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha';
+    const expectedBase = 'https://brand-alpha.integrations.example.test/api/v1/webhooks/deliverect/brand-alpha';
     expect(body.statusUpdateURL).toBe(expectedBase);
     expect(body.menuUpdateURL).toBe(`${expectedBase}/channel/menu_update`);
     expect(body.snoozeUnsnoozeURL).toBe(`${expectedBase}/channel/snooze`);

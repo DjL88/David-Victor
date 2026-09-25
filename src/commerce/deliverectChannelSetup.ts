@@ -12,6 +12,8 @@ const join = (origin: string, path: string) =>
 export const DEFAULT_DELIVERECT_CALLBACK_ORIGIN = 'https://ltx.wtf';
 
 export function resolveDeliverectCallbackOrigin(configuredOrigin?: string, runtimeOrigin?: string): string {
+  // Registration must use the server-configured public origin. The browser's
+  // runtime origin can be an AI Studio preview or another untrusted host.
   return String(configuredOrigin || DEFAULT_DELIVERECT_CALLBACK_ORIGIN || runtimeOrigin || '')
     .trim()
     .replace(/\/$/, '');
