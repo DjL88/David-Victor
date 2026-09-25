@@ -57,7 +57,8 @@ describe('admin route security policy', () => {
     const end = source.indexOf("v1Router.", start + 1);
     const discoveryRoute = start >= 0 ? source.slice(start, end > start ? end : start + 5000) : '';
 
-    expect(discoveryRoute).toContain('IntegrationContext.getContext(tenantId)');
+    expect(discoveryRoute).toContain('IntegrationContext.getContext(tenantId, {');
+    expect(discoveryRoute).toContain('allowDraftProfile: true');
     expect(discoveryRoute).toContain('environment: integrationContext.environment');
     expect(discoveryRoute).toContain('tokenManager: integrationContext.tokenManager');
     expect(discoveryRoute).not.toContain('new LinkedAccountsAdapter()');
