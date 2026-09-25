@@ -4,10 +4,11 @@ Presentation-ready channel icons for compact admin/storefront UI.
 
 - Canvas: 32×32
 - Shape: circular
-- Original marketplace artwork remains in `public/brand/channels/`
-- These SVGs are derived presentation wrappers and do not replace the source/provenance files
-- Snappy Shopper uses the official red basket mark on the aqua round background
-- JET Go intentionally presents with the Just Eat identity
+- One standalone SVG per channel
+- Original source artwork and provenance remain in `public/brand/channels/`
+- Each round SVG embeds the retained source bytes; no external image dependency is required
+- Snappy Shopper uses the red basket mark on the aqua round background
+- JET Go intentionally uses the Just Eat presentation artwork
 - `map.json` is the canonical channel/alias → icon filename map
 
-The SVGs reference the local source artwork one directory above so the original brand proportions remain intact.
+These files are presentation assets only; provider routing and Deliverect IDs remain separate concerns.
