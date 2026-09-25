@@ -15,6 +15,10 @@ export function canonicalizeLocaleTag(value: string | undefined | null): string 
   }
 }
 
+function languageOnly(locale: string): string {
+  return canonicalizeLocaleTag(locale).split('-')[0] || '';
+}
+
 /**
  * Deliverect publishes translation maps keyed by language/locale code.
  * Canonicalize locale tags while retaining region-specific variants.
@@ -41,4 +45,41 @@ export function normaliseDeliverectTranslations(
   ingest(descriptionTranslations, 'description');
 
   return Object.keys(output).length ? output : undefined;
+}
+
+export function resolveEntityTranslation(
+  entity: {
+    name?: string;
+    description?: string;
+    translations?: EntityTranslations;
+  } | null | undefined,
+  field: keyof LocalizedEntityText,
+  currentLocale: string,
+  defaultLocale: string,
+  fallbackLocale = 'en-GB'
+): string {
+  if (!entity) return '';
+
+  const translations = entity.translations || {};
+  const candidates = [
+    canonicalizeLocaleTag(currentLocale),
+    languageOnly(currentLocale),
+    canonicalizeLocaleTag(defaultLocale),
+    languageOnly(defaultLocale),
+    canonicalizeLocaleTag(fallbackLocale),
+    languageOnly(fallbackLocale),
+  ].filter(Boolean);
+
+  for (const candidate of Array.from(new Set(candidates))) {
+    const direct = translations[candidate]?.[field];
+    if (direct) return direct;
+
+    const matchedKey = Object.keys(translations).find(
+      (key) => canonicalizeLocaleTag(key).toLowerCase() === candidate.toLowerCase()
+    );
+    const matched = matchedKey ? translations[matchedKey]?.[field] : undefined;
+    if (matched) return matched;
+  }
+
+  return String(entity[field] || '');
 }

@@ -6,7 +6,10 @@ import {
 } from '../../server/deliverect/ChannelMenuIngestionService';
 import { DeliverectApiClient } from '../../server/deliverect/DeliverectApiClient';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
-import { canonicalizeLocaleTag } from '../i18n/entityTranslations';
+import {
+  canonicalizeLocaleTag,
+  resolveEntityTranslation,
+} from '../i18n/entityTranslations';
 
 class CapturingQueue implements ChannelMenuQueueClient {
   jobs: ChannelMenuIngressJob[] = [];
@@ -130,6 +133,19 @@ describe('Deliverect menu translation preservation', () => {
       name: 'Eau',
       description: 'Eau plate',
     });
+  });
+
+  it('uses the customer locale with language and tenant fallbacks', () => {
+    const entity = {
+      name: 'Water',
+      translations: {
+        fr: { name: 'Eau' },
+        'en-GB': { name: 'Water' },
+      },
+    };
+
+    expect(resolveEntityTranslation(entity, 'name', 'fr-FR', 'en-GB')).toBe('Eau');
+    expect(resolveEntityTranslation(entity, 'name', 'de-DE', 'en-GB')).toBe('Water');
   });
 
   it('persists menu/category/product translations through the real durable worker path', async () => {
