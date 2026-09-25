@@ -835,6 +835,36 @@ export class LinkedAccountsAdapter {
     }
 
     if (storesHttpStatus < 200 || storesHttpStatus >= 300) {
+      // The Commerce stores endpoint can be unavailable to otherwise valid partner
+      // credentials (notably HTTP 403 in staging). Account/location discovery is a
+      // separate Deliverect capability, and a temporary scope mismatch must not make
+      // an already-provisioned tenant lose its selectable locations. Prefer the
+      // tenant's persisted last-known-good projection when it exists; callers still
+      // receive the upstream failure when there is no safe projection to preserve.
+      const lastKnown = inMemoryMappings.get(tenantId) || await this.loadFromFirestore(tenantId);
+      if (lastKnown) {
+        inMemoryMappings.set(tenantId, lastKnown);
+      }
+      const lastKnownStores = (lastKnown?.stores || []).filter((store) => {
+        const existingAccount = String(store.accountLinkId || '');
+        return existingAccount === accountId || existingAccount === `acclink_${accountId}`;
+      });
+
+      if (lastKnownStores.length > 0) {
+        console.warn(
+          `[Commerce Stores] HTTP_${storesHttpStatus}: preserving ${lastKnownStores.length} last-known-good store(s) for tenant ${tenantId}, account ${accountId}.`
+        );
+        return {
+          success: true,
+          stores: lastKnownStores,
+          count: lastKnownStores.length,
+          status: 'STALE_LAST_KNOWN_GOOD',
+          persistenceStatus: 'SKIPPED',
+          orphanedChannelLinkIds: [],
+          message: `Deliverect Commerce store discovery returned HTTP ${storesHttpStatus}. The previous working store/location mapping was preserved as last-known-good.`,
+        };
+      }
+
       throw new Error('Deliverect store discovery failed: HTTP ' + storesHttpStatus);
     }
 

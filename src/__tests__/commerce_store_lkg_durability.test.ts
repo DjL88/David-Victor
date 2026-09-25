@@ -92,4 +92,46 @@ describe('Commerce store last-known-good durability', () => {
     expect(result.persistenceStatus).toBe('SKIPPED');
     expect(result.orphanedChannelLinkIds).toEqual([]);
   });
+
+  it('preserves the persisted working mapping when the Commerce endpoint returns HTTP 403', async () => {
+    const tokenManager = {
+      isConfigured: true,
+      getAccessToken: vi.fn(async () => 'token'),
+      config: { baseUrl: 'https://deliverect.invalid' },
+    };
+
+    const adapter = new LinkedAccountsAdapter({ tokenManager: tokenManager as any });
+    const lastKnownStore = {
+      commerceStoreId: 'cstore_channel-403',
+      accountLinkId: 'acclink_account-403',
+      physicalLocationId: 'loc_location-403',
+      channelLinkId: 'channel-403',
+      name: 'Provisioned Store',
+      stateProjection: 'open',
+      lastSeenAt: '2026-09-24T10:00:00.000Z',
+    };
+
+    (adapter as any).loadFromFirestore = vi.fn(async () => ({
+      accounts: [],
+      locations: [],
+      stores: [lastKnownStore],
+      syncedAt: '2026-09-24T10:00:00.000Z',
+    }));
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/commerce/account-403/stores')) {
+        return new Response(null, { status: 403, statusText: 'Forbidden' });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as any);
+
+    const result = await adapter.getCommerceStores('account-403', 'tenant-lkg-403');
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('STALE_LAST_KNOWN_GOOD');
+    expect(result.persistenceStatus).toBe('SKIPPED');
+    expect(result.stores).toEqual([lastKnownStore]);
+    expect(result.count).toBe(1);
+    expect(result.message).toMatch(/HTTP 403/i);
+  });
 });
