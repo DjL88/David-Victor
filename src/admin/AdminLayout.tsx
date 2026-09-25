@@ -555,7 +555,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               <StoriesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
             )}
             {activeTab === 'fees' && (
-              <FeesAdminScreen tenantId={currentTenantId} currentUser={currentUser} />
+              <FeesAdminScreen tenantId={currentTenantId} currentUser={currentUser} tenantConfig={tenantConfig} />
             )}
             {activeTab === 'product_rules' && (
               <ProductRulesScreen tenantId={currentTenantId} currentUser={currentUser} view="product" />
