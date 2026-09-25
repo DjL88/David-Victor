@@ -635,6 +635,56 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                <div>
+                  <label className="block font-bold text-gray-800">Customer action</label>
+                  <p className="mt-0.5 text-[11px] text-gray-500">Optionally make the story actionable. Product actions use the live catalogue rather than a typed PLU.</p>
+                </div>
+                <select
+                  value={editingStory.action?.type || 'NONE'}
+                  onChange={(e) => {
+                    const type = e.target.value;
+                    setEditingStory({
+                      ...editingStory,
+                      action: type === 'NONE' ? undefined : { type: type as NonNullable<Story['action']>['type'], buttonLabel: editingStory.action?.buttonLabel || 'Shop now' },
+                    });
+                  }}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold"
+                  aria-label="Story customer action"
+                >
+                  <option value="NONE">No CTA</option>
+                  <option value="PRODUCT">Open product</option>
+                </select>
+                {editingStory.action?.type === 'PRODUCT' && (
+                  <select
+                    value={editingStory.action.targetPlu || ''}
+                    onChange={(e) => setEditingStory({
+                      ...editingStory,
+                      action: { ...editingStory.action!, targetPlu: e.target.value || undefined },
+                      linkedProductPlus: e.target.value
+                        ? Array.from(new Set([...(editingStory.linkedProductPlus || []), e.target.value]))
+                        : editingStory.linkedProductPlus,
+                    })}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"
+                    aria-label="Story CTA product"
+                  >
+                    <option value="">Choose product…</option>
+                    {products.map((product) => (
+                      <option key={product.plu} value={product.plu}>{product.name} ({product.plu})</option>
+                    ))}
+                  </select>
+                )}
+                {editingStory.action && (
+                  <input
+                    value={editingStory.action.buttonLabel || ''}
+                    onChange={(e) => setEditingStory({ ...editingStory, action: { ...editingStory.action!, buttonLabel: e.target.value } })}
+                    placeholder="Button label"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"
+                    aria-label="Story CTA label"
+                  />
+                )}
+              </div>
+
               <MarketingScheduleEditor value={editingStory.schedule} onChange={(schedule) => setEditingStory({ ...editingStory, schedule })} />
 
               {/* THUMBNAIL COVER */}
