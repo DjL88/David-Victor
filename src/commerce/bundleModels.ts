@@ -1,3 +1,5 @@
+import type { EntityTranslations } from '../i18n/entityTranslations';
+
 /**
  * Deliverect Bundle / Combo Data Models and Availability Engine
  *
@@ -24,12 +26,14 @@ export interface BundleModifier {
   isAutoApplied?: boolean;
   imageUrl?: string;
   description?: string;
+  translations?: EntityTranslations;
   calories?: number;
 }
 
 export interface BundleModifierGroup {
   id: string;
   name: string;
+  translations?: EntityTranslations;
   min: number;
   max: number;
   multiMin?: number;
@@ -46,6 +50,7 @@ export interface BundleProduct {
   plu: string;
   name: string;
   description?: string;
+  translations?: EntityTranslations;
   imageUrl?: string;
   image?: string;
   price: number; // Base price in integer minor units, e.g. 500 = £5.00

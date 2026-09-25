@@ -25,6 +25,7 @@ import {
 } from './DeliverectBasketMapper';
 import type { CheckoutResult } from '../../src/domain/models';
 import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
+import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
 import { evaluateStoreOpenNow, computeNextOpeningTime, normalizeOpeningHours } from '../../src/services/storeOpeningHoursService';
 import {
   getZonedDateParts,
@@ -790,6 +791,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
         id: catId,
         name: String(rawCat.name || 'Uncategorized'),
         description: rawCat.description || '',
+        translations: normaliseDeliverectTranslations(
+          rawCat.nameTranslations,
+          rawCat.descriptionTranslations
+        ),
         imageUrl: rawCat.imageUrl || undefined,
         parentId,
         level,
@@ -1079,6 +1084,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
             return {
               id: mId,
               name: modName,
+              description: mData.description || mRef.description || '',
+              translations: normaliseDeliverectTranslations(
+                mData.nameTranslations || mRef.nameTranslations,
+                mData.descriptionTranslations || mRef.descriptionTranslations
+              ),
               plu: modPlu,
               standalonePlu,
               standalonePriceMinor,
@@ -1097,6 +1107,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           return {
             id: mgId,
             name: String(mgData.name || mgRef.name || `Section ${groupIndex + 1}`),
+            translations: normaliseDeliverectTranslations(
+              mgData.nameTranslations || mgRef.nameTranslations,
+              mgData.descriptionTranslations || mgRef.descriptionTranslations
+            ),
             min: sectionMin,
             max: sectionMax,
             multiMin: typeof mgData.multiMin === 'number' ? mgData.multiMin : (typeof mgRef.multiMin === 'number' ? mgRef.multiMin : undefined),
@@ -1124,6 +1138,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           plu,
           name: String(p.name || plu),
           description: p.description || '',
+          translations: normaliseDeliverectTranslations(
+            p.nameTranslations,
+            p.descriptionTranslations
+          ),
           imageUrl,
           image: imageUrl,
           price: basePrice,
@@ -1148,6 +1166,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           gtin: p.gtin ? (Array.isArray(p.gtin) ? p.gtin : [p.gtin]) : [],
           name: String(p.name || plu),
           description: p.description || '',
+          translations: normaliseDeliverectTranslations(
+            p.nameTranslations,
+            p.descriptionTranslations
+          ),
           imageUrl,
           image: imageUrl,
           images: imageUrl ? [imageUrl] : [],
@@ -1303,6 +1325,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           menuId: String(m.menuId || m.id || m._id),
           name: String(m.menu || m.name || 'Root Menu'),
           description: m.description || '',
+          translations: normaliseDeliverectTranslations(
+            m.menuTranslations,
+            m.descriptionTranslations
+          ),
           imageUrl: m.menuImageURL || m.imageUrl || undefined,
           menuType: m.menuType,
           productCount: prods.length,
@@ -1414,6 +1440,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
             {
               menuId: selectedMenuId,
               name: selectedMenuName,
+              translations: hosted.translations,
               menuType: hosted.menuType,
               productCount: hostedProducts.length,
               categoryCount: Array.isArray(hosted.categories)
@@ -1513,6 +1540,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
           menuId: String(m.menuId || m.id || m._id),
           name: String(m.menu || m.name || 'Store Menu'),
           description: m.description || '',
+          translations: normaliseDeliverectTranslations(
+            m.menuTranslations,
+            m.descriptionTranslations
+          ),
           imageUrl: m.menuImageURL || m.imageUrl || undefined,
           menuType: m.menuType,
           productCount: prods.length,

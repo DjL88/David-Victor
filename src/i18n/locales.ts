@@ -1,3 +1,5 @@
+import { canonicalizeLocaleTag } from './entityTranslations';
+
 export interface SupportedLocale {
   code: string;
   label: string;
@@ -11,17 +13,29 @@ export const SUPPORTED_LOCALES: SupportedLocale[] = [
   { code: 'es-ES', label: 'Español', flag: '🇪🇸', languageName: 'Spanish' },
   { code: 'fr-FR', label: 'Français', flag: '🇫🇷', languageName: 'French' },
   { code: 'de-DE', label: 'Deutsch', flag: '🇩🇪', languageName: 'German' },
+  { code: 'cy-GB', label: 'Cymraeg', flag: '🏴', languageName: 'Welsh' },
 ];
 
 export const SUPPORTED_LOCALE_CODES = SUPPORTED_LOCALES.map((locale) => locale.code);
 
 export function isSupportedLocale(code: string): boolean {
-  return SUPPORTED_LOCALE_CODES.includes(code);
+  const canonical = canonicalizeLocaleTag(code);
+  return SUPPORTED_LOCALE_CODES.some(
+    (supported) => supported.toLowerCase() === canonical.toLowerCase()
+  );
 }
 
 export function normaliseSupportedLocale(code: string | undefined, fallback = 'en-GB'): string {
-  const requested = String(code || '').trim();
-  return isSupportedLocale(requested) ? requested : (isSupportedLocale(fallback) ? fallback : 'en-GB');
+  const canonical = canonicalizeLocaleTag(code);
+  const matched = SUPPORTED_LOCALE_CODES.find(
+    (supported) => supported.toLowerCase() === canonical.toLowerCase()
+  );
+  if (matched) return matched;
+
+  const canonicalFallback = canonicalizeLocaleTag(fallback);
+  return SUPPORTED_LOCALE_CODES.find(
+    (supported) => supported.toLowerCase() === canonicalFallback.toLowerCase()
+  ) || 'en-GB';
 }
 
 export function resolveEnabledLocales(

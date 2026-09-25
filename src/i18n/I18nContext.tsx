@@ -3,6 +3,7 @@ import { TRANSLATIONS, LocaleTranslations } from './translations';
 import { useTenant } from '../tenant/TenantContext';
 import { SUPPORTED_LOCALES, normaliseSupportedLocale, resolveEnabledLocales } from './locales';
 import { resolveStorefrontCopy, StorefrontCopyOverrides } from './copy';
+import { resolveEntityTranslation, type EntityTranslations } from './entityTranslations';
 
 interface I18nContextValue {
   locale: string;
@@ -11,7 +12,7 @@ interface I18nContextValue {
   availableLocales: Array<{ code: string; label: string; flag: string }>;
   t: (key: keyof LocaleTranslations, fallback?: string) => string;
   setLocale: (locale: string) => void;
-  translateEntity: (entity: { name: string; translations?: Record<string, { name?: string; description?: string }> }) => string;
+  translateEntity: (entity: { name: string; description?: string; translations?: EntityTranslations }) => string;
   formatCurrency: (minorUnits: number, currency?: string) => string;
   formatDateTime: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string;
 }
@@ -79,24 +80,14 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentLocale, defaultLocale, fallbackLocale, tenant?.copyOverrides]);
 
   /**
-   * Translates a Deliverect product or category entity if localized strings
-   * exist on the entity, falling back to base name.
+   * Resolves a translated Deliverect entity name using regional/language fallbacks.
    */
   const translateEntity = (entity: {
     name: string;
-    translations?: Record<string, { name?: string; description?: string }>;
-  }): string => {
-    if (!entity) return '';
-    if (entity.translations) {
-      if (entity.translations[currentLocale]?.name) {
-        return entity.translations[currentLocale].name!;
-      }
-      if (entity.translations[defaultLocale]?.name) {
-        return entity.translations[defaultLocale].name!;
-      }
-    }
-    return entity?.name || '';
-  };
+    description?: string;
+    translations?: EntityTranslations;
+  }): string =>
+    resolveEntityTranslation(entity, 'name', currentLocale, defaultLocale, fallbackLocale);
 
   const formatCurrency = (minorUnits: number, currency: string = tenant?.currency || 'GBP') => {
     return new Intl.NumberFormat(currentLocale, {

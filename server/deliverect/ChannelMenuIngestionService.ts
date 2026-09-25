@@ -6,6 +6,7 @@ import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
 import { CommerceDiscoveryService } from './CommerceDiscoveryService';
 import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
+import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -516,6 +517,10 @@ export class ChannelMenuIngestionService {
           menuId,
           channelLinkId,
           menu: menu?.menu || menu?.name || '',
+          translations: normaliseDeliverectTranslations(
+            menu?.menuTranslations,
+            menu?.descriptionTranslations
+          ),
           menuType: menu?.menuType,
           currency: menu?.currency,
           categories: parsed.categories,
