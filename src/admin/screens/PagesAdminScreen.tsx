@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
+import { pageVariantMetadata } from '../../commerce/cmsVariants';
 import { auth } from '../../firebase';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { SUPPORTED_LOCALES, resolveEnabledLocales } from '../../i18n/locales';
@@ -65,6 +66,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
     finally { setSaving(false); }
   };
+
+  const variant = pageVariantMetadata(selectedPage);
+  const updateVariant = (patch: Partial<NonNullable<CmsPage['variant']>>) => setSelectedPage((page) => ({ ...page, variant: { ...pageVariantMetadata(page), ...patch } }));
 
   const createPage = () => setSelectedPage(blankPage());
   const duplicatePage = () => setSelectedPage({ ...selectedPage, id: `page_${Date.now()}`, title: `${selectedPage.title} copy`, slug: `${selectedPage.slug}-copy`, status: 'draft', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -324,6 +328,40 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
               </p>
             </div>
 
+            <div className="pt-3 border-t border-gray-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-gray-700">Language & market variant</label>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${variant.translationState === 'reviewed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {variant.translationState === 'source' ? 'Source content' : variant.translationState === 'reviewed' ? 'Translation reviewed' : 'Translation needs review'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Source language</label>
+                  <select value={variant.sourceLocale || selectedPage.locale} onChange={(e) => updateVariant({ sourceLocale: e.target.value, translationState: e.target.value === selectedPage.locale ? 'source' : 'draft' })} className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white">
+                    {tenantLocales.map((locale) => <option key={locale.code} value={locale.code}>{locale.flag} {locale.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Translation status</label>
+                  <select value={variant.translationState} onChange={(e) => updateVariant({ translationState: e.target.value as any })} className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white">
+                    <option value="source">Source</option><option value="draft">Needs review</option><option value="reviewed">Reviewed</option>
+                  </select>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600"><input type="checkbox" checked={variant.showFallbackNotice} onChange={(e) => updateVariant({ showFallbackNotice: e.target.checked })} />Show authors when fallback content is being used</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input value={variant.markets.join(', ')} onChange={(e) => updateVariant({ markets: e.target.value.split(',').map(v => v.trim()).filter(Boolean) })} placeholder="Markets (optional)" className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+                <input value={variant.regions.join(', ')} onChange={(e) => updateVariant({ regions: e.target.value.split(',').map(v => v.trim()).filter(Boolean) })} placeholder="Regions (optional)" className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+                <input value={variant.locationIds.join(', ')} onChange={(e) => updateVariant({ locationIds: e.target.value.split(',').map(v => v.trim()).filter(Boolean) })} placeholder="Locations (optional)" className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+              </div>
+              <p className="text-[10px] text-gray-500">Leave targeting blank for all customers. These are retailer-defined delivery/content scopes, not legal rules.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="block text-[10px] font-bold text-gray-500 mb-1">Publish timezone</label><input value={variant.timeZone || ''} onChange={(e) => updateVariant({ timeZone: e.target.value || undefined })} placeholder="e.g. Europe/Amsterdam" className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" /></div>
+                <div><label className="block text-[10px] font-bold text-gray-500 mb-1">Unpublish at</label><input type="datetime-local" value={variant.unpublishAt?.slice(0,16) || ''} onChange={(e) => updateVariant({ unpublishAt: e.target.value || undefined })} className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" /></div>
+              </div>
+            </div>
+
             <div className="pt-2 border-t border-gray-100">
               <label className="block text-[11px] font-bold text-gray-700 mb-1">SEO Title</label>
               <input
@@ -333,6 +371,11 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                 className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
                 placeholder="Browser tab title"
               />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className="block text-[11px] font-bold text-gray-700 mb-1">Social title</label><input value={variant.social?.title || ''} onChange={(e) => updateVariant({ social: { ...variant.social, title: e.target.value } })} className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Defaults to SEO title" /></div>
+              <div><label className="block text-[11px] font-bold text-gray-700 mb-1">Social image URL</label><input value={variant.social?.imageUrl || ''} onChange={(e) => updateVariant({ social: { ...variant.social, imageUrl: e.target.value } })} className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Optional locale-specific image" /></div>
             </div>
 
             <div>
