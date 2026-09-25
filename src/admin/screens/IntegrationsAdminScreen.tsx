@@ -77,6 +77,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
   const [discoveredStores, setDiscoveredStores] = useState<any[]>([]);
   const [discoveredLocations, setDiscoveredLocations] = useState<any[]>([]);
   const [selectedChannelLinkIds, setSelectedChannelLinkIds] = useState<string[]>([]);
+  const [knownChannelLinkId, setKnownChannelLinkId] = useState('');
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -849,6 +850,43 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
                   </label>
                 );
               })}
+            </div>
+            <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
+              <label className="block text-xs font-bold text-gray-200" htmlFor="known-channel-link-id">
+                Known LeitchTech channel link ID
+              </label>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Use this when Deliverect temporarily omits an LT channel from location discovery. The assignment remains tenant-scoped and is re-verified when discovery recovers.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="known-channel-link-id"
+                  value={knownChannelLinkId}
+                  onChange={(event) => setKnownChannelLinkId(event.target.value)}
+                  placeholder="24-character Deliverect channel link ID"
+                  className="min-w-0 flex-1 rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-white outline-none focus:border-emerald-600"
+                />
+                <button
+                  type="button"
+                  disabled={!/^[a-f0-9]{24}$/i.test(knownChannelLinkId.trim())}
+                  onClick={() => {
+                    const channelLinkId = knownChannelLinkId.trim();
+                    setSelectedChannelLinkIds((current) => current.includes(channelLinkId) ? current : [...current, channelLinkId]);
+                    setKnownChannelLinkId('');
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2 text-xs font-bold text-white hover:bg-gray-700 disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add known channel
+                </button>
+              </div>
+              {selectedChannelLinkIds.filter((id) => !accountStores.some((store: any) => String(store.channelLinkId) === id)).map((id) => (
+                <div key={id} className="mt-2 flex items-center justify-between rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">
+                  <span>Temporarily missing from discovery · {id}</span>
+                  <button type="button" onClick={() => setSelectedChannelLinkIds((current) => current.filter((value) => value !== id))}
+                    className="font-bold text-amber-300 hover:text-amber-100">Remove</button>
+                </div>
+              ))}
             </div>
             <div className="flex flex-col gap-3 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-xs text-gray-300"><strong className="text-white">{selectedChannelLinkIds.length}</strong> LT channel{selectedChannelLinkIds.length === 1 ? '' : 's'} assigned</span>
