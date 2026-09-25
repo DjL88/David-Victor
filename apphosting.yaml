@@ -42,6 +42,16 @@ env:
     availability:
       - RUNTIME
 
+  - variable: APP_HOSTING_LOCATION
+    value: europe-west4
+    availability:
+      - RUNTIME
+
+  - variable: APP_HOSTING_BACKEND_ID
+    value: leitch-store-staging
+    availability:
+      - RUNTIME
+
   # New secrets created through the tenant Admin UI keep their payload replicas
   # with the App Hosting runtime in the Netherlands.
   - variable: SECRET_MANAGER_REPLICATION_LOCATIONS
