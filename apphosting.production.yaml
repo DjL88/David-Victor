@@ -51,6 +51,16 @@ env:
     availability:
       - RUNTIME
 
+  - variable: CHANNEL_PUBLIC_BASE_URL
+    value: https://ltx.wtf
+    availability:
+      - RUNTIME
+
+  - variable: VITE_CHANNEL_PUBLIC_BASE_URL
+    value: https://ltx.wtf
+    availability:
+      - BUILD
+
   - variable: CLOUD_TASKS_SA_EMAIL
     secret: cloud_tasks_sa_email
     availability:

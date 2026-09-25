@@ -7,6 +7,7 @@ import { BFFError } from '../errors';
 import { getFirestoreDb, markFirestorePermissionDenied, isFirestorePermissionDenied } from '../firebase';
 import { FirestorePlatformService, cleanUndefined } from '../firestoreService';
 import { circuitBreakers } from '../circuitBreaker';
+import { detectDeliveryMarketplace } from '../../src/commerce/deliveryMarketplace';
 
 function getLocalMappingPath(tenantId: string): string {
   if (!isDemoMode()) {
@@ -1026,7 +1027,9 @@ export class LinkedAccountsAdapter {
           const detail = channelDetails.get(id) || (typeof link === 'object' ? link : {});
           const candidateUrl = detail.menuUrl || detail.channelSettings?.storeUrl;
           const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
-          return { id, name: String(detail.name || detail.application || detail.channel || 'Ordering channel'), channel: detail.channel, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+          const name = String(detail.name || detail.application || detail.channel || 'Ordering channel');
+          const marketplace = detectDeliveryMarketplace(name, detail.application, detail.channel).key;
+          return { id, name, channel: detail.channel, marketplace, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
         }).filter((service: any) => service.id),
         ...(rawStore.currency ? { currency: rawStore.currency } : {}),
         ...(rawStore.status ? { status: rawStore.status } : {}),
@@ -1130,7 +1133,9 @@ export class LinkedAccountsAdapter {
             const detail = channelDetails.get(id) || (typeof link === 'object' ? link : {});
             const candidateUrl = detail.menuUrl || detail.channelSettings?.storeUrl;
             const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
-            return { id, name: String(detail.name || detail.application || detail.channel || 'Ordering channel'), channel: detail.channel, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+            const name = String(detail.name || detail.application || detail.channel || 'Ordering channel');
+            const marketplace = detectDeliveryMarketplace(name, detail.application, detail.channel).key;
+            return { id, name, channel: detail.channel, marketplace, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
           }).filter((service: any) => service.id),
         };
       });
