@@ -51,6 +51,7 @@ import { CheckoutResult } from '../../src/domain/models';
 import { TenantConfig, Product } from '../../src/commerce/models';
 import { MOCK_TENANTS } from '../../src/commerce/mockData';
 import { GOOGLE_FONTS_CATALOG } from '../../src/commerce/googleFonts';
+import { marketplaceForStore } from '../../src/commerce/deliveryMarketplace';
 import { BFFError, CommerceError } from '../errors';
 import { assertProductAddAllowed, assertBasketCheckoutAllowed } from '../ruleEnforcementService';
 import { SecretManager } from '../secrets';
@@ -256,14 +257,14 @@ v1Router.use(async (req: Request, res: Response, next) => {
     const resolution = await resolveRequestTenant(req);
     (req as any).resolvedTenantId = resolution.tenantId;
     (req as any).tenantResolution = resolution satisfies TenantResolution;
-    res.setHeader('Vary', 'Host, X-Forwarded-Host');
+    res.setHeader('Vary', 'Host, X-Forwarded-Host, X-FH-Requested-Host, X-Storefront-Host');
     if (resolution.usedOverride) {
       res.setHeader('Cache-Control', 'private, no-store');
     }
     return next();
   } catch (err: any) {
     if (err instanceof BFFError) {
-      res.setHeader('Vary', 'Host, X-Forwarded-Host');
+      res.setHeader('Vary', 'Host, X-Forwarded-Host, X-FH-Requested-Host, X-Storefront-Host');
       return res.status(err.statusCode).json({
         code: err.code,
         message: err.message,
@@ -288,7 +289,7 @@ function sendConditionalJson(
   const etag = `"${hash}"`;
 
   res.setHeader('ETag', etag);
-  res.setHeader('Vary', 'Host, X-Forwarded-Host');
+  res.setHeader('Vary', 'Host, X-Forwarded-Host, X-FH-Requested-Host, X-Storefront-Host');
   const resolution = (req as any).tenantResolution as TenantResolution | undefined;
   res.setHeader('Cache-Control', resolution?.usedOverride ? 'private, no-store' : cacheControl);
 
@@ -3049,8 +3050,8 @@ async function handleDeliverectChannelProvisioning(
       }
 
       const configuredOrigin =
-        profileOrigin ||
         process.env.CHANNEL_PUBLIC_BASE_URL ||
+        profileOrigin ||
         process.env.PUBLIC_BASE_URL ||
         '';
       const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
@@ -6558,6 +6559,19 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     const requestedChannelLinkIds = assignment.requestedChannelLinkIds;
     const activeChannelLinkIds = assignment.visibleChannelLinkIds;
     const temporarilyMissingChannelLinkIds = assignment.temporarilyMissingChannelLinkIds;
+
+    const thirdPartyAssignments = matchingStores
+      .filter((store: any) => requestedChannelLinkIds.includes(String(store.channelLinkId || '')))
+      .map((store: any) => ({ store, marketplace: marketplaceForStore(store) }))
+      .filter(({ marketplace }) => marketplace.isThirdPartyMarketplace);
+    if (thirdPartyAssignments.length > 0) {
+      return res.status(400).json({
+        error: `Third-party marketplace channels are display-only and cannot be assigned to this tenant: ${thirdPartyAssignments
+          .map(({ store, marketplace }) => `${marketplace.label} (${store.channelLinkId})`)
+          .join(', ')}.`,
+        code: 'THIRD_PARTY_CHANNEL_NOT_ASSIGNABLE',
+      });
+    }
 
     // Discovery is observational. A transient empty/partial Deliverect response
     // must never mutate tenant ownership. Persist visibility diagnostics while

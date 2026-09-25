@@ -9,6 +9,14 @@ export interface DeliverectChannelEndpoint {
 const join = (origin: string, path: string) =>
   `${String(origin || '').replace(/\/$/, '')}${path}`;
 
+export const DEFAULT_DELIVERECT_CALLBACK_ORIGIN = 'https://ltx.wtf';
+
+export function resolveDeliverectCallbackOrigin(configuredOrigin?: string, runtimeOrigin?: string): string {
+  return String(configuredOrigin || DEFAULT_DELIVERECT_CALLBACK_ORIGIN || runtimeOrigin || '')
+    .trim()
+    .replace(/\/$/, '');
+}
+
 export function buildDeliverectChannelEndpoints(origin: string, tenantId: string): DeliverectChannelEndpoint[] {
   const id = encodeURIComponent(String(tenantId || '').trim());
   const base = `/api/v1/webhooks/deliverect/${id}`;

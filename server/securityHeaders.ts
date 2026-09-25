@@ -91,7 +91,7 @@ export function securityHeadersMiddleware(options: SecurityHeadersOptions = {}) 
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         res.setHeader(
           'Access-Control-Allow-Headers',
-          'Content-Type, Authorization, x-tenant-id, x-request-id, x-deliverect-signature, x-server-authorization-hmac-sha256, x-session-id'
+          'Content-Type, Authorization, x-tenant-id, x-storefront-host, x-request-id, x-deliverect-signature, x-server-authorization-hmac-sha256, x-session-id'
         );
         res.setHeader('Access-Control-Max-Age', '86400');
 

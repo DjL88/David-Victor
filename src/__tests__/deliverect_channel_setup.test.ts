@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { buildDeliverectChannelEndpoints, DELIVERECT_CHANNEL_SETUP_STEPS } from '../commerce/deliverectChannelSetup';
+import { buildDeliverectChannelEndpoints, DELIVERECT_CHANNEL_SETUP_STEPS, resolveDeliverectCallbackOrigin } from '../commerce/deliverectChannelSetup';
+import { detectDeliveryMarketplace, marketplaceForStore } from '../commerce/deliveryMarketplace';
 import { ChannelProvisioningService } from '../../server/deliverect/ChannelProvisioningService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
@@ -27,6 +28,22 @@ describe('Deliverect Channel setup', () => {
     expect(() => new URL(byKey.substitutions.url)).not.toThrow();
     expect(byKey.promotions.readiness).toBe('PENDING_CONTRACT');
     expect(DELIVERECT_CHANNEL_SETUP_STEPS.at(-1)).toMatch(/Register, then Activate/);
+  });
+
+  it('uses ltx.wtf as the stable platform callback origin', () => {
+    expect(resolveDeliverectCallbackOrigin(undefined, 'https://tenant.example')).toBe('https://ltx.wtf');
+    expect(resolveDeliverectCallbackOrigin('https://custom.example/', 'https://tenant.example')).toBe('https://custom.example');
+  });
+
+  it('recognises display-only marketplaces without confusing them with LT channels', () => {
+    expect(detectDeliveryMarketplace('Deliveroo').key).toBe('deliveroo');
+    expect(detectDeliveryMarketplace('Uber Eats').isThirdPartyMarketplace).toBe(true);
+    expect(detectDeliveryMarketplace('JustEat').key).toBe('just-eat');
+    expect(detectDeliveryMarketplace('Leitch Technology').isLeitchTech).toBe(true);
+    expect(marketplaceForStore({
+      channelLinkId: 'channel-deliveroo',
+      services: [{ id: 'channel-deliveroo', name: 'Deliveroo', source: 'DELIVERECT' }],
+    }).key).toBe('deliveroo');
   });
 
   it('provisions a store when stable identifiers are present', async () => {

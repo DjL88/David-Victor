@@ -109,19 +109,6 @@ export function isManagedPreviewHost(
   );
 }
 
-function isConfiguredAppHostingOrigin(
-  hostname: string,
-  env: NodeJS.ProcessEnv = process.env
-): boolean {
-  const backendId = normalizeHostname(env.APP_HOSTING_BACKEND_ID || '');
-  const projectId = normalizeHostname(
-    env.FIREBASE_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || ''
-  );
-  const location = normalizeHostname(env.APP_HOSTING_LOCATION || '');
-  if (!backendId || !projectId || !location) return false;
-  return normalizeHostname(hostname) === `${backendId}--${projectId}.${location}.hosted.app`;
-}
-
 function requestedTenantOverride(req: Request): string | undefined {
   const header = firstHeaderValue(req.headers['x-tenant-id'] as string | string[] | undefined);
   const query = typeof req.query?.tenantId === 'string' ? req.query.tenantId.trim() : '';
@@ -155,23 +142,30 @@ export async function resolveRequestTenant(
     (isTestMode() && firstHeaderValue(req.headers['x-test-simulate-public'] as string | string[] | undefined) === 'true');
   const localTestHost = host === 'localhost' || host === '127.0.0.1';
 
-  // Firebase App Hosting terminates the custom hostname at its edge and sends
-  // the backend its managed hosted.app origin plus X-Forwarded-Host. Accept
-  // that forwarded hostname only from this deployment's exact configured
-  // origin, and only when it resolves to an ACTIVE domain registry record.
-  // A forged/unknown hostname therefore cannot choose an arbitrary tenant.
-  if (isConfiguredAppHostingOrigin(host, env)) {
-    const forwardedHost = normalizeHostname(
-      firstHeaderValue(req.headers['x-forwarded-host'] as string | string[] | undefined)
+  // App Hosting terminates custom domains at its CDN before invoking the
+  // backend. Depending on the edge path, the original hostname is exposed as
+  // X-Forwarded-Host, Firebase's X-FH-Requested-Host, or the browser-supplied
+  // X-Storefront-Host used by this SPA. Every candidate is still fail-closed:
+  // only an exact ACTIVE domain registry record may select a tenant.
+  if (isManagedPreviewHost(host, env)) {
+    const edgeCandidates = [
+      firstHeaderValue(req.headers['x-forwarded-host'] as string | string[] | undefined),
+      firstHeaderValue(req.headers['x-fh-requested-host'] as string | string[] | undefined),
+      firstHeaderValue(req.headers['x-storefront-host'] as string | string[] | undefined),
+    ].map(normalizeHostname).filter((candidate, index, all) =>
+      Boolean(candidate) && candidate !== host && !isManagedPreviewHost(candidate, env) && all.indexOf(candidate) === index
     );
-    if (forwardedHost && forwardedHost !== host && !isManagedPreviewHost(forwardedHost, env)) {
-      const forwardedTenant = await FirestorePlatformService.resolveTenantByHostname(forwardedHost);
-      if (forwardedTenant) {
+
+    for (const candidate of edgeCandidates) {
+      const candidateTenant = await FirestorePlatformService.resolveTenantByHostname(candidate);
+      if (candidateTenant) {
         return {
-          tenantId: forwardedTenant,
+          tenantId: candidateTenant,
           source: 'host',
-          host: forwardedHost,
-          usedOverride: false,
+          host: candidate,
+          // App Hosting cannot safely cache arbitrary Vary headers. Mark the
+          // response private so one tenant's payload cannot bleed into another.
+          usedOverride: true,
         };
       }
     }
@@ -251,7 +245,7 @@ export function applyTenantResolutionCacheHeaders(
   res: { setHeader(name: string, value: string): unknown; getHeader?(name: string): unknown },
   resolution?: TenantResolution
 ): void {
-  res.setHeader('Vary', 'Host, X-Forwarded-Host');
+  res.setHeader('Vary', 'Host, X-Forwarded-Host, X-FH-Requested-Host, X-Storefront-Host');
   if (resolution?.usedOverride) {
     res.setHeader('Cache-Control', 'private, no-store');
   }

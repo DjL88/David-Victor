@@ -3,6 +3,7 @@ import { CheckCircle2, Clipboard, Clock3, ExternalLink, ServerCog } from 'lucide
 import {
   buildDeliverectChannelEndpoints,
   DELIVERECT_CHANNEL_SETUP_STEPS,
+  resolveDeliverectCallbackOrigin,
 } from '../../commerce/deliverectChannelSetup';
 
 interface Props {
@@ -11,7 +12,11 @@ interface Props {
 
 export const DeliverectChannelSetupGuide: React.FC<Props> = ({ tenantId }) => {
   const [copied, setCopied] = useState<string | null>(null);
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const origin = resolveDeliverectCallbackOrigin(
+    (import.meta as any).env?.VITE_CHANNEL_PUBLIC_BASE_URL,
+    runtimeOrigin
+  );
   const endpoints = useMemo(
     () => buildDeliverectChannelEndpoints(origin, tenantId),
     [origin, tenantId]
@@ -58,7 +63,7 @@ export const DeliverectChannelSetupGuide: React.FC<Props> = ({ tenantId }) => {
         <div>
           <h3 className="text-base font-bold text-white">Deliverect Channel provisioning</h3>
           <p className="text-xs text-gray-400 mt-1">
-            Configure the channel link in this order. URLs are generated for this brand so they can be copied directly into Deliverect.
+            Configure the channel link in this order. Every tenant uses the stable LT ingress domain; the tenant identifier in each path keeps callbacks isolated.
           </p>
         </div>
       </div>

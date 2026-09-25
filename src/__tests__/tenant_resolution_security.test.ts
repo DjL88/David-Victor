@@ -123,6 +123,23 @@ describe('TEN-00 public tenant trust boundaries', () => {
     expect(response.body.tenant.tenantId).toBe('brand-alpha');
   });
 
+  it('resolves an active storefront hostname supplied by the App Hosting SPA and disables shared caching', async () => {
+    vi.spyOn(FirestorePlatformService, 'resolveTenantByHostname').mockImplementation(async (host: string) =>
+      host === 'test1.leitch.shop' ? 'test1' : null
+    );
+
+    const app = await createApp({ serveFrontend: false, initializeDependencies: false });
+    const response = await request(app)
+      .get('/api/v1/bootstrap')
+      .set('Host', 'leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app')
+      .set('X-Storefront-Host', 'test1.leitch.shop')
+      .expect(200);
+
+    expect(response.body.tenant.tenantId).toBe('test1');
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.headers.vary).toContain('X-Storefront-Host');
+  });
+
   it('honours X-Forwarded-Host only when the edge secret matches', async () => {
     process.env.TRUSTED_EDGE_SECRET = 'edge-secret';
     vi.spyOn(FirestorePlatformService, 'resolveTenantByHostname').mockImplementation(async (host: string) =>

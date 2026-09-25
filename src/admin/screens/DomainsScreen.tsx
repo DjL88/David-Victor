@@ -352,11 +352,17 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                     ))}
                   </div>
 
-                  {domain.requiredDnsRecords && domain.requiredDnsRecords.length > 0 && !active && (
-                    <div className="space-y-3 bg-amber-50/60 p-4">
+                  {domain.requiredDnsRecords && domain.requiredDnsRecords.length > 0 && (
+                    <div className={`space-y-3 p-4 ${active ? 'bg-emerald-50/50' : 'bg-amber-50/60'}`}>
                       <div>
-                        <p className="text-xs font-bold text-amber-950">DNS changes supplied by Firebase App Hosting</p>
-                        <p className="mt-1 text-[11px] text-amber-900/70">Give these records to the retailer or add them at their DNS provider. Records marked Remove must be deleted before HTTPS can become active.</p>
+                        <p className={`text-xs font-bold ${active ? 'text-emerald-950' : 'text-amber-950'}`}>
+                          {active ? 'Live DNS records supplied by Firebase App Hosting' : 'DNS changes supplied by Firebase App Hosting'}
+                        </p>
+                        <p className={`mt-1 text-[11px] ${active ? 'text-emerald-900/70' : 'text-amber-900/70'}`}>
+                          {active
+                            ? 'Keep these records at the DNS provider. They are the source of truth for storefront routing, ownership and managed HTTPS.'
+                            : 'Give these records to the retailer or add them at their DNS provider. Records marked Remove must be deleted before HTTPS can become active.'}
+                        </p>
                       </div>
                       {domain.requiredDnsRecords.map((record, index) => (
                         <div key={`${record.domainName}-${record.type}-${index}`} className="grid gap-2 rounded-xl border border-amber-200 bg-white p-3 sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,2fr)]">
@@ -379,15 +385,17 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                           </div>
                         </div>
                       ))}
-                      <button
-                        type="button"
-                        onClick={() => void handleVerifyDomain(id, domain.hostname)}
-                        disabled={verifyingId === id || verifyingId === 'all'}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-                      >
-                        {verifyingId === id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                        Check DNS & certificate
-                      </button>
+                      {!active && (
+                        <button
+                          type="button"
+                          onClick={() => void handleVerifyDomain(id, domain.hostname)}
+                          disabled={verifyingId === id || verifyingId === 'all'}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          {verifyingId === id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                          Check DNS & certificate
+                        </button>
+                      )}
                     </div>
                   )}
 

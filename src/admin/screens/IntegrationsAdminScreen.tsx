@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { DeliverectChannelSetupGuide } from '../components/DeliverectChannelSetupGuide';
 import { DEFAULT_TENANT_ID } from '../../tenant/constants';
+import { marketplaceForStore } from '../../commerce/deliveryMarketplace';
+import { resolveDeliverectCallbackOrigin } from '../../commerce/deliverectChannelSetup';
 import {
   Link2,
   Database,
@@ -551,10 +553,16 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
 
   const currentStatus = getStatusBadge(config.status);
 
-  const callbackOrigin =
-    typeof window !== 'undefined'
-      ? window.location.origin.replace(/\/$/, '')
-      : '';
+  const accountStores = useMemo(() => {
+    if (!selectedAccountId) return discoveredStores;
+    const accountKeys = new Set([selectedAccountId, `acclink_${selectedAccountId}`]);
+    return discoveredStores.filter((store) => accountKeys.has(String(store?.accountLinkId || '')));
+  }, [discoveredStores, selectedAccountId]);
+
+  const callbackOrigin = resolveDeliverectCallbackOrigin(
+    (import.meta as any).env?.VITE_CHANNEL_PUBLIC_BASE_URL,
+    typeof window !== 'undefined' ? window.location.origin : ''
+  );
   // Keep the provisioning URL human-readable and stable per brand.
   // The BFF resolves this tenant id and still requires valid Deliverect HMAC.
   const callbackIdentifier =
@@ -620,7 +628,7 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
           {[
             { label: 'Connect', done: oauthReady },
             { label: 'Choose account', done: accountReady },
-            { label: 'Assign locations', done: connected && selectedChannelLinkIds.length > 0 },
+            { label: 'Assign LT channels', done: connected && selectedChannelLinkIds.length > 0 },
           ].map((step, index) => (
             <div key={step.label} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${
               step.done ? 'border-emerald-800 bg-emerald-950/30 text-emerald-300' : 'border-gray-800 bg-gray-950 text-gray-400'
@@ -770,7 +778,12 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
               const id = acc.deliverectAccountId || acc.accountLinkId || acc._id;
               const selected = selectedAccountId === id;
               return (
-                <button key={id} type="button" onClick={() => setSelectedAccountId(id)}
+                <button key={id} type="button" onClick={() => {
+                  setSelectedAccountId(id);
+                  if (String(config.deliverectAccountId || '') !== String(id)) {
+                    setSelectedChannelLinkIds([]);
+                  }
+                }}
                   className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${
                     selected ? 'border-blue-500 bg-blue-950/40' : 'border-gray-800 bg-gray-950 hover:border-gray-700'
                   }`}>
@@ -799,8 +812,8 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
       <section className="rounded-2xl border border-gray-800 bg-gray-900 p-6 space-y-4" data-admin-ai-target="deliverect-locations">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-bold text-white">3. Assign locations</h3>
-            <p className="text-xs text-gray-400">Only assigned Deliverect locations belong to this tenant until explicitly changed.</p>
+            <h3 className="font-bold text-white">3. Assign Leitch Tech channels</h3>
+            <p className="text-xs text-gray-400">Only explicitly assigned LT channel links are integrated. Recognised marketplace channels remain visible for store-finder badges but cannot be selected here.</p>
           </div>
           <button type="button" onClick={() => handleDiscoverStores()} disabled={discoveringStores || !selectedAccountId}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2 text-xs font-bold text-white hover:bg-gray-700 disabled:opacity-40">
@@ -809,30 +822,36 @@ export const IntegrationsAdminScreen: React.FC<IntegrationsAdminScreenProps> = (
           </button>
         </div>
 
-        {discoveredStores.length > 0 ? (
+        {accountStores.length > 0 ? (
           <div className="space-y-3">
             <div className="grid gap-2 sm:grid-cols-2">
-              {discoveredStores.map((st: any) => {
+              {accountStores.map((st: any) => {
                 const channelLinkId = String(st.channelLinkId || '');
                 const selected = selectedChannelLinkIds.includes(channelLinkId);
+                const marketplace = marketplaceForStore(st);
+                const selectable = Boolean(channelLinkId) && !marketplace.isThirdPartyMarketplace;
                 return (
                   <label key={st.commerceStoreId || channelLinkId || st._id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${
+                    className={`flex items-start gap-3 rounded-xl border p-3 ${selectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'} ${
                       selected ? 'border-emerald-700 bg-emerald-950/25' : 'border-gray-800 bg-gray-950'
                     }`}>
-                    <input type="checkbox" checked={selected} disabled={!channelLinkId}
+                    <input type="checkbox" checked={selected} disabled={!selectable}
                       onChange={() => setSelectedChannelLinkIds((current) => selected ? current.filter((id) => id !== channelLinkId) : [...current, channelLinkId])}
                       className="mt-0.5 h-4 w-4 rounded border-gray-600 text-emerald-500" />
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-bold text-white">{st.name || 'Location'}</span>
-                      <span className="block truncate text-[11px] text-gray-500">Channel {channelLinkId || 'not available'}</span>
+                      <span className="flex items-center gap-2">
+                        {marketplace.iconUrl && <img src={marketplace.iconUrl} alt="" className="h-5 w-5 rounded object-contain" />}
+                        <span className="block truncate text-sm font-bold text-white">{st.name || 'Location'}</span>
+                      </span>
+                      <span className="mt-1 block truncate text-[11px] text-gray-500">{marketplace.label} · Channel {channelLinkId || 'not available'}</span>
+                      {marketplace.isThirdPartyMarketplace && <span className="mt-1 block text-[10px] font-bold text-amber-400">Display only — not integrated</span>}
                     </span>
                   </label>
                 );
               })}
             </div>
             <div className="flex flex-col gap-3 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-xs text-gray-300"><strong className="text-white">{selectedChannelLinkIds.length}</strong> location{selectedChannelLinkIds.length === 1 ? '' : 's'} assigned</span>
+              <span className="text-xs text-gray-300"><strong className="text-white">{selectedChannelLinkIds.length}</strong> LT channel{selectedChannelLinkIds.length === 1 ? '' : 's'} assigned</span>
               <button type="button" onClick={handleSelectAccount} disabled={!selectedAccountId}
                 className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40">
                 Save locations

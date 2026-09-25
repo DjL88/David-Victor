@@ -95,6 +95,9 @@ export class HttpCommerceClient implements CommerceClient {
           ...options,
           headers: {
             'Content-Type': 'application/json',
+            ...(typeof window !== 'undefined' && window.location?.hostname
+              ? { 'X-Storefront-Host': window.location.hostname }
+              : {}),
             ...(this.appMode === 'demo' && this.currentTenantId
               ? { 'X-Tenant-ID': this.currentTenantId }
               : {}),
