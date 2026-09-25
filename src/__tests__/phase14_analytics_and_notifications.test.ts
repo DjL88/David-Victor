@@ -320,6 +320,39 @@ describe('Phase 14: Analytics & Notifications Engine', () => {
       expect(data.event.properties.price).toBe(199);
     });
 
+    it('rejects browser-authored paid attribution and ignores caller-chosen event ids', async () => {
+      const paid = await fetch(`${baseUrl}/analytics/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': tenantId,
+        },
+        body: JSON.stringify({
+          id: 'caller-controlled',
+          type: 'ARTIE_RECOMMENDATION_PAID',
+          sessionId: 'ses_untrusted',
+          properties: { attributedRevenue: 999999 },
+        }),
+      });
+      expect(paid.status).toBe(400);
+
+      const ordinary = await fetch(`${baseUrl}/analytics/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': tenantId,
+        },
+        body: JSON.stringify({
+          id: 'caller-controlled',
+          type: 'PRODUCT_VIEW',
+          sessionId: 'ses_untrusted',
+        }),
+      });
+      expect(ordinary.status).toBe(201);
+      const data = await ordinary.json();
+      expect(data.event.id).not.toBe('caller-controlled');
+    });
+
     it('GET /api/v1/analytics/insights returns genuine dashboard metrics', async () => {
       const res = await fetch(`${baseUrl}/analytics/insights?timeframe=30d`, {
         headers: {

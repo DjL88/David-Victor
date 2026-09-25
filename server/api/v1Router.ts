@@ -3313,9 +3313,7 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
       if (proj.customerUid) {
         isAuthorized = isAuthorized || Boolean(callerUid && callerUid === proj.customerUid);
       } else {
-        const suppliedToken = String(
-          req.headers['x-order-access-token'] || req.query.accessToken || ''
-        ).trim();
+        const suppliedToken = String(req.headers['x-order-access-token'] || '').trim();
         if (suppliedToken && proj.orderAccessTokenHash) {
           const suppliedHash = crypto.createHash('sha256').update(suppliedToken).digest();
           const expectedHash = Buffer.from(proj.orderAccessTokenHash, 'hex');
@@ -6881,7 +6879,7 @@ v1Router.post('/admin/connection/trace', requireAdminAuth(), requireAdminCapabil
 v1Router.post('/analytics/events', async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);
-    const event = await AnalyticsService.trackEvent(tenantId, req.body);
+    const event = await AnalyticsService.trackClientEvent(tenantId, req.body);
     res.status(201).json({ success: true, event });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to record analytics event');
@@ -6895,7 +6893,7 @@ v1Router.post('/analytics/events/batch', async (req: Request, res: Response) => 
   try {
     const tenantId = resolveTenant(req);
     const events = Array.isArray(req.body?.events) ? req.body.events : [];
-    const recorded = await AnalyticsService.trackEventsBatch(tenantId, events);
+    const recorded = await AnalyticsService.trackClientEventsBatch(tenantId, events);
     res.status(201).json({ success: true, count: recorded.length });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to record analytics event batch');

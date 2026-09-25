@@ -2,6 +2,7 @@ import React from 'react';
 import type { Order } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { useI18n } from '../../i18n/I18nContext';
+import { safeHttpsUrl } from '../../utils/safeUrl';
 import {
   ArrowUpRight,
   Check,
@@ -29,6 +30,7 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
   const stageIndex = getTrackerStageIndex(order);
   const eta = getOrderEtaText(order);
   const pickup = order.fulfillment.type === 'pickup';
+  const courierTrackingUrl = safeHttpsUrl(order.delivery?.trackingUrl);
 
   const statusLabel =
     stage === 'PICKING'
@@ -175,9 +177,9 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
             <p className="mt-1 truncate text-[11px] text-gray-500">{order.storeName}</p>
           </div>
 
-          {order.delivery?.trackingUrl && (
+          {courierTrackingUrl && (
             <a
-              href={order.delivery.trackingUrl}
+              href={courierTrackingUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-800 shadow-xs hover:bg-gray-50"

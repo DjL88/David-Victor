@@ -41,6 +41,19 @@ describe('WP-10/11 production isolation foundations', () => {
     });
   });
 
+  it('rejects a partially configured deployment target instead of mixing it with the applet file', () => {
+    expect(() =>
+      resolveFirebaseRuntimeTarget(
+        {
+          projectId: 'hi-domino-d0abb',
+          storageBucket: 'hi-domino-d0abb.firebasestorage.app',
+          firestoreDatabaseId: 'legacy-db',
+        },
+        { FIREBASE_PROJECT_ID: 'lt-prod' }
+      )
+    ).toThrow(/target is incomplete/i);
+  });
+
   it('fails closed if production still resolves to the legacy personal Firebase project', () => {
     const target = resolveFirebaseRuntimeTarget(
       { projectId: 'hi-domino-d0abb' },

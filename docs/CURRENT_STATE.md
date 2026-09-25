@@ -1,5 +1,14 @@
 # System Audit & Gap Analysis (docs/CURRENT_STATE.md)
 
+## 25 September 2026 - Audit III P0 security and isolation pass
+
+- Both `/api/v1/admin/*` and `/api/commerce/admin/*` now cross the same live App Check/MFA boundary.
+- Public analytics ingestion rejects backend-only and paid-attribution events, ignores caller-supplied IDs, and persists records below the trusted tenant document.
+- Guest order access credentials are accepted only in `X-Order-Access-Token`, never in a query string.
+- Courier tracking links render only when they are valid HTTPS URLs.
+- Server Firebase targets are all-or-nothing: project, Storage bucket, and Firestore database must come from one deployment source; the REST reader uses the same resolver.
+- Verification: TypeScript, 33 focused tests, 79 certification tests, and the production build passed. The full suite reached 868/869 before an unrelated asset lifecycle timeout/worker exit; both affected files passed on an isolated rerun (20/20).
+
 **Generated Date:** September 2026  
 **Status:** Audit Complete — Phase 0
 
