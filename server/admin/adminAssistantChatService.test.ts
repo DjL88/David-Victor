@@ -25,7 +25,8 @@ describe('AdminAssistantChatService foundations', () => {
     expect(instruction).toContain('"tenantId":"tenant-a"');
     expect(instruction).toContain('"section":"branding"');
     expect(instruction).toContain('You do not have direct Firestore');
-    expect(instruction).toContain('Write actions must be proposed through the typed ChangeSet flow');
+    expect(instruction).toContain('For writes, follow the control-plane chain');
+    expect(instruction).toContain('preview → typed ChangeSet → permission/approval → execute through its typed adapter → audit');
     expect(instruction).toContain('Default to under 90 words');
     expect(instruction).toContain('Use plain text, not Markdown');
     expect(instruction).not.toContain('GEMINI_API_KEY');
