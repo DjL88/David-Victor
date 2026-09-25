@@ -30,6 +30,7 @@ export interface ChannelMenuIngressReceipt {
 }
 
 export interface ChannelMenuQueueClient {
+  execution?: 'async' | 'inline';
   enqueue(job: ChannelMenuIngressJob): Promise<void>;
 }
 
@@ -118,6 +119,7 @@ const channelLinkIdOf = (menu: any): string =>
   ).trim();
 
 class CloudTasksChannelMenuQueue implements ChannelMenuQueueClient {
+  readonly execution = 'async' as const;
   private client: any = null;
 
   private getClient(): any {
@@ -187,18 +189,20 @@ class CloudTasksChannelMenuQueue implements ChannelMenuQueueClient {
 }
 
 class InMemoryChannelMenuQueue implements ChannelMenuQueueClient {
+  readonly execution = 'inline' as const;
+
   async enqueue(job: ChannelMenuIngressJob): Promise<void> {
-    const work = new Promise<void>((resolve) => {
-      setImmediate(async () => {
-        try {
-          await ChannelMenuIngestionService.processJob(job);
-        } finally {
-          pending.delete(work);
-          resolve();
-        }
-      });
-    });
+    // Serverless instances can be suspended as soon as the webhook response is
+    // sent. Staging deliberately runs without Cloud Tasks, so finish the small
+    // normalization/storage job on the authenticated request instead of
+    // scheduling fire-and-forget work that may never run.
+    const work = ChannelMenuIngestionService.processJob(job).then(() => undefined);
     pending.add(work);
+    try {
+      await work;
+    } finally {
+      pending.delete(work);
+    }
   }
 }
 
@@ -403,14 +407,29 @@ export class ChannelMenuIngestionService {
       receivedAt: now,
     };
 
+    const queue = this.getQueueClient();
+    await this.saveIngressRecord({
+      ...record,
+      status: 'QUEUED',
+      updatedAt: new Date().toISOString(),
+    });
+
     try {
-      await this.getQueueClient().enqueue(job);
-      await this.saveIngressRecord({
-        ...record,
-        status: 'QUEUED',
-        updatedAt: new Date().toISOString(),
-      });
+      await queue.enqueue(job);
     } catch (err: any) {
+      if (queue.execution === 'inline') {
+        // processJob has already journalled FAILED. Propagate the error so
+        // Deliverect reports the publish as failed and can retry it, rather than
+        // accepting a catalogue that the storefront cannot serve.
+        console.error('[Channel Menu Inline Processing Failed]', {
+          tenantId: params.tenantId,
+          eventId,
+          menuIds,
+          channelLinkIds,
+          error: String(err?.message || err),
+        });
+        throw err;
+      }
       await this.saveIngressRecord({
         ...record,
         status: 'QUEUE_FAILED',
@@ -657,6 +676,15 @@ export class ChannelMenuIngestionService {
         processedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         error: undefined,
+      });
+      console.info('[Channel Menu Processed]', {
+        tenantId: job.tenantId,
+        eventId: job.eventId,
+        menuIds: menus.map(menuIdOf).filter(Boolean),
+        channelLinkIds: menus
+          .map((menu) => channelLinkIdOf(menu) || fallbackChannelLinkId)
+          .filter(Boolean),
+        menuCount: menus.length,
       });
       return { processed: menus.length };
     } catch (err: any) {
