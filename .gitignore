@@ -9,3 +9,6 @@ coverage/
 
 # Local runtime persistence / diagnostics (may contain tenant or customer data)
 .data/
+
+# Runtime fallback snapshots are environment state, not source.
+data/*.json
