@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-hidden="true">
   <defs><clipPath id="c"><circle cx="16" cy="16" r="15.5"/></clipPath></defs>
   <circle cx="16" cy="16" r="15.5" fill="#FFFFFF" stroke="#E5E7EB"/>
-  <g clip-path="url(#c)"><image href="../doordash.svg" x="4.5" y="7" width="23" height="18" preserveAspectRatio="xMidYMid meet"/></g>
+  <g clip-path="url(#c)"><image href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDk5LjUgNTYuNSIgZmlsbD0iI2ViMTcwMGZmIj48cGF0aCBkPSJNOTUuNjQsMTMuMzhBMjUuMjQsMjUuMjQsMCwwLDAsNzMuMjcsMEgyLjQzQTIuNDQsMi40NCwwLDAsMCwuNzIsNC4xNkwxNi4xNSwxOS42OGE3LjI2LDcuMjYsMCwwLDAsNS4xNSwyLjE0SDcxLjI0YTYuNDQsNi40NCwwLDEsMSwuMTMsMTIuODhIMzYuOTRhMi40NCwyLjQ0LDAsMCwwLTEuNzIsNC4xNkw1MC42Niw1NC4zOWE3LjI1LDcuMjUsMCwwLDAsNS4xNSwyLjE0SDcxLjM4YzIwLjI2LDAsMzUuNTgtMjEuNjYsMjQuMjYtNDMuMTYiPjwvcGF0aD48L3N2Zz4=" x="4.5" y="7" width="23" height="18" preserveAspectRatio="xMidYMid meet"/></g>
 </svg>
