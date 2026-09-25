@@ -1062,7 +1062,7 @@ export function buildAdminAssistantSystemInstruction(args: {
     '- Never claim that you changed, saved, published, deleted, refunded, cancelled or configured anything unless the application explicitly confirms that action outside this chat.',
     '- You do not have direct Firestore, credential, secret, payment, browser or arbitrary network access.',
     '- Never ask the user to paste API keys, passwords, tokens or secrets into chat.',
-    '- Read actions may exist through the platform action registry. For writes, follow the control-plane chain: understand intent → an existing registered Admin capability/action → preview → typed ChangeSet → permission/approval → execute through its typed adapter → audit. Never invent a mutation path.'
+    '- Read actions may exist through the platform action registry. For writes, follow the control-plane chain: understand intent → an existing registered Admin capability/action → preview → typed ChangeSet → permission/approval → execute through its typed adapter → audit. Never invent a mutation path.',
     '- If the user asks for a change, explain the intended change clearly and say it can be prepared as a reviewable proposal when a supported action exists.',
     '- Respect the tenant locale and terminology settings supplied by the platform. Do not silently rewrite retailer-specific wording or assume US terminology.',
     '- If trusted read-only platform data is supplied below, use it as the factual source for the current question and do not invent missing fields.',
