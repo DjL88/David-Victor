@@ -49,6 +49,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
     | 'regions'
     | 'abandonment'
     | 'telemetry'
+    | 'artie'
   >('overview');
 
   const [data, setData] = useState<InsightsDashboardData | null>(null);
@@ -297,6 +298,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           { id: 'products', label: 'Product Performance', icon: Package },
           { id: 'stories', label: 'Stories Analytics', icon: Film },
           { id: 'search', label: 'Search Queries', icon: Search },
+          { id: 'artie', label: 'Artie Conversion', icon: TrendingUp },
           { id: 'picking', label: 'Availability & Picking', icon: ShieldCheck },
           { id: 'regions', label: 'Coarse Regions', icon: MapPin },
           { id: 'abandonment', label: 'Basket Abandonment', icon: ShoppingBag },
@@ -321,6 +323,21 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           );
         })}
       </div>
+
+      {(activeTab === 'overview' || activeTab === 'artie') && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Artie recommendation conversion</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Strict attribution from recommendation presentation through acceptance to paid order.</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Presented</div><div className="text-xl font-black">{data.artieRecommendations?.presented ?? 0}</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Accepted</div><div className="text-xl font-black">{data.artieRecommendations?.accepted ?? 0}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.presentedToAcceptedRate ?? 0}% of presented</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Paid</div><div className="text-xl font-black">{data.artieRecommendations?.paid ?? 0}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.presentedToPaidRate ?? 0}% of presented</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Attributed revenue</div><div className="text-xl font-black">£{(data.artieRecommendations?.attributedRevenue ?? 0).toLocaleString()}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.acceptedToPaidRate ?? 0}% accepted → paid</div></div>
+          </div>
+        </div>
+      )}
 
       {/* TAB CONTENT: CONVERSION FUNNEL */}
       {(activeTab === 'overview' || activeTab === 'funnel') && (
