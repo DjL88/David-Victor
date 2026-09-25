@@ -1,0 +1,129 @@
+{
+  "retrievedAt": "2026-09-25",
+  "status": "official-source-artwork-for-review",
+  "permission": "Trademarks belong to their owners. Public availability is not a commercial-use licence. Confirm applicable partner brand terms before publishing. JET media kit requests permission; Uber co-marketing requests Brand Desk approval.",
+  "entries": [
+    {
+      "id": "deliveroo",
+      "asset": "/brand/channels/deliveroo.png",
+      "sourcePage": "https://api-docs.deliveroo.com/",
+      "sourceAsset": "https://files.readme.io/2b1dde1-small-deliveroo.png",
+      "sourceArchiveMember": null,
+      "originalSha256": "1e251b4b560bfa6d56c9f08fe5c0f08bedd2f365430d874ca1732c8c5e4a0706",
+      "assetSha256": "1e251b4b560bfa6d56c9f08fe5c0f08bedd2f365430d874ca1732c8c5e4a0706",
+      "transformation": "Unchanged official developer-site 32px favicon. Small badge only; higher-resolution master pending."
+    },
+    {
+      "id": "doordash",
+      "asset": "/brand/channels/doordash.svg",
+      "sourcePage": "https://about.doordash.com/en-us",
+      "sourceAsset": "https://about.doordash.com/en-us",
+      "sourceArchiveMember": null,
+      "originalSha256": "4f007809414e8f8a4e66b89941e8ecd26406788d7dcf50835c66555de87eb13d",
+      "assetSha256": "b12b46d32601ef6102b713232bd98b344f46d167ac59b4693f761cf139912d5b",
+      "transformation": "Native header symbol; its CSS fill resolved to the exact official page value #eb1700ff. Paths unchanged."
+    },
+    {
+      "id": "just-eat",
+      "asset": "/brand/channels/just-eat.webp",
+      "sourcePage": "https://newsroom.justeattakeaway.com/en-GB/assets/227914/",
+      "sourceAsset": "https://d21buns5ku92am.cloudfront.net/69463/images/544893-Just%20Eat-Logo-Orange-Primary-Vertical-Stacked-RGB-94c51a-original-1720190061.png?download=1",
+      "sourceArchiveMember": null,
+      "originalSha256": "18c04438dc3316024331ba5d5c994a74b86469486e84b119066f5e26ef8b3e3a",
+      "assetSha256": "1f87bbc21a6998d5e9b51f5183c97e6b090cb7de092cbfac41dcd9f5081796b6",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "thuisbezorgd",
+      "asset": "/brand/channels/thuisbezorgd.webp",
+      "sourcePage": "https://newsroom.justeattakeaway.com/nl-NL/assets/229376/",
+      "sourceAsset": "https://d21buns5ku92am.cloudfront.net/69461/images/440044-Thuisbezorgd-Logo-Orange-Primary-Stacked-RGB-e2e423-original-1661348558.png?download=1",
+      "sourceArchiveMember": null,
+      "originalSha256": "12f46ddc5bde664815692c0f5820493e85a1ee45b8a48a0edd4c8a0108d9527f",
+      "assetSha256": "520bd4f5d8f97ac840292bdf80b4b48c4707c1fd8eb6b7c2d4ae43f46d9eb7dc",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "lieferando",
+      "asset": "/brand/channels/lieferando.webp",
+      "sourcePage": "https://newsroom.justeattakeaway.com/de-DE/assets/227955/",
+      "sourceAsset": "https://d21buns5ku92am.cloudfront.net/69464/images/407863-Lieferando-Logo-Orange-Primary-Vertical-Stacked-RGB-dc122b-original-1637232267.png?download=1",
+      "sourceArchiveMember": null,
+      "originalSha256": "01d1202e9a312cce1f5a1871cce53b141d2cdbfed32de60cc554d6d691bd3e06",
+      "assetSha256": "de2642644ecb7d0cccfbeefdf51247c75a57a424c32e1c149f4a1e3de6ecd049",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "takeaway",
+      "asset": "/brand/channels/takeaway.webp",
+      "sourcePage": "https://newsroom.justeattakeaway.com/nl-BE/assets/236421/",
+      "sourceAsset": "https://d21buns5ku92am.cloudfront.net/70224/images/601122-Takeaway-Logo-Orange-Primary-Stacked-RGB-8ac470-original-1752505979.png?download=1",
+      "sourceArchiveMember": null,
+      "originalSha256": "71df3fc21e30f31321cb7cacb0c535ecaf40d01d97d2510f9adfd04a36d5aff2",
+      "assetSha256": "e7fefedb902279f8a91673bb4b38cde92983485c4c61c6159063a0db40e86454",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "grubhub",
+      "asset": "/brand/channels/grubhub.svg",
+      "sourcePage": "https://www.grubhub.com/",
+      "sourceAsset": "https://www.grubhub.com/icon.svg",
+      "sourceArchiveMember": null,
+      "originalSha256": "1dba2a1236c57a7f2d3d8997daa89a2bbafcb2ce6c7d9a6b36d4d1e0c068609c",
+      "assetSha256": "1dba2a1236c57a7f2d3d8997daa89a2bbafcb2ce6c7d9a6b36d4d1e0c068609c",
+      "transformation": "Original artwork; no recolouring or geometric distortion."
+    },
+    {
+      "id": "uber-eats",
+      "asset": "/brand/channels/uber-eats.webp",
+      "sourcePage": "https://www.ubereats.com/gb",
+      "sourceAsset": "https://www.ubereats.com/_static/35b3b9a3182fec82.png",
+      "sourceArchiveMember": null,
+      "originalSha256": "cfb1a6e9bdd312f5e10412b207e407d53e3f493ee152657ad5cbd15683f6e75a",
+      "assetSha256": "bbbd6d39e1a31bada82fb8c2322c4554d4d08c5e501b59602e7e46b42bff0fab",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "glovo",
+      "asset": "/brand/channels/glovo.svg",
+      "sourcePage": "https://glovo-about.cdn.prismic.io/glovo-about/65cce5649be9a5b998b5d1d6_GLOVOLOGOS.zip",
+      "sourceAsset": "https://glovo-about.cdn.prismic.io/glovo-about/65cce5649be9a5b998b5d1d6_GLOVOLOGOS.zip",
+      "sourceArchiveMember": "Logos/Vectorial/over white.svg",
+      "originalSha256": "9c826fadde2e5fa012011309edbf3c0fde9e9e309f282f4ecdc7264ba61bb806",
+      "assetSha256": "9c826fadde2e5fa012011309edbf3c0fde9e9e309f282f4ecdc7264ba61bb806",
+      "transformation": "Original artwork; no recolouring or geometric distortion."
+    },
+    {
+      "id": "wolt",
+      "asset": "/brand/channels/wolt.webp",
+      "sourcePage": "https://press.wolt.com/en-WW/assets/225299/",
+      "sourceAsset": "https://d21buns5ku92am.cloudfront.net/69274/documents/43826-1608038201-Wolt_logo_RGB-86ecff-medium.png",
+      "sourceArchiveMember": null,
+      "originalSha256": "c1977f8b9758a8763cb8811302b3933015fd11be72046c5c580f4e26ad13cc3f",
+      "assetSha256": "753a3acf83f72817a11036369e2b5df865b694f461680619eee7d3e10da94161",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    },
+    {
+      "id": "snappy-shopper",
+      "asset": "/brand/channels/snappy-shopper.webp",
+      "sourcePage": "https://www.snappyshopper.co.uk/",
+      "sourceAsset": "https://www.snappyshopper.co.uk/api/favicon/512",
+      "sourceArchiveMember": null,
+      "originalSha256": "6c41f5afb87e8372d372e3e1355cad6c80f58c97e63d049895c5e00e43f7a505",
+      "assetSha256": "01b9df8535d99b22b7cc6ddef769bcf1a506931116b4568c73d2dc610dd0bc1d",
+      "transformation": "Proportional reduction within 256px, preserving source canvas and colour; lossless WebP encoding. No generated/traced artwork."
+    }
+  ],
+  "pending": [
+    {
+      "id": "uber-direct",
+      "sourcePage": "https://merchants.ubereats.com/gb/en/services/uber-direct/",
+      "reason": "No standalone official product artwork verified; neutral text fallback only."
+    },
+    {
+      "id": "jet-go",
+      "sourcePage": "https://developers.just-eat.com/documentation/jet-go",
+      "reason": "No standalone official product artwork verified; neutral text fallback only."
+    }
+  ]
+}

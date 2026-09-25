@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { AdminUser } from '../commerce/models';
 import type { AdminTab } from './AdminLayout';
+import { AltieGuidanceNotice, type AltieGuidanceRequest } from './AltieGuidanceNotice';
 
 export type AdminResourceType =
   | 'tenant'
@@ -60,16 +61,39 @@ interface AdminWorkspaceContextValue extends AdminWorkspaceSnapshot {
 
 const AdminWorkspaceContext = createContext<AdminWorkspaceContextValue | null>(null);
 
-export const AdminWorkspaceProvider: React.FC<{
+interface AdminWorkspaceProviderProps {
   tenantId: string;
   section: AdminTab;
   actor: AdminUser;
   onNavigate?: (section: AdminTab, target?: string, options?: AdminNavigateOptions) => void;
   children: React.ReactNode;
-}> = ({ tenantId, section, actor, onNavigate, children }) => {
+}
+
+// Reset before descendants render under another identity, not in a later effect.
+// This also discards the drawer's conversation/draft state on tenant or role change.
+export const AdminWorkspaceProvider: React.FC<AdminWorkspaceProviderProps> = (props) => {
+  const { tenantId, actor } = props;
+  const identity = JSON.stringify([tenantId, actor.id, actor.role, actor.tenantId]);
+  return <AdminWorkspaceSession key={identity} {...props} />;
+};
+
+const AdminWorkspaceSession: React.FC<AdminWorkspaceProviderProps> = ({ tenantId, section, actor, onNavigate, children }) => {
   const [scope, setScope] = useState<AdminWorkspaceScope>({});
   const [resource, setResource] = useState<AdminResourceSelection | undefined>();
   const [filters, setFilters] = useState<Record<string, string | number | boolean | null> | undefined>();
+  const [guidance, setGuidance] = useState<AltieGuidanceRequest | null>(null);
+  const dismissGuidance = useCallback(() => setGuidance(null), []);
+  const navigateTo = useCallback((nextSection: AdminTab, target?: string, options?: AdminNavigateOptions) => {
+    if (!onNavigate) return;
+    // Existing navigation, prefills and approval paths remain authoritative.
+    onNavigate(nextSection, target, options);
+    const first = options?.steps?.find((step) => step?.section);
+    setGuidance({
+      section: first?.section || nextSection,
+      target: first ? first.target : target,
+      label: typeof first?.label === 'string' && first.label.trim() ? first.label : 'Review before saving',
+    });
+  }, [onNavigate]);
 
   const value = useMemo<AdminWorkspaceContextValue>(
     () => ({
@@ -87,12 +111,15 @@ export const AdminWorkspaceProvider: React.FC<{
       setScope,
       setResource,
       setFilters,
-      navigateTo: (nextSection, target, options) => onNavigate?.(nextSection, target, options),
+      navigateTo,
     }),
-    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, scope, resource, filters, onNavigate]
+    [tenantId, section, actor.id, actor.name, actor.role, actor.tenantId, scope, resource, filters, navigateTo]
   );
 
-  return <AdminWorkspaceContext.Provider value={value}>{children}</AdminWorkspaceContext.Provider>;
+  return <AdminWorkspaceContext.Provider value={value}>
+    {children}
+    {guidance && <AltieGuidanceNotice key={JSON.stringify(guidance)} request={guidance} activeSection={section} onDismiss={dismissGuidance} />}
+  </AdminWorkspaceContext.Provider>;
 };
 
 export function useAdminWorkspace(): AdminWorkspaceContextValue {

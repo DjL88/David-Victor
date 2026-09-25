@@ -174,6 +174,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     setShowBackToTop(false);
   }, [activeTab, currentTenantId]);
 
+  // Altie guidance is identity-scoped. Tenant/user/role changes must discard any
+  // pending walkthrough before the new identity can see or act on stale context.
+  useEffect(() => {
+    setAssistantGuide(null);
+    setIsAssistantOpen(false);
+  }, [currentTenantId, currentUser.id, currentUser.role, currentUser.tenantId]);
+
   const loadAllTenants = async () => {
     try {
       const list = await defaultAdminClient.listAllTenants();
@@ -500,13 +507,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               type="button"
               onClick={() => setIsAssistantOpen(true)}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-xs font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-2.5"
-              aria-label="Open Admin Assistant"
+              aria-label="Open Altie"
             >
               <span className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
                 <BotMessageSquare className="w-4 h-4" />
               </span>
               <span className="min-w-0">
-                <span className="block">Ask Admin Assistant</span>
+                <span className="block">Ask Altie</span>
                 <span className="block text-[10px] font-medium text-gray-400 mt-0.5">Context-aware · safe changes</span>
               </span>
             </button>
@@ -627,11 +634,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           type="button"
           onClick={() => setIsAssistantOpen(true)}
           className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-gray-950 px-4 py-3 text-xs font-extrabold text-white shadow-2xl hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"
-          aria-label="Ask Admin Assistant"
-          title="Ask Admin Assistant about this page"
+          aria-label="Ask Altie"
+          title="Ask Altie about this page"
         >
           <BotMessageSquare className="w-4 h-4 text-indigo-300" />
-          <span className="hidden sm:inline">Ask Admin AI</span>
+          <span className="hidden sm:inline">Ask Altie</span>
         </button>
       )}
 
@@ -646,7 +653,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 <div className="flex items-center gap-2">
                   <BotMessageSquare className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">
-                    Guided setup · {assistantGuide.index + 1} of {assistantGuide.steps.length}
+                    Altie walkthrough · {assistantGuide.index + 1} of {assistantGuide.steps.length}
                   </span>
                 </div>
                 <p className="mt-1 text-xs font-extrabold text-gray-950">{step.label}</p>
@@ -660,6 +667,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+            <div className="mt-3" aria-label="Altie walkthrough progress">
+              <div className="h-1.5 overflow-hidden rounded-full bg-indigo-100">
+                <div
+                  className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                  style={{ width: `${((assistantGuide.index + 1) / assistantGuide.steps.length) * 100}%` }}
+                />
+              </div>
             </div>
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
               <button
