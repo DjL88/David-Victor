@@ -1434,6 +1434,42 @@ v1Router.post('/payments/:paymentId/capture', requireAdminAuth('operationsEditor
         capturedAmount: req.body.finalAmountMinor,
         residualHoldReleased: payment.residualHoldAmount,
       });
+
+      // Strict Artie attribution: only durable recommendation records already
+      // attached to the authoritative order may become paid conversions.
+      const attributions = Array.isArray(linkedOrder.metadata?.artieRecommendationAttributions)
+        ? linkedOrder.metadata.artieRecommendationAttributions
+        : [];
+      for (const attribution of attributions) {
+        const recommendationId = typeof attribution?.recommendationId === 'string' ? attribution.recommendationId : '';
+        const productPlu = typeof attribution?.productPlu === 'string' ? attribution.productPlu : '';
+        const survived = linkedOrder.picking?.items
+          ? linkedOrder.picking.items.some((item) =>
+              item.plu === productPlu &&
+              item.state !== 'REMOVED' &&
+
+              (item.pickedQuantity ?? item.originalQuantity ?? 0) > 0
+            )
+          : false;
+        if (!recommendationId || !productPlu || !survived) continue;
+
+        const line = linkedOrder.picking?.items?.find((item) => item.plu === productPlu);
+        const unitAmount =
+          typeof line?.finalPrice === 'object' ? line.finalPrice?.amount :
+          typeof line?.originalPrice === 'object' ? line.originalPrice?.amount : 0;
+        const quantity = line?.pickedQuantity ?? line?.originalQuantity ?? 0;
+        await AnalyticsService.trackEvent(resolvedTenant, {
+          type: 'ARTIE_RECOMMENDATION_PAID',
+          sessionId: typeof attribution.sessionId === 'string' ? attribution.sessionId : undefined,
+          productPlu,
+          properties: {
+            recommendationId,
+            surface: typeof attribution.surface === 'string' ? attribution.surface : 'UNKNOWN',
+            reasonCode: typeof attribution.reasonCode === 'string' ? attribution.reasonCode : 'UNKNOWN',
+            attributedRevenue: Math.max(0, Number(unitAmount || 0) * Number(quantity || 0)) / 100,
+          },
+        });
+      }
     }
 
     res.json(payment);
