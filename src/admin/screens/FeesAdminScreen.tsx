@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   TenantFeePolicy,
   AdminUser,
+  TenantConfig,
   policyFeeToMajor,
   policyFeeToMinor,
 } from '../../commerce/models';
@@ -12,12 +13,16 @@ import { Coins, Check, RefreshCw, AlertCircle, Info } from 'lucide-react';
 interface FeesAdminScreenProps {
   tenantId: string;
   currentUser: AdminUser;
+  tenantConfig?: TenantConfig | null;
 }
 
 export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
   tenantId,
   currentUser,
+  tenantConfig,
 }) => {
+  const currency = tenantConfig?.currency || 'GBP';
+  const currencyLabel = tenantConfig?.currencySymbol || currency;
   const [policy, setPolicy] = useState<TenantFeePolicy | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -84,7 +89,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     if (!policy) return;
     let newAmount = policy.serviceFeeAmount;
     if (newMode === 'FIXED') {
-      // If switching from PERCENT or if current value is percentage range, set default minor units (49p = £0.49)
+      // If switching from PERCENT or if current value is percentage range, set a neutral default minor-unit amount
       if (policy.serviceFeeMode === 'PERCENT' || newAmount <= 20) {
         newAmount = 49;
       }
@@ -191,7 +196,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold bg-white"
               >
-                <option value="FIXED">Fixed Flat Fee (e.g. £1.99)</option>
+                <option value="FIXED">Fixed flat fee</option>
                 <option value="DISPATCH_COST">Pass-Through Deliverect Dispatch Quote</option>
                 <option value="DISPATCH_PLUS_FIXED">Dispatch Cost + Fixed Brand Surcharge</option>
                 <option value="DISPATCH_PLUS_PERCENT">Dispatch Cost + Percentage Margin</option>
@@ -201,7 +206,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             {policy.deliveryFeeMode === 'FIXED' && (
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Fixed Delivery Fee (£)</label>
+                <label className="block font-bold text-gray-700 mb-1">Fixed Delivery Fee ({currencyLabel})</label>
                 <input
                   data-admin-ai-target="fees-fixed-delivery"
                   type="number"
@@ -220,7 +225,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             {policy.deliveryFeeMode === 'DISPATCH_PLUS_FIXED' && (
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Fixed Brand Surcharge (£)</label>
+                <label className="block font-bold text-gray-700 mb-1">Fixed Brand Surcharge ({currencyLabel})</label>
                 <input
                   type="number"
                   step="0.01"
@@ -255,7 +260,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             )}
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Free Delivery Threshold (£)</label>
+              <label className="block font-bold text-gray-700 mb-1">Free Delivery Threshold ({currencyLabel})</label>
               <input
                 type="number"
                 step="1.00"
@@ -269,7 +274,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
               />
               <span className="text-[10px] text-gray-400 block mt-1">
-                Subtotal at which delivery fee automatically waives to £0.00
+                Subtotal at which delivery fee automatically waives to zero
               </span>
             </div>
           </div>
@@ -308,7 +313,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                {policy.serviceFeeMode === 'PERCENT' ? 'Service Fee (%)' : 'Service Fee (£)'}
+                {policy.serviceFeeMode === 'PERCENT' ? 'Service Fee (%)' : 'Service Fee ({currencyLabel})'}
               </label>
               <input
                 type="number"
@@ -332,7 +337,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Recyclable Bag Fee (£)</label>
+              <label className="block font-bold text-gray-700 mb-1">Recyclable Bag Fee ({currencyLabel})</label>
               <input
                 type="number"
                 step="0.05"
@@ -346,7 +351,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl font-semibold"
               />
               <span className="text-[10px] text-gray-400 block mt-1">
-                Mandated under retail carrier bag statutory regulations
+                Optional retailer-configured packaging charge. Market rules and provenance are managed separately.
               </span>
             </div>
           </div>
@@ -354,7 +359,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
           {policy.serviceFeeMode === 'PERCENT' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2 border-t border-gray-100">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Service Fee Min Cap (£)</label>
+                <label className="block font-bold text-gray-700 mb-1">Service Fee Min Cap ({currencyLabel})</label>
                 <input
                   type="number"
                   step="0.01"
@@ -370,7 +375,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Service Fee Max Cap (£)</label>
+                <label className="block font-bold text-gray-700 mb-1">Service Fee Max Cap ({currencyLabel})</label>
                 <input
                   type="number"
                   step="0.01"
@@ -407,7 +412,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Minimum Basket Threshold (£)</label>
+              <label className="block font-bold text-gray-700 mb-1">Minimum Basket Threshold ({currencyLabel})</label>
               <input
                 type="number"
                 step="1.00"
@@ -423,7 +428,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Small Order Surcharge (£)</label>
+              <label className="block font-bold text-gray-700 mb-1">Small Order Surcharge ({currencyLabel})</label>
               <input
                 type="number"
                 step="0.10"
