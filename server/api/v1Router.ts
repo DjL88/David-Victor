@@ -142,8 +142,8 @@ import {
   AdminAssistantChangeSetSchema,
 } from './schemas';
 
-export import { resolvePersistentChannelAssignments } from '../deliverect/locationAssignmentPersistence';
-const v1Router = Router();
+import { resolvePersistentChannelAssignments } from '../deliverect/locationAssignmentPersistence';
+export const v1Router = Router();
 
 /**
  * Standardized error handler for storefront commerce routes.
