@@ -6,7 +6,7 @@ import { setStoreOverride } from '../deliverect/DeliverectApiClient';
 import { CommerceDiscoveryService } from '../deliverect/CommerceDiscoveryService';
 import { ConnectionDiagnostics } from '../deliverect/ConnectionDiagnostics';
 import { connectionHealthService } from '../deliverect/ConnectionHealthService';
-import { LinkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
+import { LinkedAccountsAdapter, linkedAccountsAdapter } from '../deliverect/LinkedAccountsAdapter';
 import { IntegrationContext } from '../deliverect/IntegrationContext';
 import { normalizeIntegrationEnvironment } from '../integrationProfile';
 import { FirestorePlatformService, FirestoreService, OrderProjection } from '../firestoreService';
