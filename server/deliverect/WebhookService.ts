@@ -334,20 +334,31 @@ export class WebhookService {
     tenantId: string,
     payload: any
   ): Promise<string[]> {
-    const candidateChannelLinkId = String(
-      payload?.channelLinkId ||
-      payload?.channelLink?._id ||
-      payload?.channelLink?.id ||
-      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
-      ''
-    ).trim();
-    const candidateLocationId = String(
-      payload?.locationId ||
-      payload?.location?._id ||
-      payload?.location?.id ||
-      (typeof payload?.location === 'string' ? payload.location : '') ||
-      ''
-    ).trim();
+    // Menu Publish sends an array of menu objects, while the smaller Channel
+    // callbacks send a single object. Extract identifiers from every envelope
+    // item so the staging HMAC can still be checked against an already-mapped
+    // channel/location without trusting arbitrary payload values.
+    const payloadItems = Array.isArray(payload) ? payload : [payload];
+    const candidateChannelLinkIds = new Set<string>();
+    const candidateLocationIds = new Set<string>();
+    for (const item of payloadItems) {
+      const channelLinkId = String(
+        item?.channelLinkId ||
+        item?.channelLink?._id ||
+        item?.channelLink?.id ||
+        (typeof item?.channelLink === 'string' ? item.channelLink : '') ||
+        ''
+      ).trim();
+      const locationId = String(
+        item?.locationId ||
+        item?.location?._id ||
+        item?.location?.id ||
+        (typeof item?.location === 'string' ? item.location : '') ||
+        ''
+      ).trim();
+      if (channelLinkId) candidateChannelLinkIds.add(channelLinkId);
+      if (locationId) candidateLocationIds.add(locationId);
+    }
 
     const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
     const isProductionWebhook =
@@ -388,7 +399,7 @@ export class WebhookService {
       if (externalLocationId) secrets.add(externalLocationId);
     };
 
-    if (candidateChannelLinkId) {
+    for (const candidateChannelLinkId of candidateChannelLinkIds) {
       if (allowed.has(candidateChannelLinkId)) {
         secrets.add(candidateChannelLinkId);
       }
@@ -398,7 +409,7 @@ export class WebhookService {
       if (matchedStore) addMappedStoreSecrets(matchedStore);
     }
 
-    if (candidateLocationId) {
+    for (const candidateLocationId of candidateLocationIds) {
       const matchedStore = activeStores.find((store: any) => {
         const values = [
           store?.deliverectLocationId,
