@@ -6,7 +6,7 @@ import { setMockAdminAuthForTest } from '../../server/firebase';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
 import { installMockFirebaseAdminToken } from './helpers/firebaseAuthHarness';
 
-const bucket = '';
+const bucket = 'leitch-tech-nonprod.firebasestorage.app';
 const mediaUrl = (objectPath: string, selectedBucket = bucket) =>
   `https://firebasestorage.googleapis.com/v0/b/${selectedBucket}/o/${encodeURIComponent(objectPath)}?alt=media&token=test`;
 
