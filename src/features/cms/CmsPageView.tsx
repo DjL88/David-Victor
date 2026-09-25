@@ -4,7 +4,7 @@ import { Product, Category, Story } from '../../commerce/models';
 import { getPromoBanners } from '../../commerce/promoBannerData';
 import { useTenant } from '../../tenant/TenantContext';
 import { HeroImage, ProductImage, CategoryImage } from '../../components/media/Media';
-import { formatCurrency } from '../../utils/formatters';
+import { formatStorefrontCurrency } from '../../utils/formatters';
 import {
   ChevronDown,
   ChevronUp,
@@ -138,7 +138,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                       </h4>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
                         <span className="font-mono font-bold text-xs text-gray-800">
-                          {formatCurrency(prod.price, '£')}
+                          {formatStorefrontCurrency(prod.price, tenant)}
                         </span>
                         <button
                           type="button"
