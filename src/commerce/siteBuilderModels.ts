@@ -37,7 +37,7 @@ export type SiteReadinessCode =
   | 'NO_PUBLISHABLE_PAGE' | 'DUPLICATE_SLUG' | 'NAV_PAGE_MISSING'
   | 'NAV_ARCHIVED_PAGE' | 'NAV_DUPLICATE_PAGE' | 'NAV_ORPHAN_PARENT'
   | 'NAV_PARENT_CYCLE' | 'HOME_NOT_PUBLISHED' | 'DOMAIN_NOT_READY'
-  | 'CATALOG_CHANGE_HELD';
+  | 'CATALOG_CHANGE_HELD' | 'OPERATIONAL_NOT_READY';
 
 export interface SiteReadinessIssue {
   code: SiteReadinessCode;
@@ -50,6 +50,11 @@ export interface SiteReadinessContext {
   domainSelected?: boolean;
   domainVerified?: boolean;
   destructiveCatalogChangeHeld?: boolean;
+  /** Persisted integration readiness only; callers must not perform live provider calls in the publish path. */
+  operationalReadiness?: {
+    status: 'HEALTHY' | 'NEEDS_ATTENTION' | 'NOT_READY';
+    issueCount: number;
+  };
 }
 
 export interface SiteReadinessResult { ready: boolean; issues: SiteReadinessIssue[]; }

@@ -164,6 +164,19 @@ export function evaluateSiteReadiness(
   if (context.destructiveCatalogChangeHeld) {
     issues.push({ code: 'CATALOG_CHANGE_HELD', severity: 'blocker', message: 'A held destructive catalogue change must be reviewed before launch.' });
   }
+  if (context.operationalReadiness?.status === 'NOT_READY') {
+    issues.push({
+      code: 'OPERATIONAL_NOT_READY',
+      severity: 'blocker',
+      message: `Store integration setup has ${context.operationalReadiness.issueCount} blocking ${context.operationalReadiness.issueCount === 1 ? 'issue' : 'issues'} to resolve before launch.`,
+    });
+  } else if (context.operationalReadiness?.status === 'NEEDS_ATTENTION') {
+    issues.push({
+      code: 'OPERATIONAL_NOT_READY',
+      severity: 'warning',
+      message: `Store integration has ${context.operationalReadiness.issueCount} non-blocking ${context.operationalReadiness.issueCount === 1 ? 'issue' : 'issues'} requiring attention.`,
+    });
+  }
 
   return { ready: !issues.some((issue) => issue.severity === 'blocker'), issues };
 }
