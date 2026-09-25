@@ -6803,7 +6803,7 @@ v1Router.get('/admin/connection/readiness', requireAdminAuth(), async (req: Requ
     if (counts.accounts === 0) issues.push({ code: 'ACCOUNT_NOT_MAPPED', severity: 'CRITICAL', count: 1, message: 'No Deliverect account is mapped to this tenant.' });
     if (counts.physicalLocations === 0) issues.push({ code: 'NO_LOCATIONS', severity: 'CRITICAL', count: 1, message: 'No physical locations are mapped to this tenant.' });
     if (counts.commerceStores === 0) issues.push({ code: 'NO_COMMERCE_STORES', severity: 'CRITICAL', count: 1, message: 'No commerce stores are mapped to this tenant.' });
-    if (counts.heldCatalogueReviews > 0) issues.push({ code: 'CATALOGUE_REVIEW_REQUIRED', severity: 'WARNING', count: counts.heldCatalogueReviews, message: `${counts.heldCatalogueReviews} catalogue change${counts.heldCatalogueReviews === 1 ? '' : 's'} require review.` });
+    if (counts.heldCatalogueReviews > 0) issues.push({ code: 'CATALOGUE_REVIEW_REQUIRED', severity: 'CRITICAL', count: counts.heldCatalogueReviews, message: `${counts.heldCatalogueReviews} catalogue change${counts.heldCatalogueReviews === 1 ? '' : 's'} require review.` });
 
     const issueCount = issues.reduce((sum, issue) => sum + issue.count, 0);
     const status = issues.some((issue) => issue.severity === 'CRITICAL')
