@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRecommendationAnalyticsEvent } from '../artie/RecommendationAnalytics';
 
-describe('Artie recommendation analytics contract', () => {
+describe('Altie recommendation analytics contract', () => {
   const input = {
     action: 'IMPRESSION' as const,
     recommendationId: 'rec_123',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rankRecommendations } from '../artie/RecommendationEngine';
 
-describe('Artie deterministic recommendation engine', () => {
+describe('Altie deterministic recommendation engine', () => {
   it('never recommends unavailable or policy-blocked products', () => {
     const result = rankRecommendations(
       { tenantId: 'tenant-a', surface: 'BASKET_COMPLETION' },

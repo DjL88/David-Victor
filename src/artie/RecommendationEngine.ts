@@ -1,5 +1,5 @@
 /**
- * Deterministic Artie merchandising engine.
+ * Deterministic Altie merchandising engine.
  *
  * Pure by design: callers supply tenant-scoped first-party signals and policy
  * eligibility. No model/provider dependency and no cross-tenant state.

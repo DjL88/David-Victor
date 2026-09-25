@@ -227,7 +227,7 @@ export class AdminChangeSetService {
       throw error('ADMIN_CHANGESET_ACTION_REQUIRED', 'At least one proposed action is required.', 400);
     }
     if (!hasServerAdminCapability(args.actorRole, 'assistant.use')) {
-      throw error('ADMIN_CHANGESET_FORBIDDEN', 'This role cannot use the Admin Assistant.', 403);
+      throw error('ADMIN_CHANGESET_FORBIDDEN', 'This role cannot use Altie.', 403);
     }
 
     const actions: AdminChangeSetAction[] = args.actions.map((candidate) => {

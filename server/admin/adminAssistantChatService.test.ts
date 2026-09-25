@@ -29,6 +29,9 @@ describe('AdminAssistantChatService foundations', () => {
     expect(instruction).toContain('preview → typed ChangeSet → permission/approval → execute through its typed adapter → audit');
     expect(instruction).toContain('Default to under 90 words');
     expect(instruction).toContain('Use plain text, not Markdown');
+    expect(instruction).toContain('You are Altie');
+    expect(instruction).toContain('Refer to yourself as Altie');
+    expect(instruction).not.toContain('You are Artie');
     expect(instruction).not.toContain('GEMINI_API_KEY');
   });
 
