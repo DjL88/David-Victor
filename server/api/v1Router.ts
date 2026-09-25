@@ -6853,7 +6853,15 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
       });
     }
 
-    const adapter = new LinkedAccountsAdapter();
+    // Store discovery must use the same tenant-scoped credentials that already
+    // passed the Admin connection test. Constructing a fresh adapter here used
+    // only process-level environment variables, so tenants backed by Secret
+    // Manager (platform or dedicated mode) incorrectly appeared unconfigured.
+    const integrationContext = await IntegrationContext.getContext(tenantId);
+    const adapter = new LinkedAccountsAdapter({
+      environment: integrationContext.environment,
+      tokenManager: integrationContext.tokenManager,
+    });
     const discoveryResult = await adapter.getCommerceStores(targetAccountId, tenantId);
 
     const status = discoveryResult.stores.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
