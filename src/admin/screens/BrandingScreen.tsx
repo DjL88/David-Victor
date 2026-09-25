@@ -489,7 +489,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-8">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -627,7 +627,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-4">
               {[
                 ['Primary', brandProfileAnalysis.profile.primaryColour],
                 ['Secondary', brandProfileAnalysis.profile.secondaryColour],
@@ -773,7 +773,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                   <label className="block text-xs font-bold text-gray-700">Brand Logo Asset</label>
                   <label className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800">
                     {uploadingAsset === 'logo' ? (
@@ -814,7 +814,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                   <label className="block text-xs font-bold text-gray-700">Square Brand Icon / Favicon</label>
                   <label className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800">
                     {uploadingAsset === 'favicon' ? (
@@ -977,7 +977,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
             {/* DYNAMIC FONT SELECTION & FALLBACK CHAINS */}
             <div className="pt-4 border-t border-gray-100 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                   <Type className="w-4 h-4 text-indigo-600" />
                   <span>Storefront typography</span>
@@ -1062,7 +1062,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               <p className="mt-1 text-xs text-gray-500">Upload licensed brand fonts only when the standard font choices are not enough.</p>
             </summary>
             <div className="border-t border-gray-100 p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div>
                 <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                   <Upload className="w-4 h-4 text-indigo-600" />
@@ -1121,7 +1121,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   Font File Upload (.woff2, .woff, .ttf, .otf)
                 </label>
                 <div className="flex items-center gap-2">
-                  <label className="flex-1 cursor-pointer flex items-center justify-between px-3 py-2 border border-dashed border-gray-300 rounded-lg hover:border-indigo-400 bg-white transition-colors">
+                  <label className="flex-1 cursor-pointer flex flex-wrap items-center justify-between gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-lg hover:border-indigo-400 bg-white transition-colors">
                     <span className="text-xs text-gray-600 truncate">
                       {uploadFile ? uploadFile.name : uploadFileName || 'Choose a font file or drag here...'}
                     </span>
@@ -1204,7 +1204,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                   </div>
                 )}
                 {fontsList.map((f) => (
-                  <div key={f.id} className="p-3 flex items-center justify-between text-xs bg-white">
+                  <div key={f.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
                         Aa
@@ -1236,7 +1236,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
         <div className="lg:col-span-5 space-y-6">
           {/* LIVE TYPOGRAPHY PREVIEW PANEL */}
           <div data-admin-ai-target="branding-typography" className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                 <Type className="w-4 h-4 text-indigo-600" />
                 <span>Typography preview</span>
@@ -1283,7 +1283,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-gray-200/60 flex items-center justify-between">
+              <div className="pt-2 border-t border-gray-200/60 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                   Price
                 </span>
@@ -1299,7 +1299,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
 
           {/* REAL-TIME MOBILE UI PREVIEW */}
           <div className="bg-gray-900 p-4 rounded-3xl shadow-xl max-w-sm mx-auto">
-            <div className="flex items-center justify-between text-gray-400 text-[11px] mb-3 px-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-gray-400 text-[11px] mb-3 px-2">
               <span className="font-semibold">Mobile preview</span>
               <Eye className="w-3.5 h-3.5" />
             </div>
@@ -1314,7 +1314,7 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
               }}
             >
               {/* Header mockup */}
-              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-gray-100">
                 <span
                   className="font-black text-sm tracking-tight"
                   style={{ color: textColour }}

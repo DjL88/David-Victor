@@ -247,7 +247,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 gap-3">
           <h2 className="text-sm font-bold text-gray-900">Your domains ({domains.length})</h2>
         </div>
 
@@ -302,7 +302,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-px border-y border-gray-100 bg-gray-100 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-px border-y border-gray-100 bg-gray-100 sm:grid-cols-4">
                     {[
                       ['1', 'Claimed', true],
                       ['2', 'Ownership', ownershipReady],

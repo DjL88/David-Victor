@@ -384,7 +384,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                       className="w-full h-full object-cover opacity-85 hover:scale-105 transition-transform duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 flex flex-col justify-between">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-white/20">
                           #{index + 1}
                         </span>
@@ -479,7 +479,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
       {isEditorOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 space-y-5 my-8">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
                   <Sparkles className="w-4 h-4" />
@@ -499,7 +499,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
             {/* RESPONSIVE LIVE PREVIEW */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 gap-3">
                 <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-purple-600" />
                   <span>Live banner preview</span>
@@ -609,7 +609,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
               {/* Background Image URL & Presets */}
               <div data-admin-ai-target="hero-banner-image" className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="font-extrabold text-gray-800">
                     Background Image URL <span className="text-rose-500">*</span>
                   </label>
@@ -790,7 +790,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
 
               {/* Stock Linking & Live Verification */}
               <div className="p-3 bg-gray-50 rounded-2xl border border-gray-200/80 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="font-extrabold text-gray-800 flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Link Deliverect Products for Live Stock Verification</span>
@@ -854,7 +854,7 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                         <div
                           key={p.plu}
                           onClick={() => toggleLinkedProduct(p.plu)}
-                          className={`p-1.5 rounded-lg flex items-center justify-between text-[11px] cursor-pointer transition-colors ${
+                          className={`p-1.5 rounded-lg flex flex-wrap items-center justify-between gap-2 text-[11px] cursor-pointer transition-colors ${
                             isSelected ? 'bg-emerald-50 text-emerald-900 font-bold' : 'hover:bg-gray-100 text-gray-700'
                           }`}
                         >
