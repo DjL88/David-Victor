@@ -104,6 +104,7 @@ interface NavSection {
     id: AdminTab;
     label: string;
     icon: React.FC<{ className?: string }>;
+    issueCount?: number;
   }>;
 }
 
@@ -136,6 +137,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const [allTenants, setAllTenants] = useState<TenantConfig[]>([]);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
   const [tenantLoadError, setTenantLoadError] = useState<string>('');
+  const [connectionIssueCount, setConnectionIssueCount] = useState<number>(0);
   const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [assistantGuide, setAssistantGuide] = useState<{ steps: AdminGuideStep[]; index: number } | null>(null);
@@ -150,6 +152,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
 
   useEffect(() => {
     loadTenant();
+    void loadConnectionIssues();
   }, [currentTenantId]);
 
   useEffect(() => {
@@ -196,6 +199,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       }
     } catch (e) {
       console.warn('Failed to load dynamic tenants list:', e);
+    }
+  };
+
+  const loadConnectionIssues = async () => {
+    if (!defaultAdminClient.listHeldCatalogueReviews) {
+      setConnectionIssueCount(0);
+      return;
+    }
+    try {
+      const result = await defaultAdminClient.listHeldCatalogueReviews(currentTenantId);
+      setConnectionIssueCount(Math.max(0, Number(result?.issueCount || 0)));
+    } catch (error) {
+      // Connection issue discovery is deliberately background-only: a health
+      // endpoint problem must never block the rest of Admin from loading.
+      console.warn('Failed to load connection issue count:', error);
+      setConnectionIssueCount(0);
     }
   };
 
@@ -280,7 +299,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       title: 'Connections',
       items: [
         { id: 'integrations', label: 'Deliverect Setup', icon: Link2 },
-        { id: 'connection_health', label: 'Connection Status', icon: Activity },
+        { id: 'connection_health', label: 'Connection Status', icon: Activity, issueCount: connectionIssueCount },
         { id: 'domains', label: 'Domains', icon: Globe },
         { id: 'media_health', label: 'Media Health', icon: ImageIcon },
       ],
@@ -457,7 +476,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                           />
                           <span className="truncate">{item.label}</span>
                         </div>
-                        {isActive && (
+                        {Boolean(item.issueCount) && (
+                          <span
+                            className="ml-2 min-w-5 rounded-full bg-amber-400 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-amber-950"
+                            aria-label={`${item.issueCount} connection ${item.issueCount === 1 ? 'issue' : 'issues'} need attention`}
+                          >
+                            {item.issueCount! > 99 ? '99+' : item.issueCount}
+                          </span>
+                        )}
+                        {isActive && !item.issueCount && (
                           <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-70" />
                         )}
                       </button>
