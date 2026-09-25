@@ -5,6 +5,7 @@ import { getPromoBanners } from '../../commerce/promoBannerData';
 import { useTenant } from '../../tenant/TenantContext';
 import { HeroImage, ProductImage, CategoryImage } from '../../components/media/Media';
 import { formatStorefrontCurrency } from '../../utils/formatters';
+import { useI18n } from '../../i18n/I18nContext';
 import {
   ChevronDown,
   ChevronUp,
@@ -34,6 +35,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
   onAddToCart = () => {},
 }) => {
   const { tenant } = useTenant();
+  const { t } = useI18n();
   const [openFaqIndices, setOpenFaqIndices] = useState<Record<number, boolean>>({});
 
   const toggleFaq = (idx: number) => {
@@ -127,15 +129,15 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                       >
                         <ProductImage
                           src={prod.imageUrl}
-                          alt={prod?.name || 'Product'}
-                          productName={prod?.name || 'Product'}
+                          alt={prod?.name || t('cms.productFallback')}
+                          productName={prod?.name || t('cms.productFallback')}
                         />
                       </div>
                       <h4
                         className="font-bold text-xs text-gray-900 line-clamp-2 cursor-pointer hover:underline flex-1"
                         onClick={() => onSelectProduct(prod)}
                       >
-                        {prod?.name || prod?.plu || 'Product'}
+                        {prod?.name || prod?.plu || t('cms.productFallback')}
                       </h4>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
                         <span className="font-mono font-bold text-xs text-gray-800">
@@ -174,12 +176,12 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                       <div className="h-16 w-16 mx-auto rounded-xl overflow-hidden mb-2 bg-gray-50">
                         <CategoryImage
                           src={cat.imageUrl}
-                          alt={cat?.name || 'Category'}
-                          categoryName={cat?.name || 'Category'}
+                          alt={cat?.name || t('cms.categoryFallback')}
+                          categoryName={cat?.name || t('cms.categoryFallback')}
                         />
                       </div>
                       <span className="text-xs font-bold text-gray-800 line-clamp-1">
-                        {cat?.name || 'Category'}
+                        {cat?.name || t('cms.categoryFallback')}
                       </span>
                     </div>
                   ))}
@@ -237,7 +239,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                           }}
                           className="px-3.5 py-1.5 rounded-xl font-bold text-xs bg-white text-gray-900 hover:bg-gray-100 transition-transform active:scale-95 shadow-xs"
                         >
-                          {banner.buttonLabel || 'Explore Offer'}
+                          {banner.buttonLabel || t('cms.exploreOffer')}
                         </button>
                       </div>
                     </div>
@@ -323,7 +325,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                           {story.thumbnailUrl || (story.mediaType !== 'video' && story.mediaUrl) ? (
                             <img
                               src={story.thumbnailUrl || story.mediaUrl}
-                              alt={story.title || 'Story'}
+                              alt={story.title || t('cms.storyFallback')}
                               className="h-full w-full object-cover"
                             />
                           ) : null}
@@ -333,7 +335,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-500">No stories are currently available.</p>
+                  <p className="text-xs text-gray-500">{t('cms.noStories')}</p>
                 )}
               </section>
             );
@@ -380,7 +382,7 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                   type="button"
                   className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 shadow-xs flex items-center gap-1.5 shrink-0"
                 >
-                  <span>Locate Stores</span>
+                  <span>{t('cms.locateStores')}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
