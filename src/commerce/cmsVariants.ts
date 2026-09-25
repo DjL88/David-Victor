@@ -1,26 +1,22 @@
-import type { CmsPage } from './cmsModels';
+import type { CmsPage, CmsPageVariant } from './cmsModels';
 
 export type CmsTranslationState = 'source' | 'draft' | 'reviewed';
 
-export interface CmsVariantMetadata {
+export interface CmsVariantMetadata extends CmsPageVariant {
   familyId: string;
-  sourceLocale?: string;
   translationState: CmsTranslationState;
   showFallbackNotice: boolean;
   markets: string[];
   regions: string[];
   locationIds: string[];
-  timeZone?: string;
-  unpublishAt?: string;
-  social?: { title?: string; description?: string; imageUrl?: string };
 }
 
 export function pageFamilyId(page: CmsPage): string {
-  return (page as CmsPage & { variant?: Partial<CmsVariantMetadata> }).variant?.familyId || page.slug;
+  return page.variant?.familyId || page.slug;
 }
 
 export function pageVariantMetadata(page: CmsPage): CmsVariantMetadata {
-  const variant = (page as CmsPage & { variant?: Partial<CmsVariantMetadata> }).variant;
+  const variant = page.variant;
   return {
     familyId: variant?.familyId || page.slug,
     sourceLocale: variant?.sourceLocale,
