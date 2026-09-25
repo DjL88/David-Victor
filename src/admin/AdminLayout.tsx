@@ -668,6 +668,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <div className="mt-3" aria-label="Altie walkthrough progress">
+              <div className="h-1.5 overflow-hidden rounded-full bg-indigo-100">
+                <div
+                  className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                  style={{ width: `${((assistantGuide.index + 1) / assistantGuide.steps.length) * 100}%` }}
+                />
+              </div>
+            </div>
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
               <button
                 type="button"
