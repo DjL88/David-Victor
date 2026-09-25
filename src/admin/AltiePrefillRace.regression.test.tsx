@@ -96,4 +96,26 @@ describe('Altie delayed prefill trust boundary', () => {
     window.removeEventListener('admin-ai-prefill', listener);
     expect(delivered).toEqual([]);
   });
+  it('does not deliver a queued prefill after the operator changes page', async () => {
+    const delivered: unknown[] = [];
+    const listener = (event: Event) => delivered.push((event as CustomEvent).detail);
+    window.addEventListener('admin-ai-prefill', listener);
+
+    await act(async () => {
+      root!.render(<AdminLayout initialUser={actor} onExitAdmin={() => undefined} />);
+      await Promise.resolve();
+    });
+
+    clickLabel('Ask Altie');
+    clickLabel('Schedule evaluator prefill');
+
+    const products = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Products & Stock'));
+    if (!products) throw new Error('Missing Products & Stock navigation');
+    act(() => products.click());
+    act(() => vi.advanceTimersByTime(500));
+
+    window.removeEventListener('admin-ai-prefill', listener);
+    expect(delivered).toEqual([]);
+  });
 });
