@@ -1052,7 +1052,16 @@ export const BrandingScreen: React.FC<BrandingScreenProps> = ({
           </form>
 
           {/* CUSTOM FONT ASSET UPLOAD & PIPELINE */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-6">
+          <details className="rounded-2xl border border-gray-200 bg-white shadow-xs">
+            <summary className="cursor-pointer list-none p-5">
+              <div className="flex items-center gap-2">
+                <Upload className="w-4 h-4 text-indigo-600" />
+                <span className="text-sm font-bold text-gray-900">Custom fonts</span>
+                <span className="ml-1 text-[10px] font-medium text-gray-400">Advanced</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">Upload licensed brand fonts only when the standard font choices are not enough.</p>
+            </summary>
+            <div className="border-t border-gray-100 p-6 space-y-6">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div>
                 <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
