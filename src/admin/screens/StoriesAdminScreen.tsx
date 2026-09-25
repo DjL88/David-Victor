@@ -452,7 +452,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 className="p-4 rounded-2xl bg-white border border-gray-200 shadow-xs flex flex-col justify-between space-y-3"
               >
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
                       {s.tag || 'Story'}
                     </span>
@@ -492,7 +492,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
                   {/* LINKED PRODUCTS */}
                   <div className="pt-2 border-t border-gray-100 space-y-1">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-gray-700">
                       <span className="flex items-center gap-1">
                         <Package className="w-3.5 h-3.5 text-gray-500" />
                         <span>Linked Stock Items ({linkedPlus.length}):</span>
@@ -525,7 +525,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                     {selectedLocationId !== 'all' ? (
                       locationStockResult && (
                         <div
-                          className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                          className={`p-2 rounded-xl text-xs font-semibold flex flex-wrap items-center justify-between gap-2 ${
                             locationStockResult.isEligible
                               ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
                               : 'bg-rose-50 text-rose-900 border border-rose-200'
@@ -549,7 +549,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                         </div>
                       )
                     ) : (
-                      <div className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-gray-50 border border-gray-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs p-1.5 rounded-lg bg-gray-50 border border-gray-100">
                         <span className="text-gray-600 font-medium">Available branches:</span>
                         <span className="font-bold text-gray-900">
                           {storesWithStockCount} of {stores.length} locations
@@ -613,7 +613,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Campaign Tag / Badge</label>
                   <input
@@ -689,7 +689,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
               {/* THUMBNAIL COVER */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                   <label className="block font-bold text-gray-700">Story Thumbnail / Bubble Cover</label>
                   {editingStory.items?.[0]?.mediaUrl && (
                     <button
@@ -732,7 +732,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
               {/* LINKED PRODUCTS & AND / OR STOCK MATCHING RULE */}
               <div className="space-y-3 p-4 rounded-2xl bg-indigo-50/40 border border-indigo-200">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-indigo-600" />
                     <label className="block font-bold text-gray-900 text-sm">
@@ -962,7 +962,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
               {/* Story frames */}
               <div className="space-y-3 pt-2 border-t border-gray-100">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-gray-700 block">Story Frames & Media</span>
                   <span className="text-[11px] text-gray-500 font-medium">
                     Supports YouTube, Vimeo, Loom, Direct Video (MP4/WebM), & Images
@@ -982,7 +982,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
                   return (
                     <div key={item.id} className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-gray-800 text-xs">Frame {idx + 1}</span>
                           
