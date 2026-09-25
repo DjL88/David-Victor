@@ -23,10 +23,15 @@ describe('Altie grounded intelligence', () => {
       expect.arrayContaining(['Products & Stock', 'Domains', 'Search & Recommendations', 'Audit History'])
     );
     expect(isAltieCapabilityQuestion('What can Altie do?')).toBe(true);
+    expect(isAltieCapabilityQuestion('What can you verify live?')).toBe(true);
+    expect(isAltieCapabilityQuestion('What do you know about this brand?')).toBe(false);
   });
 
   it('refuses to invent unavailable live metrics, orders or publication state', () => {
     expect(buildUnavailableLiveDataReply('What is our top selling item today?')).toContain(
+      'don’t have a trusted live Insights read'
+    );
+    expect(buildUnavailableLiveDataReply('What live Insights data can you verify from chat?')).toContain(
       'don’t have a trusted live Insights read'
     );
     expect(buildUnavailableLiveDataReply('What is order LT123456 status?')).toContain(

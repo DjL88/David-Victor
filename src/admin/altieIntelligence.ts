@@ -28,7 +28,7 @@ export const ALTIE_PRODUCT_KNOWLEDGE = {
     'Audit History',
   ],
   facts: [
-    'Deliverect menu/catalogue data is normalized into tenant and location-aware storefront data.',
+    'Deliverect menu/catalogue data is normalised into tenant and location-aware storefront data.',
     'Altie can use allow-listed catalogue, location, rule and permitted connection diagnostics.',
     'Product-rule writes are proposal-only; Branding is the only assistant path with a typed low-risk apply and rollback adapter today.',
     'Banners, Stories and Pages are tenant content/promotion surfaces; their current publication state is not a trusted Altie chat read today.',
@@ -73,12 +73,12 @@ export interface AltieWorkspaceSnapshot {
   };
   search?: {
     locale?: string;
-    typoAliases: number;
-    synonyms: number;
-    queryRewrites: number;
-    pinnedProducts: number;
-    boostRules: number;
-    excludedProducts: number;
+    typoAliases?: number;
+    synonyms?: number;
+    queryRewrites?: number;
+    pinnedProducts?: number;
+    boostRules?: number;
+    excludedProducts?: number;
     updatedAt?: string;
   };
   domains?: Array<{
@@ -106,11 +106,15 @@ export interface AltieWorkspaceSnapshot {
 }
 
 function sameTenant(expected: string, actual: unknown): boolean {
-  return !actual || String(actual).trim() === expected;
+  return typeof actual === 'string' && actual.trim() === expected;
 }
 
-function safeCount(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
+function safeCount(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined;
+}
+
+function safeNumber(value: unknown): number | undefined {
+  return Number.isFinite(Number(value)) ? Number(value) : undefined;
 }
 
 export async function loadAltieWorkspaceSnapshot(
@@ -169,9 +173,9 @@ export async function loadAltieWorkspaceSnapshot(
       status: (readinessRaw as any).status,
       issueCount: Number.isFinite(Number((readinessRaw as any).issueCount)) ? Number((readinessRaw as any).issueCount) : undefined,
       checkedAt: (readinessRaw as any).checkedAt,
-      commerceStores: Number((readinessRaw as any).counts?.commerceStores || 0),
-      physicalLocations: Number((readinessRaw as any).counts?.physicalLocations || 0),
-      heldCatalogueReviews: Number((readinessRaw as any).counts?.heldCatalogueReviews || 0),
+      commerceStores: safeNumber((readinessRaw as any).counts?.commerceStores),
+      physicalLocations: safeNumber((readinessRaw as any).counts?.physicalLocations),
+      heldCatalogueReviews: safeNumber((readinessRaw as any).counts?.heldCatalogueReviews),
     };
   } else if (readinessRaw) {
     unavailable.push('operational readiness');
@@ -260,7 +264,8 @@ export function buildUnavailableLiveDataReply(message: string): string | null {
   const liveInsights =
     /\b(top|best|most|least)\s+(selling|sold)\b/.test(text) ||
     /\b(sales|revenue|gmv|takings|turnover)\b.*\b(today|yesterday|current|currently|now|this\s+(?:day|week|month|year)|how\s+much|total|top|best|most|least)\b/.test(text) ||
-    /\b(today|yesterday|current|currently|now|this\s+(?:day|week|month|year))\b.*\b(sales|revenue|gmv|takings|turnover)\b/.test(text);
+    /\b(today|yesterday|current|currently|now|this\s+(?:day|week|month|year))\b.*\b(sales|revenue|gmv|takings|turnover)\b/.test(text) ||
+    (/\binsights\b/.test(text) && /\b(live|current|verify|verified|available|metrics|data)\b/.test(text));
   if (liveInsights) {
     return 'I don’t have a trusted live Insights read for sales, revenue or top-selling metrics in this chat, so I can’t state a current figure. I can explain the Insights area or take you there, but I won’t guess.';
   }
@@ -286,7 +291,13 @@ export function buildUnavailableLiveDataReply(message: string): string | null {
 
 export function isAltieCapabilityQuestion(message: string): boolean {
   const text = String(message || '').trim().toLowerCase();
-  return /\b(what can (?:you|altie) do|what do (?:you|altie) know|your capabilities|what are you able to do|what do you know about the (?:app|platform|product))\b/.test(text);
+  return (
+    /\bwhat can (?:you|altie) do\b/.test(text) ||
+    /\b(?:your|altie(?:'s)?) capabilities\b/.test(text) ||
+    /\bwhat are you able to do\b/.test(text) ||
+    /\bwhat do (?:you|altie) know about (?:the )?(?:app|platform|product)\b/.test(text) ||
+    /\bwhat can (?:you|altie) verify live\b/.test(text)
+  );
 }
 
 export function buildAltieCapabilityReply(): string {
@@ -365,7 +376,7 @@ export function summariseAltieWorkspaceSnapshot(
       return 'I couldn’t verify the current Search & Recommendations configuration for this tenant, so I won’t invent settings.';
     }
     const s = snapshot.search;
-    return `Current search tuning has ${s.typoAliases} typo aliases, ${s.synonyms} synonym groups, ${s.queryRewrites} rewrites, ${s.pinnedProducts} pinned products, ${s.boostRules} boost/demotion rules and ${s.excludedProducts} exclusions${s.locale ? ` for ${s.locale}` : ''}.`;
+    return `Current search tuning has ${s.typoAliases ?? 'unknown'} typo aliases, ${s.synonyms ?? 'unknown'} synonym groups, ${s.queryRewrites ?? 'unknown'} rewrites, ${s.pinnedProducts ?? 'unknown'} pinned products, ${s.boostRules ?? 'unknown'} boost/demotion rules and ${s.excludedProducts ?? 'unknown'} exclusions${s.locale ? ` for ${s.locale}` : ''}.`;
   }
 
   if (/\bfee|fees\b/.test(text)) {
@@ -409,7 +420,16 @@ export function summariseAltieWorkspaceSnapshot(
     parts.push(`${snapshot.domains.length} mapped domain(s)`);
   }
   if (snapshot.search) {
-    parts.push(`${snapshot.search.synonyms + snapshot.search.queryRewrites + snapshot.search.boostRules} active search-tuning records across synonym/rewrite/boost collections`);
+    const tuningCounts = [
+      snapshot.search.synonyms,
+      snapshot.search.queryRewrites,
+      snapshot.search.boostRules,
+    ].filter((value): value is number => typeof value === 'number');
+    parts.push(
+      tuningCounts.length > 0
+        ? `${tuningCounts.reduce((sum, value) => sum + value, 0)} known search-tuning records across synonym/rewrite/boost collections`
+        : 'search tuning loaded, but record counts were not reported'
+    );
   }
 
   if (parts.length === 0) {
