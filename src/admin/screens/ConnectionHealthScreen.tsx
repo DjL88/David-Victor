@@ -35,6 +35,8 @@ export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ 
   const [health, setHealth] = useState<ConnectionHealthData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [catalogueReviews, setCatalogueReviews] = useState<any[]>([]);
+  const [approvingReviewId, setApprovingReviewId] = useState<string | null>(null);
 
   // Request Trace State
   const [traceResult, setTraceResult] = useState<ConnectionTraceResult | null>(null);
@@ -54,10 +56,28 @@ export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ 
         const data = await defaultAdminClient.getConnectionHealth(tenantId);
         setHealth(data);
       }
+      if (defaultAdminClient.listHeldCatalogueReviews) {
+        const held = await defaultAdminClient.listHeldCatalogueReviews(tenantId);
+        setCatalogueReviews(held.reviews || []);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to retrieve connection health');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveCatalogueReview = async (eventId: string) => {
+    if (!defaultAdminClient.approveHeldCatalogueReview) return;
+    setApprovingReviewId(eventId);
+    setError(null);
+    try {
+      await defaultAdminClient.approveHeldCatalogueReview(tenantId, eventId);
+      await loadHealth();
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve catalogue change');
+    } finally {
+      setApprovingReviewId(null);
     }
   };
 
@@ -82,6 +102,48 @@ export const ConnectionHealthScreen: React.FC<ConnectionHealthScreenProps> = ({ 
 
   return (
     <div className="space-y-6 text-gray-900">
+      {catalogueReviews.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-xs" role="alert">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-700 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-extrabold text-amber-950">
+                  {catalogueReviews.length} catalogue change{catalogueReviews.length === 1 ? '' : 's'} need review
+                </h2>
+                <span className="text-[10px] font-black uppercase tracking-wide rounded-full bg-amber-200 text-amber-900 px-2 py-0.5">
+                  Storefront protected
+                </span>
+              </div>
+              <p className="text-xs text-amber-900 mt-1">
+                Deliverect reported the Menu Push as failed and the previous catalogue remains live until you approve the change.
+              </p>
+              <div className="mt-3 space-y-2">
+                {catalogueReviews.map((item) => (
+                  <div key={item.eventId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-white border border-amber-200 p-3">
+                    <div className="text-xs text-gray-700">
+                      <span className="font-bold text-gray-900">{item.review.removedProductCount} products removed</span>
+                      <span className="text-gray-500"> ({item.review.removedPercent}% of {item.review.previousProductCount})</span>
+                      <div className="text-[11px] text-gray-500 mt-0.5">
+                        Received {new Date(item.receivedAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleApproveCatalogueReview(item.eventId)}
+                      disabled={approvingReviewId === item.eventId}
+                      className="shrink-0 px-3 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold disabled:opacity-50"
+                    >
+                      {approvingReviewId === item.eventId ? 'Applying…' : 'Approve change'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER & METADATA BAR */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

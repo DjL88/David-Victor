@@ -280,6 +280,66 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     expect(failOnceQueue.jobs[0].eventId).toBe(first.eventId);
   });
 
+
+  it('holds a destructive catalogue delta and preserves last-known-good truth', async () => {
+    const tenantId = `tenant-destructive-delta-${Date.now()}`;
+    const products: Record<string, any> = {};
+    const productIds: string[] = [];
+    for (let i = 0; i < 120; i += 1) {
+      const id = `prod-${i}`;
+      productIds.push(id);
+      products[id] = {
+        _id: id,
+        plu: `SKU-${i}`,
+        name: `Product ${i}`,
+        price: 100 + i,
+        productType: 1,
+      };
+    }
+    const full = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'All', subProducts: productIds }],
+      products,
+    });
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: full,
+      rawBody: JSON.stringify(full),
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const before = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(before?.products).toHaveLength(120);
+
+    queue.jobs = [];
+    const retainedIds = productIds.slice(0, 10);
+    const destructive = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'All', subProducts: retainedIds }],
+      products: Object.fromEntries(retainedIds.map((id) => [id, products[id]])),
+    });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: destructive,
+      rawBody: JSON.stringify(destructive),
+    });
+    const result = await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    expect(result).toMatchObject({ processed: 0, reviewRequired: true });
+    const after = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(after?.products).toHaveLength(120);
+    expect(after?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'SKU-119' })])
+    );
+  });
+
   it('keeps very large menu content out of the Cloud Task body', async () => {
     const tenantId = `tenant-large-menu-${Date.now()}`;
     const payload = sampleMenu({

@@ -38,10 +38,20 @@ interface ChannelMenuIngressRecord {
   contentHash: string;
   menuIds: string[];
   channelLinkIds: string[];
-  status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'QUEUE_FAILED' | 'FAILED';
+  status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'REVIEW_REQUIRED' | 'QUEUE_FAILED' | 'FAILED';
+  review?: {
+    reason: 'DESTRUCTIVE_DELTA';
+    previousProductCount: number;
+    nextProductCount: number;
+    removedProductCount: number;
+    removedPercent: number;
+    removedExamples: string[];
+  };
   receivedAt: string;
   updatedAt: string;
   processedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
   error?: string;
 }
 
@@ -322,7 +332,7 @@ export class ChannelMenuIngestionService {
     );
 
     const existing = await this.getIngressRecord(params.tenantId, eventId);
-    if (existing && ['QUEUED', 'PROCESSING', 'PROCESSED'].includes(existing.status)) {
+    if (existing && ['QUEUED', 'PROCESSING', 'PROCESSED', 'REVIEW_REQUIRED'].includes(existing.status)) {
       return {
         accepted: true,
         status: 'DUPLICATE',
@@ -407,7 +417,56 @@ export class ChannelMenuIngestionService {
     };
   }
 
-  static async processJob(job: ChannelMenuIngressJob): Promise<{ processed: number }> {
+  private static productKey(product: any): string {
+    return String(product?.plu || product?.id || product?._id || product?.productId || '').trim();
+  }
+
+  static async destructiveDeltaReview(params: {
+    tenantId: string;
+    channelLinkId: string;
+    menuId: string;
+    nextProducts: any[];
+  }): Promise<ChannelMenuIngressRecord['review'] | undefined> {
+    const previous = await this.getLatestNormalizedMenu(
+      params.tenantId,
+      params.channelLinkId,
+      params.menuId
+    );
+    const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
+    if (previousProducts.length < 20) return undefined;
+
+    const previousKeys = new Set<string>(
+      previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
+    );
+    const nextKeys = new Set<string>(
+      params.nextProducts.map((product: any) => this.productKey(product)).filter(Boolean)
+    );
+    const removed = Array.from(previousKeys).filter((key) => !nextKeys.has(key));
+    const removedPercent = previousKeys.size
+      ? Math.round((removed.length / previousKeys.size) * 10000) / 100
+      : 0;
+
+    // Conservative platform defaults. Tenant-specific thresholds can be layered
+    // on later without weakening this fail-safe. Both an absolute and relative
+    // threshold avoid holding ordinary small catalogue edits.
+    const percentThreshold = Math.max(1, Number(process.env.CATALOG_DESTRUCTIVE_DELTA_PERCENT || 25));
+    const absoluteThreshold = Math.max(1, Number(process.env.CATALOG_DESTRUCTIVE_DELTA_COUNT || 100));
+    if (removed.length < absoluteThreshold && removedPercent < percentThreshold) return undefined;
+
+    return {
+      reason: 'DESTRUCTIVE_DELTA',
+      previousProductCount: previousKeys.size,
+      nextProductCount: nextKeys.size,
+      removedProductCount: removed.length,
+      removedPercent,
+      removedExamples: removed.slice(0, 20),
+    };
+  }
+
+  static async processJob(
+    job: ChannelMenuIngressJob,
+    options: { approvedReviewEventId?: string } = {}
+  ): Promise<{ processed: number; reviewRequired?: boolean }> {
     const existing = await this.getIngressRecord(job.tenantId, job.eventId);
     if (existing?.status === 'PROCESSED') return { processed: existing.menuIds.length };
 
@@ -466,6 +525,31 @@ export class ChannelMenuIngestionService {
           receivedAt: job.receivedAt,
           processedAt: new Date().toISOString(),
         };
+        const review = options.approvedReviewEventId === job.eventId
+          ? undefined
+          : await this.destructiveDeltaReview({
+              tenantId: job.tenantId,
+              channelLinkId,
+              menuId,
+              nextProducts: parsed.products,
+            });
+        if (review) {
+          await this.saveIngressRecord({
+            ...processing,
+            menuIds: menus.map(menuIdOf).filter(Boolean),
+            channelLinkIds: menus.map(channelLinkIdOf).filter(Boolean),
+            status: 'REVIEW_REQUIRED',
+            review,
+            updatedAt: new Date().toISOString(),
+            error: undefined,
+          });
+          await this.recordReviewAlert(job.tenantId, job.eventId, review);
+          // Preserve the last-known-good hosted menu. The raw candidate is
+          // already durably buffered under this ingress event for authorised
+          // review; do not publish or invalidate storefront caches.
+          return { processed: 0, reviewRequired: true };
+        }
+
         const normalizedBody = Buffer.from(JSON.stringify(normalized), 'utf8');
         const normalizedPath =
           `hosted-catalog/tenants/${safeSegment(job.tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
@@ -554,6 +638,145 @@ export class ChannelMenuIngestionService {
       });
       throw err;
     }
+  }
+
+  static async listHeldReviews(tenantId: string): Promise<Array<{
+    eventId: string;
+    receivedAt: string;
+    menuIds: string[];
+    channelLinkIds: string[];
+    review: NonNullable<ChannelMenuIngressRecord['review']>;
+  }>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return [];
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    let records: ChannelMenuIngressRecord[] = [];
+    if (db) {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .where('status', '==', 'REVIEW_REQUIRED')
+        .limit(50)
+        .get();
+      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
+    } else {
+      records = Array.from(memoryIngress.values()).filter(
+        (record) =>
+          record.tenantId === cleanTenantId &&
+          record.status === 'REVIEW_REQUIRED'
+      );
+    }
+    return records
+      .filter((record) => Boolean(record.review))
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .map((record) => ({
+        eventId: record.eventId,
+        receivedAt: record.receivedAt,
+        menuIds: record.menuIds,
+        channelLinkIds: record.channelLinkIds,
+        review: record.review!,
+      }));
+  }
+
+  private static async recordReviewAlert(
+    tenantId: string,
+    eventId: string,
+    review: NonNullable<ChannelMenuIngressRecord['review']>
+  ): Promise<void> {
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) return;
+    await db
+      .collection('tenants')
+      .doc(tenantId)
+      .collection('adminAlerts')
+      .doc(`catalogue-review-${safeSegment(eventId)}`)
+      .set(
+        {
+          type: 'CATALOGUE_REVIEW_REQUIRED',
+          severity: 'warning',
+          status: 'OPEN',
+          tenantId,
+          eventId,
+          title: 'Catalogue change needs review',
+          message: `A Deliverect Menu Push would remove ${review.removedProductCount} products (${review.removedPercent}%). The previous catalogue remains live.`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+  }
+
+  static async inspectDestructiveMenuPush(params: {
+    tenantId: string;
+    payload: any;
+    resolvedChannelLinkId?: string;
+  }): Promise<ChannelMenuIngressRecord['review'] | undefined> {
+    for (const menu of menuArray(params.payload)) {
+      const menuId = menuIdOf(menu);
+      const channelLinkId =
+        channelLinkIdOf(menu) || String(params.resolvedChannelLinkId || '').trim();
+      if (!menuId || !channelLinkId) continue;
+      const parsed = DeliverectApiClient.parseDeliverectMenu(menu, true, []);
+      const review = await this.destructiveDeltaReview({
+        tenantId: params.tenantId,
+        channelLinkId,
+        menuId,
+        nextProducts: parsed.products,
+      });
+      if (review) return review;
+    }
+    return undefined;
+  }
+
+  static async approveReview(params: {
+    tenantId: string;
+    eventId: string;
+    approvedBy: string;
+  }): Promise<{ processed: number; reviewRequired?: boolean }> {
+    const record = await this.getIngressRecord(params.tenantId, params.eventId);
+    if (!record || record.status !== 'REVIEW_REQUIRED') {
+      throw new BFFError(
+        'MENU_NOT_AVAILABLE',
+        'No held catalogue change was found for this tenant and event.',
+        404
+      );
+    }
+    const approvedAt = new Date().toISOString();
+    await this.saveIngressRecord({
+      ...record,
+      approvedAt,
+      approvedBy: params.approvedBy,
+      updatedAt: approvedAt,
+    });
+    const result = await this.processJob(
+      {
+        jobId: record.jobId,
+        eventId: record.eventId,
+        tenantId: record.tenantId,
+        storagePath: record.storagePath,
+        receivedAt: record.receivedAt,
+      },
+      { approvedReviewEventId: record.eventId }
+    );
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (db) {
+      await db
+        .collection('tenants')
+        .doc(params.tenantId)
+        .collection('adminAlerts')
+        .doc(`catalogue-review-${safeSegment(record.eventId)}`)
+        .set(
+          {
+            status: 'RESOLVED',
+            resolvedAt: new Date().toISOString(),
+            resolvedBy: params.approvedBy,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+    }
+    return result;
   }
 
   static async getLatestNormalizedMenu(

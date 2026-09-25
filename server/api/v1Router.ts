@@ -2798,12 +2798,36 @@ async function handleDeliverectOperationalWebhook(
         );
       }
 
+      // Check against last-known-good catalogue truth before acknowledging the
+      // provider. A held destructive push is still durably buffered below, but
+      // receives a non-2xx response so Deliverect visibly reports the Menu Push
+      // as failed instead of presenting a false success to operators.
+      const destructiveReview =
+        await ChannelMenuIngestionService.inspectDestructiveMenuPush({
+          tenantId,
+          payload: menuPayload,
+          resolvedChannelLinkId: mappedChannelLinkId || undefined,
+        });
+
       const receipt = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
         tenantId,
         payload: menuPayload,
         rawBody,
         resolvedChannelLinkId: mappedChannelLinkId || undefined,
       });
+
+      if (destructiveReview) {
+        res.status(409).json({
+          ...receipt,
+          status: 'REVIEW_REQUIRED',
+          code: 'CATALOGUE_DESTRUCTIVE_DELTA_HELD',
+          message:
+            'Menu Push was received safely but held for authorised review because it would remove an unusually large part of the current catalogue.',
+          review: destructiveReview,
+        });
+        return;
+      }
+
       res.status(receipt.status === 'DUPLICATE' ? 200 : 202).json(receipt);
       return;
     }
@@ -2831,6 +2855,56 @@ async function handleDeliverectOperationalWebhook(
     res.status(status).json({ error: err.message, code });
   }
 }
+
+
+v1Router.get(
+  '/admin/integrations/deliverect/menu-reviews',
+  requireAdminAuth('operationsEditor'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const reviews = await ChannelMenuIngestionService.listHeldReviews(tenantId);
+      res.status(200).json({
+        reviews,
+        issueCount: reviews.length,
+      });
+    } catch (err: any) {
+      res.status(err.status || err.statusCode || 500).json({
+        error: err.message,
+        code: err.code || 'CATALOGUE_REVIEWS_FAILED',
+      });
+    }
+  }
+);
+
+// A destructive catalogue push can only be released by an authenticated
+// operations-capable admin in the same tenant scope. The original raw payload
+// is reused; no browser-supplied catalogue data is trusted for the override.
+v1Router.post(
+  '/admin/integrations/deliverect/menu-reviews/:eventId/approve',
+  requireAdminAuth('operationsEditor'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const tenantId = resolveTenant(req);
+      const actor =
+        req.adminUser?.uid ||
+        req.adminUser?.email ||
+        req.adminUser?.role ||
+        'authenticated-admin';
+      const result = await ChannelMenuIngestionService.approveReview({
+        tenantId,
+        eventId: String(req.params.eventId || ''),
+        approvedBy: String(actor),
+      });
+      res.status(200).json({ success: true, result });
+    } catch (err: any) {
+      res.status(err.status || err.statusCode || 500).json({
+        error: err.message,
+        code: err.code || 'CATALOGUE_REVIEW_APPROVAL_FAILED',
+      });
+    }
+  }
+);
 
 v1Router.post(
   [
