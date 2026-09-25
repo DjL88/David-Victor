@@ -112,7 +112,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       await client.addOrUpdateDomain({ hostname, tenantId, isPrimary });
       setNewHostname('');
       setIsPrimary(false);
-      setSuccessMessage(`"${hostname}" is claimed for this tenant. Add the exact ownership TXT record shown below, then verify it.`);
+      setSuccessMessage(`"${hostname}" is claimed for this tenant. Apply the exact DNS changes shown below, then refresh its status.`);
       await loadDomains();
     } catch (error: any) {
       console.error('Failed to save domain mapping:', error);
@@ -133,7 +133,7 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       setSuccessMessage(
         result?.domain?.status === 'active'
           ? `"${hostname}" is verified and live.`
-          : `Ownership of "${hostname}" is verified. Secure serving/TLS is the remaining publish step.`
+          : result?.nextStep || `Firebase is still checking DNS and provisioning HTTPS for "${hostname}".`
       );
       await loadDomains();
     } catch (error: any) {

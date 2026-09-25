@@ -4671,8 +4671,17 @@ v1Router.post('/admin/domains/:domainId/verify', requireAdminAuth('tenantAdmin')
       });
     }
 
-    if (existing.provisioningProvider === 'firebase_app_hosting' && AppHostingDomainService.isConfigured()) {
-      const provider = await AppHostingDomainService.get(existing.hostname);
+    // Adopt pre-control-plane domain claims into App Hosting on the first
+    // status check. This keeps tenants created before App Hosting support from
+    // being stranded on the legacy TXT-only verification path.
+    if (AppHostingDomainService.isConfigured() && !existing.hostname.endsWith('.retail.platform')) {
+      let provider;
+      try {
+        provider = await AppHostingDomainService.get(existing.hostname);
+      } catch (error: any) {
+        if (error?.statusCode !== 404) throw error;
+        provider = await AppHostingDomainService.create(existing.hostname);
+      }
       const ownershipReady = provider.ownershipState === 'OWNERSHIP_ACTIVE';
       const nextStatus = provider.active ? 'active' : ownershipReady ? 'verified' : 'pending';
       const authSync = provider.active
