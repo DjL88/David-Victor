@@ -45,10 +45,10 @@ export function buildDeliverectChannelEndpoints(origin: string, tenantId: string
 export const DELIVERECT_CHANNEL_SETUP_STEPS = [
   'Create or edit the Deliverect channel link and select this channel/integration.',
   'Set the External location id to the location identifier used by this tenant.',
-  'Paste the Store provisioning URL and Channel registration webhook URL.',
-  'Configure Catalog callbacks: Menu update, Snooze/Unsnooze, then Promotions when its contract is enabled.',
-  'Configure operational callbacks: Busy mode and Update prep time.',
-  'Configure order callbacks: Order status, Picking status, Amendments and Substitutions; add Courier/Payment when enabled.',
+  'Copy the two Registration URLs from the Registration group.',
+  'Copy the Catalog & availability URLs into their matching Deliverect fields.',
+  'Copy the Orders & picking URLs into their matching Deliverect fields.',
+  'Ignore Reserved endpoints unless their provider contract is explicitly enabled.',
   'Save the channel link in Deliverect.',
   'From the Deliverect three-dot menu use Register, then Activate. Use Disable only when intentionally taking the channel link out of service.',
 ] as const;
