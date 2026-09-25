@@ -9,6 +9,9 @@ import {
 } from '../../commerce/searchMerchModels';
 import { DEFAULT_SEARCH_CONFIG, getActiveSearchConfig, setActiveSearchConfig } from '../../commerce/searchMerchEngine';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import type { Category, Product } from '../../commerce/models';
+import { mergeSearchMerchReferences, resolveSearchMerchTargetName } from '../searchMerchAdminUtils';
 import {
   Search,
   ArrowRight,
@@ -34,6 +37,8 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -50,6 +55,49 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
     };
   }, [tenantId]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const commerceClient = getCommerceClient(tenantId) as any;
+
+    Promise.all([
+      commerceClient.getProducts?.() || Promise.resolve([]),
+      commerceClient.getCatalog?.() || Promise.resolve(null),
+    ])
+      .then(([products, catalog]: [Product[], { categories?: Category[] } | null]) => {
+        if (!isMounted) return;
+
+        setCatalogProducts(products || []);
+        const flattenCategories = (
+          categories: Category[],
+          depth = 0,
+        ): Array<{ id: string; name: string }> =>
+          (categories || []).flatMap((category) => [
+            {
+              id: String(category.id),
+              name: `${'— '.repeat(depth)}${category.name || category.id}`,
+            },
+            ...flattenCategories(category.subcategories || [], depth + 1),
+          ]);
+
+        setCatalogCategories(flattenCategories(catalog?.categories || []));
+      })
+      .catch((err: unknown) => {
+        console.warn('[SearchMerchScreen] Could not load live catalogue references:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tenantId]);
+
+  const availableBrands = Array.from(
+    new Set(
+      catalogProducts
+        .map((product) => product.brand?.trim())
+        .filter((brand): brand is string => Boolean(brand)),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
   // New item draft states
   const [newTypo, setNewTypo] = useState({ typo: '', resolvesTo: '' });
   const [newSynonym, setNewSynonym] = useState({ term: '', synonyms: '' });
@@ -62,6 +110,13 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
     boostMultiplier: 1.5,
   });
   const [newExclusionPlu, setNewExclusionPlu] = useState('');
+
+  const boostDatalistId =
+    newBoost.type === 'product'
+      ? 'search-merch-product-options'
+      : newBoost.type === 'category'
+        ? 'search-merch-category-options'
+        : 'search-merch-brand-options';
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -187,7 +242,13 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
   // Add Boost
   const addBoost = () => {
-    if (!newBoost.targetId.trim()) return;
+    const targetId = newBoost.targetId.trim();
+    if (!targetId) return;
+
+    const resolvedTargetName =
+      newBoost.targetName.trim() ||
+      resolveSearchMerchTargetName(newBoost.type, targetId, catalogProducts, catalogCategories);
+
     setConfig((prev) => ({
       ...prev,
       boostRules: [
@@ -195,8 +256,8 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         {
           id: `boost_${Date.now()}`,
           type: newBoost.type,
-          targetId: newBoost.targetId.trim(),
-          targetName: newBoost.targetName.trim() || newBoost.targetId.trim(),
+          targetId,
+          targetName: resolvedTargetName,
           boostMultiplier: Number(newBoost.boostMultiplier) || 1.5,
           isActive: true,
         },
@@ -217,7 +278,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
     if (!newExclusionPlu.trim()) return;
     setConfig((prev) => ({
       ...prev,
-      excludedProductPlus: [...prev.excludedProductPlus, newExclusionPlu.trim()],
+      excludedProductPlus: mergeSearchMerchReferences(prev.excludedProductPlus, newExclusionPlu),
     }));
     setNewExclusionPlu('');
   };
@@ -230,7 +291,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   };
 
   return (
-    <div className="p-4 sm:p-4 sm:p-6 max-w-6xl mx-auto space-y-6 min-w-0 min-w-0">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6 min-w-0">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -243,9 +304,9 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
           {saveError && (
-            <span className="text-xs font-bold text-red-700 flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-xl border border-red-200">
+            <span className="min-w-0 break-words text-xs font-bold text-red-700 flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-xl border border-red-200">
               <AlertCircle className="w-3.5 h-3.5" />
               {saveError}
             </span>
@@ -260,7 +321,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
             type="button"
             disabled={isSaving}
             onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50"
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs hover:bg-indigo-700 flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             <span>{isSaving ? 'Deploying...' : 'Deploy Search Rules'}</span>
@@ -269,7 +330,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       </div>
 
       {/* ARCHITECTURE INTEGRITY NOTICE */}
-      <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80 flex items-center gap-3 text-xs text-indigo-900">
+      <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80 flex items-start sm:items-center gap-3 text-xs text-indigo-900">
         <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0" />
         <span>
           <strong className="font-bold">Catalogue Immutability: </strong>
@@ -278,7 +339,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
       </div>
 
       {/* TABS */}
-      <div className="flex items-center gap-1.5 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-gray-200 pb-2 scrollbar-none">
         {[
           { id: 'typos', label: 'Typo Aliases', count: config.typoAliases.length },
           { id: 'synonyms', label: 'Synonyms', count: config.synonyms.length },
@@ -291,7 +352,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === tab.id
                 ? 'bg-gray-900 text-white shadow-xs'
                 : 'text-gray-600 hover:bg-gray-100'
@@ -302,21 +363,37 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         ))}
       </div>
 
+      <datalist id="search-merch-product-options">
+        {catalogProducts.map((product) => (
+          <option key={product.plu} value={product.plu} label={product.name} />
+        ))}
+      </datalist>
+      <datalist id="search-merch-category-options">
+        {catalogCategories.map((category) => (
+          <option key={category.id} value={category.id} label={category.name} />
+        ))}
+      </datalist>
+      <datalist id="search-merch-brand-options">
+        {availableBrands.map((brand) => (
+          <option key={brand} value={brand} />
+        ))}
+      </datalist>
+
       {/* TYPO ALIASES */}
       {activeTab === 'typos' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Typo Aliases</h3>
             <span className="text-xs text-gray-500">Maps common misspellings directly to correct catalog terms</span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 sm:flex-row sm:items-center">
             <input
               type="text"
               placeholder="Typo (e.g. choclit)"
               value={newTypo.typo}
               onChange={(e) => setNewTypo({ ...newTypo, typo: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             />
             <ArrowRight className="w-4 h-4 text-gray-400" />
             <input
@@ -324,7 +401,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
               placeholder="Resolves to (e.g. chocolate)"
               value={newTypo.resolvesTo}
               onChange={(e) => setNewTypo({ ...newTypo, resolvesTo: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             />
             <button
               type="button"
@@ -339,7 +416,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.typoAliases.map((t) => (
               <div key={t.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <span className="font-mono font-bold text-rose-600">"{t.typo}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
                   <span className="font-mono font-bold text-emerald-700">"{t.resolvesTo}"</span>
@@ -359,26 +436,26 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
       {/* SYNONYMS */}
       {activeTab === 'synonyms' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Search Synonyms</h3>
             <span className="text-xs text-gray-500">Expands matching tokens for colloquial terms</span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 sm:flex-row sm:items-center">
             <input
               type="text"
               placeholder="Base term (e.g. soda)"
               value={newSynonym.term}
               onChange={(e) => setNewSynonym({ ...newSynonym, term: e.target.value })}
-              className="w-1/3 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white sm:w-1/3"
             />
             <input
               type="text"
               placeholder="Comma-separated synonyms (e.g. pop, cola, carbonated drink)"
               value={newSynonym.synonyms}
               onChange={(e) => setNewSynonym({ ...newSynonym, synonyms: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             />
             <button
               type="button"
@@ -393,7 +470,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.synonyms.map((s) => (
               <div key={s.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <span className="font-bold text-gray-900">"{s.term}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
                   <span className="text-gray-600 font-mono">
@@ -415,19 +492,19 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
       {/* QUERY REWRITES */}
       {activeTab === 'rewrites' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900">Query Rewrites</h3>
             <span className="text-xs text-gray-500">Maps concept queries to specific multi-item searches</span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 sm:flex-row sm:items-center">
             <input
               type="text"
               placeholder="Incoming query (e.g. breakfast essentials)"
               value={newRewrite.incomingQuery}
               onChange={(e) => setNewRewrite({ ...newRewrite, incomingQuery: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             />
             <ArrowRight className="w-4 h-4 text-gray-400" />
             <input
@@ -435,7 +512,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
               placeholder="Rewritten query (e.g. bread eggs milk butter)"
               value={newRewrite.rewrittenQuery}
               onChange={(e) => setNewRewrite({ ...newRewrite, rewrittenQuery: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             />
             <button
               type="button"
@@ -450,7 +527,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.queryRewrites.map((r) => (
               <div key={r.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <span className="font-bold text-indigo-900">"{r.incomingQuery}"</span>
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
                   <span className="font-mono text-gray-700">"{r.rewrittenQuery}"</span>
@@ -470,7 +547,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
       {/* PINNED PRODUCTS */}
       {activeTab === 'pins' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <Pin className="w-4 h-4 text-indigo-600" />
@@ -479,27 +556,29 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
             <span className="text-xs text-gray-500">Locks sponsored or signature items to top search positions</span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 sm:flex-row sm:items-center">
             <input
               type="text"
               placeholder="Query (e.g. chocolate)"
               value={newPin.query}
               onChange={(e) => setNewPin({ ...newPin, query: e.target.value })}
-              className="w-1/3 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full min-w-0 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white sm:w-1/3"
             />
             <input
               type="text"
-              placeholder="Product PLU (e.g. PLU-ART-001)"
+              placeholder="Search or enter product PLU"
               value={newPin.productPlu}
               onChange={(e) => setNewPin({ ...newPin, productPlu: e.target.value })}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+              list="search-merch-product-options"
+              aria-label="Pinned product PLU"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
             />
             <input
               type="number"
               placeholder="Pos"
               value={newPin.position}
               onChange={(e) => setNewPin({ ...newPin, position: Number(e.target.value) })}
-              className="w-16 px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white sm:w-20"
               min="1"
               max="5"
             />
@@ -516,7 +595,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.pinnedProducts.map((p) => (
               <div key={p.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                     Pos #{p.position}
                   </span>
@@ -539,7 +618,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
       {/* BOOST RULES */}
       {activeTab === 'boosts' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4 text-indigo-600" />
@@ -551,7 +630,15 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
             <select
               value={newBoost.type}
-              onChange={(e) => setNewBoost({ ...newBoost, type: e.target.value as any })}
+              onChange={(e) =>
+                setNewBoost({
+                  ...newBoost,
+                  type: e.target.value as ProductBoostRule['type'],
+                  targetId: '',
+                  targetName: '',
+                })
+              }
+              aria-label="Boost target type"
               className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
             >
               <option value="category">Category Boost</option>
@@ -561,10 +648,18 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
             <input
               type="text"
-              placeholder="Target ID (e.g. Bakery or PLU)"
+              placeholder={
+                newBoost.type === 'product'
+                  ? 'Search or enter product PLU'
+                  : newBoost.type === 'category'
+                    ? 'Search or enter category'
+                    : 'Search or enter brand'
+              }
               value={newBoost.targetId}
               onChange={(e) => setNewBoost({ ...newBoost, targetId: e.target.value })}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+              list={boostDatalistId}
+              aria-label="Boost target"
+              className="min-w-0 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
             />
 
             <input
@@ -597,7 +692,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
             {config.boostRules.map((b) => (
               <div key={b.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs bg-white">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 uppercase">
                     {b.type}
                   </span>
@@ -628,7 +723,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
       {/* EXCLUSIONS */}
       {activeTab === 'exclusions' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <Ban className="w-4 h-4 text-rose-600" />
@@ -637,13 +732,15 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
             <span className="text-xs text-gray-500">Completely hides listed PLUs from all search queries</span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 sm:flex-row sm:items-center">
             <input
               type="text"
-              placeholder="Product PLU to exclude (e.g. PLU-OLD-ITEM)"
+              placeholder="Search, enter or paste PLUs (comma-separated)"
               value={newExclusionPlu}
               onChange={(e) => setNewExclusionPlu(e.target.value)}
-              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+              list="search-merch-product-options"
+              aria-label="Products to exclude from search"
+              className="w-full min-w-0 flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
             />
             <button
               type="button"
