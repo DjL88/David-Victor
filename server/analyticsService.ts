@@ -212,6 +212,7 @@ export class AnalyticsService {
         searches: [],
         regions: [],
         abandonedBasket: [],
+        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
       };
     }
 
@@ -225,6 +226,10 @@ export class AnalyticsService {
     let pickingItems = 0;
     let pickingSubstitutions = 0;
     let pickingRemovals = 0;
+    let artiePresented = 0;
+    let artieAccepted = 0;
+    let artiePaid = 0;
+    let artieAttributedRevenue = 0;
 
     const funnelCounts: Record<string, Set<string>> = {
       brand_store_landing: new Set(),
@@ -352,6 +357,16 @@ export class AnalyticsService {
             sm.noResult = true;
             searchMap.set(query, sm);
           }
+          break;
+        case 'ARTIE_RECOMMENDATION_PRESENTED':
+          artiePresented++;
+          break;
+        case 'ARTIE_RECOMMENDATION_ACCEPTED':
+          artieAccepted++;
+          break;
+        case 'ARTIE_RECOMMENDATION_PAID':
+          artiePaid++;
+          artieAttributedRevenue += typeof e.properties?.attributedRevenue === 'number' ? e.properties.attributedRevenue : 0;
           break;
         case 'SEARCH_RESULT_CLICK':
           if (e.searchTerm) {
@@ -546,6 +561,15 @@ export class AnalyticsService {
       searches,
       regions,
       abandonedBasket,
+      artieRecommendations: {
+        presented: artiePresented,
+        accepted: artieAccepted,
+        paid: artiePaid,
+        presentedToAcceptedRate: artiePresented > 0 ? Math.round((artieAccepted / artiePresented) * 1000) / 10 : 0,
+        presentedToPaidRate: artiePresented > 0 ? Math.round((artiePaid / artiePresented) * 1000) / 10 : 0,
+        acceptedToPaidRate: artieAccepted > 0 ? Math.round((artiePaid / artieAccepted) * 1000) / 10 : 0,
+        attributedRevenue: artieAttributedRevenue,
+      },
     };
   }
 }
