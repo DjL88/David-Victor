@@ -119,7 +119,7 @@ describe('Deliverect Channel registration callback', () => {
     const body = await res.json();
     expect(body.registration.tenantId).toBe('brand-alpha');
   });
-  it('prefers the deployment-wide callback origin over a tenant publicBaseUrl', async () => {
+  it('returns the same reachable request origin for staging callbacks', async () => {
     vi.mocked(FirestorePlatformService.getIntegrationProfile).mockResolvedValue({
       id: 'brand-alpha__staging',
       tenantId: 'brand-alpha',
@@ -137,7 +137,7 @@ describe('Deliverect Channel registration callback', () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    const expectedBase = 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha';
+    const expectedBase = `${baseUrl.replace(/\/api\/v1$/, '')}/api/v1/webhooks/deliverect/brand-alpha`;
     expect(body.statusUpdateURL).toBe(expectedBase);
     expect(body.menuUpdateURL).toBe(`${expectedBase}/channel/menu_update`);
     expect(body.snoozeUnsnoozeURL).toBe(`${expectedBase}/channel/snooze`);

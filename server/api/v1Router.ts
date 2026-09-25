@@ -3028,6 +3028,7 @@ async function handleDeliverectChannelProvisioning(
 
     if (type === 'CHANNEL_REGISTRATION') {
       let profileOrigin = '';
+      let registrationEnvironment: 'staging' | 'production' = 'staging';
       try {
         const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
         const environment = normalizeIntegrationEnvironment(
@@ -3036,6 +3037,7 @@ async function handleDeliverectChannelProvisioning(
             process.env.DELIVERECT_ENV ||
             'staging'
         );
+        registrationEnvironment = environment;
         const profile = await FirestorePlatformService.getIntegrationProfile(
           tenantId,
           environment
@@ -3060,9 +3062,13 @@ async function handleDeliverectChannelProvisioning(
       const forwardedHost = String(req.headers['x-forwarded-host'] || '')
         .split(',')[0]
         .trim();
-      const origin =
-        configuredOrigin.replace(/\/$/, '') ||
-        `${forwardedProto || req.protocol || 'https'}://${forwardedHost || req.get('host')}`;
+      const requestOrigin = `${forwardedProto || req.protocol || 'https'}://${forwardedHost || req.get('host')}`;
+      // Staging custom domains can be transient while certificates/DNS are
+      // being provisioned. Registration arrived successfully on this origin,
+      // so return that same known-reachable host instead of a stale override.
+      const origin = registrationEnvironment === 'staging'
+        ? requestOrigin.replace(/\/$/, '')
+        : configuredOrigin.replace(/\/$/, '') || requestOrigin;
       const id = encodeURIComponent(tenantId);
       const webhookBase = `${origin}/api/v1/webhooks/deliverect/${id}`;
 

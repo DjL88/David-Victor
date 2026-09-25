@@ -12,11 +12,15 @@ export interface ResolvedRetailOrderEndpoint {
   source: {
     baseUrl: 'tenant' | 'env' | 'default';
     pathTemplate: 'tenant' | 'env' | 'default';
-    headers: 'tenant' | 'env' | 'none';
+    headers: 'tenant' | 'env' | 'default';
   };
 }
 
-const DEFAULT_TEMPLATE = '/{channelName}/order/{channelLinkId}';
+// Deliverect Retail/Quest orders must use the retail-routed endpoint. The
+// legacy /{channelName}/order path can create an order record that remains
+// read-only in Quest.
+const DEFAULT_TEMPLATE = '/generic/order/{channelLinkId}';
+const DEFAULT_HEADERS = { 'x-deliverect-version': 'retail' } as const;
 const ALLOWED_HEADERS = new Set(['x-deliverect-version']);
 const ALLOWED_VERSIONS = new Set(['retail', 'stable', 'rapid']);
 const ALLOWED_PLACEHOLDERS = new Set(['channelName', 'channelLinkId', 'accountId']);
@@ -104,7 +108,11 @@ export function resolveRetailOrderEndpoint(args: {
   if (template.includes('{accountId}') && !args.accountId) invalid('Retail order path template requires an accountId.');
 
   const parsedEnvHeaders = envHeaders(args.env.DELIVERECT_RETAIL_ORDER_HEADERS);
-  const selectedHeaders = tenant.headers !== undefined ? tenant.headers : parsedEnvHeaders;
+  const selectedHeaders = tenant.headers !== undefined
+    ? tenant.headers
+    : parsedEnvHeaders !== undefined
+      ? parsedEnvHeaders
+      : DEFAULT_HEADERS;
   const headers = validateRetailOrderHeaders(selectedHeaders);
 
   const values: Record<string, string | undefined> = {
@@ -122,7 +130,7 @@ export function resolveRetailOrderEndpoint(args: {
     source: {
       baseUrl: tenant.baseUrl ? 'tenant' : envBase ? 'env' : 'default',
       pathTemplate: tenant.pathTemplate ? 'tenant' : envTemplate ? 'env' : 'default',
-      headers: tenant.headers !== undefined ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'none',
+      headers: tenant.headers !== undefined ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'default',
     },
   };
 }

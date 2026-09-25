@@ -95,7 +95,10 @@ export class HttpAdminClient implements AdminClient {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Tenant-ID': this.currentTenantId,
+      // Keep one canonical casing. Several tenant-selectable Admin calls spread
+      // these headers and then replace x-tenant-id; mixed casing makes Fetch
+      // combine both values into "old, selected" instead of overriding it.
+      'x-tenant-id': this.currentTenantId,
     };
 
     if (authHeader) {

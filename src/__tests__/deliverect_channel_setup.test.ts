@@ -30,9 +30,10 @@ describe('Deliverect Channel setup', () => {
     expect(DELIVERECT_CHANNEL_SETUP_STEPS.at(-1)).toMatch(/Register, then Activate/);
   });
 
-  it('uses ltx.wtf as the stable platform callback origin', () => {
-    expect(resolveDeliverectCallbackOrigin(undefined, 'https://tenant.example')).toBe('https://ltx.wtf');
-    expect(resolveDeliverectCallbackOrigin('https://custom.example/', 'https://tenant.example')).toBe('https://custom.example');
+  it('uses the known-reachable Admin runtime before a stale configured callback origin', () => {
+    expect(resolveDeliverectCallbackOrigin(undefined, 'https://tenant.example')).toBe('https://tenant.example');
+    expect(resolveDeliverectCallbackOrigin('https://custom.example/', 'https://tenant.example')).toBe('https://tenant.example');
+    expect(resolveDeliverectCallbackOrigin('https://custom.example/')).toBe('https://custom.example');
   });
 
   it('recognises display-only marketplaces without confusing them with LT channels', () => {

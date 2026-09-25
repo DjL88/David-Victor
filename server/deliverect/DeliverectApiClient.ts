@@ -568,6 +568,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
       return {
         id: s.channelLinkId || s.commerceStoreId,
+        // scopedStores has already been filtered against the tenant's explicit
+        // channel allow-list. Preserve that durable assignment in the Admin DTO
+        // even when Deliverect does not supply optional brandStoreId metadata.
+        assigned: this.allowedChannelLinkIds
+          ? this.allowedChannelLinkIds.has(String(s.channelLinkId))
+          : undefined,
         channelLinkId: s.channelLinkId,
         channelLocationId: s.channelLocationId || undefined,
         physicalLocationId: s.physicalLocationId || undefined,
