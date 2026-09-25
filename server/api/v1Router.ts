@@ -142,6 +142,7 @@ import {
   AdminAssistantChangeSetSchema,
 } from './schemas';
 
+import { resolvePersistentChannelAssignments } from '../deliverect/locationAssignmentPersistence';
 export const v1Router = Router();
 
 /**
@@ -6320,35 +6321,42 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     }
 
     const matchingStores = (mappings?.stores || []).filter((s: any) => s.accountLinkId === `acclink_${accountId}` || s.accountLinkId === accountId);
-    const availableChannelLinkIds = new Set(matchingStores.map((s: any) => String(s.channelLinkId)));
-    // Store assignment is explicit. Missing or empty input never expands a tenant to every store.
-    const requestedChannelLinkIds: string[] = channelLinkIds === undefined
-      ? []
-      : [...new Set((channelLinkIds as any[]).map(id => String(id)))];
-    
-    // A previously assigned channel may legitimately disappear when it is deleted
-    // in Deliverect. Do not fail the whole account connection. Keep the record for
-    // history, mark it ORPHANED, and remove it from the tenant's active allowlist.
-    const orphanedChannelLinkIds = requestedChannelLinkIds.filter(
-      (id: string) => !availableChannelLinkIds.has(id)
-    );
-    const activeChannelLinkIds = requestedChannelLinkIds.filter(
-      (id: string) => availableChannelLinkIds.has(id)
-    );
+    const existingIntegration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+    const assignment = resolvePersistentChannelAssignments({
+      existingChannelLinkIds: existingIntegration.allowedChannelLinkIds || [],
+      requestedChannelLinkIds: channelLinkIds,
+      discoveredChannelLinkIds: matchingStores.map((store: any) => String(store.channelLinkId || '')),
+    });
+    const requestedChannelLinkIds = assignment.requestedChannelLinkIds;
+    const activeChannelLinkIds = assignment.visibleChannelLinkIds;
+    const temporarilyMissingChannelLinkIds = assignment.temporarilyMissingChannelLinkIds;
 
-    for (const orphanedId of orphanedChannelLinkIds) {
-      await FirestorePlatformService.markTenantStoreOrphaned(
-        tenantId,
-        orphanedId,
-        'CHANNEL_LINK_NOT_RETURNED_FOR_SELECTED_ACCOUNT'
-      );
+    // Discovery is observational. A transient empty/partial Deliverect response
+    // must never mutate tenant ownership. Persist visibility diagnostics while
+    // retaining the explicit assignment until an administrator unassigns it.
+    for (const missingId of temporarilyMissingChannelLinkIds) {
+      await FirestorePlatformService.saveTenantStore(tenantId, {
+        channelLinkId: missingId,
+        assigned: true,
+        upstreamVisibility: 'MISSING',
+        lastUpstreamMissingAt: new Date().toISOString(),
+      });
+    }
+    for (const store of matchingStores.filter((store: any) => requestedChannelLinkIds.includes(String(store.channelLinkId)))) {
+      await FirestorePlatformService.saveTenantStore(tenantId, {
+        ...store,
+        channelLinkId: String(store.channelLinkId),
+        assigned: true,
+        upstreamVisibility: 'VISIBLE',
+        lastSeenAt: new Date().toISOString(),
+      });
     }
 
-    const newStatus = activeChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
+    const newStatus = requestedChannelLinkIds.length > 0 ? 'COMMERCE_VERIFIED' : 'ACCOUNT_MAPPED';
 
     await FirestorePlatformService.updateIntegrationConfig(tenantId, {
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: activeChannelLinkIds,
+      allowedChannelLinkIds: requestedChannelLinkIds,
       status: newStatus as any,
       lastSyncAt: new Date().toISOString(),
     });
@@ -6361,17 +6369,19 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       tenantId,
       category: 'Integration',
       action: 'SELECT_DELIVERECT_ACCOUNT',
-      details: `Selected Deliverect Account "${accountId}" with ${activeChannelLinkIds.length} active channel link(s) and ${orphanedChannelLinkIds.length} orphaned channel link(s). Status transitioned to ${newStatus}.`,
+      details: `Selected Deliverect Account "${accountId}" with ${activeChannelLinkIds.length} active channel link(s) and ${temporarilyMissingChannelLinkIds.length} temporarily missing upstream channel link(s), with assignments preserved. Status transitioned to ${newStatus}.`,
     });
 
     res.json({
       success: true,
       tenantId,
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: activeChannelLinkIds,
-      orphanedChannelLinkIds,
-      warning: orphanedChannelLinkIds.length
-        ? `${orphanedChannelLinkIds.length} channel link(s) were no longer returned by Deliverect and were orphaned instead of blocking the connection.`
+      // Return the durable assignment set. Discovery visibility is reported
+      // separately so a transient upstream omission never looks like an unassignment.
+      allowedChannelLinkIds: requestedChannelLinkIds,
+      temporarilyMissingChannelLinkIds,
+      warning: temporarilyMissingChannelLinkIds.length
+        ? `${temporarilyMissingChannelLinkIds.length} channel link(s) were not returned by this Deliverect discovery response; their tenant assignments were preserved.`
         : undefined,
       status: newStatus,
       storesCount: activeChannelLinkIds.length,
