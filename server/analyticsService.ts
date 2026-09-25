@@ -1,5 +1,22 @@
+import { randomUUID } from 'crypto';
 import { AnalyticsEvent, AnalyticsEventType, InsightsDashboardData, FunnelStageMetric, ProductPerformanceMetric, StoryPerformanceMetric, SearchQueryMetric, RegionalMetric, AbandonedBasketMetric } from '../src/analytics/analyticsModels';
 import { FirestorePlatformService } from './firestoreService';
+import { BFFError } from './errors';
+
+const SERVER_ONLY_EVENT_TYPES = new Set<AnalyticsEventType>([
+  'ORDER_ACCEPTED',
+  'PICKING_STARTED',
+  'ITEM_PICKED',
+  'ITEM_SUBSTITUTED',
+  'ITEM_REMOVED',
+  'ITEM_QUANTITY_AMENDED',
+  'PICKING_COMPLETE',
+  'PAYMENT_CAPTURED',
+  'COURIER_ASSIGNED',
+  'ORDER_DELIVERED',
+  'ORDER_CANCELLED',
+  'ARTIE_RECOMMENDATION_PAID',
+]);
 
 /**
  * PII and Payment Credential scrubbing patterns (Section 38 & 39).
@@ -34,6 +51,43 @@ const FORBIDDEN_PROPERTY_PATTERNS = [
 ];
 
 export class AnalyticsService {
+  private static assertClientEvent(rawEvent: Partial<AnalyticsEvent>): void {
+    const type = (rawEvent.type || 'SESSION_STARTED') as AnalyticsEventType;
+    if (SERVER_ONLY_EVENT_TYPES.has(type)) {
+      throw new BFFError(
+        'VALIDATION_ERROR',
+        'This analytics event may only be recorded by the server.',
+        400
+      );
+    }
+    if (
+      rawEvent.properties &&
+      Object.prototype.hasOwnProperty.call(rawEvent.properties, 'attributedRevenue')
+    ) {
+      throw new BFFError(
+        'VALIDATION_ERROR',
+        'Attributed revenue may only be recorded after a server-verified payment.',
+        400
+      );
+    }
+  }
+
+  static async trackClientEvent(
+    tenantId: string,
+    rawEvent: Partial<AnalyticsEvent>
+  ): Promise<AnalyticsEvent> {
+    this.assertClientEvent(rawEvent);
+    return this.trackEvent(tenantId, rawEvent);
+  }
+
+  static async trackClientEventsBatch(
+    tenantId: string,
+    rawEvents: Partial<AnalyticsEvent>[]
+  ): Promise<AnalyticsEvent[]> {
+    rawEvents.forEach((event) => this.assertClientEvent(event));
+    return this.trackEventsBatch(tenantId, rawEvents);
+  }
+
   /**
    * Sanitizes and scrubs an analytics event before persistence.
    * Enforces Section 38 rules:
@@ -47,7 +101,9 @@ export class AnalyticsService {
     tenantId: string,
     rawEvent: Partial<AnalyticsEvent>
   ): AnalyticsEvent {
-    const eventId = rawEvent.id || `evt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // The trusted server boundary owns Firestore document identities. A
+    // browser-supplied id must never overwrite another tenant's record.
+    const eventId = `evt_${Date.now()}_${randomUUID()}`;
     const timestamp = rawEvent.timestamp || new Date().toISOString();
     const type = (rawEvent.type || 'SESSION_STARTED') as AnalyticsEventType;
 

@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  assertProductionFirebaseIsolation,
+  resolveFirebaseRuntimeTarget,
+} from './firebaseTarget';
 
 export interface FirebaseAppletConfig {
   projectId: string;
@@ -65,10 +69,12 @@ export class FirestoreRestService {
    */
   static async getDocument(collection: string, docId: string): Promise<Record<string, any> | null> {
     const config = getAppletFirebaseConfig();
-    if (!config?.projectId || !config?.apiKey) return null;
+    const target = resolveFirebaseRuntimeTarget(config, process.env);
+    assertProductionFirebaseIsolation(target, process.env);
+    if (!target.projectId || !config?.apiKey) return null;
 
-    const dbId = config.firestoreDatabaseId || '(default)';
-    const url = `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/${dbId}/documents/${collection}/${encodeURIComponent(docId)}?key=${config.apiKey}`;
+    const dbId = target.firestoreDatabaseId || '(default)';
+    const url = `https://firestore.googleapis.com/v1/projects/${target.projectId}/databases/${dbId}/documents/${collection}/${encodeURIComponent(docId)}?key=${config.apiKey}`;
 
     try {
       const response = await fetch(url, {

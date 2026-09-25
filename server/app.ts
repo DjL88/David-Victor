@@ -70,6 +70,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/api/v1',aiStudioPreviewBffProxy);
   // SEC-02b: privileged Admin endpoints may require Firebase App Check and MFA.
   app.use('/api/v1/admin', adminSecurityMiddleware);
+  app.use('/api/commerce/admin', adminSecurityMiddleware);
   // Customer checkout App Check rolls out independently from Admin enforcement.
   app.post('/api/v1/checkouts', checkoutAppCheckMiddleware);
   app.post('/api/commerce/checkouts', checkoutAppCheckMiddleware);

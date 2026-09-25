@@ -3790,7 +3790,11 @@ export class FirestoreService {
           const chunk = events.slice(i, i + CHUNK_SIZE);
           const batch = db.batch();
           for (const ev of chunk) {
-            const ref = db.collection('analyticsEvents').doc(ev.id);
+            const ref = db
+              .collection('tenants')
+              .doc(ev.tenantId)
+              .collection('analyticsEvents')
+              .doc(ev.id);
             batch.set(ref, cleanUndefined(ev));
           }
           await batch.commit();
@@ -3812,8 +3816,10 @@ export class FirestoreService {
       return [...memEvents].slice(-limit);
     }
     try {
-      const snap = await db.collection('analyticsEvents')
-        .where('tenantId', '==', tenantId)
+      const snap = await db
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('analyticsEvents')
         .limit(limit)
         .get();
       if (!snap.empty) {

@@ -31,10 +31,10 @@ function installAdminAuth(decoded: Record<string, any>) {
   return auth;
 }
 
-async function adminRequest(appCheckToken?: string) {
+async function adminRequest(appCheckToken?: string, apiMount = '/api/v1') {
   const app = await createApp({ serveFrontend: false, initializeDependencies: false });
   const req = request(app)
-    .get('/api/v1/admin/memberships')
+    .get(`${apiMount}/admin/memberships`)
     .set('Authorization', `Bearer ${authToken}`)
     .set('X-Tenant-ID', 'brand-alpha')
     .set('Host', 'localhost');
@@ -110,6 +110,24 @@ describe('SEC-02b current-main MFA and App Check boundary', () => {
     expect(response.status).toBe(401);
     expect(response.body.code).toBe('APP_CHECK_REQUIRED');
   });
+
+  it.each(['/api/v1', '/api/commerce'])(
+    'enforces App Check through the %s Admin mount',
+    async (apiMount) => {
+      process.env.ADMIN_REQUIRE_APP_CHECK = 'true';
+      installAdminAuth({
+        uid: 'admin-uid',
+        email: 'admin@example.test',
+        email_verified: true,
+        role: 'tenantAdmin',
+        tenantId: 'brand-alpha',
+      });
+
+      const response = await adminRequest(undefined, apiMount);
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('APP_CHECK_REQUIRED');
+    }
+  );
 
   it('accepts a verified App Check token on an Admin route', async () => {
     process.env.ADMIN_REQUIRE_APP_CHECK = 'true';

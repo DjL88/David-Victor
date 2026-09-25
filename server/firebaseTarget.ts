@@ -21,20 +21,32 @@ export function resolveFirebaseRuntimeTarget(
       env.GCP_PROJECT ||
       ''
   ).trim();
+  const environmentStorageBucket = String(env.FIREBASE_STORAGE_BUCKET || '').trim();
+  const environmentDatabaseId = String(env.FIRESTORE_DATABASE_ID || '').trim();
+  const hasAnyEnvironmentTarget = Boolean(
+    environmentProjectId || environmentStorageBucket || environmentDatabaseId
+  );
+  if (
+    hasAnyEnvironmentTarget &&
+    !(environmentProjectId && environmentStorageBucket && environmentDatabaseId)
+  ) {
+    throw new Error(
+      'Firebase deployment target is incomplete. Project ID, Storage bucket, and Firestore database ID must all come from environment configuration.'
+    );
+  }
   const fileProjectId = String(fileConfig?.projectId || '').trim();
-  const projectId = environmentProjectId || fileProjectId || null;
+  const projectId = hasAnyEnvironmentTarget ? environmentProjectId : fileProjectId || null;
 
   return {
     projectId,
-    storageBucket:
-      String(env.FIREBASE_STORAGE_BUCKET || '').trim() ||
-      String(fileConfig?.storageBucket || '').trim() ||
-      (projectId ? `${projectId}.firebasestorage.app` : null),
-    firestoreDatabaseId:
-      String(env.FIRESTORE_DATABASE_ID || '').trim() ||
-      String(fileConfig?.firestoreDatabaseId || '').trim() ||
-      null,
-    source: environmentProjectId ? 'environment' : fileProjectId ? 'file' : 'missing',
+    storageBucket: hasAnyEnvironmentTarget
+      ? environmentStorageBucket
+      : String(fileConfig?.storageBucket || '').trim() ||
+        (projectId ? `${projectId}.firebasestorage.app` : null),
+    firestoreDatabaseId: hasAnyEnvironmentTarget
+      ? environmentDatabaseId
+      : String(fileConfig?.firestoreDatabaseId || '').trim() || null,
+    source: hasAnyEnvironmentTarget ? 'environment' : fileProjectId ? 'file' : 'missing',
   };
 }
 
