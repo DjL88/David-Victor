@@ -105,7 +105,15 @@ export const OrdersScreen: React.FC<{
       setOrders(history);
       if (initialOrderId) {
         const routedOrder = history.find((order) => order.id === initialOrderId);
-        if (routedOrder) setSelectedOrder(routedOrder);
+        if (routedOrder) {
+          setSelectedOrder(routedOrder);
+        } else {
+          // Guest checkout orders are deliberately absent from authenticated
+          // history. Resolve the explicit deep link through getOrder(), which
+          // attaches the persisted per-order access token when available.
+          const directOrder = await defaultCommerceClient.getOrder(initialOrderId);
+          setSelectedOrder(directOrder || null);
+        }
       }
       // If there are orders and none selected, or to sync
       if (selectedOrder) {
