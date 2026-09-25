@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getCloudTasksCapabilityHealth } from '../../server/cloudTasksSecurity';
+import { resolveChannelMenuQueueMode } from '../../server/deliverect/ChannelMenuIngestionService';
 
 describe('Cloud Tasks capability health', () => {
   it('reports exact missing live configuration without throwing', () => {
@@ -42,5 +43,25 @@ describe('Cloud Tasks capability health', () => {
     expect(health.mode).toBe('in-memory');
     expect(health.configured).toBe(true);
     expect(health.missing).toEqual([]);
+  });
+
+  it('uses in-memory menu processing for staging when Cloud Tasks is intentionally absent', () => {
+    expect(resolveChannelMenuQueueMode({ APP_MODE: 'staging' })).toBe('in-memory');
+  });
+
+  it('uses Cloud Tasks for staging once the bulk queue identity is configured', () => {
+    expect(
+      resolveChannelMenuQueueMode({
+        APP_MODE: 'staging',
+        GOOGLE_CLOUD_PROJECT: 'lt-nonprod',
+        CLOUD_TASKS_SA_EMAIL: 'tasks@lt-nonprod.iam.gserviceaccount.com',
+        CLOUD_TASKS_AUDIENCE: 'https://integration.leitch.tech',
+        CHANNEL_MENU_TASKS_QUEUE: 'deliverect-menu',
+      })
+    ).toBe('cloud-tasks');
+  });
+
+  it('keeps production on the durable queue so missing infrastructure fails closed', () => {
+    expect(resolveChannelMenuQueueMode({ APP_MODE: 'production' })).toBe('cloud-tasks');
   });
 });

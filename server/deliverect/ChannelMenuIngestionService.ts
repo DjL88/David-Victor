@@ -5,7 +5,10 @@ import { isDemoMode, isTestMode } from '../runtimeMode';
 import { DeliverectApiClient } from './DeliverectApiClient';
 import { DeliverectOperationalWebhookService } from './DeliverectOperationalWebhookService';
 import { CommerceDiscoveryService } from './CommerceDiscoveryService';
-import { getCloudTasksSecurityConfig } from '../cloudTasksSecurity';
+import {
+  getCloudTasksCapabilityHealth,
+  getCloudTasksSecurityConfig,
+} from '../cloudTasksSecurity';
 import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
 
 export interface ChannelMenuIngressJob {
@@ -70,6 +73,27 @@ const pending = new Set<Promise<void>>();
 
 const liveEnvironment = () =>
   !isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test';
+
+export function resolveChannelMenuQueueMode(
+  env: NodeJS.ProcessEnv = process.env
+): 'cloud-tasks' | 'in-memory' {
+  const runtimeMode = String(env.APP_MODE || '').trim().toLowerCase();
+  if (runtimeMode === 'production') return 'cloud-tasks';
+  if (runtimeMode !== 'staging') return 'in-memory';
+
+  const health = getCloudTasksCapabilityHealth(env, true);
+  const bulkQueueReady =
+    health.projectConfigured &&
+    health.identityConfigured &&
+    health.audienceConfigured &&
+    health.appUrlConfigured &&
+    health.queues.bulk;
+
+  // The initial staging rollout intentionally has no Cloud Tasks resources.
+  // Keep verified menu ingestion working in-process there, while production
+  // continues to fail closed through the durable Cloud Tasks client.
+  return bulkQueueReady ? 'cloud-tasks' : 'in-memory';
+}
 
 const safeSegment = (value: string) =>
   String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 220);
@@ -196,7 +220,8 @@ export class ChannelMenuIngestionService {
 
   static getQueueClient(): ChannelMenuQueueClient {
     if (!this.queueClient) {
-      this.queueClient = liveEnvironment()
+      this.queueClient =
+        liveEnvironment() && resolveChannelMenuQueueMode() === 'cloud-tasks'
         ? new CloudTasksChannelMenuQueue()
         : new InMemoryChannelMenuQueue();
     }
