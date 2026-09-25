@@ -186,11 +186,11 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
       accepted: true,
-      status: 'QUEUED',
+      status: 'PROCESSED',
       menuIds: ['menu-abc'],
       channelLinkIds: ['channel-link-789'],
     });
@@ -224,11 +224,11 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
       accepted: true,
-      status: 'QUEUED',
+      status: 'PROCESSED',
       menuIds: ['menu-no-channel-link'],
       channelLinkIds: ['channel-link-789'],
     });
@@ -264,11 +264,11 @@ describe('Deliverect Channel registration callback', () => {
       }
     );
 
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
       accepted: true,
-      status: 'QUEUED',
+      status: 'PROCESSED',
       menuIds: ['menu-location-secret'],
       channelLinkIds: ['channel-link-789'],
     });

@@ -98,7 +98,7 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       rawBody: JSON.stringify(payload),
     });
 
-    expect(receipt.status).toBe('QUEUED');
+    expect(receipt.status).toBe('PROCESSED');
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
       tenantId,
       'channel-1',
@@ -124,6 +124,46 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
         resolvedChannelLinkId: 'channel-1',
       })
     ).rejects.toThrow(/missing menuId or channelLinkId/i);
+  });
+
+  it('keeps an overlapping inline redelivery retryable until the owner finishes', async () => {
+    const tenantId = `tenant-inline-overlap-${Date.now()}`;
+    const payload = sampleMenu();
+    ChannelMenuIngestionService.setQueueClient(null);
+
+    let enteredStorage!: () => void;
+    let failStorage!: (error: Error) => void;
+    const storageEntered = new Promise<void>((resolve) => {
+      enteredStorage = resolve;
+    });
+    const storageBlocked = new Promise<void>((_resolve, reject) => {
+      failStorage = reject;
+    });
+    const storageSpy = vi
+      .spyOn(ChannelMenuIngestionService as any, 'saveNormalizedObject')
+      .mockImplementation(async () => {
+        enteredStorage();
+        await storageBlocked;
+      });
+
+    const first = ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody: JSON.stringify(payload),
+    });
+    await storageEntered;
+
+    await expect(
+      ChannelMenuIngestionService.acceptVerifiedMenuPush({
+        tenantId,
+        payload,
+        rawBody: JSON.stringify(payload),
+      })
+    ).rejects.toMatchObject({ code: 'MENU_PROCESSING', statusCode: 503 });
+
+    failStorage(new Error('late storage failure'));
+    await expect(first).rejects.toThrow('late storage failure');
+    storageSpy.mockRestore();
   });
 
   it('materializes the existing Commerce-compatible catalogue shape in the worker', async () => {
