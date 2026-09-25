@@ -758,7 +758,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             />
           )}
 
-          {activeTab === 'orders' && <OrdersScreen initialOrderId={activeRoute.kind === 'orders' ? activeRoute.orderId : undefined} />}
+          {activeTab === 'orders' && (
+            <OrdersScreen
+              initialOrderId={activeRoute.kind === 'orders' ? activeRoute.orderId : undefined}
+              onNavigateOrder={(orderId) => {
+                const orderPath = orderId ? `/orders/${encodeURIComponent(orderId)}` : '/orders';
+                pushStorefrontUrl(orderPath);
+                setActiveRoute({ kind: 'orders', orderId });
+              }}
+            />
+          )}
 
           {activeTab === 'account' && <AccountScreen onOpenAdmin={onOpenAdmin} />}
         </main>
