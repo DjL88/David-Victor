@@ -88,24 +88,14 @@ export interface DeliverectChannelNameResolution {
 
 /**
  * Resolves the Channel API path segment without treating OAuth scope discovery
- * as an authorization gate. An explicitly configured Channel Name is
- * authoritative. OAuth genericChannel:<scope> is only a convenience fallback.
+ * as a generic permission gate. When the active token exposes exactly one
+ * genericChannel:<scope>, that exact grant is authoritative over stale profile
+ * metadata. A configured Channel Name still selects between multiple grants.
  */
 export function resolveDeliverectChannelName(
   configuredChannelName: string | undefined,
   grantedChannelScopes: string[] = []
 ): DeliverectChannelNameResolution {
-  const configured = String(configuredChannelName || '')
-    .trim()
-    .toLowerCase();
-  if (configured) {
-    return {
-      channelName: configured,
-      source: 'integration_config',
-      grantedChannelScopes,
-    };
-  }
-
   const scopes = Array.from(
     new Set(
       grantedChannelScopes
@@ -113,6 +103,15 @@ export function resolveDeliverectChannelName(
         .filter(Boolean)
     )
   );
+  const configured = String(configuredChannelName || '').trim().toLowerCase();
+
+  if (configured && (scopes.length === 0 || scopes.includes(configured))) {
+    return {
+      channelName: configured,
+      source: 'integration_config',
+      grantedChannelScopes: scopes,
+    };
+  }
 
   if (scopes.length === 1) {
     return {
@@ -3556,18 +3555,12 @@ export class DeliverectApiClient implements DeliverectAdapter {
       latestIntegration?.channelName ||
       context.channelName;
 
-    let channelResolution = resolveDeliverectChannelName(
-      configuredChannelName
+    const grantedChannelScopes =
+      await this.tokenManager.getChannelScopeNames();
+    const channelResolution = resolveDeliverectChannelName(
+      configuredChannelName,
+      grantedChannelScopes
     );
-
-    if (!channelResolution.channelName) {
-      const grantedChannelScopes =
-        await this.tokenManager.getChannelScopeNames();
-      channelResolution = resolveDeliverectChannelName(
-        configuredChannelName,
-        grantedChannelScopes
-      );
-    }
 
     if (!channelResolution.channelName) {
       if (channelResolution.source === 'ambiguous') {
