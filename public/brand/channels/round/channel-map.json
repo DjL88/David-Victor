@@ -1,0 +1,219 @@
+{
+  "version": "1.0.0",
+  "baselineCssPixels": 32,
+  "format": "PNG RGBA",
+  "sizes": [
+    32,
+    64,
+    128
+  ],
+  "transparentOutsideCircle": true,
+  "assetStatus": "User-approved design exports; not a claim of official brand approval.",
+  "sourceNote": "Accepted badges are raster exports from the approved design sheet. Snappy Shopper uses the red basket/blue wheels artwork from the earlier source pack. JET Go reuses the Just Eat badge at the user's request.",
+  "channels": [
+    {
+      "id": "deliveroo",
+      "label": "Deliveroo",
+      "kind": "marketplace",
+      "aliases": [
+        "deliveroo"
+      ],
+      "files": {
+        "32": "32x32/deliveroo.png",
+        "64": "64x64/deliveroo.png",
+        "128": "128x128/deliveroo.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "doordash",
+      "label": "DoorDash",
+      "kind": "marketplace",
+      "aliases": [
+        "doordash",
+        "door dash"
+      ],
+      "files": {
+        "32": "32x32/doordash.png",
+        "64": "64x64/doordash.png",
+        "128": "128x128/doordash.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "just-eat",
+      "label": "Just Eat",
+      "kind": "marketplace",
+      "aliases": [
+        "just eat",
+        "justeat"
+      ],
+      "files": {
+        "32": "32x32/just-eat.png",
+        "64": "64x64/just-eat.png",
+        "128": "128x128/just-eat.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "thuisbezorgd",
+      "label": "Thuisbezorgd.nl",
+      "kind": "marketplace",
+      "aliases": [
+        "thuisbezorgd",
+        "thuisbezorgd.nl"
+      ],
+      "files": {
+        "32": "32x32/thuisbezorgd.png",
+        "64": "64x64/thuisbezorgd.png",
+        "128": "128x128/thuisbezorgd.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "lieferando",
+      "label": "Lieferando",
+      "kind": "marketplace",
+      "aliases": [
+        "lieferando",
+        "lieferando.de"
+      ],
+      "files": {
+        "32": "32x32/lieferando.png",
+        "64": "64x64/lieferando.png",
+        "128": "128x128/lieferando.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "takeaway",
+      "label": "Takeaway.com",
+      "kind": "marketplace",
+      "aliases": [
+        "takeaway.com"
+      ],
+      "files": {
+        "32": "32x32/takeaway.png",
+        "64": "64x64/takeaway.png",
+        "128": "128x128/takeaway.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "grubhub",
+      "label": "Grubhub",
+      "kind": "marketplace",
+      "aliases": [
+        "grubhub",
+        "grub hub"
+      ],
+      "files": {
+        "32": "32x32/grubhub.png",
+        "64": "64x64/grubhub.png",
+        "128": "128x128/grubhub.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "uber-eats",
+      "label": "Uber Eats",
+      "kind": "marketplace",
+      "aliases": [
+        "uber eats",
+        "ubereats"
+      ],
+      "files": {
+        "32": "32x32/uber-eats.png",
+        "64": "64x64/uber-eats.png",
+        "128": "128x128/uber-eats.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "glovo",
+      "label": "Glovo",
+      "kind": "marketplace",
+      "aliases": [
+        "glovo"
+      ],
+      "files": {
+        "32": "32x32/glovo.png",
+        "64": "64x64/glovo.png",
+        "128": "128x128/glovo.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "wolt",
+      "label": "Wolt",
+      "kind": "marketplace",
+      "aliases": [
+        "wolt"
+      ],
+      "files": {
+        "32": "32x32/wolt.png",
+        "64": "64x64/wolt.png",
+        "128": "128x128/wolt.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "snappy-shopper",
+      "label": "Snappy Shopper",
+      "kind": "marketplace",
+      "aliases": [
+        "snappy shopper",
+        "snappyshopper"
+      ],
+      "files": {
+        "32": "32x32/snappy-shopper.png",
+        "64": "64x64/snappy-shopper.png",
+        "128": "128x128/snappy-shopper.png"
+      },
+      "source": "existing-source-pack/snappy-shopper.png",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "uber-direct",
+      "label": "Uber Direct",
+      "kind": "direct-delivery",
+      "aliases": [
+        "uber direct"
+      ],
+      "files": {
+        "32": "32x32/uber-direct.png",
+        "64": "64x64/uber-direct.png",
+        "128": "128x128/uber-direct.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": null
+    },
+    {
+      "id": "jet-go",
+      "label": "JET Go",
+      "kind": "direct-delivery",
+      "aliases": [
+        "jet go",
+        "just eat go",
+        "justeat go"
+      ],
+      "files": {
+        "32": "32x32/jet-go.png",
+        "64": "64x64/jet-go.png",
+        "128": "128x128/jet-go.png"
+      },
+      "source": "approved-design-sheet",
+      "artworkAliasOf": "just-eat"
+    }
+  ]
+}

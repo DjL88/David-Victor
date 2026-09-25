@@ -379,7 +379,7 @@ export interface Store {
   brandStoreId?: string;
   currency?: string;
   timezone?: string;
-  services?: Array<{ id: string; name: string; channel?: string | number; url?: string; marketplace?: string; source: 'DELIVERECT' | 'MANUAL' }>;
+  services?: Array<{ id: string; name: string; channel?: string | number; url?: string; marketplace?: string; status?: string | number; source: 'DELIVERECT' | 'MANUAL' }>;
 }
 
 /**

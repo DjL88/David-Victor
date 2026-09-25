@@ -3,6 +3,8 @@ import type { Order } from '../../commerce/models';
 import { useTenantStyles } from '../../tenant/useTenant';
 import { useI18n } from '../../i18n/I18nContext';
 import { safeHttpsUrl } from '../../utils/safeUrl';
+import { dispatchProviderIdentity } from '../../commerce/deliveryMarketplace';
+import { ChannelBrandIcon } from '../../components/MarketplaceServiceBadge';
 import {
   ArrowUpRight,
   Check,
@@ -31,6 +33,7 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
   const eta = getOrderEtaText(order);
   const pickup = order.fulfillment.type === 'pickup';
   const courierTrackingUrl = safeHttpsUrl(order.delivery?.trackingUrl);
+  const dispatchProvider = !pickup ? dispatchProviderIdentity(order) : undefined;
 
   const statusLabel =
     stage === 'PICKING'
@@ -99,6 +102,12 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
                 {pickup ? <ShoppingBag className="h-3.5 w-3.5" /> : <Truck className="h-3.5 w-3.5" />}
                 {pickup ? t('tracking.storeCollection') : t('tracking.courierDelivery')}
               </span>
+              {dispatchProvider && (
+                <span className="inline-flex items-center gap-2 font-semibold text-gray-700" aria-label={`Delivery by ${dispatchProvider.label}`}>
+                  <ChannelBrandIcon identity={dispatchProvider} label={dispatchProvider.label} />
+                  {dispatchProvider.label}
+                </span>
+              )}
               {eta && (
                 <span className="inline-flex items-center gap-1.5">
                   <Clock3 className="h-3.5 w-3.5" />
