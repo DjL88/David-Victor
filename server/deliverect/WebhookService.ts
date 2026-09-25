@@ -372,10 +372,13 @@ export class WebhookService {
         .filter(Boolean)
     );
     const stores = await FirestorePlatformService.getTenantStores(tenantId);
-    const activeStores = stores.filter((store: any) =>
-      store?.lifecycleStatus !== 'ORPHANED' &&
-      store?.lifecycleStatus !== 'ARCHIVED'
-    );
+    const activeStores = stores.filter((store: any) => {
+      const channelLinkId = String(store?.channelLinkId || store?.id || '').trim();
+      return Boolean(channelLinkId) &&
+        store?.lifecycleStatus !== 'ORPHANED' &&
+        store?.lifecycleStatus !== 'ARCHIVED' &&
+        (!allowed.size || allowed.has(channelLinkId));
+    });
 
     const secrets = new Set<string>();
     const addMappedStoreSecrets = (store: any) => {
