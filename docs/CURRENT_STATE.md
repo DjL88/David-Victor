@@ -1,5 +1,12 @@
 # System Audit & Gap Analysis (docs/CURRENT_STATE.md)
 
+## 25 September 2026 - Altie identity-scope hardening
+
+- Admin workspace scope, resource and filter context now resets whenever tenant, administrator identity or role changes.
+- Pending Altie walkthrough state and the assistant drawer close on the same identity boundary, preventing stale product/location/filter guidance from crossing tenants or roles.
+- This is UI/context isolation only; existing Admin RBAC, tenant checks and approval paths remain authoritative.
+
+
 ## 25 September 2026 - Audit III P0 security and isolation pass
 
 - Both `/api/v1/admin/*` and `/api/commerce/admin/*` now cross the same live App Check/MFA boundary.
