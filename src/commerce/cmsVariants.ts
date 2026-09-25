@@ -30,3 +30,26 @@ export function pageVariantMetadata(page: CmsPage): CmsVariantMetadata {
     social: variant?.social,
   };
 }
+
+export interface CmsVariantAudience { locale: string; market?: string; region?: string; locationId?: string; }
+export interface CmsVariantResolution { page?: CmsPage; usedFallback: boolean; requestedLocale: string; resolvedLocale?: string; }
+
+function targetMatches(page: CmsPage, audience: CmsVariantAudience): boolean {
+  const variant = pageVariantMetadata(page);
+  const includesOrGlobal = (values: string[], value?: string) => values.length === 0 || (!!value && values.includes(value));
+  return includesOrGlobal(variant.markets, audience.market) && includesOrGlobal(variant.regions, audience.region) && includesOrGlobal(variant.locationIds, audience.locationId);
+}
+
+export function resolvePageVariant(pages: CmsPage[], familyId: string, audience: CmsVariantAudience, defaultLocale: string): CmsVariantResolution {
+  const eligible = pages.filter((page) => pageFamilyId(page) === familyId && targetMatches(page, audience));
+  const exact = eligible.find((page) => page.locale === audience.locale);
+  if (exact) return { page: exact, usedFallback: false, requestedLocale: audience.locale, resolvedLocale: exact.locale };
+  const fallback = eligible.find((page) => page.locale === defaultLocale);
+  return { page: fallback, usedFallback: !!fallback, requestedLocale: audience.locale, resolvedLocale: fallback?.locale };
+}
+
+export function resolveVariantNavigation(pages: CmsPage[], audience: CmsVariantAudience, defaultLocale: string): CmsVariantResolution[] {
+  const published = pages.filter((p) => p.status === 'published' && p.navigationVisibility !== 'hidden');
+  const families = Array.from(new Set(published.map(pageFamilyId)));
+  return families.map((family) => resolvePageVariant(published, family, audience, defaultLocale)).filter((result) => !!result.page);
+}
