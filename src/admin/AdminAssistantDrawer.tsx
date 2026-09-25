@@ -328,7 +328,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
     const exportedAt = new Date();
     const lines: string[] = [
-      '# Artie Transcript',
+      '# Altie Transcript',
       '',
       `- Brand: ${workspace.tenantId}`,
       `- Area: ${sectionLabel}`,
@@ -343,7 +343,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
     lines.push('', '---', '');
 
     messages.forEach((message, index) => {
-      const speaker = message.role === 'user' ? 'You' : 'Artie';
+      const speaker = message.role === 'user' ? 'You' : 'Altie';
       lines.push(`## ${speaker}`, '', message.content || '');
 
       if (message.attachments?.length) {
@@ -382,7 +382,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
       '',
       '---',
       '',
-      '_Exported from the Square Shaped Artie. Attached file contents are not embedded in this transcript; only their filenames are listed._'
+      '_Exported from Leitch Tech Altie. Attached file contents are not embedded in this transcript; only their filenames are listed._'
     );
 
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
@@ -392,7 +392,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
     const date = exportedAt.toISOString().slice(0, 10);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `artie-${safeTenant || 'tenant'}-${safeSection || 'admin'}-${date}.md`;
+    link.download = `altie-${safeTenant || 'tenant'}-${safeSection || 'admin'}-${date}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -428,7 +428,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
             <BotMessageSquare className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-extrabold text-gray-950">Artie</h2>
+            <h2 className="text-sm font-extrabold text-gray-950">Altie</h2>
             <p className="text-[11px] text-gray-500 truncate">
               {sectionLabel} · {workspace.tenantId}
             </p>

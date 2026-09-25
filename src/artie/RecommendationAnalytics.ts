@@ -47,7 +47,7 @@ const safeTimestamp = (value: string): string => {
 };
 
 /**
- * Builds the deliberately small Artie measurement event at a trusted server
+ * Builds the deliberately small Altie measurement event at a trusted server
  * boundary. Tenant identity is supplied separately from the browser payload so
  * a client cannot attribute recommendation activity to another tenant.
  *

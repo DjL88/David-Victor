@@ -1442,7 +1442,7 @@ v1Router.post('/payments/:paymentId/capture', requireAdminAuth('operationsEditor
         residualHoldReleased: payment.residualHoldAmount,
       });
 
-      // Strict Artie attribution: only durable recommendation records already
+      // Strict Altie attribution: only durable recommendation records already
       // attached to the authoritative order may become paid conversions.
       const attributions = Array.isArray(linkedOrder.metadata?.artieRecommendationAttributions)
         ? linkedOrder.metadata.artieRecommendationAttributions

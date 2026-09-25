@@ -298,7 +298,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
           { id: 'products', label: 'Product Performance', icon: Package },
           { id: 'stories', label: 'Stories Analytics', icon: Film },
           { id: 'search', label: 'Search Queries', icon: Search },
-          { id: 'artie', label: 'Artie Conversion', icon: TrendingUp },
+          { id: 'artie', label: 'Altie Conversion', icon: TrendingUp },
           { id: 'picking', label: 'Availability & Picking', icon: ShieldCheck },
           { id: 'regions', label: 'Coarse Regions', icon: MapPin },
           { id: 'abandonment', label: 'Basket Abandonment', icon: ShoppingBag },
@@ -327,7 +327,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       {(activeTab === 'overview' || activeTab === 'artie') && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div>
-            <h3 className="text-sm font-bold text-gray-900">Artie recommendation conversion</h3>
+            <h3 className="text-sm font-bold text-gray-900">Altie recommendation conversion</h3>
             <p className="text-xs text-gray-500 mt-0.5">Strict attribution from recommendation presentation through acceptance to paid order.</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

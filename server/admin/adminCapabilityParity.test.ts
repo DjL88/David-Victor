@@ -18,7 +18,7 @@ const ROLES: AdminRole[] = [
   'viewer',
 ];
 
-describe('Artie capability parity', () => {
+describe('Altie capability parity', () => {
   it('keeps browser guidance and server authorization capability sets aligned', () => {
     for (const role of ROLES) {
       const clientCapabilities = new Set<AdminCapability>(

@@ -439,7 +439,7 @@ export interface AdminClient {
    */
   runAssistantAction?(tenantId: string, actionName: string, input?: Record<string, unknown>, context?: { section?: string; resourceType?: string; resourceId?: string; organizationId?: string; market?: string; region?: string; locationGroupId?: string; locationId?: string }): Promise<any>;
 
-  /** Sends a conversational Admin Assistant message. This chat has no direct write/tool access. */
+  /** Sends a conversational Altie message. This chat has no direct write/tool access. */
   chatWithAssistant?(tenantId: string, request: {
     message: string;
     attachments?: Array<{ name: string; contentType?: string; content: string; byteSize?: number; truncated?: boolean }>;
