@@ -1,28 +1,16 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 
 export function ensureBwydiFontLoaded() {
   if (typeof document === 'undefined') return;
   try {
     if (document.getElementById('bwydi-font-face')) return;
-    const style = document.createElement('style');
-    style.id = 'bwydi-font-face';
-    style.textContent = `
-      @font-face {
-        font-family: 'Croogla';
-        src: url("https://db.onlinewebfonts.com/t/9645b9f58651aa6b35d5e34795cc30b6.woff2") format("woff2"),
-             url("https://db.onlinewebfonts.com/t/9645b9f58651aa6b35d5e34795cc30b6.woff") format("woff"),
-             url("https://db.onlinewebfonts.com/t/9645b9f58651aa6b35d5e34795cc30b6.ttf") format("truetype");
-        font-weight: 400 700;
-        font-style: normal;
-        font-display: swap;
-      }
-      .font-croogla {
-        font-family: 'Croogla4F', 'Croogla', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      }
-    `;
-    document.head.appendChild(style);
+    const link = document.createElement('link');
+    link.id = 'bwydi-font-face';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap';
+    document.head.appendChild(link);
   } catch (err) {
-    console.warn('[BwydiLogo] Font loading fallback active:', err);
+    console.warn('[LTLogo] Font loading fallback active:', err);
   }
 }
 
@@ -73,7 +61,7 @@ const SIZE_CONFIGS = {
   },
 };
 
-export const BwydiLogo: React.FC<BwydiLogoProps> = ({
+export const LTLogo: React.FC<BwydiLogoProps> = ({
   variant = 'composite',
   color = 'aubergine',
   size = 'md',
@@ -81,9 +69,7 @@ export const BwydiLogo: React.FC<BwydiLogoProps> = ({
   className = '',
   id,
 }) => {
-  useEffect(() => {
-    ensureBwydiFontLoaded();
-  }, []);
+  React.useEffect(() => ensureBwydiFontLoaded(), []);
 
   const config = SIZE_CONFIGS[size];
 
@@ -91,12 +77,12 @@ export const BwydiLogo: React.FC<BwydiLogoProps> = ({
 
   // Pick direct raster image if 'full' variant requested
   if (variant === 'full' && !imgError) {
-    const fullLogoSrc = color === 'green' ? '/bwydi-green.png' : '/bwydi-aubergine.png';
+    const fullLogoSrc = color === 'white' ? '/brand/lt-logo-white.png' : '/brand/lt-logo-full.svg';
     return (
       <div id={id} className={`inline-flex items-center ${config.gap} ${className}`}>
         <img
           src={fullLogoSrc}
-          alt="bwydi"
+          alt="Leitch Tech"
           onError={() => setImgError(true)}
           className={`${config.logoHeight} w-auto object-contain shrink-0`}
         />
@@ -111,20 +97,20 @@ export const BwydiLogo: React.FC<BwydiLogoProps> = ({
 
   // Icon only
   if (variant === 'icon' && !imgError) {
-    const iconSrc = color === 'mono' ? '/bwydi-bulb-icon-mono.png' : '/bwydi-bulb-icon.png';
+    const iconSrc = color === 'white' ? '/brand/lt-logo-white.png' : '/brand/lt-logo.png';
     return (
       <img
         id={id}
         src={iconSrc}
-        alt="bwydi logo icon"
+        alt="Leitch Tech logo"
         onError={() => setImgError(true)}
         className={`${config.iconSize} object-contain shrink-0 ${className}`}
       />
     );
   }
 
-  // Composite: Crisp bulb icon + Typographic "bwydi" in genuine Croogla font
-  const iconSrc = color === 'mono' ? '/bwydi-bulb-icon-mono.png' : '/bwydi-bulb-icon.png';
+  // Composite: supplied LT mark with a compact Leitch Tech wordmark.
+  const iconSrc = color === 'white' ? '/brand/lt-logo-white.png' : '/brand/lt-logo.png';
   
   let textColorClass = 'text-[#3c1b3f]';
   if (color === 'green') {
@@ -140,16 +126,17 @@ export const BwydiLogo: React.FC<BwydiLogoProps> = ({
       {!imgError && (
         <img
           src={iconSrc}
-          alt="bwydi"
+          alt="Leitch Tech"
           onError={() => setImgError(true)}
           className={`${config.iconSize} object-contain shrink-0`}
         />
       )}
       <div className="flex flex-col leading-none">
         <span
-          className={`font-croogla font-normal tracking-tight lowercase ${config.textSize} ${textColorClass} drop-shadow-2xs`}
+          className={`font-semibold tracking-tight ${config.textSize} ${textColorClass} drop-shadow-2xs`}
+          style={{ fontFamily: "'Montaser Arabic', 'Montserrat', system-ui, sans-serif" }}
         >
-          bwydi
+          Leitch Tech
         </span>
         {subtitle && (
           <span className={`font-medium tracking-wider uppercase text-gray-400 mt-0.5 ${config.subtitleSize}`}>
@@ -160,3 +147,6 @@ export const BwydiLogo: React.FC<BwydiLogoProps> = ({
     </div>
   );
 };
+
+// Backwards-compatible export while callers migrate to the LT component name.
+export const BwydiLogo = LTLogo;
