@@ -206,7 +206,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             {policy.deliveryFeeMode === 'FIXED' && (
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Fixed Delivery Fee ({currencyLabel})</label>
+                <label className="block font-bold text-gray-700 mb-1">{`Fixed Delivery Fee (${currencyLabel})`}</label>
                 <input
                   data-admin-ai-target="fees-fixed-delivery"
                   type="number"
@@ -225,7 +225,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             {policy.deliveryFeeMode === 'DISPATCH_PLUS_FIXED' && (
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Fixed Brand Surcharge ({currencyLabel})</label>
+                <label className="block font-bold text-gray-700 mb-1">{`Fixed Brand Surcharge (${currencyLabel})`}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -260,7 +260,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             )}
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Free Delivery Threshold ({currencyLabel})</label>
+              <label className="block font-bold text-gray-700 mb-1">{`Free Delivery Threshold (${currencyLabel})`}</label>
               <input
                 type="number"
                 step="1.00"
@@ -313,7 +313,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                {policy.serviceFeeMode === 'PERCENT' ? 'Service Fee (%)' : 'Service Fee ({currencyLabel})'}
+                {policy.serviceFeeMode === 'PERCENT' ? 'Service Fee (%)' : `Service Fee (${currencyLabel})`}
               </label>
               <input
                 type="number"
@@ -337,7 +337,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Recyclable Bag Fee ({currencyLabel})</label>
+              <label className="block font-bold text-gray-700 mb-1">{`Recyclable Bag Fee (${currencyLabel})`}</label>
               <input
                 type="number"
                 step="0.05"
@@ -359,7 +359,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
           {policy.serviceFeeMode === 'PERCENT' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2 border-t border-gray-100">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Service Fee Min Cap ({currencyLabel})</label>
+                <label className="block font-bold text-gray-700 mb-1">{`Service Fee Min Cap (${currencyLabel})`}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -375,7 +375,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Service Fee Max Cap ({currencyLabel})</label>
+                <label className="block font-bold text-gray-700 mb-1">{`Service Fee Max Cap (${currencyLabel})`}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -412,7 +412,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Minimum Basket Threshold ({currencyLabel})</label>
+              <label className="block font-bold text-gray-700 mb-1">{`Minimum Basket Threshold (${currencyLabel})`}</label>
               <input
                 type="number"
                 step="1.00"
@@ -428,7 +428,7 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Small Order Surcharge ({currencyLabel})</label>
+              <label className="block font-bold text-gray-700 mb-1">{`Small Order Surcharge (${currencyLabel})`}</label>
               <input
                 type="number"
                 step="0.10"
