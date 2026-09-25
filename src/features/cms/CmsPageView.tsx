@@ -320,7 +320,13 @@ export const CmsPageView: React.FC<CmsPageViewProps> = ({
                     {stories.map((story) => (
                       <div key={story.id} className="min-w-28 max-w-28">
                         <div className="aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100">
-                          {story.imageUrl ? <img src={story.imageUrl} alt={story.title || 'Story'} className="h-full w-full object-cover" /> : null}
+                          {story.thumbnailUrl || (story.mediaType !== 'video' && story.mediaUrl) ? (
+                            <img
+                              src={story.thumbnailUrl || story.mediaUrl}
+                              alt={story.title || 'Story'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
                         </div>
                         {story.title && <p className="mt-1 line-clamp-2 text-xs font-bold text-gray-800">{story.title}</p>}
                       </div>
