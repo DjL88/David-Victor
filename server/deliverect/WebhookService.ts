@@ -442,6 +442,14 @@ export class WebhookService {
       }
     }
 
+    // A known LT channel can be assigned manually while Deliverect's store
+    // discovery temporarily omits it. In that state there is deliberately no
+    // store projection yet, but a sole tenant-scoped allowlist entry is still
+    // an authoritative mapping and is the documented staging HMAC secret.
+    if (secrets.size === 0 && allowed.size === 1) {
+      secrets.add(Array.from(allowed)[0]);
+    }
+
     return Array.from(secrets);
   }
 
