@@ -126,6 +126,7 @@ describe('Retail Channel local basket', () => {
       updatedAt: new Date().toISOString(),
     });
     vi.spyOn(client.tokenManager, 'getAuthorizationHeader').mockResolvedValue('Bearer channel-token');
+    vi.spyOn(client.tokenManager, 'getChannelScopeNames').mockResolvedValue(['leitchtech']);
     const commerceApi = vi.spyOn(client, 'getCommerceBasketApi');
     let submittedUrl = '';
     let submittedBody: any;
