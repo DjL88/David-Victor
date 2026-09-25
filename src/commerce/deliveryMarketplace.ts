@@ -8,7 +8,10 @@ export type ChannelServiceKind = 'marketplace' | 'direct-delivery' | 'platform' 
 export interface DeliveryMarketplaceIdentity {
   key: DeliveryMarketplaceKey;
   label: string;
+  /** Original sourced brand artwork retained for provenance/review. */
   iconUrl?: string;
+  /** Normalised 32×32 round presentation icon used by compact UI. */
+  badgeIconUrl?: string;
   colour: string;
   isLeitchTech: boolean;
   isThirdPartyMarketplace: boolean;
@@ -19,15 +22,18 @@ export interface DeliveryMarketplaceIdentity {
 
 function identity(
   key: DeliveryMarketplaceKey, label: string, colour: string,
-  serviceKind: ChannelServiceKind, asset?: string
+  serviceKind: ChannelServiceKind, asset?: string, roundIcon?: string
 ): DeliveryMarketplaceIdentity {
   return Object.freeze({
     key, label, colour, serviceKind,
     iconUrl: asset ? `/brand/channels/${asset}` : undefined,
+    badgeIconUrl: roundIcon
+      ? `/brand/channels/round/${roundIcon}`
+      : asset ? `/brand/channels/round/${key}.svg` : undefined,
     isLeitchTech: serviceKind === 'platform',
     isThirdPartyMarketplace: serviceKind === 'marketplace',
     assetStatus: asset ? 'official-source' : serviceKind === 'direct-delivery' ? 'pending' : 'unknown',
-    maxIconPixels: key === 'deliveroo' ? 32 : 40,
+    maxIconPixels: 32,
   });
 }
 
@@ -49,9 +55,10 @@ export const CHANNEL_BRAND_REGISTRY: Readonly<Record<DeliveryMarketplaceKey, Del
   glovo: identity('glovo', 'Glovo', '#00A082', 'marketplace', 'glovo.svg'),
   wolt: identity('wolt', 'Wolt', '#009DE0', 'marketplace', 'wolt.webp'),
   'snappy-shopper': identity('snappy-shopper', 'Snappy Shopper', '#174E86', 'marketplace', 'snappy-shopper.webp'),
-  // No verified standalone official artwork yet. Never substitute marketplace logos.
-  'uber-direct': identity('uber-direct', 'Uber Direct', '#334155', 'direct-delivery'),
-  'jet-go': identity('jet-go', 'JET Go', '#334155', 'direct-delivery'),
+  // Direct services keep source-logo provenance separate from their compact presentation badge.
+  'uber-direct': identity('uber-direct', 'Uber Direct', '#000000', 'direct-delivery', undefined, 'uber-direct.svg'),
+  // Product UI intentionally presents JET Go with the Just Eat identity.
+  'jet-go': identity('jet-go', 'JET Go', '#FF8000', 'direct-delivery', undefined, 'jet-go.svg'),
   other: identity('other', 'Other channel', '#64748B', 'unknown'),
 });
 
