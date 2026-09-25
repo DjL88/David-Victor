@@ -53,7 +53,7 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
       icon: pickup ? PackageCheck : Truck,
     },
     {
-      label: pickup ? 'Collected' : t('order.statusDelivered'),
+      label: pickup ? t('tracking.collected') : t('order.statusDelivered'),
       icon: Check,
     },
   ];
@@ -122,7 +122,7 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
           </div>
         </div>
 
-        <div className="relative mt-6 grid grid-cols-4 gap-2" aria-label="Order progress">
+        <div className="relative mt-6 grid grid-cols-4 gap-2" aria-label={t('tracking.progressLabel')}>
           {steps.map((step, index) => {
             const Icon = step.icon;
             const complete = index <= stageIndex && stage !== 'CANCELLED';
@@ -182,7 +182,7 @@ export const OrderProgressHero: React.FC<OrderProgressHeroProps> = ({ order }) =
               rel="noopener noreferrer"
               className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-800 shadow-xs hover:bg-gray-50"
             >
-              Live courier tracking
+              {t('tracking.liveCourier')}
               <ArrowUpRight className="h-3.5 w-3.5" />
             </a>
           )}
