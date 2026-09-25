@@ -33,6 +33,8 @@ const suppliedFlag = (value: boolean | undefined) =>
   value == null ? 'Unknown' : value ? 'Yes' : 'No';
 
 export const isUnassignedStore = (store: Store): boolean => {
+  if (store.assigned === true) return false;
+  if (store.assigned === false) return true;
   return (
     !store.brandStoreId ||
     !store.channelLinkId ||

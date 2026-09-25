@@ -563,7 +563,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
                 currentTenantId={currentTenantId}
               />
             )}
-            {activeTab === 'catalog' && <CatalogAdminScreen tenantId={currentTenantId} />}
+            {activeTab === 'catalog' && <CatalogAdminScreen key={currentTenantId} tenantId={currentTenantId} />}
             {activeTab === 'connection_health' && <ConnectionHealthScreen tenantId={currentTenantId} />}
             {activeTab === 'integrations' && (
               <IntegrationsAdminScreen

@@ -1,7 +1,8 @@
 import { getServerRuntimeMode } from '../runtimeMode';
 import { FirestorePlatformService } from '../firestoreService';
-import { linkedAccountsAdapter } from './LinkedAccountsAdapter';
-import { getDeliverectAdapter } from './index';
+import { LinkedAccountsAdapter, linkedAccountsAdapter } from './LinkedAccountsAdapter';
+import { getDeliverectAdapter, getDeliverectAdapterAsync } from './index';
+import { IntegrationContext } from './IntegrationContext';
 import { MetricsService } from '../metricsService';
 import {
   ConnectionHealthData,
@@ -35,9 +36,17 @@ export class ConnectionHealthService {
   async getConnectionHealth(tenantId: string, hostname: string = 'localhost:3000'): Promise<ConnectionHealthData> {
     const runtimeMode = getServerRuntimeMode();
     const resolvedTenantConfig = await FirestorePlatformService.getTenantConfig(tenantId).catch(() => null);
+
+    const integrationContext = await IntegrationContext.getContext(tenantId).catch(() => null);
+    const tenantMappingsAdapter = integrationContext
+      ? new LinkedAccountsAdapter({
+          environment: integrationContext.environment,
+          tokenManager: integrationContext.tokenManager,
+        })
+      : linkedAccountsAdapter;
     
     // Resolve Deliverect account & mappings
-    const mappings = await linkedAccountsAdapter.getTenantMappings(tenantId).catch(() => ({
+    const mappings = await tenantMappingsAdapter.getTenantMappings(tenantId).catch(() => ({
       tenantId,
       integration: { status: 'UNCONFIGURED', deliverectAccountId: null, environment: 'staging' },
       accounts: [],
@@ -45,8 +54,8 @@ export class ConnectionHealthService {
       stores: [],
     }));
 
-    const accountId = (mappings as any).integration?.deliverectAccountId || (mappings.accounts?.[0]?.deliverectAccountId) || process.env.DELIVERECT_ACCOUNT_ID || null;
-    const env = ((mappings as any).integration?.environment as 'staging' | 'production') || (runtimeMode === 'production' ? 'production' : 'staging');
+    const accountId = integrationContext?.deliverectAccountId || (mappings as any).integration?.deliverectAccountId || (mappings.accounts?.[0]?.deliverectAccountId) || process.env.DELIVERECT_ACCOUNT_ID || null;
+    const env = integrationContext?.environment || ((mappings as any).integration?.environment as 'staging' | 'production') || (runtimeMode === 'production' ? 'production' : 'staging');
     const apiUrl = env === 'production' ? 'https://api.deliverect.com' : 'https://api.staging.deliverect.com';
 
     const physicalLocationsCount = mappings.locations?.length || 0;
@@ -54,9 +63,7 @@ export class ConnectionHealthService {
     const accountsCount = mappings.accounts?.length || (accountId ? 1 : 0);
 
     // Check credentials configuration
-    const clientId = process.env.DELIVERECT_CLIENT_ID;
-    const clientSecret = process.env.DELIVERECT_CLIENT_SECRET;
-    const isConfigured = runtimeMode === 'demo' || Boolean(clientId && clientSecret);
+    const isConfigured = runtimeMode === 'demo' || integrationContext?.isConfigured === true;
 
     // Resolve Root & Store Menus via adapter
     let rootMenuInfo: ConnectionHealthData['menus']['rootMenu'] = null;
@@ -72,7 +79,7 @@ export class ConnectionHealthService {
     let lastFailure: ConnectionHealthData['lastFailure'] = null;
 
     try {
-      const adapter = getDeliverectAdapter(tenantId);
+      const adapter = await getDeliverectAdapterAsync(tenantId);
       const rootCatalog = await adapter.getRootCatalog();
       
       if (rootCatalog) {
@@ -933,7 +940,9 @@ export class ConnectionHealthService {
       // accountId is guaranteed non-null here: the NOT_CONFIGURED guard above
       // already returned when no account could be resolved. 'default' is the
       // adapter factory's own no-override sentinel, not a fabricated ID.
-      const adapter = getDeliverectAdapter(tenantId, env, accountId ?? 'default');
+      const adapter = runtimeMode === 'demo'
+        ? getDeliverectAdapter(tenantId, env, accountId ?? 'default')
+        : await getDeliverectAdapterAsync(tenantId, env, accountId ?? 'default');
       let storeCatalog = await adapter.getStoreCatalog(channelLinkId, params.fulfillmentType || 'delivery').catch(() => null);
       if (!storeCatalog || !storeCatalog.products || storeCatalog.products.length === 0) {
         const rootCat = await adapter.getRootCatalog().catch(() => null);

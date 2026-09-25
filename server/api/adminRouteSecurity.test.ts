@@ -63,4 +63,24 @@ describe('admin route security policy', () => {
     expect(discoveryRoute).toContain('tokenManager: integrationContext.tokenManager');
     expect(discoveryRoute).not.toContain('new LinkedAccountsAdapter()');
   });
+
+  it('serves the Admin catalogue through an authenticated tenant-scoped route', () => {
+    const start = source.indexOf("v1Router.get('/admin/tenants/:id/commerce/catalog'");
+    const end = source.indexOf('v1Router.', start + 1);
+    const route = start >= 0 ? source.slice(start, end > start ? end : start + 3000) : '';
+
+    expect(route).toContain('requireAdminAuth()');
+    expect(route).toContain('getDeliverectAdapterAsync(tenantId)');
+    expect(route).toContain('adapter.getRootCatalog()');
+  });
+
+  it('keeps active integration profiles aligned when account assignments change', () => {
+    const start = source.indexOf("v1Router.post('/admin/tenants/:id/integration/select-account'");
+    const end = source.indexOf('v1Router.', start + 1);
+    const route = start >= 0 ? source.slice(start, end > start ? end : start + 9000) : '';
+
+    expect(route).toContain('updateIntegrationProfile');
+    expect(route).toContain('allowedChannelLinkIds: requestedChannelLinkIds');
+    expect(route).toContain('accountId');
+  });
 });
