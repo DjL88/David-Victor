@@ -168,6 +168,7 @@ export class MockAnalyticsClient implements AnalyticsClient {
         searches: [],
         regions: [],
         abandonedBasket: [],
+        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
       };
     }
 
@@ -496,6 +497,7 @@ export class MockAnalyticsClient implements AnalyticsClient {
           ],
         },
       ],
+      artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
     };
   }
 
