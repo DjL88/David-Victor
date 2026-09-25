@@ -90,6 +90,11 @@ export interface RawDeliverectChannelLink {
     | any;
 }
 
+function channelServiceStatus(detail: any, fallback: any): string | number | undefined {
+  return detail?.status ?? detail?.channelStatus ?? detail?.onboardingStatus ?? detail?.state
+    ?? fallback?.status ?? fallback?.channelStatus ?? fallback?.onboardingStatus ?? fallback?.state;
+}
+
 export interface LinkedAccountsSyncResult {
   tenantId: string;
   accounts: AccountLink[];
@@ -1066,7 +1071,8 @@ export class LinkedAccountsAdapter {
           const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
           const name = String(detail.name || detail.application || detail.channel || 'Ordering channel');
           const marketplace = detectDeliveryMarketplace(name, detail.application, detail.channel).key;
-          return { id, name, channel: detail.channel, marketplace, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+          const status = channelServiceStatus(detail, typeof link === 'object' ? link : undefined);
+          return { id, name, channel: detail.channel, marketplace, ...(status !== undefined ? { status } : {}), ...(url ? { url } : {}), source: 'DELIVERECT' as const };
         }).filter((service: any) => service.id),
         ...(rawStore.currency ? { currency: rawStore.currency } : {}),
         ...(rawStore.status ? { status: rawStore.status } : {}),
@@ -1172,7 +1178,8 @@ export class LinkedAccountsAdapter {
             const url = typeof candidateUrl === 'string' && /^https?:\/\//i.test(candidateUrl) ? candidateUrl : undefined;
             const name = String(detail.name || detail.application || detail.channel || 'Ordering channel');
             const marketplace = detectDeliveryMarketplace(name, detail.application, detail.channel).key;
-            return { id, name, channel: detail.channel, marketplace, ...(url ? { url } : {}), source: 'DELIVERECT' as const };
+            const status = channelServiceStatus(detail, typeof link === 'object' ? link : undefined);
+            return { id, name, channel: detail.channel, marketplace, ...(status !== undefined ? { status } : {}), ...(url ? { url } : {}), source: 'DELIVERECT' as const };
           }).filter((service: any) => service.id),
         };
       });

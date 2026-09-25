@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { CHANNEL_BRAND_REGISTRY, CHANNEL_NAME_ALIASES, detectDeliveryMarketplace, marketplaceForStore } from '../commerce/deliveryMarketplace';
+import {
+  CHANNEL_BRAND_REGISTRY,
+  CHANNEL_NAME_ALIASES,
+  detectDeliveryMarketplace,
+  dispatchProviderIdentity,
+  isStorefrontMarketplaceService,
+  marketplaceForStore,
+} from '../commerce/deliveryMarketplace';
 
 describe('official channel identity registry', () => {
   it.each(Object.entries(CHANNEL_NAME_ALIASES))('resolves exact alias %s to %s', (alias, key) => {
@@ -28,13 +34,27 @@ describe('official channel identity registry', () => {
     expect(detectDeliveryMarketplace('uber-direct', 'Uber Eats Glasgow').key).toBe('uber-direct');
     expect(detectDeliveryMarketplace('leitch-tech', 'Deliveroo test').isLeitchTech).toBe(true);
   });
-  it('keeps direct services out of marketplace flags and never substitutes the wrong logo', () => {
+  it('keeps direct services out of marketplace flags and reserves supplied artwork for tracking', () => {
     for (const key of ['uber-direct', 'jet-go'] as const) {
       expect(CHANNEL_BRAND_REGISTRY[key]).toMatchObject({
-        serviceKind: 'direct-delivery', isThirdPartyMarketplace: false, isLeitchTech: false, assetStatus: 'pending',
+        serviceKind: 'direct-delivery', isThirdPartyMarketplace: false, isLeitchTech: false, assetStatus: 'user-provided',
       });
-      expect(CHANNEL_BRAND_REGISTRY[key].iconUrl).toBeUndefined();
+      expect(CHANNEL_BRAND_REGISTRY[key].iconUrl).toMatch(/^\/brand\/channels\/round\/(uber-direct|jet-go)\.png$/);
     }
+  });
+  it.each([
+    ['ACTIVE', true], ['active', true], ['ONBOARDING', true], ['on-boarding', true],
+    ['INACTIVE', false], ['SUSPENDED', false], ['TESTING', false], ['', false], [undefined, false],
+  ])('shows marketplace status %s only when customer-facing', (status, visible) => {
+    expect(isStorefrontMarketplaceService({ name: 'Deliveroo', status })).toBe(visible);
+  });
+  it.each(['Uber Direct', 'JET Go'])('never treats %s as a storefront marketplace', name => {
+    expect(isStorefrontMarketplaceService({ name, status: 'ACTIVE', url: 'https://example.com' })).toBe(false);
+  });
+  it('maps direct dispatch providers to tracker artwork without accepting marketplaces', () => {
+    expect(dispatchProviderIdentity({ dispatch: { providerId: 'uber-direct' } })?.key).toBe('uber-direct');
+    expect(dispatchProviderIdentity({ delivery: { deliveryOption: { displayName: 'JET Go' } } })?.key).toBe('jet-go');
+    expect(dispatchProviderIdentity({ dispatch: { providerDisplayName: 'Deliveroo' } })).toBeUndefined();
   });
   it('uses the assigned own channel link, not an unrelated store service', () => {
     const store = { channelLinkId: 'own', services: [
@@ -45,25 +65,16 @@ describe('official channel identity registry', () => {
     expect(marketplaceForStore({ marketplace: '__proto__', provider: 'Wolt' }).key).toBe('wolt');
     expect(marketplaceForStore({ marketplace: 'uber-direct' }).key).toBe('uber-direct');
   });
-  it('vendors eleven official-source files with matching provenance checksums', () => {
-    const manifest = JSON.parse(readFileSync(resolve('public/brand/channels/sources.json'), 'utf8'));
-    expect(manifest.entries).toHaveLength(11);
-    const official = Object.values(CHANNEL_BRAND_REGISTRY).filter(entry => entry.assetStatus === 'official-source');
-    expect(official).toHaveLength(11);
-    for (const entry of official) {
-      expect(entry.iconUrl).toMatch(/^\/brand\/channels\/[a-z-]+\.(png|webp|svg)$/);
-      const source = manifest.entries.find((item: any) => item.id === entry.key);
-      expect(source.asset).toBe(entry.iconUrl);
-      expect(source.sourcePage).toMatch(/^https:\/\//);
-      const filePath = resolve('public', entry.iconUrl!.slice(1));
-      const rawBytes = readFileSync(filePath);
-      // Git may materialise text SVGs with CRLF on Windows while the reviewed
-      // repository/deployment bytes use LF. Normalise text line endings before
-      // checking provenance; raster assets remain byte-for-byte verified.
-      const bytes = entry.iconUrl!.endsWith('.svg')
-        ? Buffer.from(rawBytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8')
-        : rawBytes;
-      expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.assetSha256);
+  it('vendors all thirteen user-approved circular badges described by the channel map', () => {
+    const manifest = JSON.parse(readFileSync(resolve('public/brand/channels/round/channel-map.json'), 'utf8'));
+    expect(manifest.baselineCssPixels).toBe(32);
+    expect(manifest.channels).toHaveLength(13);
+    const supplied = Object.values(CHANNEL_BRAND_REGISTRY).filter(entry => entry.assetStatus === 'user-provided');
+    expect(supplied).toHaveLength(13);
+    for (const entry of supplied) {
+      expect(entry.iconUrl).toBe(`/brand/channels/round/${entry.key}.png`);
+      expect(manifest.channels.find((item: any) => item.id === entry.key)).toBeDefined();
+      expect(readFileSync(resolve('public', entry.iconUrl!.slice(1))).subarray(1, 4).toString()).toBe('PNG');
     }
     expect(CHANNEL_BRAND_REGISTRY.deliveroo.maxIconPixels).toBe(32);
   });

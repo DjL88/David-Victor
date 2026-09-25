@@ -30,6 +30,22 @@ import { Product, Money, moneyToMajor } from '../../commerce/models';
 import { isDemoMode } from '../../domain/runtime';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { MarketplaceServiceBadge } from '../../components/MarketplaceServiceBadge';
+import { isStorefrontMarketplaceService } from '../../commerce/deliveryMarketplace';
+
+type StoreService = NonNullable<Store['services']>[number];
+
+function StoreMarketplaceIcons({ services }: { services?: StoreService[] }) {
+  const visible = (services || []).filter(isStorefrontMarketplaceService);
+  if (visible.length === 0) return null;
+  return (
+    <section className="mt-6 border-t border-gray-200 pt-5">
+      <h3 className="mb-3 text-base font-black text-gray-900">Also available on</h3>
+      <div className="flex flex-wrap items-center gap-2" aria-label="Other active ordering channels">
+        {visible.map((service) => <MarketplaceServiceBadge key={service.id} service={service} />)}
+      </div>
+    </section>
+  );
+}
 
 function toMajorPrice(val?: Money | number | null): number | null {
   if (val === undefined || val === null) return null;
@@ -195,7 +211,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
               {detailsStore.coordinates && <div className="h-48 rounded-2xl overflow-hidden mb-4 border border-gray-200"><StoreLocationMap userCoordinates={detailsStore.coordinates} stores={[detailsStore]} selectedStore={detailsStore} onSelectStore={() => {}} height="192px" className="w-full h-full" /></div>}
               <div className="space-y-3 text-sm"><div className="flex gap-3"><MapPin className="w-5 h-5 text-gray-500 shrink-0" /><span>{[detailsStore.address?.line1, detailsStore.address?.city, detailsStore.address?.postcode].filter(Boolean).join(', ') || 'Address unavailable'}</span></div>{detailsStore.phone && <a href={`tel:${detailsStore.phone}`} className="flex gap-3 text-emerald-700 font-semibold"><Phone className="w-5 h-5 shrink-0" />{detailsStore.phone}</a>}</div>
               {detailsStore.openingHours && <section className="mt-6 pt-5 border-t border-gray-200"><h3 className="text-base font-black text-gray-900 mb-3">Opening hours</h3><div className="space-y-2 text-sm">{Array.isArray(detailsStore.openingHours) ? detailsStore.openingHours.map((hours) => { const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']; return <div key={`${hours.dayOfWeek}-${hours.startTime}`} className="flex justify-between"><span className="font-semibold">{days[hours.dayOfWeek] || `Day ${hours.dayOfWeek}`}</span><span>{hours.startTime}–{hours.endTime}</span></div>; }) : Object.entries(detailsStore.openingHours).map(([day, hours]) => <div key={day} className="flex justify-between"><span className="font-semibold capitalize">{day}</span><span>{hours.open}–{hours.close}</span></div>)}</div></section>}
-              {(detailsStore.services?.length || 0) > 0 && <section className="mt-6 pt-5 border-t border-gray-200"><h3 className="text-base font-black text-gray-900 mb-3">Also available on</h3><div className="grid grid-cols-2 gap-3">{detailsStore.services!.map((service) => <MarketplaceServiceBadge key={service.id} service={service} />)}</div></section>}
+              <StoreMarketplaceIcons services={detailsStore.services} />
             </div>
           )}
           <div className="overflow-y-auto flex-1 space-y-3 p-1">
@@ -276,14 +292,7 @@ export const StorePickerModal: React.FC<StorePickerModalProps> = ({
                 </div>
               </section>
             )}
-            {(detailsStore.services?.length || 0) > 0 && (
-              <section className="mt-6 pt-5 border-t border-gray-200">
-                <h3 className="text-base font-black text-gray-900 mb-3">Services</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {detailsStore.services!.map((service) => <MarketplaceServiceBadge key={service.id} service={service} />)}
-                </div>
-              </section>
-            )}
+            <StoreMarketplaceIcons services={detailsStore.services} />
           </div>
         )}
 

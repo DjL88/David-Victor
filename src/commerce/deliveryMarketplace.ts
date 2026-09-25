@@ -13,7 +13,7 @@ export interface DeliveryMarketplaceIdentity {
   isLeitchTech: boolean;
   isThirdPartyMarketplace: boolean;
   serviceKind?: ChannelServiceKind;
-  assetStatus?: 'official-source' | 'pending' | 'platform' | 'unknown';
+  assetStatus?: 'official-source' | 'user-provided' | 'pending' | 'platform' | 'unknown';
   maxIconPixels?: number;
 }
 
@@ -26,8 +26,8 @@ function identity(
     iconUrl: asset ? `/brand/channels/${asset}` : undefined,
     isLeitchTech: serviceKind === 'platform',
     isThirdPartyMarketplace: serviceKind === 'marketplace',
-    assetStatus: asset ? 'official-source' : serviceKind === 'direct-delivery' ? 'pending' : 'unknown',
-    maxIconPixels: key === 'deliveroo' ? 32 : 40,
+    assetStatus: asset ? 'user-provided' : serviceKind === 'direct-delivery' ? 'pending' : 'unknown',
+    maxIconPixels: 32,
   });
 }
 
@@ -38,20 +38,26 @@ export const CHANNEL_BRAND_REGISTRY: Readonly<Record<DeliveryMarketplaceKey, Del
     colour: '#0B4A57', isLeitchTech: true, isThirdPartyMarketplace: false,
     serviceKind: 'platform', assetStatus: 'platform', maxIconPixels: 40,
   }),
-  deliveroo: identity('deliveroo', 'Deliveroo', '#00CCBC', 'marketplace', 'deliveroo.png'),
-  doordash: identity('doordash', 'DoorDash', '#EB1700', 'marketplace', 'doordash.svg'),
-  'just-eat': identity('just-eat', 'Just Eat', '#FF8000', 'marketplace', 'just-eat.webp'),
-  thuisbezorgd: identity('thuisbezorgd', 'Thuisbezorgd.nl', '#FF8000', 'marketplace', 'thuisbezorgd.webp'),
-  lieferando: identity('lieferando', 'Lieferando', '#FF8000', 'marketplace', 'lieferando.webp'),
-  takeaway: identity('takeaway', 'Takeaway.com', '#FF8000', 'marketplace', 'takeaway.webp'),
-  grubhub: identity('grubhub', 'Grubhub', '#FF8000', 'marketplace', 'grubhub.svg'),
-  'uber-eats': identity('uber-eats', 'Uber Eats', '#06C167', 'marketplace', 'uber-eats.webp'),
-  glovo: identity('glovo', 'Glovo', '#00A082', 'marketplace', 'glovo.svg'),
-  wolt: identity('wolt', 'Wolt', '#009DE0', 'marketplace', 'wolt.webp'),
-  'snappy-shopper': identity('snappy-shopper', 'Snappy Shopper', '#174E86', 'marketplace', 'snappy-shopper.webp'),
-  // No verified standalone official artwork yet. Never substitute marketplace logos.
-  'uber-direct': identity('uber-direct', 'Uber Direct', '#334155', 'direct-delivery'),
-  'jet-go': identity('jet-go', 'JET Go', '#334155', 'direct-delivery'),
+  deliveroo: identity('deliveroo', 'Deliveroo', '#00CCBC', 'marketplace', 'round/deliveroo.png'),
+  doordash: identity('doordash', 'DoorDash', '#EB1700', 'marketplace', 'round/doordash.png'),
+  'just-eat': identity('just-eat', 'Just Eat', '#FF8000', 'marketplace', 'round/just-eat.png'),
+  thuisbezorgd: identity('thuisbezorgd', 'Thuisbezorgd.nl', '#FF8000', 'marketplace', 'round/thuisbezorgd.png'),
+  lieferando: identity('lieferando', 'Lieferando', '#FF8000', 'marketplace', 'round/lieferando.png'),
+  takeaway: identity('takeaway', 'Takeaway.com', '#FF8000', 'marketplace', 'round/takeaway.png'),
+  grubhub: identity('grubhub', 'Grubhub', '#FF8000', 'marketplace', 'round/grubhub.png'),
+  'uber-eats': identity('uber-eats', 'Uber Eats', '#06C167', 'marketplace', 'round/uber-eats.png'),
+  glovo: identity('glovo', 'Glovo', '#00A082', 'marketplace', 'round/glovo.png'),
+  wolt: identity('wolt', 'Wolt', '#009DE0', 'marketplace', 'round/wolt.png'),
+  'snappy-shopper': identity('snappy-shopper', 'Snappy Shopper', '#174E86', 'marketplace', 'round/snappy-shopper.png'),
+  // User-supplied partner artwork is reserved for dispatch tracking, never marketplace links.
+  'uber-direct': Object.freeze({
+    ...identity('uber-direct', 'Uber Direct', '#000000', 'direct-delivery', 'round/uber-direct.png'),
+    assetStatus: 'user-provided' as const,
+  }),
+  'jet-go': Object.freeze({
+    ...identity('jet-go', 'JET Go', '#FF8000', 'direct-delivery', 'round/jet-go.png'),
+    assetStatus: 'user-provided' as const,
+  }),
   other: identity('other', 'Other channel', '#64748B', 'unknown'),
 });
 
@@ -128,4 +134,25 @@ export function marketplaceForStore(store: any): DeliveryMarketplaceIdentity {
     ownService?.name, ownService?.channel, store?.channelName,
     store?.application, store?.channel, store?.provider
   );
+}
+
+export function isStorefrontChannelStatusVisible(status: unknown): boolean {
+  const normalized = String(status ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return normalized === 'ACTIVE' || normalized === 'ONBOARDING' || normalized === 'ON_BOARDING';
+}
+
+export function isStorefrontMarketplaceService(service: any): boolean {
+  if (!isStorefrontChannelStatusVisible(service?.status)) return false;
+  return detectDeliveryMarketplace(service?.marketplace, service?.name, service?.channel).serviceKind === 'marketplace';
+}
+
+export function dispatchProviderIdentity(order: any): DeliveryMarketplaceIdentity | undefined {
+  const identity = detectDeliveryMarketplace(
+    order?.dispatch?.providerDisplayName,
+    order?.dispatch?.providerId,
+    order?.delivery?.deliveryOption?.providerName,
+    order?.delivery?.deliveryOption?.displayName,
+    order?.delivery?.deliveryOption?.providerId,
+  );
+  return identity.serviceKind === 'direct-delivery' ? identity : undefined;
 }
