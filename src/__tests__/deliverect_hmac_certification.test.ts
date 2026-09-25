@@ -113,6 +113,24 @@ describe('Deliverect HMAC certification contract', () => {
     ).resolves.toMatchObject({ tenantId: 'tenant-a', secret: 'cl-menu-push-123' });
   });
 
+  it('resolves the mapped store from an array menu-push payload before publishing', async () => {
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'tenant-a',
+      environment: 'staging',
+      allowedChannelLinkIds: ['cl-menu-push-123', 'cl-other-456'],
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getTenantStores').mockResolvedValue([
+      { id: 'store-a', channelLinkId: 'cl-menu-push-123', lifecycleStatus: 'ACTIVE' },
+      { id: 'store-b', channelLinkId: 'cl-other-456', lifecycleStatus: 'ACTIVE' },
+    ] as any);
+
+    await expect(
+      WebhookService.resolveMappedOperationalChannelLinkId('tenant-a', [
+        { menuId: 'menu-1', channelLinkId: 'cl-menu-push-123' },
+      ])
+    ).resolves.toBe('cl-menu-push-123');
+  });
+
   it('uses the sole assigned store for an identifier-free menu push and ignores stale discovered stores', async () => {
     process.env.APP_MODE = 'staging';
     process.env.DELIVERECT_ENV = 'staging';

@@ -37,6 +37,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
+import { resolveDeliverectWebhookTenantHandover } from '../deliverect/DeliverectWebhookTenantResolution';
 import { PickingStatusIngressService, type PickingStatusIngressReceipt } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
 import { NotificationService } from '../notificationService';
@@ -2432,10 +2433,16 @@ async function resolveDeliverectWebhookTenant(
     );
   }
 
-  const tenantId =
-    await FirestorePlatformService.resolveTenantByWebhookIdentifier(identifier);
+  const resolution = await resolveDeliverectWebhookTenantHandover({
+    routeIdentifier: identifier,
+    payload: req.body,
+    resolveByIdentifier: (value) =>
+      FirestorePlatformService.resolveTenantByWebhookIdentifier(value),
+    resolveByAccountId: (value) =>
+      FirestorePlatformService.resolveTenantByDeliverectAccountId(value),
+  });
 
-  if (!tenantId) {
+  if (!resolution) {
     throw new BFFError(
       'WEBHOOK_TENANT_NOT_FOUND',
       'Inbound Deliverect webhook route identifier is not provisioned.',
@@ -2443,7 +2450,17 @@ async function resolveDeliverectWebhookTenant(
     );
   }
 
-  return tenantId;
+  if (
+    resolution.source === 'ACCOUNT' &&
+    resolution.routeTenantId &&
+    resolution.routeTenantId !== resolution.tenantId
+  ) {
+    console.warn(
+      `[Deliverect Webhook Routing] Handing callback from legacy route "${identifier}" (${resolution.routeTenantId}) to tenant "${resolution.tenantId}" using uniquely mapped account ${resolution.accountId}.`
+    );
+  }
+
+  return resolution.tenantId;
 }
 
 function isExplicitQuestPickingStatusUpdate(payload: any): boolean {
@@ -2838,6 +2855,14 @@ async function handleDeliverectOperationalWebhook(
           menu?.channelLinkId
             ? menu
             : { ...menu, channelLinkId: mappedChannelLinkId }
+        );
+      }
+
+      if (!mappedChannelLinkId) {
+        throw new BFFError(
+          'STORE_NOT_FOUND',
+          'Menu Push could not be assigned to a provisioned channel link. The previous hosted catalogue remains live.',
+          422
         );
       }
 

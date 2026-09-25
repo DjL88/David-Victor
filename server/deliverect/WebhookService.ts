@@ -465,6 +465,11 @@ export class WebhookService {
     tenantId: string,
     payload: any
   ): Promise<string | null> {
+    const payloadItems = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.menus)
+        ? payload.menus
+        : [payload];
     const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
     const allowed = new Set(
       (integration?.allowedChannelLinkIds || [])
@@ -481,29 +486,32 @@ export class WebhookService {
         (!allowed.size || allowed.has(id));
     });
 
-    const directChannelLinkId = String(
-      payload?.channelLinkId ||
-      payload?.storeId ||
-      payload?.channelLink?._id ||
-      payload?.channelLink?.id ||
-      (typeof payload?.channelLink === 'string' ? payload.channelLink : '') ||
-      ''
-    ).trim();
-    if (directChannelLinkId) {
+    const directChannelLinkIds = Array.from(new Set<string>(payloadItems
+      .map((item: any) => String(
+        item?.channelLinkId ||
+        item?.storeId ||
+        item?.channelLink?._id ||
+        item?.channelLink?.id ||
+        (typeof item?.channelLink === 'string' ? item.channelLink : '') ||
+        ''
+      ).trim())
+      .filter(Boolean)));
+    if (directChannelLinkIds.length === 1) {
+      const directChannelLinkId = directChannelLinkIds[0];
       const direct = activeStores.find((store: any) =>
         String(store?.channelLinkId || store?.id || '').trim() === directChannelLinkId
       );
       if (direct) return directChannelLinkId;
     }
 
-    const locationCandidates = [
-      payload?.locationId,
-      payload?.channelLocationId,
-      payload?.externalLocationId,
-      payload?.location?._id,
-      payload?.location?.id,
-      typeof payload?.location === 'string' ? payload.location : undefined,
-    ]
+    const locationCandidates = payloadItems.flatMap((item: any) => [
+      item?.locationId,
+      item?.channelLocationId,
+      item?.externalLocationId,
+      item?.location?._id,
+      item?.location?.id,
+      typeof item?.location === 'string' ? item.location : undefined,
+    ])
       .map((value) => String(value || '').trim())
       .filter(Boolean);
 
@@ -526,13 +534,16 @@ export class WebhookService {
       }
     }
 
-    const payloadAccountId = String(
-      payload?.accountId ||
-      payload?.account?._id ||
-      payload?.account?.id ||
-      (typeof payload?.account === 'string' ? payload.account : '') ||
-      ''
-    ).trim();
+    const payloadAccountIds = Array.from(new Set<string>(payloadItems
+      .map((item: any) => String(
+        item?.accountId ||
+        item?.account?._id ||
+        item?.account?.id ||
+        (typeof item?.account === 'string' ? item.account : '') ||
+        ''
+      ).trim())
+      .filter(Boolean)));
+    const payloadAccountId = payloadAccountIds.length === 1 ? payloadAccountIds[0] : '';
     const mappedAccountId = String(integration?.deliverectAccountId || '').trim();
 
     // Account-only callbacks are safe to collapse to a store only when the
