@@ -105,7 +105,16 @@ export const OrdersScreen: React.FC<{
       setOrders(history);
       if (initialOrderId) {
         const routedOrder = history.find((order) => order.id === initialOrderId);
-        if (routedOrder) setSelectedOrder(routedOrder);
+        if (routedOrder) {
+          setSelectedOrder(routedOrder);
+        } else {
+          // Guest orders are intentionally absent from account history. The
+          // explicit order route remains recoverable using its scoped order
+          // access credential; getOrder() attaches that credential when one
+          // was persisted by checkout.
+          const directOrder = await defaultCommerceClient.getOrder(initialOrderId);
+          setSelectedOrder(directOrder || null);
+        }
       }
       // If there are orders and none selected, or to sync
       if (selectedOrder) {
