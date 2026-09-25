@@ -13,6 +13,14 @@ import {
 import { useAdminWorkspace } from './AdminWorkspaceContext';
 import type { AdminTab } from './AdminLayout';
 import { defaultAdminClient } from '../commerce/HttpAdminClient';
+import {
+  buildAltieCapabilityReply,
+  buildUnavailableLiveDataReply,
+  isAltieCapabilityQuestion,
+  isWorkspaceSnapshotQuestion,
+  loadAltieWorkspaceSnapshot,
+  summariseAltieWorkspaceSnapshot,
+} from './altieIntelligence';
 
 const SECTION_LABELS: Record<string, string> = {
   brands: 'Brands',
@@ -107,6 +115,31 @@ const STARTERS: Record<string, string[]> = {
     'How do translated CMS pages work?',
     'How do I show a page in the Account section?',
   ],
+  insights: [
+    'What live Insights data can you verify from chat?',
+    'Explain what Insights covers.',
+    'What will you refuse to guess here?',
+  ],
+  search_merch: [
+    'What search tuning is configured for this brand?',
+    'Explain synonyms, rewrites and boosts.',
+    'What can I safely change here?',
+  ],
+  domains: [
+    'What is the current domain and TLS status for this brand?',
+    'Explain the domain publishing flow.',
+    'What should I check before going live?',
+  ],
+  fees: [
+    'What fee policy is configured for this brand?',
+    'Explain the delivery and service fee modes.',
+    'What should I review before changing fees?',
+  ],
+  audit: [
+    'Explain what Altie actions are audited.',
+    'What can Altie do without approval?',
+    'How is tenant isolation enforced?',
+  ],
 };
 
 type AssistantAttachment = {
@@ -168,7 +201,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
   const starters = useMemo(
     () => STARTERS[workspace.section] || [
-      'What can you help me with on this page?',
+      'What do you know about this brand and what can you verify live?',
       'Explain this area in plain English.',
       'What should I check before making changes here?',
     ],
@@ -231,7 +264,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         allowedExtensions.includes(extension);
 
       if (!isTextLike) {
-        setAttachmentError('For now, Admin AI accepts CSV, TSV, JSON, Markdown and text files.');
+        setAttachmentError('For now, Altie accepts CSV, TSV, JSON, Markdown and text files.');
         continue;
       }
 
@@ -286,8 +319,63 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
 
     try {
       setRunning(true);
+
+      if (filesForTurn.length === 0) {
+        const unavailableReply = buildUnavailableLiveDataReply(userText);
+        if (unavailableReply) {
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: unavailableReply,
+              provider: 'local-agent',
+              suggestions: [
+                'What can you verify live?',
+                'What do you know about the platform?',
+              ],
+            },
+          ]);
+          return;
+        }
+
+        if (isAltieCapabilityQuestion(userText)) {
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: buildAltieCapabilityReply(),
+              provider: 'local-agent',
+              suggestions: [
+                'What is configured for this brand?',
+                'Check current connection status',
+                'What changes can you safely help with?',
+              ],
+            },
+          ]);
+          return;
+        }
+
+        if (isWorkspaceSnapshotQuestion(userText)) {
+          const snapshot = await loadAltieWorkspaceSnapshot(defaultAdminClient, workspace.tenantId);
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: summariseAltieWorkspaceSnapshot(snapshot, userText),
+              provider: 'local-agent',
+              suggestions: [
+                'What features are enabled?',
+                'Check domain status',
+                'Check Deliverect connection status',
+              ],
+            },
+          ]);
+          return;
+        }
+      }
+
       if (!defaultAdminClient.chatWithAssistant) {
-        throw new Error('Conversational Admin AI is not available in this client.');
+        throw new Error('Altie is not available in this client.');
       }
 
       const response = await defaultAdminClient.chatWithAssistant(workspace.tenantId, {
@@ -312,7 +400,10 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
       ]);
     } catch (err: any) {
       setFailedRequest({ message: userText, history, attachments: filesForTurn });
-      setError(err?.message || 'Admin AI could not answer right now.');
+      const safeMessage = String(err?.message || 'Altie could not answer right now.')
+        .replace(/Admin AI/gi, 'Altie')
+        .replace(/Admin Assistant/gi, 'Altie');
+      setError(safeMessage);
     } finally {
       setRunning(false);
     }
@@ -703,7 +794,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                 void sendMessage();
               }
             }}
-            placeholder="Ask Admin AI…"
+            placeholder="Ask Altie…"
             rows={2}
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />
