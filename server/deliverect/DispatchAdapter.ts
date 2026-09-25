@@ -134,12 +134,80 @@ export interface DispatchCancelResult {
   reason?: string;
 }
 
+export interface DispatchAdapterCapabilities {
+  validateAvailability: boolean;
+  quoteProjection: boolean;
+  directAssignment: boolean;
+  directCancellation: boolean;
+  providerManagedLifecycle: boolean;
+  courierStatusIngress: boolean;
+}
+
+export const DELIVERECT_DISPATCH_CAPABILITIES: DispatchAdapterCapabilities = Object.freeze({
+  validateAvailability: true,
+  quoteProjection: true,
+  directAssignment: false,
+  directCancellation: false,
+  providerManagedLifecycle: true,
+  courierStatusIngress: false,
+});
+
+export const DEMO_DISPATCH_CAPABILITIES: DispatchAdapterCapabilities = Object.freeze({
+  validateAvailability: true,
+  quoteProjection: true,
+  directAssignment: true,
+  directCancellation: true,
+  providerManagedLifecycle: false,
+  courierStatusIngress: true,
+});
+
+export const UNAVAILABLE_DISPATCH_CAPABILITIES: DispatchAdapterCapabilities = Object.freeze({
+  validateAvailability: false,
+  quoteProjection: false,
+  directAssignment: false,
+  directCancellation: false,
+  providerManagedLifecycle: false,
+  courierStatusIngress: false,
+});
+
+const UNKNOWN_DISPATCH_CAPABILITIES: DispatchAdapterCapabilities = Object.freeze({
+  validateAvailability: false,
+  quoteProjection: false,
+  directAssignment: false,
+  directCancellation: false,
+  providerManagedLifecycle: false,
+  courierStatusIngress: false,
+});
+
 export interface DispatchAdapter {
   readonly adapterName: string;
   readonly isConnected: boolean;
+  /** Optional while legacy/test adapters migrate to explicit capability metadata. */
+  readonly capabilities?: DispatchAdapterCapabilities;
 
   validateAvailability(params: DispatchValidateParams): Promise<DispatchValidationResult>;
   getQuotes(params: DispatchQuoteParams): Promise<DispatchQuoteResult>;
   assignCourier(params: DispatchAssignParams): Promise<DispatchAssignmentResult>;
   cancelDispatch(params: DispatchCancelParams): Promise<DispatchCancelResult>;
+}
+
+
+/**
+ * Central capability resolution keeps orchestration provider-neutral while legacy
+ * adapters migrate to explicit metadata. Unknown adapters fail closed rather than
+ * inheriting destructive assignment/cancellation powers.
+ */
+export function getDispatchAdapterCapabilities(adapter: DispatchAdapter): DispatchAdapterCapabilities {
+  if (adapter.capabilities) return adapter.capabilities;
+
+  switch (adapter.adapterName) {
+    case 'DeliverectDispatchAdapter':
+      return DELIVERECT_DISPATCH_CAPABILITIES;
+    case 'DemoDispatchAdapter':
+      return DEMO_DISPATCH_CAPABILITIES;
+    case 'IntegrationUnavailableDispatchAdapter':
+      return UNAVAILABLE_DISPATCH_CAPABILITIES;
+    default:
+      return UNKNOWN_DISPATCH_CAPABILITIES;
+  }
 }
