@@ -189,6 +189,13 @@ export class DeliverectDPayAdapter implements DPayAdapter {
         404
       );
     }
+    if (this.tenantId && payment.tenantId !== this.tenantId) {
+      throw new CommerceError(
+        ErrorCode.ORDER_NOT_FOUND,
+        `Payment '${paymentId}' is not available in this tenant.`,
+        404
+      );
+    }
     return payment;
   }
 
