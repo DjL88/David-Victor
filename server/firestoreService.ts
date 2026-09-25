@@ -8,7 +8,7 @@ import {
   getFirestorePermissionStatus,
 } from './firebase';
 import { FirestoreRestService } from './firestoreRest';
-import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Money, SubstitutionPreferenceType } from '../src/commerce/models';
+import { TenantConfig, Story, Order, AuditLogEntry, TenantFeePolicy, CategoryPromoBanner, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Money, SubstitutionPreferenceType, Basket } from '../src/commerce/models';
 import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '../src/commerce/mockData';
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
@@ -51,6 +51,7 @@ const inMemoryStoreOperationalStates: Record<string, Record<string, StoreOperati
 const inMemoryStoreSnoozes: Record<string, Record<string, Record<string, StoreProductSnoozeState>>> = {};
 const inMemoryStoreProductOperationalStates: Record<string, Record<string, Record<string, StoreProductOperationalState>>> = {};
 const inMemoryTenantStores: Record<string, Record<string, any>> = {};
+const inMemoryChannelBaskets: Record<string, Basket> = {};
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -2191,6 +2192,58 @@ export class FirestoreService {
       throw err;
     }
     return updated;
+  }
+
+  /**
+   * Persists the customer basket owned by our Retail/Channel integration.
+   * Deliverect Channel API has no mutable basket resource: it receives the
+   * completed order only, so draft basket state must remain tenant-scoped here.
+   */
+  static async saveChannelBasket(tenantId: string, basket: Basket): Promise<Basket> {
+    if (!tenantId || !basket?.id) throw new Error('tenantId and basket.id are required.');
+    if (basket.tenantId && basket.tenantId !== tenantId) {
+      throw new Error('Channel basket tenant scope mismatch.');
+    }
+
+    const persisted = cleanUndefined({ ...basket, tenantId, basketId: basket.id });
+    const key = `${tenantId}:${basket.id}`;
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error('Database persistence is unavailable. Channel basket write rejected.');
+      }
+      inMemoryChannelBaskets[key] = persisted;
+      return persisted;
+    }
+
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basket.id)}`;
+    await db.collection('channelBaskets').doc(documentId).set(persisted);
+    inMemoryChannelBaskets[key] = persisted;
+    return persisted;
+  }
+
+  static async getChannelBasket(tenantId: string, basketId: string): Promise<Basket | null> {
+    if (!tenantId || !basketId) return null;
+    const key = `${tenantId}:${basketId}`;
+    if (inMemoryChannelBaskets[key]) return cleanUndefined({ ...inMemoryChannelBaskets[key] });
+
+    const db = getFirestoreDb();
+    if (!db) {
+      if (!isDemoMode() && process.env.NODE_ENV !== 'test' && !isTestMode()) {
+        throw new Error('Database persistence is unavailable. Channel basket lookup rejected.');
+      }
+      return null;
+    }
+
+    const documentId = `${encodeURIComponent(tenantId)}__${encodeURIComponent(basketId)}`;
+    const snap = await db.collection('channelBaskets').doc(documentId).get();
+    if (!snap.exists) return null;
+    const basket = snap.data() as Basket;
+    if (basket.tenantId !== tenantId || basket.id !== basketId) {
+      throw new Error('Channel basket tenant/basket scope mismatch.');
+    }
+    inMemoryChannelBaskets[key] = basket;
+    return cleanUndefined({ ...basket });
   }
 
   /**
