@@ -1447,7 +1447,7 @@ v1Router.post('/payments/:paymentId/capture', requireAdminAuth('operationsEditor
           ? linkedOrder.picking.items.some((item) =>
               item.plu === productPlu &&
               item.state !== 'REMOVED' &&
-              item.state !== 'OUT_OF_STOCK' &&
+
               (item.pickedQuantity ?? item.originalQuantity ?? 0) > 0
             )
           : false;
