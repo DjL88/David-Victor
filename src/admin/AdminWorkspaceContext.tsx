@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { AdminUser } from '../commerce/models';
 import type { AdminTab } from './AdminLayout';
 
@@ -70,6 +70,14 @@ export const AdminWorkspaceProvider: React.FC<{
   const [scope, setScope] = useState<AdminWorkspaceScope>({});
   const [resource, setResource] = useState<AdminResourceSelection | undefined>();
   const [filters, setFilters] = useState<Record<string, string | number | boolean | null> | undefined>();
+
+  // Workspace context is identity-scoped. Never carry a product/location/filter
+  // selection from one tenant, administrator or role into another identity.
+  useEffect(() => {
+    setScope({});
+    setResource(undefined);
+    setFilters(undefined);
+  }, [tenantId, actor.id, actor.role, actor.tenantId]);
 
   const value = useMemo<AdminWorkspaceContextValue>(
     () => ({
