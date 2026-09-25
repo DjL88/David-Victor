@@ -59,7 +59,7 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -122,7 +122,7 @@ export const AuditHistoryScreen: React.FC<AuditHistoryScreenProps> = ({ tenantId
         </div>
       </div>
 
-      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between"><span>{error}</span><button type="button" onClick={loadLogs} className="font-bold underline">Retry</button></div>}
+      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex flex-wrap items-center justify-between gap-2"><span>{error}</span><button type="button" onClick={loadLogs} className="font-bold underline">Retry</button></div>}
 
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
         <div className="divide-y divide-gray-100">
