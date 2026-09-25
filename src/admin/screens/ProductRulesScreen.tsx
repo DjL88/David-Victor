@@ -218,13 +218,11 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     type === 'PREVENT_PURCHASE' ? { type, reason: 'Unavailable' } :
     { type };
 
-  const applyTemplate = (template: 'age' | 'alcohol' | 'quantity' | 'recommendations' | 'discounts') => {
+  const applyTemplate = (template: 'quantity' | 'recommendations' | 'discounts') => {
     const base = editingRule || {
       id: `rule-${Date.now()}`, name: 'New rule', enabled: true, countries: ['GB'], priority: 50,
       matchConditions: [], actions: [],
     } as VisualRule;
-    if (template === 'age') setEditingRule({ ...base, name: 'Age restricted products', matchConditions: [{ field: 'productTag', operator: 'equals', value: 'AGE_RESTRICTED_18' }], actions: [{ type: 'MINIMUM_AGE', minimumAge: 18 }, { type: 'REQUIRES_COURIER_VERIFICATION', verificationType: 'AGE' }] });
-    if (template === 'alcohol') setEditingRule({ ...base, name: 'Alcohol controls', matchConditions: [{ field: 'isAlcohol', operator: 'equals', value: 'true' }], actions: [{ type: 'MINIMUM_AGE', minimumAge: 18 }, { type: 'PREVENT_UPSELL' }] });
     if (template === 'quantity') setEditingRule({ ...base, name: 'Quantity cap', matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }], actions: [{ type: 'MAX_QUANTITY_PER_ORDER', maximum: 2 }] });
     if (template === 'recommendations') setEditingRule({ ...base, name: 'Exclude from promotion', matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }], actions: [{ type: 'PREVENT_UPSELL' }, { type: 'PREVENT_RECOMMENDATION' }, { type: 'PREVENT_STORY_PLACEMENT' }, { type: 'PREVENT_CAROUSEL_PLACEMENT' }] });
     if (template === 'discounts') setEditingRule({ ...base, name: 'Exclude from discounts', matchConditions: [{ field: 'productTag', operator: 'equals', value: '' }], actions: [{ type: 'EXCLUDE_FROM_DISCOUNTS' }] });
@@ -768,10 +766,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
         {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">{ruleError}</div>}
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-gray-900">Quick templates</h3><p className="text-xs text-gray-500 mt-0.5">Start with a common retail control, then customise it.</p></div>
+            <div><h3 className="text-sm font-bold text-gray-900">Quick templates</h3><p className="text-xs text-gray-500 mt-0.5">Start with a non-regulatory retail control, then customise it. Age, alcohol and market-specific controls are created from verified Market Packs so this screen never guesses legal values.</p></div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => applyTemplate('age')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">18+ products</button>
-              <button type="button" onClick={() => applyTemplate('alcohol')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">Alcohol controls</button>
               <button type="button" onClick={() => applyTemplate('quantity')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">Quantity cap</button>
               <button type="button" onClick={() => applyTemplate('recommendations')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">No promotion</button>
               <button type="button" onClick={() => applyTemplate('discounts')} className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold hover:bg-gray-100">No discounts</button>
