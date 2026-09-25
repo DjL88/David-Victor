@@ -136,6 +136,21 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           content: 'Add your page content here.',
         };
         break;
+      case 'Image':
+        newBlock = { id: `b_${Date.now()}`, type: 'Image', order: newOrder, imageUrl: '', altText: '', aspectRatio: '16:9' };
+        break;
+      case 'Video':
+        newBlock = { id: `b_${Date.now()}`, type: 'Video', order: newOrder, videoUrl: '', posterUrl: '', caption: '', autoplay: false };
+        break;
+      case 'CTA':
+        newBlock = { id: `b_${Date.now()}`, type: 'CTA', order: newOrder, title: 'Call to action', description: '', buttonLabel: 'Learn more', actionUrl: '', variant: 'primary' };
+        break;
+      case 'Stories':
+        newBlock = { id: `b_${Date.now()}`, type: 'Stories', order: newOrder, title: 'Stories', storeScoped: false };
+        break;
+      case 'CategoryCarousel':
+        newBlock = { id: `b_${Date.now()}`, type: 'CategoryCarousel', order: newOrder, title: 'Shop by category', categoryIds: [] };
+        break;
       case 'ProductCarousel':
         newBlock = {
           id: `b_${Date.now()}`,
@@ -174,12 +189,10 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
         };
         break;
       case 'Divider':
-        newBlock = {
-          id: `b_${Date.now()}`,
-          type: 'Divider',
-          order: newOrder,
-          style: 'subtle',
-        };
+        newBlock = { id: `b_${Date.now()}`, type: 'Divider', order: newOrder, style: 'subtle' };
+        break;
+      case 'Spacer':
+        newBlock = { id: `b_${Date.now()}`, type: 'Spacer', order: newOrder, heightPx: 32 };
         break;
       default:
         newBlock = {
@@ -484,12 +497,18 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
               <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in fade-in">
                 {[
                   { type: 'Hero', label: 'Hero Banner', icon: Layers },
-                  { type: 'OfferCarousel', label: 'Offer Carousel', icon: Sparkles },
-                  { type: 'ProductCarousel', label: 'Product Carousel', icon: ShoppingBag },
                   { type: 'RichText', label: 'Rich Text', icon: FileText },
+                  { type: 'Image', label: 'Image', icon: Layout },
+                  { type: 'Video', label: 'Video', icon: Layout },
+                  { type: 'CTA', label: 'Call to Action', icon: ArrowRight },
+                  { type: 'Stories', label: 'Stories', icon: Layers },
+                  { type: 'ProductCarousel', label: 'Product Rail', icon: ShoppingBag },
+                  { type: 'CategoryCarousel', label: 'Category Rail', icon: Layout },
+                  { type: 'OfferCarousel', label: 'Offer Rail', icon: Sparkles },
                   { type: 'StoreFinder', label: 'Store Finder', icon: Store },
                   { type: 'FAQ', label: 'FAQ Accordion', icon: HelpCircle },
                   { type: 'Divider', label: 'Divider', icon: Layout },
+                  { type: 'Spacer', label: 'Spacer', icon: Layout },
                 ].map((b) => {
                   const Icon = b.icon;
                   return (
