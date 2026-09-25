@@ -6376,7 +6376,9 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       success: true,
       tenantId,
       deliverectAccountId: accountId,
-      allowedChannelLinkIds: activeChannelLinkIds,
+      // Return the durable assignment set. Discovery visibility is reported
+      // separately so a transient upstream omission never looks like an unassignment.
+      allowedChannelLinkIds: requestedChannelLinkIds,
       temporarilyMissingChannelLinkIds,
       warning: temporarilyMissingChannelLinkIds.length
         ? `${temporarilyMissingChannelLinkIds.length} channel link(s) were not returned by this Deliverect discovery response; their tenant assignments were preserved.`
