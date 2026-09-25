@@ -30,9 +30,9 @@ describe('Deliverect Channel setup', () => {
     expect(DELIVERECT_CHANNEL_SETUP_STEPS.at(-1)).toMatch(/Register, then Activate/);
   });
 
-  it('uses the known-reachable Admin runtime before a stale configured callback origin', () => {
-    expect(resolveDeliverectCallbackOrigin(undefined, 'https://tenant.example')).toBe('https://tenant.example');
-    expect(resolveDeliverectCallbackOrigin('https://custom.example/', 'https://tenant.example')).toBe('https://tenant.example');
+  it('uses the trusted configured callback origin instead of the browser runtime', () => {
+    expect(resolveDeliverectCallbackOrigin(undefined, 'https://tenant.example')).toBe('https://ltx.wtf');
+    expect(resolveDeliverectCallbackOrigin('https://custom.example/', 'https://tenant.example')).toBe('https://custom.example');
     expect(resolveDeliverectCallbackOrigin('https://custom.example/')).toBe('https://custom.example');
   });
 

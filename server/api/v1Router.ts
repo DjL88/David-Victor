@@ -3028,7 +3028,6 @@ async function handleDeliverectChannelProvisioning(
 
     if (type === 'CHANNEL_REGISTRATION') {
       let profileOrigin = '';
-      let registrationEnvironment: 'staging' | 'production' = 'staging';
       try {
         const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
         const environment = normalizeIntegrationEnvironment(
@@ -3037,7 +3036,6 @@ async function handleDeliverectChannelProvisioning(
             process.env.DELIVERECT_ENV ||
             'staging'
         );
-        registrationEnvironment = environment;
         const profile = await FirestorePlatformService.getIntegrationProfile(
           tenantId,
           environment
@@ -3052,23 +3050,29 @@ async function handleDeliverectChannelProvisioning(
       }
 
       const configuredOrigin =
-        process.env.CHANNEL_PUBLIC_BASE_URL ||
         profileOrigin ||
+        process.env.CHANNEL_PUBLIC_BASE_URL ||
         process.env.PUBLIC_BASE_URL ||
         '';
-      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-        .split(',')[0]
-        .trim();
-      const forwardedHost = String(req.headers['x-forwarded-host'] || '')
-        .split(',')[0]
-        .trim();
-      const requestOrigin = `${forwardedProto || req.protocol || 'https'}://${forwardedHost || req.get('host')}`;
-      // Staging custom domains can be transient while certificates/DNS are
-      // being provisioned. Registration arrived successfully on this origin,
-      // so return that same known-reachable host instead of a stale override.
-      const origin = registrationEnvironment === 'staging'
-        ? requestOrigin.replace(/\/$/, '')
-        : configuredOrigin.replace(/\/$/, '') || requestOrigin;
+      if (!configuredOrigin) {
+        res.status(503).json({
+          error: 'Deliverect Channel callbacks require a configured tenant/environment public base URL.',
+          code: 'CHANNEL_PUBLIC_BASE_URL_REQUIRED',
+        });
+        return;
+      }
+      const parsedOrigin = new URL(configuredOrigin);
+      if (parsedOrigin.protocol !== 'https:' || parsedOrigin.username || parsedOrigin.password) {
+        res.status(503).json({
+          error: 'Deliverect Channel public base URL must be a credential-free HTTPS origin.',
+          code: 'CHANNEL_PUBLIC_BASE_URL_INVALID',
+        });
+        return;
+      }
+      // Never derive externally registered callbacks from Host or forwarded
+      // headers. Only a tenant/environment profile or deployment setting is a
+      // trusted callback destination.
+      const origin = parsedOrigin.origin;
       const id = encodeURIComponent(tenantId);
       const webhookBase = `${origin}/api/v1/webhooks/deliverect/${id}`;
 

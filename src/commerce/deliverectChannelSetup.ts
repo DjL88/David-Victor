@@ -12,10 +12,9 @@ const join = (origin: string, path: string) =>
 export const DEFAULT_DELIVERECT_CALLBACK_ORIGIN = 'https://ltx.wtf';
 
 export function resolveDeliverectCallbackOrigin(configuredOrigin?: string, runtimeOrigin?: string): string {
-  // The Admin runtime is already on a publicly reachable HTTPS origin and is
-  // the safest staging registration target. A stale configured custom domain
-  // must not keep generating callback URLs after its certificate breaks.
-  return String(runtimeOrigin || configuredOrigin || DEFAULT_DELIVERECT_CALLBACK_ORIGIN || '')
+  // Registration must use the server-configured public origin. The browser's
+  // runtime origin can be an AI Studio preview or another untrusted host.
+  return String(configuredOrigin || DEFAULT_DELIVERECT_CALLBACK_ORIGIN || runtimeOrigin || '')
     .trim()
     .replace(/\/$/, '');
 }

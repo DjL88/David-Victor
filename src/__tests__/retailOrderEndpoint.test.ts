@@ -87,6 +87,15 @@ describe('DV-07a retail order endpoint resolver', () => {
       .toBe('https://api.deliverect.io/leitchtech/order/cl_123');
   });
 
+  it('keeps the required retail header when an optional tenant headers object is empty', () => {
+    const resolved = resolveRetailOrderEndpoint({
+      ...base,
+      tenantConfig: { headers: {} },
+    });
+    expect(resolved.headers).toEqual({ 'x-deliverect-version': 'retail' });
+    expect(resolved.source.headers).toBe('default');
+  });
+
   it('still fails closed for an unknown environment without tenant or env configuration', () => {
     try {
       resolveRetailOrderEndpoint({ ...base, environment: 'custom', env: {} });

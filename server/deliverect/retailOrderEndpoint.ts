@@ -108,7 +108,8 @@ export function resolveRetailOrderEndpoint(args: {
   if (template.includes('{accountId}') && !args.accountId) invalid('Retail order path template requires an accountId.');
 
   const parsedEnvHeaders = envHeaders(args.env.DELIVERECT_RETAIL_ORDER_HEADERS);
-  const selectedHeaders = tenant.headers !== undefined
+  const hasTenantHeaders = tenant.headers !== undefined && Object.keys(tenant.headers).length > 0;
+  const selectedHeaders = hasTenantHeaders
     ? tenant.headers
     : parsedEnvHeaders !== undefined
       ? parsedEnvHeaders
@@ -130,7 +131,7 @@ export function resolveRetailOrderEndpoint(args: {
     source: {
       baseUrl: tenant.baseUrl ? 'tenant' : envBase ? 'env' : 'default',
       pathTemplate: tenant.pathTemplate ? 'tenant' : envTemplate ? 'env' : 'default',
-      headers: tenant.headers !== undefined ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'default',
+      headers: hasTenantHeaders ? 'tenant' : parsedEnvHeaders !== undefined ? 'env' : 'default',
     },
   };
 }
