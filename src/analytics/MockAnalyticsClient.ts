@@ -168,6 +168,7 @@ export class MockAnalyticsClient implements AnalyticsClient {
         searches: [],
         regions: [],
         abandonedBasket: [],
+        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
       };
     }
 
@@ -494,6 +495,7 @@ export class MockAnalyticsClient implements AnalyticsClient {
             { plu: 'PLU-ORGANIC-MILK-2L', name: 'Estate Whole Organic Milk', frequency: Math.round(180 * scale) },
             { plu: 'PLU-COLDPRESS-ORANGE', name: 'Cold Pressed Orange Juice', frequency: Math.round(110 * scale) },
           ],
+      artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
         },
       ],
     };
