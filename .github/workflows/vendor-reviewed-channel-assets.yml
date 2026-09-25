@@ -1,0 +1,28 @@
+name: Import reviewed channel assets (temporary)
+on:
+  pull_request:
+    paths:
+      - scripts/vendor_reviewed_channel_assets.py
+      - .github/workflows/vendor-reviewed-channel-assets.yml
+permissions:
+  contents: write
+  actions: read
+jobs:
+  import-reviewed:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/official-channel-brand-assets'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install pinned image decoder
+        run: python3 -m pip install Pillow==11.3.0
+      - name: Import SHA-pinned reviewed originals (draft branch only, never main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_BRANCH: ${{ github.head_ref }}
+          TARGET_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: python3 scripts/vendor_reviewed_channel_assets.py
