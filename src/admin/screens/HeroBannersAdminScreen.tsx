@@ -650,6 +650,29 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label className="font-extrabold text-gray-800">Banner layout</label>
+                <p className="text-[11px] text-gray-500">Choose how artwork and copy are composed. Targeting, stock rules and the CTA stay unchanged.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {([
+                    ['BACKGROUND', 'Background', 'Image fills the banner with copy over it'],
+                    ['ARTWORK', 'Artwork', 'Keep supplied artwork visible with a readable copy panel'],
+                    ['SPLIT', 'Split', 'Copy on the left, image weighted to the right'],
+                  ] as const).map(([value, label, help]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setCurrentEditingBanner((prev) => ({ ...prev, layout: value }))}
+                      className={`rounded-xl border p-3 text-left transition-colors ${(currentEditingBanner.layout || 'BACKGROUND') === value ? 'border-purple-500 bg-purple-50 text-purple-950' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                      aria-pressed={(currentEditingBanner.layout || 'BACKGROUND') === value}
+                    >
+                      <span className="block text-xs font-extrabold">{label}</span>
+                      <span className="mt-1 block text-[10px] leading-snug opacity-75">{help}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <MarketingScheduleEditor value={currentEditingBanner.schedule} onChange={(schedule) => setCurrentEditingBanner((prev) => ({ ...prev, schedule }))} />
 
               {/* Action Type & Category / Store Target */}
