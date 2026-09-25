@@ -575,20 +575,48 @@ export class WebhookService {
       throw err;
     }
 
-    // Demo/test fixtures keep their explicit local secret. Staging/production
-    // use one canonical Secret Manager secret per tenant and never scan/fallback
-    // across other tenants.
-    const secret =
-      isDemoMode() || process.env.NODE_ENV === 'test'
-        ? this.getWebhookSecret(candidateTenantId)
-        : (await SecretManager.getSecret(`deliverect-webhook-${candidateTenantId}`)) || '';
+    const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
+    const environment = String(
+      integration?.activeEnv ||
+      integration?.environment ||
+      process.env.DELIVERECT_ENV ||
+      'staging'
+    ).toLowerCase() === 'production'
+      ? 'production'
+      : 'staging';
+
+    // Demo/test fixtures keep their explicit local secret. Live deployments
+    // must follow the active integration profile's Secret Manager reference;
+    // the old deliverect-webhook-{tenantId} name remains a migration fallback.
+    let secret = '';
+    if (isDemoMode() || process.env.NODE_ENV === 'test') {
+      secret = this.getWebhookSecret(candidateTenantId);
+    } else {
+      let configuredSecretRef = '';
+      try {
+        const profile = await FirestorePlatformService.getIntegrationProfile(
+          candidateTenantId,
+          environment
+        );
+        configuredSecretRef = String(
+          profile?.secretRefs?.deliverectWebhookSecret || ''
+        ).trim();
+      } catch {
+        // Preserve legacy lookup when a profile is not available yet.
+      }
+      secret =
+        (configuredSecretRef
+          ? await SecretManager.getSecret(configuredSecretRef)
+          : null) ||
+        (await SecretManager.getSecret(`deliverect-webhook-${candidateTenantId}`)) ||
+        '';
+    }
 
     if (secret && this.verifyDeliverectHmac(rawBody, signatureHeader, secret)) {
       this.consumeWebhookIngressToken(candidateTenantId);
       return { tenantId: candidateTenantId, secret };
     }
 
-    const integration = await FirestorePlatformService.getIntegrationConfig(candidateTenantId);
     const isProductionWebhook =
       integration?.environment === 'production' ||
       process.env.DELIVERECT_ENV === 'production' ||
