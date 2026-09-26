@@ -133,6 +133,45 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
       expect(normalizeDeliverectOrderStatus('124')).toBe('ORDER_FAILED');
     });
   });
+
+  it('persists POS preparation/finalisation snapshots without promoting them to delivered', async () => {
+    const preparingId = `order_pos_preparing_${Date.now()}`;
+    const finalizedId = `order_pos_finalized_${Date.now()}`;
+
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: preparingId,
+        orderId: preparingId,
+        orderReference: `REF-POS-50-${Date.now()}`,
+        status: 50,
+        fulfillmentType: 'pickup',
+        items: [],
+        total: 0,
+        currency: 'GBP',
+      } as any,
+      testTenant
+    );
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: finalizedId,
+        orderId: finalizedId,
+        orderReference: `REF-POS-90-${Date.now()}`,
+        status: 90,
+        fulfillmentType: 'pickup',
+        items: [],
+        total: 0,
+        currency: 'GBP',
+      } as any,
+      testTenant
+    );
+
+    const preparing = await FirestorePlatformService.getOrderProjection(preparingId);
+    const finalized = await FirestorePlatformService.getOrderProjection(finalizedId);
+    expect(preparing?.status).toBe('PREPARING');
+    expect(finalized?.status).toBe('READY');
+    expect(preparing?.status).not.toBe('DELIVERED');
+    expect(finalized?.status).not.toBe('DELIVERED');
+  });
   it('acknowledges an undocumented numeric order status without corrupting lifecycle state', async () => {
     const orderId = `order_unknown_numeric_${Date.now()}`;
     await FirestorePlatformService.saveOrderProjection(
