@@ -9,6 +9,7 @@ import {
   resolveAdminAssistantNavigationHint,
   resolveContextualCatalogLookupQuery,
 } from './adminAssistantChatService';
+import { selectAltieKnowledge } from './altieKnowledge';
 
 describe('AdminAssistantChatService foundations', () => {
   it('builds a tenant-bound system instruction without granting direct write access', () => {
@@ -33,6 +34,24 @@ describe('AdminAssistantChatService foundations', () => {
     expect(instruction).toContain('Refer to yourself as Altie');
     expect(instruction).not.toContain('You are Artie');
     expect(instruction).not.toContain('GEMINI_API_KEY');
+  });
+
+  it('injects versioned curated knowledge into the trusted server instruction without granting permission', () => {
+    const knowledge = selectAltieKnowledge({
+      section: 'branding',
+      message: 'Help me prepare a branding change safely',
+    });
+    const instruction = buildAdminAssistantSystemInstruction({
+      tenantId: 'tenant-a',
+      actorRole: 'tenantAdmin',
+      context: { section: 'branding' },
+      knowledge,
+    });
+
+    expect(instruction).toContain(knowledge.version);
+    expect(instruction).toContain('Branding is the currently connected end-to-end ChangeSet apply path');
+    expect(instruction).toContain('trusted guidance only');
+    expect(instruction).toContain('never grants permissions');
   });
 
   it('trims and bounds conversation history', () => {
