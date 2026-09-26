@@ -207,6 +207,100 @@ describe('Deliverect operational webhooks', () => {
   });
 
 
+
+  it('does not let an older PLU snapshot overwrite newer operational truth', async () => {
+    const tenantId = `tenant-ordering-${Date.now()}`;
+    const channelLinkId = 'channel-ordering';
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'MILK-ORDERED',
+        snoozed: true,
+        snoozeStart: '2026-09-26T14:00:00.000Z',
+        updatedAt: '2026-09-26T14:00:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      { observedAt: '2026-09-26T14:00:00.000Z' }
+    );
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'MILK-ORDERED',
+        snoozed: true,
+        snoozeStart: '2026-09-26T13:00:00.000Z',
+        updatedAt: '2026-09-26T13:00:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      { observedAt: '2026-09-26T13:00:00.000Z' }
+    );
+
+    const state = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(state['MILK-ORDERED']).toMatchObject({
+      availability: 'SNOOZED',
+      snoozed: true,
+      snoozeStart: '2026-09-26T14:00:00.000Z',
+      updatedAt: '2026-09-26T14:00:00.000Z',
+    });
+  });
+
+  it('requires a provably newer snapshot before an omission can clear a snooze', async () => {
+    const tenantId = `tenant-clear-ordering-${Date.now()}`;
+    const channelLinkId = 'channel-clear-ordering';
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'CLEAR-ME',
+        snoozed: true,
+        updatedAt: '2026-09-26T14:00:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      { observedAt: '2026-09-26T14:00:00.000Z' }
+    );
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [],
+      { observedAt: '2026-09-26T13:59:00.000Z' }
+    );
+    expect((await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    ))['CLEAR-ME']).toMatchObject({ availability: 'SNOOZED', snoozed: true });
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [],
+      { observedAt: '2026-09-26T14:01:00.000Z' }
+    );
+    expect((await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    ))['CLEAR-ME']).toMatchObject({
+      availability: 'ACTIVE',
+      snoozed: false,
+      updatedAt: '2026-09-26T14:01:00.000Z',
+    });
+    expect((await FirestorePlatformService.getStoreProductSnoozes(
+      tenantId,
+      channelLinkId
+    ))['CLEAR-ME']).toBeUndefined();
+  });
+
   it('replaces a 15k-SKU operational snapshot without serial per-SKU upserts', async () => {
     const tenantId = `tenant-scale-${Date.now()}`;
     const channelLinkId = 'channel-scale-15k';
