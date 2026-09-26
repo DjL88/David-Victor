@@ -54,3 +54,9 @@ reduced-motion behaviour and a live AI conversation still require browser
 validation. Authored tests, executed tests, CI status and production deployment
 must be reported separately.
 
+## Sprint 5 status note — 26 September 2026
+
+The repository already has the live conversational caller, authenticated workspace context, registered read actions, durable ChangeSets and a versioned Branding adapter. This Sprint 5 branch adds a curated, source-attributed knowledge pack and certification for that pack.
+
+The gate remains intentionally open until that pack is consumed by the live conversation path and the remaining operator safeguards are wired and tested. A standalone knowledge module is not completion.
+
