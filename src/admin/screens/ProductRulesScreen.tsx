@@ -41,6 +41,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [operationsError, setOperationsError] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [ruleLoadError, setRuleLoadError] = useState<string | null>(null);
+  const [rulesTenantId, setRulesTenantId] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [entityOptions, setEntityOptions] = useState<SearchMerchEntityOptions>(EMPTY_ENTITY_OPTIONS);
   const [catalogLoadState, setCatalogLoadState] = useState<LoadState>('loading');
@@ -66,6 +67,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       setRules(pRules);
       setDispatchRules(dRules);
       setSchedulingPolicy(sPolicy);
+      setRulesTenantId(tenantId);
     } catch (err: any) {
       if (requestId !== rulesLoadRequestRef.current) return;
       setRuleLoadError(err?.message || 'Product rules and operational settings could not be loaded.');
@@ -75,6 +77,13 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   };
 
   useEffect(() => {
+    setRules([]);
+    setDispatchRules(DEFAULT_DISPATCH_RULES);
+    setSchedulingPolicy(DEFAULT_TENANT_SCHEDULING_POLICY);
+    setEditingRule(null);
+    setRuleError(null);
+    setOperationsError(null);
+    setRulesTenantId(null);
     loadRules();
     return () => {
       rulesLoadRequestRef.current += 1;
@@ -384,9 +393,9 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     }
   };
 
-  if (loading) {
+  if (loading || (!ruleLoadError && rulesTenantId !== tenantId)) {
     return (
-      <div className="p-8 flex items-center justify-center text-gray-500">
+      <div className="p-8 flex items-center justify-center text-gray-500" aria-live="polite">
         <RefreshCw className="w-6 h-6 animate-spin mr-2" />
         <span>Loading product rules...</span>
       </div>
@@ -514,6 +523,16 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {activeTab === 'product' && catalogLoadState === 'empty' && (
         <div role="status" className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-600">
           This tenant currently has no catalogue-backed rule suggestions. Exact manual values are still accepted.
+        </div>
+      )}
+      {activeTab === 'product' && storeLoadState === 'loading' && (
+        <div aria-live="polite" className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs font-semibold text-gray-600">
+          Loading store geography suggestions…
+        </div>
+      )}
+      {activeTab === 'product' && storeLoadState === 'empty' && (
+        <div role="status" className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-600">
+          This tenant currently has no store geography suggestions. Exact manual geography values are still accepted.
         </div>
       )}
       {activeTab === 'product' && storeLoadState === 'error' && (
