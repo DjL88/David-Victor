@@ -40,7 +40,7 @@ export function normalizeDeliverectOrderProjectionStatus(value: unknown): string
     70: 'READY',
     90: 'READY',
     95: 'READY',
-    100: 'CANCELLED',
+    // 100 is a cancellation request, not confirmation.
     110: 'CANCELLED',
     120: 'ORDER_FAILED',
     121: 'ORDER_FAILED',
