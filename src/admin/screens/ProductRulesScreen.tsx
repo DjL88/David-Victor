@@ -4,7 +4,7 @@ import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
-import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload, Download } from 'lucide-react';
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -39,6 +39,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [substitutionImporting, setSubstitutionImporting] = useState(false);
   const [substitutionImportMessage, setSubstitutionImportMessage] = useState<string | null>(null);
+  const [substitutionExporting, setSubstitutionExporting] = useState(false);
 
   useEffect(() => {
     loadRules();
@@ -327,6 +328,21 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       setRuleError(error?.message || 'Substitution CSV could not be imported.');
     } finally {
       setSubstitutionImporting(false);
+    }
+  };
+
+  const handleSubstitutionEconomicsExport = async () => {
+    setSubstitutionExporting(true);
+    setRuleError(null);
+    try {
+      if (!defaultAdminClient.downloadSubstitutionEconomicsCsv) {
+        throw new Error('Substitution economics export is not available in this admin client.');
+      }
+      await defaultAdminClient.downloadSubstitutionEconomicsCsv(tenantId);
+    } catch (error: any) {
+      setRuleError(error?.message || 'Substitution economics could not be exported.');
+    } finally {
+      setSubstitutionExporting(false);
     }
   };
 
@@ -845,6 +861,33 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </div>
           </div>
         </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-gray-900">Substitution pricing safety</h3>
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Fixed default</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-700">Replacement quantity is independent from the original quantity. The customer charge is always the lower of the protected original effective <strong>line total</strong> and the replacement effective line total.</p>
+              <ul className="mt-2 space-y-1 text-[11px] text-gray-600 list-disc pl-4">
+                <li>Original promotion allocation stays frozen and is never recalculated because of a substitution.</li>
+                <li>A verified replacement promotion is considered only when the original line was not promotional.</li>
+                <li>Cheaper replacements reduce the charge; dearer replacements never create a positive substitution uplift.</li>
+                <li>Retail delta, customer delta and price-protection value are retained separately for finance reporting.</li>
+              </ul>
+              <p className="mt-2 text-[11px] font-semibold text-emerald-800">This payment-safety policy is read-only. Product rules may restrict which replacements are eligible, but cannot weaken the protected customer charge.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSubstitutionEconomicsExport()}
+              disabled={substitutionExporting}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {substitutionExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {substitutionExporting ? 'Exporting…' : 'Download economics CSV'}
+            </button>
+          </div>
+        </div>
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div><h3 className="text-sm font-bold text-gray-900">Preferred substitution PLU map</h3><p className="text-xs text-gray-600 mt-0.5">Upload CSV headers <code>originalPlu,substitutePlu</code>. Repeat an original PLU to set its preferred order. Availability, matching tags, category and price rules are still enforced.</p>{substitutionImportMessage&&<p className="mt-2 text-xs font-bold text-emerald-700">{substitutionImportMessage}</p>}</div>
@@ -1041,7 +1084,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   {action.type==='PREVENT_PURCHASE'&&<input value={(action as any).reason||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],reason:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Reason shown to customer"/>}
                   {action.type==='BADGE'&&<input value={(action as any).label||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],label:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Badge text"/>}
                   {action.type==='WARNING'&&<input value={(action as any).text||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],text:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Warning message"/>}
-                  {action.type==='SUBSTITUTION_POLICY'&&<div className="space-y-2 text-xs text-gray-700"><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],neverSubstitute:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Never substitute matching products</label><label className="block">Maximum price increase (£)<input type="number" min="0" step="0.01" value={(((action as any).maxPriceIncreaseMinor||0)/100).toFixed(2)} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maxPriceIncreaseMinor:Math.max(0,Math.round((Number(e.target.value)||0)*100))};setEditingRule({...editingRule,actions:a})}} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100"/></label><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).requireSameCategory!==false} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],requireSameCategory:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Confine automatic substitutes to the same category</label><label className="block">Preferred substitute PLUs (first choice first)<textarea value={((action as any).preferredSubstitutePlus||[]).join('\n')} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],preferredSubstitutePlus:e.target.value.split(/[\n,]/).map((value)=>value.trim()).filter(Boolean)};setEditingRule({...editingRule,actions:a})}} className="mt-1 min-h-20 w-full px-3 py-2 border border-gray-200 rounded-lg font-mono disabled:bg-gray-100" placeholder={'MILK-ALT-1\nMILK-ALT-2'}/></label><p className="text-[11px] text-gray-500">Customer-selected items remain a single explicit choice. Automatic recommendations also require matching product tags and live availability.</p></div>}
+                  {action.type==='SUBSTITUTION_POLICY'&&<div className="space-y-2 text-xs text-gray-700"><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],neverSubstitute:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Never substitute matching products</label><label className="block">Maximum replacement shelf-price increase for candidate eligibility (£)<input type="number" min="0" step="0.01" value={(((action as any).maxPriceIncreaseMinor||0)/100).toFixed(2)} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maxPriceIncreaseMinor:Math.max(0,Math.round((Number(e.target.value)||0)*100))};setEditingRule({...editingRule,actions:a})}} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100"/></label><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).requireSameCategory!==false} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],requireSameCategory:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Confine automatic substitutes to the same category</label><label className="block">Preferred substitute PLUs (first choice first)<textarea value={((action as any).preferredSubstitutePlus||[]).join('\n')} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],preferredSubstitutePlus:e.target.value.split(/[\n,]/).map((value)=>value.trim()).filter(Boolean)};setEditingRule({...editingRule,actions:a})}} className="mt-1 min-h-20 w-full px-3 py-2 border border-gray-200 rounded-lg font-mono disabled:bg-gray-100" placeholder={'MILK-ALT-1\nMILK-ALT-2'}/></label><p className="text-[11px] text-gray-500">This controls replacement eligibility only and never raises the protected customer charge. Customer-selected items remain a single explicit choice. Automatic recommendations also require matching product tags and live availability.</p></div>}
                 </div>)}
               </div>
 
