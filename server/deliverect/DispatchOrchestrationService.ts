@@ -265,12 +265,19 @@ export class DispatchOrchestrationService {
 
     const currentRecord = order.dispatch;
 
-    // If dispatch is already in terminal state or not requested, nothing to cancel with provider
-    if (['CANCELLED', 'DELIVERED', 'NOT_REQUESTED'].includes(currentRecord.state)) {
+    if (currentRecord.state === 'CANCELLED') {
       return {
         success: true,
         deliveryJobId: currentRecord.deliveryJobId || 'none',
         status: 'CANCELLED',
+      };
+    }
+    if (currentRecord.state === 'DELIVERED') {
+      return {
+        success: false,
+        deliveryJobId: currentRecord.deliveryJobId || 'none',
+        status: 'FAILED',
+        reason: 'Dispatch has already been delivered; cancellation was not applied.',
       };
     }
 
@@ -302,15 +309,15 @@ export class DispatchOrchestrationService {
         await FirestorePlatformService.updateOrderDispatchState(orderId, updated);
         return cancelRes;
       } catch (err: any) {
-        console.warn(`[Dispatch] Provider cancellation error for order ${orderId}:`, err);
+        console.warn(`[Dispatch] Provider cancellation failed for order ${orderId}.`);
+        // A provider rejection/unsupported operation is not evidence that the
+        // courier job was cancelled. Preserve the last verified lifecycle state.
         const updated: DispatchStateRecord = {
           ...currentRecord,
-          state: 'CANCELLED',
-          lastError: err.message || 'Upstream courier cancellation error',
+          lastError: String(err?.code || 'UPSTREAM_DISPATCH_CANCELLATION_FAILED'),
           idempotencyKeys: [...currentRecord.idempotencyKeys, idempotencyKey],
           timestamps: {
             ...currentRecord.timestamps,
-            cancelledAt: now,
             updatedAt: now,
           },
         };
@@ -318,8 +325,8 @@ export class DispatchOrchestrationService {
         return {
           success: false,
           deliveryJobId: currentRecord.deliveryJobId,
-          status: 'CANCELLED',
-          reason: err.message,
+          status: 'FAILED',
+          reason: String(err?.code || 'UPSTREAM_DISPATCH_CANCELLATION_FAILED'),
         };
       }
     } else {
