@@ -12,6 +12,14 @@ import {
   validateAdminActionInput,
 } from './adminActionRegistry';
 
+export interface VerifiedAdminActionPersistence {
+  verified: true;
+  verifiedAt: string;
+  revisionId: string;
+  resource: { type: 'tenantBranding'; id: string };
+  persistedSnapshot: BrandingSnapshot;
+}
+
 export interface PreparedAdminActionProposal {
   actionName: string;
   input: Record<string, unknown>;
@@ -382,6 +390,69 @@ async function rollbackBrandingRevision(args: {
   return { revisionId: rollbackDraft.revisionId, tenant: fullTenant };
 }
 
+async function verifyBrandingRevisionPersisted(args: {
+  tenantId: string;
+  revisionId: string;
+}): Promise<VerifiedAdminActionPersistence> {
+  const revision = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+    args.tenantId,
+    args.revisionId
+  );
+  if (
+    revision.resourceType !== 'tenantBranding' ||
+    revision.resourceId !== args.tenantId ||
+    revision.status !== 'PUBLISHED'
+  ) {
+    throw Object.assign(new Error('The Branding revision is not the published revision for this tenant.'), {
+      code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
+      statusCode: 409,
+    });
+  }
+
+  const published = await ConfigurationRevisionService.resolvePublishedConfiguration<BrandingSnapshot>(
+    args.tenantId,
+    'tenantBranding',
+    args.tenantId
+  );
+  if (!published || published.pointer.currentRevisionId !== revision.revisionId) {
+    throw Object.assign(new Error('The published Branding pointer does not match the applied revision.'), {
+      code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
+      statusCode: 409,
+    });
+  }
+
+  const db = getFirestoreDb();
+  let persistedTenant: TenantConfig;
+  if (db) {
+    const snap = await db.collection('tenants').doc(args.tenantId).get();
+    if (!snap.exists) {
+      throw Object.assign(new Error('Persisted tenant Branding could not be re-read after apply.'), {
+        code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
+        statusCode: 409,
+      });
+    }
+    persistedTenant = snap.data() as TenantConfig;
+  } else {
+    persistedTenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+  }
+
+  const persistedSnapshot = brandingSnapshot(persistedTenant);
+  if (diffConfiguration(revision.payload, persistedSnapshot).length > 0) {
+    throw Object.assign(new Error('Persisted Branding does not match the applied revision.'), {
+      code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
+      statusCode: 409,
+    });
+  }
+
+  return {
+    verified: true,
+    verifiedAt: new Date().toISOString(),
+    revisionId: revision.revisionId,
+    resource: { type: 'tenantBranding', id: args.tenantId },
+    persistedSnapshot,
+  };
+}
+
 export class AdminResourceAdapterRegistry {
   static async applyRevision(args: {
     tenantId: string;
@@ -397,6 +468,23 @@ export class AdminResourceAdapterRegistry {
     }
     const applied = await projectBrandingRevision(args);
     return { revisionId: applied.revisionId, result: applied.tenant };
+  }
+
+  static async verifyRevisionPersisted(args: {
+    tenantId: string;
+    actionName: string;
+    revisionId: string;
+  }): Promise<VerifiedAdminActionPersistence> {
+    if (args.actionName !== 'branding.proposeUpdate') {
+      throw Object.assign(new Error('This admin action does not have a persistence verifier.'), {
+        code: 'ADMIN_ACTION_VERIFY_NOT_CONNECTED',
+        statusCode: 409,
+      });
+    }
+    return verifyBrandingRevisionPersisted({
+      tenantId: args.tenantId,
+      revisionId: args.revisionId,
+    });
   }
 
   static async rollbackRevision(args: {
