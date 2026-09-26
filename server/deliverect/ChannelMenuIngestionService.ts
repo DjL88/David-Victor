@@ -799,6 +799,52 @@ export class ChannelMenuIngestionService {
     }
   }
 
+  static async listRecentIngress(tenantId: string, limit: number = 100): Promise<Array<{
+    eventId: string;
+    status: ChannelMenuIngressRecord['status'];
+    receivedAt: string;
+    updatedAt: string;
+    processedAt?: string;
+    menuIds: string[];
+    channelLinkIds: string[];
+    byteSize: number;
+    error?: string;
+    review?: ChannelMenuIngressRecord['review'];
+  }>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return [];
+    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    let records: ChannelMenuIngressRecord[] = [];
+    if (db) {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .orderBy('receivedAt', 'desc')
+        .limit(boundedLimit)
+        .get();
+      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
+    } else {
+      records = Array.from(memoryIngress.values())
+        .filter((record) => record.tenantId === cleanTenantId)
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+        .slice(0, boundedLimit);
+    }
+    return records.map((record) => ({
+      eventId: record.eventId,
+      status: record.status,
+      receivedAt: record.receivedAt,
+      updatedAt: record.updatedAt,
+      processedAt: record.processedAt,
+      menuIds: record.menuIds,
+      channelLinkIds: record.channelLinkIds,
+      byteSize: record.byteSize,
+      error: record.error,
+      review: record.review,
+    }));
+  }
+
   static async listHeldReviews(tenantId: string): Promise<Array<{
     eventId: string;
     receivedAt: string;
