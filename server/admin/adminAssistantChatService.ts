@@ -1329,12 +1329,13 @@ export class AdminAssistantChatService {
     console.error('[AdminAssistantChat] Falling back to guided mode:', lastError?.message || 'No AI provider configured');
     return {
       message: buildDegradedAssistantReply(args.context?.section, args.message, readContext),
-      suggestions: getAdminAssistantSuggestions(args.context?.section),
+      suggestions: suggestionsFor(args.context?.section),
       provider: 'local-fallback',
       model: 'guided-admin-fallback',
       degraded: true,
       readAction: readContext?.actionName,
       navigation,
+      knowledgeVersion: knowledge.version,
     };
   }
 }
