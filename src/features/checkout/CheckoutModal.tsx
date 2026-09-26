@@ -652,8 +652,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onBasketUpdated?.(updated);
       setPromoSuccess(`Promo code applied!`);
       setPromoCode('');
-    } catch (err: any) {
-      setPromoError(err.message || 'Invalid promo code');
+    } catch (_err: unknown) {
+      setPromoError(t('checkout.promoFailure'));
     } finally {
       setIsApplyingPromo(false);
     }
@@ -1708,9 +1708,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1">
                 A secure hosted payment session has been created by our Backend-for-Frontend.
               </p>
-              <div className="mt-2 inline-block px-3 py-1 rounded-full bg-gray-100 text-[11px] font-mono text-gray-600">
-                Session: {sessionId}
-              </div>
+              <p className="mt-2 text-[11px] text-gray-500">
+                Continue in the secure payment window. Technical payment identifiers are kept private.
+              </p>
             </div>
 
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 text-left text-xs space-y-2 max-w-sm mx-auto">

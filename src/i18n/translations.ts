@@ -215,6 +215,7 @@ export interface LocaleTranslations {
   'checkout.promoPlaceholder': string;
   'checkout.apply': string;
   'checkout.applying': string;
+  'checkout.promoFailure': string;
   'checkout.payableTotal': string;
   'checkout.collectionOrder': string;
   'checkout.collectionNotice': string;
@@ -625,6 +626,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.promoPlaceholder': 'e.g. SAVE5 or FREEDELIV',
     'checkout.apply': 'Apply',
     'checkout.applying': 'Applying…',
+    'checkout.promoFailure': 'That code could not be applied. Check it and try again.',
     'checkout.payableTotal': 'Payable Total',
     'checkout.collectionOrder': 'Collection Order',
     'checkout.collectionNotice': 'This collection order is submitted directly to the store. No card pre-authorisation, payment capture or courier dispatch is created on this order path.',
@@ -1023,6 +1025,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.promoPlaceholder': 'p. ej. SAVE5 o FREEDELIV',
     'checkout.apply': 'Aplicar',
     'checkout.applying': 'Aplicando…',
+    'checkout.promoFailure': 'No se pudo aplicar ese código. Compruébalo e inténtalo de nuevo.',
     'checkout.payableTotal': 'Total a pagar',
     'checkout.collectionOrder': 'Pedido para recoger',
     'checkout.collectionNotice': 'Este pedido de recogida se envía directamente a la tienda. No se crea preautorización, cobro ni envío por mensajero.',
@@ -1421,6 +1424,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.promoPlaceholder': 'ex. SAVE5 ou FREEDELIV',
     'checkout.apply': 'Appliquer',
     'checkout.applying': 'Application…',
+    'checkout.promoFailure': 'Ce code n’a pas pu être appliqué. Vérifiez-le et réessayez.',
     'checkout.payableTotal': 'Total à payer',
     'checkout.collectionOrder': 'Commande à retirer',
     'checkout.collectionNotice': 'Cette commande de retrait est envoyée directement au magasin. Aucune préautorisation, capture de paiement ou livraison par coursier n’est créée.',
@@ -1819,6 +1823,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.promoPlaceholder': 'z. B. SAVE5 oder FREEDELIV',
     'checkout.apply': 'Anwenden',
     'checkout.applying': 'Wird angewendet…',
+    'checkout.promoFailure': 'Dieser Code konnte nicht angewendet werden. Prüfe ihn und versuche es erneut.',
     'checkout.payableTotal': 'Zu zahlender Gesamtbetrag',
     'checkout.collectionOrder': 'Abholbestellung',
     'checkout.collectionNotice': 'Diese Abholbestellung wird direkt an die Filiale gesendet. Es werden keine Karten-Vorautorisierung, Zahlungserfassung oder Kurierzustellung erstellt.',
