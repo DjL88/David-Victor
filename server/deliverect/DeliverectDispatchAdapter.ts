@@ -4,14 +4,12 @@ import {
   DispatchValidationResult,
   DispatchQuoteParams,
   DispatchQuoteResult,
-  CourierQuote,
   DispatchAssignParams,
   DispatchAssignmentResult,
   DispatchCancelParams,
   DispatchCancelResult,
 } from './DispatchAdapter';
 import { OAuthTokenManager } from './OAuthTokenManager';
-import { Money } from '../../src/commerce/models';
 import { BFFError } from '../errors';
 
 /**
@@ -21,11 +19,18 @@ import { BFFError } from '../errors';
  * Requires OAuth client credentials.
  * Tokens are cached server-side and never exposed to the client.
  *
- * Open Contract to verify in staging (DELIVERECT_VERIFICATION.md):
- * - Exact schema of /fulfillment/validate request & response
- * - Validation token expiration duration
- * - Delivery quote and ETA field names
- * - Live courier assignment endpoint and payload (DV-02, DV-08)
+ * Verified public contract:
+ * - POST /fulfillment/validate accepts channelLinkId, pickupTime and
+ *   deliveryLocations; a successful response exposes validationId, expiresAt,
+ *   deliveryTimeETA, pickupTimeEta and price.
+ * - The validation token is short-lived provider evidence and is not a courier
+ *   quote/provider identity.
+ *
+ * Still unverified for this channel-side integration:
+ * - Live courier assignment endpoint/payload.
+ * - Dispatch-job cancellation endpoint/cutoff.
+ * Those operations fail closed below instead of being inferred from unrelated
+ * Dispatch-partner webhook or Channel order-cancellation contracts.
  */
 export class DeliverectDispatchAdapter implements DispatchAdapter {
   readonly adapterName = 'DeliverectDispatchAdapter';
@@ -61,6 +66,54 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
       throw error;
     }
 
+    const channelLinkId = String(params.channelLinkId || params.storeId || '').trim();
+    if (!channelLinkId) {
+      throw new BFFError(
+        'DISPATCH_CHANNEL_LINK_REQUIRED',
+        'A verified channelLinkId is required for Deliverect dispatch validation.',
+        400,
+        false
+      );
+    }
+
+    const address: any = params.deliveryAddress || {};
+    const street = String(address.street || address.line1 || '').trim();
+    const city = String(address.city || '').trim();
+    const country = String(address.country || '').trim();
+    const postalCode = String(address.postalCode || address.postcode || '').trim();
+    if (!street || !city || !country || !postalCode) {
+      throw new BFFError(
+        'DISPATCH_ADDRESS_INCOMPLETE',
+        'Street, city, country and postal code are required for Deliverect dispatch validation.',
+        400,
+        false
+      );
+    }
+
+    const latitude =
+      typeof address.coordinates?.latitude === 'number'
+        ? address.coordinates.latitude
+        : typeof address.latitude === 'number'
+          ? address.latitude
+          : undefined;
+    const longitude =
+      typeof address.coordinates?.longitude === 'number'
+        ? address.coordinates.longitude
+        : typeof address.longitude === 'number'
+          ? address.longitude
+          : undefined;
+
+    const deliveryLocations: Record<string, unknown> = {
+      street,
+      city,
+      country,
+      postalCode,
+      ...(params.deliveryTime ? { deliveryTime: params.deliveryTime } : {}),
+      ...(Number.isFinite(latitude) && Number.isFinite(longitude)
+        ? { coordinates: { latitude, longitude } }
+        : {}),
+    };
+
     const accessToken = await this.tokenManager.getAccessToken();
     const baseUrl =
       typeof (this.tokenManager as any).getBaseUrl === 'function'
@@ -68,130 +121,107 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
         : this.tokenManager.config?.baseUrl || 'https://api.staging.deliverect.com';
     const endpoint = `${baseUrl}/fulfillment/validate`;
 
-    try {
-      const response = await this.fetchFn(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          channelLinkId: params.channelLinkId || params.storeId,
-          deliveryAddress: params.deliveryAddress,
-          pickupTime: params.pickupTime,
-          deliveryTime: params.deliveryTime,
-          orderValue: {
-            amount: params.orderValueMinorUnits ?? 0,
-            currency: params.currency,
-          },
-          itemsCount: params.itemsCount,
-        }),
-      });
+    const response = await this.fetchFn(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        channelLinkId,
+        ...(params.pickupTime ? { pickupTime: params.pickupTime } : {}),
+        deliveryLocations,
+      }),
+    });
 
-      if (!response.ok) {
-        if (response.status === 401 && !isRetry) {
-          if (typeof (this.tokenManager as any).invalidateToken === 'function') {
-            (this.tokenManager as any).invalidateToken();
-          } else if (typeof this.tokenManager.invalidateCache === 'function') {
-            this.tokenManager.invalidateCache();
-          }
-          return this.validateAvailability(params, true);
+    if (!response.ok) {
+      if (response.status === 401 && !isRetry) {
+        if (typeof (this.tokenManager as any).invalidateToken === 'function') {
+          (this.tokenManager as any).invalidateToken();
+        } else if (typeof this.tokenManager.invalidateCache === 'function') {
+          this.tokenManager.invalidateCache();
         }
-
-        if (response.status === 404 || response.status === 400 || response.status === 422) {
-          const errData: any = await response.json().catch(() => ({}));
-          return {
-            available: false,
-            failureReason: errData.message || errData.reason || 'Address outside courier dispatch delivery zone',
-          };
-        }
-        const errorText = await response.text().catch(() => 'Unknown upstream error');
-        const error: any = new Error(`Deliverect Dispatch API failed (${response.status}): ${errorText}`);
-        error.status = response.status;
-        error.code = 'UPSTREAM_DISPATCH_ERROR';
-        throw error;
+        return this.validateAvailability(params, true);
       }
 
-      const data: any = await response.json();
-
-      // Normalize response according to Deliverect Dispatch contract
-      // NEVER default to true when availability fields are missing
-      const isAvailable = typeof data.available === 'boolean'
-        ? data.available
-        : typeof data.isAvailable === 'boolean'
-          ? data.isAvailable
-          : false;
-
-      if (!isAvailable) {
-        return {
-          available: false,
-          failureReason: data.reason || data.unavailabilityReason || 'Courier dispatch unserviceable for this location',
-        };
-      }
-
-      let fee: Money | undefined = undefined;
-      if (data.deliveryFee) {
-        const feeCurrency = (typeof data.deliveryFee === 'object' ? data.deliveryFee.currency : undefined) || params.currency;
-        const feeAmount = typeof data.deliveryFee === 'object' ? data.deliveryFee.amount : data.deliveryFee;
-        if (typeof feeAmount === 'number' && feeCurrency) {
-          fee = { amount: feeAmount, currency: feeCurrency };
-        }
-      } else if (typeof data.deliveryPrice === 'number' && params.currency) {
-        fee = { amount: data.deliveryPrice, currency: params.currency };
-      }
-
-      return {
-        available: true,
-        validationId: data.validationId || data.dispatchValidationId || data.id,
-        expiresAt: data.expiresAt || (data.validUntil ? new Date(data.validUntil).toISOString() : undefined),
-        estimatedDeliveryTime: data.deliveryTime || (data.estimatedDurationMinutes ? `${data.estimatedDurationMinutes} mins` : undefined),
-        estimatedPickupTime: data.pickupTime,
-        fee,
-        provider: data.provider || data.courierProvider,
-      };
-    } catch (err: any) {
-      if (err.code === 'INTEGRATION_NOT_CONFIGURED' || err.status === 503) {
-        throw err;
-      }
-      throw err;
+      throw new BFFError(
+        'UPSTREAM_DISPATCH_ERROR',
+        `Deliverect dispatch validation failed with HTTP ${response.status}.`,
+        response.status >= 400 && response.status < 600 ? response.status : 502,
+        response.status >= 500
+      );
     }
+
+    const data: any = await response.json();
+    if (typeof data?.available !== 'boolean') {
+      throw new BFFError(
+        'UPSTREAM_DISPATCH_CONTRACT_INVALID',
+        'Deliverect dispatch validation returned no explicit availability result.',
+        502,
+        true
+      );
+    }
+
+    if (!data.available) {
+      return {
+        available: false,
+        failureReason:
+          typeof data.errors === 'string' && data.errors.trim()
+            ? data.errors.trim()
+            : 'No valid dispatch offer is available for this delivery.',
+      };
+    }
+
+    const validationId = typeof data.validationId === 'string' ? data.validationId.trim() : '';
+    const expiresAt = typeof data.expiresAt === 'string' ? data.expiresAt.trim() : '';
+    if (!validationId || !expiresAt || !Number.isFinite(Date.parse(expiresAt))) {
+      throw new BFFError(
+        'UPSTREAM_DISPATCH_CONTRACT_INVALID',
+        'Deliverect reported dispatch availability without usable validationId/expiresAt evidence.',
+        502,
+        true
+      );
+    }
+
+    const price = typeof data.price === 'number' && Number.isFinite(data.price)
+      ? data.price
+      : undefined;
+    return {
+      available: true,
+      validationId,
+      expiresAt,
+      deliveryPrice: price,
+      ...(price !== undefined && params.currency
+        ? { fee: { amount: price, currency: params.currency } }
+        : {}),
+      estimatedDeliveryTime:
+        typeof data.deliveryTimeETA === 'string' ? data.deliveryTimeETA : undefined,
+      estimatedPickupTime:
+        typeof data.pickupTimeEta === 'string' ? data.pickupTimeEta : undefined,
+    };
   }
 
   async getQuotes(params: DispatchQuoteParams): Promise<DispatchQuoteResult> {
-    const valResult = await this.validateAvailability(params);
-    if (!valResult.available) {
+    const validation = await this.validateAvailability(params);
+    if (!validation.available) {
       return {
         available: false,
         quotes: [],
-        failureReason: valResult.failureReason || 'Address outside courier dispatch delivery zone',
+        failureReason: validation.failureReason,
       };
     }
 
-    const fee = valResult.fee || { amount: valResult.deliveryPrice || 0, currency: params.currency || 'GBP' };
-    const expiresAt = valResult.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-    const quote: CourierQuote = {
-      quoteId: valResult.validationId || `quote_deliverect_${Date.now()}`,
-      providerId: 'deliverect-dispatch',
-      providerDisplayName: valResult.provider || 'Deliverect Dispatch',
-      fee,
-      pickupEtaMinutes: valResult.pickupEtaMinutes,
-      deliveryEtaMinutes: valResult.deliveryEtaMinutes,
-      estimatedPickupTime: valResult.estimatedPickupTime,
-      estimatedDeliveryTime: valResult.estimatedDeliveryTime,
-      expiresAt,
-      supportsScheduledAssignment: false, // Live staging Deliverect contract pending verification (DV-02)
-      supportsAgeVerification: false,
-      supportsPin: false,
-    };
-
+    // /fulfillment/validate proves serviceability and supplies a short-lived
+    // validationId. It does not expose a courier/provider quote identity.
+    // Keep that distinction explicit: consumers can use validationId/expiresAt
+    // at checkout without us inventing quote/provider metadata.
     return {
       available: true,
-      quotes: [quote],
-      selectedQuote: quote,
-      validationId: valResult.validationId,
-      expiresAt,
+      quotes: [],
+      validationId: validation.validationId,
+      expiresAt: validation.expiresAt,
+      reason: 'Dispatch availability verified; courier quote/provider identity was not reported.',
     };
   }
 
@@ -200,17 +230,17 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
     // Explicitly reject rather than fabricating live success.
     throw new BFFError(
       'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED',
-      'Deliverect live courier assignment is pending partner staging verification (DV-02). Use Demo mode for end-to-end simulated driver dispatch.',
+      'Deliverect live courier assignment is not enabled because the channel-side assignment contract has not been verified.',
       501,
       false
     );
   }
 
   async cancelDispatch(_params: DispatchCancelParams): Promise<DispatchCancelResult> {
-    // Deliverect staging live cancellation contract is unverified.
+    // No verified channel-side dispatch-job cancellation endpoint or cutoff is available here.
     throw new BFFError(
       'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED',
-      'Deliverect live courier cancellation is pending partner staging verification.',
+      'Deliverect dispatch-job cancellation is not enabled because its channel-side endpoint and cutoff semantics have not been verified.',
       501,
       false
     );

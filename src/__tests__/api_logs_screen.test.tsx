@@ -14,7 +14,13 @@ function deferred<T>() {
 }
 const snapshot = (tenantId: string, accountId = tenantId) => ({
   tenantId, generatedAt: '2026-09-26T04:00:00Z', menuPushes: [], webhooks: [], circuits: {},
-  integration: { accountId, grantedScopes: [], commerceScopeGranted: false, allowedChannelLinkIds: [] },
+  sources: {
+    menuPushes: { status: 'AVAILABLE', source: 'FIRESTORE', observedAt: '2026-09-26T04:00:00Z' },
+    webhooks: { status: 'AVAILABLE', source: 'FIRESTORE', observedAt: '2026-09-26T04:00:00Z' },
+    integration: { status: 'AVAILABLE', observedAt: '2026-09-26T04:00:00Z' },
+    oauth: { status: 'UNKNOWN', mode: 'PASSIVE', observedAt: '2026-09-26T04:00:00Z' },
+  },
+  integration: { accountId, grantedScopes: [], commerceScopeGranted: null, allowedChannelLinkIds: [] },
 });
 
 let container: HTMLDivElement;
@@ -51,6 +57,22 @@ describe('API Logs real component', () => {
     expect(container.textContent).not.toContain('genericCommerce missing');
     expect(container.textContent).not.toContain('CLOSED');
     expect(container.textContent).not.toContain('private-token');
+  });
+
+  it('labels unavailable and partial journal sources instead of claiming empty history', async () => {
+    client.getIntegrationApiLogs.mockResolvedValue({
+      ...snapshot('tenant-a'),
+      sources: {
+        ...snapshot('tenant-a').sources,
+        menuPushes: { status: 'UNAVAILABLE', source: 'MEMORY', observedAt: '2026-09-26T04:01:00Z', errorCode: 'FIRESTORE_READ_FAILED' },
+        webhooks: { status: 'PARTIAL', source: 'MEMORY', observedAt: '2026-09-26T04:01:00Z', errorCode: 'FIRESTORE_READ_FAILED' },
+      },
+    });
+    await render('tenant-a');
+    expect(container.textContent).toContain('Menu Push activity source is unavailable; an empty result is not confirmed.');
+    expect(container.textContent).toContain('Webhook activity is partial; additional durable history may be unavailable.');
+    expect(container.textContent).not.toContain('No Menu Push entries returned for this tenant.');
+    expect(container.textContent).not.toContain('No webhook entries returned for this tenant.');
   });
 
   it('hides the old snapshot immediately on tenant switch, then ignores its delayed response', async () => {
