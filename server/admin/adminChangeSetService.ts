@@ -57,6 +57,10 @@ export interface AssistantChangeSet {
   validatedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  approvalScopeHash: string;
+  approvalExpiresAt?: string;
+  approvalConsumedAt?: string;
+  approvalConsumedBy?: string;
   applyingAt?: string;
   appliedAt?: string;
   failedAt?: string;
@@ -86,6 +90,8 @@ export interface AuditEventV2 {
     required: boolean;
     approvedBy?: string;
     approvedAt?: string;
+    expiresAt?: string;
+    scopeHash?: string;
   };
   assistant?: {
     conversationId?: string;
@@ -120,6 +126,8 @@ interface ApproveChangeSetArgs {
   actorRole: AdminRole;
 }
 
+export const ADMIN_CHANGESET_APPROVAL_TTL_MS = 10 * 60 * 1000;
+
 const inMemoryChangeSets = new Map<string, AssistantChangeSet>();
 const inMemoryAuditEvents = new Map<string, AuditEventV2[]>();
 
@@ -133,6 +141,35 @@ function collectionKey(tenantId: string, changeSetId: string): string {
 
 function stableHash(value: unknown): string {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function approvalScopeHashFor(value: Pick<AssistantChangeSet, 'tenantId' | 'requestHash' | 'actions' | 'revisionIds'>): string {
+  return stableHash({
+    tenantId: value.tenantId,
+    requestHash: value.requestHash,
+    actions: value.actions.map((action) => ({
+      actionName: action.actionName,
+      input: action.input,
+      risk: action.risk,
+      capability: action.capability,
+    })),
+    revisionIds: value.revisionIds,
+  });
+}
+
+function assertApprovalUsable(changeSet: AssistantChangeSet): void {
+  if (!changeSet.approvedAt || !changeSet.approvedBy || !changeSet.approvalExpiresAt) {
+    throw error('ADMIN_CHANGESET_APPROVAL_REQUIRED', 'A current scoped approval is required before apply.', 409);
+  }
+  if (changeSet.approvalScopeHash !== approvalScopeHashFor(changeSet)) {
+    throw error('ADMIN_CHANGESET_APPROVAL_SCOPE_MISMATCH', 'The approved change scope no longer matches this change set.', 409);
+  }
+  if (Date.now() >= Date.parse(changeSet.approvalExpiresAt)) {
+    throw error('ADMIN_CHANGESET_APPROVAL_EXPIRED', 'This approval has expired. Review and approve a fresh change set.', 409);
+  }
+  if (changeSet.approvalConsumedAt) {
+    throw error('ADMIN_CHANGESET_APPROVAL_REPLAYED', 'This approval has already been consumed.', 409);
+  }
 }
 
 function changeSetIdFor(tenantId: string, idempotencyKey?: string): string {
@@ -186,6 +223,8 @@ function auditEventForApproved(changeSet: AssistantChangeSet, actorId: string): 
       required: true,
       approvedBy: changeSet.approvedBy,
       approvedAt: changeSet.approvedAt,
+      expiresAt: changeSet.approvalExpiresAt,
+      scopeHash: changeSet.approvalScopeHash,
     },
     result: 'SUCCESS',
     reversible: changeSet.reversible,
@@ -291,6 +330,17 @@ export class AdminChangeSetService {
       revisionIds: args.revisionIds || [],
       idempotencyKey: args.idempotencyKey,
       requestHash,
+      approvalScopeHash: stableHash({
+        tenantId: args.tenantId,
+        requestHash,
+        actions: actions.map((action) => ({
+          actionName: action.actionName,
+          input: action.input,
+          risk: action.risk,
+          capability: action.capability,
+        })),
+        revisionIds: args.revisionIds || [],
+      }),
       createdAt: now,
       updatedAt: now,
       validatedAt: now,
@@ -400,6 +450,7 @@ export class AdminChangeSetService {
         status: 'APPROVED',
         approvedAt: new Date().toISOString(),
         approvedBy: args.actorId,
+        approvalExpiresAt: new Date(Date.now() + ADMIN_CHANGESET_APPROVAL_TTL_MS).toISOString(),
         updatedAt: new Date().toISOString(),
       };
       inMemoryChangeSets.set(key, approved);
@@ -438,6 +489,7 @@ export class AdminChangeSetService {
         status: 'APPROVED',
         approvedAt: now,
         approvedBy: args.actorId,
+        approvalExpiresAt: new Date(Date.now() + ADMIN_CHANGESET_APPROVAL_TTL_MS).toISOString(),
         updatedAt: now,
       };
       const event = auditEventForApproved(approved, args.actorId);
@@ -483,6 +535,7 @@ export class AdminChangeSetService {
           409
         );
       }
+      if (args.status === 'APPLYING') assertApprovalUsable(current);
       const now = new Date().toISOString();
       const next: AssistantChangeSet = {
         ...current,
@@ -494,7 +547,11 @@ export class AdminChangeSetService {
           : current.warnings,
         rollbackRevisionIds: args.rollbackRevisionIds ?? current.rollbackRevisionIds,
       };
-      if (args.status === 'APPLYING') next.applyingAt = now;
+      if (args.status === 'APPLYING') {
+        next.applyingAt = now;
+        next.approvalConsumedAt = now;
+        next.approvalConsumedBy = args.actorId;
+      }
       if (args.status === 'APPLIED') next.appliedAt = now;
       if (args.status === 'FAILED' || args.status === 'PARTIALLY_FAILED') next.failedAt = now;
       if (args.status === 'ROLLED_BACK') next.rolledBackAt = now;
