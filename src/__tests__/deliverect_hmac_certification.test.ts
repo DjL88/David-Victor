@@ -47,6 +47,45 @@ describe('Deliverect HMAC certification contract', () => {
     ).resolves.toMatchObject({ tenantId: 'tenant-a', secret: 'cl-staging-123' });
   });
 
+  it('accepts the mapped channelLink nested in a Retail picking eventData envelope', async () => {
+    process.env.APP_MODE = 'staging';
+    process.env.DELIVERECT_ENV = 'staging';
+    const raw = JSON.stringify({
+      eventId: 'retail-pick-123',
+      eventType: 'PICKING_STATUS_UPDATE',
+      eventData: {
+        channelOrderId: 'LT-PICK-123',
+        channelLink: 'cl-staging-123',
+        status: 'PICKING_STARTED',
+      },
+    });
+
+    vi.spyOn(SecretManager, 'getSecret').mockResolvedValue(undefined as any);
+    vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+      tenantId: 'tenant-a',
+      environment: 'staging',
+      allowedChannelLinkIds: ['cl-staging-123'],
+    } as any);
+    vi.spyOn(FirestorePlatformService, 'getTenantStores').mockResolvedValue([
+      { id: 'store-a', channelLinkId: 'cl-staging-123', lifecycleStatus: 'ACTIVE' },
+    ] as any);
+
+    const temporarySecrets = await WebhookService.getMappedStagingChannelLinkSecrets(
+      'tenant-a',
+      JSON.parse(raw)
+    );
+    expect(temporarySecrets).toContain('cl-staging-123');
+
+    await expect(
+      WebhookService.resolveTenantForWebhook(
+        Buffer.from(raw),
+        sign(raw, 'cl-staging-123'),
+        'tenant-a',
+        { stagingTemporarySecrets: temporarySecrets }
+      )
+    ).resolves.toMatchObject({ tenantId: 'tenant-a', secret: 'cl-staging-123' });
+  });
+
   it('accepts a mapped staging locationId where Deliverect uses location as the temporary secret', async () => {
     process.env.APP_MODE = 'staging';
     process.env.DELIVERECT_ENV = 'staging';
