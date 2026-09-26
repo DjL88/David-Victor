@@ -86,34 +86,35 @@ describe('Phase 8: Store Eligibility & Dispatch Validation', () => {
     });
 
     describe('DeliverectDispatchAdapter (Production Upstream Protocol)', () => {
-      it('formats request payload to Deliverect /fulfillment/validate with minor unit money and token authorization', async () => {
-        const fakeTokenManager = {
-          getAccessToken: vi.fn().mockResolvedValue('test_bearer_token_123'),
-          invalidateToken: vi.fn(),
-          getEnvironment: vi.fn().mockReturnValue('staging'),
-          getBaseUrl: vi.fn().mockReturnValue('https://api.staging.deliverect.com'),
-        } as any;
+      const tokenManager = () => ({
+        isConfigured: true,
+        getAccessToken: vi.fn().mockResolvedValue('test_bearer_token_123'),
+        invalidateToken: vi.fn(),
+        getEnvironment: vi.fn().mockReturnValue('staging'),
+        getBaseUrl: vi.fn().mockReturnValue('https://api.staging.deliverect.com'),
+      }) as any;
 
+      it('uses the verified /fulfillment/validate request and response contract', async () => {
+        const fakeTokenManager = tokenManager();
+        const expiresAt = '2026-09-26T14:30:00.000Z';
         const fakeFetch = vi.fn().mockResolvedValue({
           ok: true,
           status: 200,
           json: async () => ({
             available: true,
             validationId: 'dlv_val_abc999',
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-            pickupTime: '2026-09-18T10:00:00Z',
-            deliveryTime: '2026-09-18T10:35:00Z',
-            estimatedDurationMinutes: 35,
-            deliveryFee: {
-              amount: 350,
-              currency: 'GBP',
-            },
+            expiresAt,
+            pickupTimeEta: '2026-09-26T14:22:00.000Z',
+            deliveryTimeETA: '2026-09-26T14:42:00.000Z',
+            price: 350,
           }),
         });
 
         const adapter = new DeliverectDispatchAdapter(fakeTokenManager, fakeFetch);
         const result = await adapter.validateAvailability({
           channelLinkId: 'channel-store-99',
+          pickupTime: '2026-09-26T14:20:00.000Z',
+          deliveryTime: '2026-09-26T14:45:00.000Z',
           deliveryAddress: {
             street: 'Oxford Street',
             city: 'London',
@@ -126,60 +127,144 @@ describe('Phase 8: Store Eligibility & Dispatch Validation', () => {
           itemsCount: 3,
         });
 
-        expect(result.available).toBe(true);
-        expect(result.validationId).toBe('dlv_val_abc999');
-        expect(result.fee?.amount).toBe(350);
-        expect(result.fee?.currency).toBe('GBP');
+        expect(result).toMatchObject({
+          available: true,
+          validationId: 'dlv_val_abc999',
+          expiresAt,
+          deliveryPrice: 350,
+          fee: { amount: 350, currency: 'GBP' },
+          estimatedPickupTime: '2026-09-26T14:22:00.000Z',
+          estimatedDeliveryTime: '2026-09-26T14:42:00.000Z',
+        });
+        expect(result.provider).toBeUndefined();
 
-        expect(fakeFetch).toHaveBeenCalledTimes(1);
         const [url, options] = fakeFetch.mock.calls[0];
         expect(url).toBe('https://api.staging.deliverect.com/fulfillment/validate');
         expect(options.method).toBe('POST');
-        expect(options.headers['Authorization']).toBe('Bearer test_bearer_token_123');
-        const body = JSON.parse(options.body);
-        expect(body.channelLinkId).toBe('channel-store-99');
-        expect(body.orderValue.amount).toBe(4200);
-        expect(body.orderValue.currency).toBe('GBP');
+        expect(options.headers.Authorization).toBe('Bearer test_bearer_token_123');
+        expect(JSON.parse(options.body)).toEqual({
+          channelLinkId: 'channel-store-99',
+          pickupReadyTime: '2026-09-26T14:20:00.000Z',
+          deliveryLocations: {
+            deliveryTime: '2026-09-26T14:45:00.000Z',
+            street: 'Oxford Street',
+            city: 'London',
+            country: 'GB',
+            postalCode: 'W1D 1BS',
+            coordinates: { latitude: 51.5154, longitude: -0.1419 },
+          },
+        });
+        expect(options.body).not.toContain('orderValue');
+        expect(options.body).not.toContain('itemsCount');
+      });
+
+      it('keeps unavailable provider evidence unavailable without inventing a quote', async () => {
+        const fakeFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ available: false, errors: 'No valid offers available' }),
+        });
+        const adapter = new DeliverectDispatchAdapter(tokenManager(), fakeFetch);
+        const result = await adapter.getQuotes({
+          channelLinkId: 'channel-1',
+          deliveryAddress: {
+            street: 'Oxford Street', city: 'London', postalCode: 'W1D 1BS', country: 'GB',
+          },
+          currency: 'GBP',
+        });
+
+        expect(result).toEqual({
+          available: false,
+          quotes: [],
+          failureReason: 'No valid offers available',
+        });
+      });
+
+      it('returns validation evidence without synthesising provider, quote id, or expiry', async () => {
+        const expiresAt = '2026-09-26T14:30:00.000Z';
+        const fakeFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            available: true,
+            validationId: 'validation-real',
+            expiresAt,
+            price: 299,
+          }),
+        });
+        const adapter = new DeliverectDispatchAdapter(tokenManager(), fakeFetch);
+        const result = await adapter.getQuotes({
+          channelLinkId: 'channel-1',
+          deliveryAddress: {
+            street: 'Oxford Street', city: 'London', postalCode: 'W1D 1BS', country: 'GB',
+          },
+          currency: 'GBP',
+        });
+
+        expect(result).toMatchObject({
+          available: true,
+          validationId: 'validation-real',
+          expiresAt,
+          quotes: [],
+        });
+        expect(result.selectedQuote).toBeUndefined();
+        expect(JSON.stringify(result)).not.toContain('deliverect-dispatch');
+        expect(JSON.stringify(result)).not.toContain('quote_deliverect_');
+      });
+
+      it('rejects an incomplete successful response instead of inventing missing validation evidence', async () => {
+        const adapter = new DeliverectDispatchAdapter(tokenManager(), vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ available: true }),
+        }) as any);
+
+        await expect(adapter.validateAvailability({
+          channelLinkId: 'channel-1',
+          deliveryAddress: {
+            street: 'Oxford Street', city: 'London', postalCode: 'W1D 1BS', country: 'GB',
+          },
+        })).rejects.toMatchObject({ code: 'UPSTREAM_DISPATCH_CONTRACT_INVALID', statusCode: 502 });
       });
 
       it('refreshes token and retries once on 401 Unauthorized', async () => {
-        const fakeTokenManager = {
-          getAccessToken: vi
-            .fn()
-            .mockResolvedValueOnce('stale_token')
-            .mockResolvedValueOnce('fresh_token'),
-          invalidateToken: vi.fn(),
-          getEnvironment: vi.fn().mockReturnValue('staging'),
-          getBaseUrl: vi.fn().mockReturnValue('https://api.staging.deliverect.com'),
-        } as any;
-
+        const fakeTokenManager = tokenManager();
+        fakeTokenManager.getAccessToken = vi
+          .fn()
+          .mockResolvedValueOnce('stale_token')
+          .mockResolvedValueOnce('fresh_token');
         const fakeFetch = vi
           .fn()
-          .mockResolvedValueOnce({
-            ok: false,
-            status: 401,
-            text: async () => 'Unauthorized',
-          })
+          .mockResolvedValueOnce({ ok: false, status: 401 })
           .mockResolvedValueOnce({
             ok: true,
             status: 200,
             json: async () => ({
               available: true,
               validationId: 'dlv_val_refreshed_1',
-              expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+              expiresAt: '2026-09-26T14:30:00.000Z',
             }),
           });
 
         const adapter = new DeliverectDispatchAdapter(fakeTokenManager, fakeFetch);
         const result = await adapter.validateAvailability({
           channelLinkId: 'channel-1',
-          deliveryAddress: { city: 'London', country: 'GB' },
+          deliveryAddress: {
+            street: 'Oxford Street', city: 'London', postalCode: 'W1D 1BS', country: 'GB',
+          },
         });
 
-        expect(result.available).toBe(true);
         expect(result.validationId).toBe('dlv_val_refreshed_1');
         expect(fakeTokenManager.invalidateToken).toHaveBeenCalledTimes(1);
         expect(fakeFetch).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps unverified live assignment and dispatch-job cancellation disabled', async () => {
+        const adapter = new DeliverectDispatchAdapter(tokenManager(), vi.fn() as any);
+        await expect(adapter.assignCourier({} as any))
+          .rejects.toMatchObject({ code: 'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED', statusCode: 501 });
+        await expect(adapter.cancelDispatch({} as any))
+          .rejects.toMatchObject({ code: 'UPSTREAM_DISPATCH_OPERATION_UNSUPPORTED', statusCode: 501 });
       });
     });
   });
