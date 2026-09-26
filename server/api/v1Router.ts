@@ -2896,7 +2896,13 @@ async function handleDeliverectOperationalWebhook(
         return;
       }
 
-      res.status(receipt.status === 'DUPLICATE' ? 200 : 202).json(receipt);
+      const receiptStatus =
+        receipt.status === 'DUPLICATE' || receipt.status === 'PROCESSED'
+          ? 200
+          : receipt.status === 'QUEUE_DEGRADED'
+            ? 503
+            : 202;
+      res.status(receiptStatus).json(receipt);
       return;
     }
 
