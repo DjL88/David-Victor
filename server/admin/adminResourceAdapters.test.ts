@@ -109,6 +109,18 @@ describe('AdminResourceAdapterRegistry', () => {
     });
     expect((applied.result as any).primaryColour).toBe('#abcdef');
 
+    const verification = await AdminResourceAdapterRegistry.verifyRevisionPersisted({
+      tenantId: 'tenant-a',
+      actionName: 'branding.proposeUpdate',
+      revisionId: preview.revisionIds[0],
+    });
+    expect(verification).toMatchObject({
+      verified: true,
+      revisionId: preview.revisionIds[0],
+      resource: { type: 'tenantBranding', id: 'tenant-a' },
+      persistedSnapshot: { primaryColour: '#abcdef' },
+    });
+
     const rolledBack = await AdminResourceAdapterRegistry.rollbackRevision({
       tenantId: 'tenant-a',
       actorId: 'admin-1',
@@ -223,6 +235,55 @@ describe('AdminResourceAdapterRegistry', () => {
         revisionId: preview.revisionIds[0],
       })
     ).rejects.toMatchObject({ code: 'ADMIN_REVISION_LIVE_STATE_CONFLICT' });
+  });
+
+  it('fails verification when the persisted Branding state does not match the published revision', async () => {
+    let live: any = {
+      tenantId: 'tenant-a',
+      brandName: 'Old Brand',
+      primaryColour: '#111111',
+      secondaryColour: '#222222',
+      backgroundColour: '#ffffff',
+      textColour: '#000000',
+      locale: 'en-GB',
+    };
+    vi.spyOn(FirestorePlatformService, 'getTenantConfig').mockImplementation(async () => live);
+    vi.spyOn(FirestorePlatformService, 'updateTenantConfig').mockImplementation(async (_tenantId, updates) => {
+      live = { ...live, ...updates };
+      return live;
+    });
+
+    const preview = await AdminResourceAdapterRegistry.prepareProposal({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actionName: 'branding.proposeUpdate',
+      input: { primaryColour: '#abcdef' },
+    });
+    await AdminResourceAdapterRegistry.applyRevision({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actionName: 'branding.proposeUpdate',
+      revisionId: preview.revisionIds[0],
+    });
+
+    live = { ...live, primaryColour: '#badbad' };
+    await expect(
+      AdminResourceAdapterRegistry.verifyRevisionPersisted({
+        tenantId: 'tenant-a',
+        actionName: 'branding.proposeUpdate',
+        revisionId: preview.revisionIds[0],
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_VERIFICATION_FAILED' });
+  });
+
+  it('does not invent persistence verification for unsupported write adapters', async () => {
+    await expect(
+      AdminResourceAdapterRegistry.verifyRevisionPersisted({
+        tenantId: 'tenant-a',
+        actionName: 'fees.proposeUpdate',
+        revisionId: 'rev-unknown',
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_ACTION_VERIFY_NOT_CONNECTED' });
   });
 
   it('keeps unadapted write actions proposal-only with an explicit warning', async () => {
