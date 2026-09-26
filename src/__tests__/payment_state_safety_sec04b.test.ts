@@ -56,6 +56,10 @@ describe('SEC-04b payment state safety', () => {
   });
 
   it('updates local payment state only after the provider confirms authorization release', async () => {
+    vi.spyOn(FirestorePlatformService, 'getPaymentProjection').mockResolvedValue({
+      paymentId: 'pay-1',
+      tenantId: 'tenant-a',
+    } as any);
     const updateSpy = vi
       .spyOn(FirestorePlatformService, 'updatePaymentProjection')
       .mockResolvedValue(undefined as any);
@@ -99,6 +103,10 @@ describe('SEC-04b payment state safety', () => {
   });
 
   it('does not mutate local payment state when provider authorization release fails', async () => {
+    vi.spyOn(FirestorePlatformService, 'getPaymentProjection').mockResolvedValue({
+      paymentId: 'pay-2',
+      tenantId: 'tenant-a',
+    } as any);
     const updateSpy = vi
       .spyOn(FirestorePlatformService, 'updatePaymentProjection')
       .mockResolvedValue(undefined as any);
@@ -116,5 +124,43 @@ describe('SEC-04b payment state safety', () => {
     ).rejects.toThrow('provider unavailable');
 
     expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before calling the provider when payment ownership cannot be proven', async () => {
+    vi.spyOn(FirestorePlatformService, 'getPaymentProjection').mockResolvedValue(null as any);
+    const adapter: any = {
+      adapterName: 'test-dpay',
+      voidAuthorization: vi.fn(),
+    };
+    setDPayAdapter(adapter, 'tenant-a');
+
+    await expect(
+      PaymentService.voidAuthorization('pay-unowned', 'cancelled', 'tenant-a')
+    ).rejects.toMatchObject({
+      code: expect.anything(),
+      statusCode: 404,
+    });
+
+    expect(adapter.voidAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an order projection has no tenant before settlement or cancellation', async () => {
+    vi.spyOn(FirestorePlatformService, 'getOrderProjection').mockResolvedValue({
+      orderId: 'ord-unowned',
+      status: 'ORDER_CANCELLED',
+      total: 1000,
+      itemsCount: 1,
+      fulfillmentType: 'delivery',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any);
+
+    await expect(
+      PaymentService.settleOrderPayment('ord-unowned', 'tenant-a')
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    await expect(
+      PaymentService.handleOrderCancellation('ord-unowned', 'tenant-a')
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

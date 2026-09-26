@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertCheckoutTenantScope } from '../../server/checkoutOwnership';
+import { FirestorePlatformService } from '../../server/firestoreService';
 
 describe('checkout tenant ownership fence', () => {
   it('allows a checkout owned by the resolved tenant', () => {
@@ -24,5 +25,18 @@ describe('checkout tenant ownership fence', () => {
       code: 'CHECKOUT_NOT_FOUND',
       statusCode: 404,
     }));
+  });
+
+  it('refuses to persist an order projection without an explicit tenant', async () => {
+    await expect(
+      (FirestorePlatformService.saveOrderProjection as any)({
+        id: 'ord-no-tenant',
+        status: 'SUBMITTED',
+        items: [],
+      })
+    ).rejects.toMatchObject({
+      code: 'TENANT_SCOPE_REQUIRED',
+      statusCode: 400,
+    });
   });
 });
