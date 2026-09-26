@@ -90,7 +90,7 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
   const mutate = async (action: AltieFactsMutation['action'], confirmed = false) => {
     if (!data || blocked) return;
     if (action === 'save-draft' && !AltieFactPackSchema.safeParse(draft).success) {
-      setError('Each fact needs a title (3-120 characters), explanation (10-2,000 characters), up to 12 aliases and a clean source. Remove secrets and personal data.');
+      setError('Each fact needs a title (3–120 characters), explanation (10–2,000 characters), up to 12 aliases and a clean source. Remove secrets and personal data.');
       return;
     }
     if (action === 'publish' && dirty) return;
@@ -144,7 +144,7 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
   return <section className="mx-auto w-full min-w-0 max-w-5xl space-y-6" aria-label="Altie facts">
     <header className="space-y-2">
       <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900"><BookOpen className="h-6 w-6" aria-hidden="true" /> Altie Facts</h1>
-      <p className="text-sm text-slate-600">Platform-wide reference library � Super Admin only � independent of the brand selected in the sidebar.</p>
+      <p className="text-sm text-slate-600">Platform-wide reference library · Super Admin only · independent of the brand selected in the sidebar.</p>
       <p className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">Teach Altie how the app operates and what retail terms mean. Facts are reference data, not instructions or permissions. Never add secrets, customer/order details or private tenant configuration. New facts default to Super Admin only.</p>
     </header>
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">{error}</p>}
@@ -154,8 +154,8 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
       <button type="button" className={button} disabled={blocked} onClick={() => void showHistory()}><History className="h-4 w-4" aria-hidden="true" /> Revision history</button>
       <button type="button" className={button} disabled={blocked} onClick={() => void exportReference()}><Download className="h-4 w-4" aria-hidden="true" /> Export published reference</button>
     </div>
-    {!data ? <p role="status" className="text-sm text-slate-600">{busy ? 'Loading the reference library.' : 'The reference library is unavailable. Reload to try again.'}</p> : <>
-      <p className="text-sm text-slate-600">Saved revision {data.state.revision} � Published revision {data.state.publishedRevision || 'none'} � Bundled pack {data.builtInVersion}</p>
+    {!data ? <p role="status" className="text-sm text-slate-600">{busy ? 'Loading the reference library…' : 'The reference library is unavailable. Reload to try again.'}</p> : <>
+      <p className="text-sm text-slate-600">Saved revision {data.state.revision} · Published revision {data.state.publishedRevision || 'none'} · Bundled pack {data.builtInVersion}</p>
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-lg font-semibold">Editable facts and synonyms</h2>
         <p className="text-sm text-slate-600">Save a draft, review it, then explicitly publish. Archiving a fact takes effect after publication. Synonyms improve reference matching only; they do not change product IDs or storefront search rules.</p>
@@ -167,7 +167,7 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
         </div>
         {dirty && <p className="text-sm text-amber-800">Local changes are not saved. Publication is disabled until the draft has been saved and reviewed.</p>}
         <details className="rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-medium">Compare local, saved and published references</summary>
-          <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">{[['Local draft', draft], ['Saved draft', data.state.draft], ['Published', data.state.published]].map(([label, facts]) => <div key={String(label)} className="min-w-0"><h3 className="font-medium">{String(label)}</h3>{(facts as AltieFact[]).map((fact) => <p key={fact.id} className="mt-2 break-words text-xs"><strong>{fact.title}</strong> � {fact.audience} � {fact.active ? 'Active' : 'Archived'}<br />{fact.body}<br />Aliases: {fact.aliases.join(', ')}</p>)}</div>)}</div>
+          <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">{[['Local draft', draft], ['Saved draft', data.state.draft], ['Published', data.state.published]].map(([label, facts]) => <div key={String(label)} className="min-w-0"><h3 className="font-medium">{String(label)}</h3>{(facts as AltieFact[]).map((fact) => <p key={fact.id} className="mt-2 break-words text-xs"><strong>{fact.title}</strong> · {fact.audience} · {fact.active ? 'Active' : 'Archived'}<br />{fact.body}<br />Aliases: {fact.aliases.join(', ')}</p>)}</div>)}</div>
           <button type="button" className={`${button} mt-3`} disabled={blocked} onClick={() => setConfirmation('use-saved')}>Use saved server draft locally</button>
         </details>
         {draft.length === 0 && <p className="text-sm text-slate-500">No editorial facts in this draft. Bundled references remain available below.</p>}
@@ -180,7 +180,7 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
               <label className="text-sm">Category<select className={field} value={fact.category} onChange={(event) => edit(fact.id, { category: event.target.value as AltieFact['category'] })}><option value="app">Application</option><option value="retail">Retail terminology</option><option value="deliverect">Deliverect reference</option><option value="operations">Operations guidance</option></select></label>
               <label className="text-sm">Audience<select className={field} value={fact.audience} onChange={(event) => edit(fact.id, { audience: event.target.value as AltieFact['audience'] })}><option value="superAdmin">Super Admin only</option><option value="operators">All tenant operators</option></select></label>
               {fact.audience === 'operators' && <p className="text-xs text-amber-800 sm:col-span-2">After publication, this fact can inform answers for all tenants. Do not put tenant-specific or private information here.</p>}
-              <label className="min-w-0 text-sm sm:col-span-2">Fact or explanation<textarea className={`${field} min-h-32`} value={fact.body} maxLength={2000} onChange={(event) => edit(fact.id, { body: event.target.value })} /><span className="text-xs text-slate-500">{fact.body.length}/2,000 characters � plain reference text</span></label>
+              <label className="min-w-0 text-sm sm:col-span-2">Fact or explanation<textarea className={`${field} min-h-32`} value={fact.body} maxLength={2000} onChange={(event) => edit(fact.id, { body: event.target.value })} /><span className="text-xs text-slate-500">{fact.body.length}/2,000 characters · plain reference text</span></label>
               <label className="min-w-0 text-sm sm:col-span-2">Synonyms / matching phrases, separated by commas<input className={field} value={aliasText[fact.id] ?? fact.aliases.join(', ')} onChange={(event) => { const value = event.target.value; setAliasText((previous) => ({ ...previous, [fact.id]: value })); edit(fact.id, { aliases: value.split(',').map((part) => part.trim()).filter(Boolean) }); }} /><span className="text-xs text-slate-500">Up to 12 phrases. These select reference facts, never product identity.</span></label>
               <label className="min-w-0 text-sm sm:col-span-2">Source or reference<input className={field} value={fact.source} maxLength={240} onChange={(event) => edit(fact.id, { source: event.target.value })} /><span className="text-xs text-slate-500">Repository path or clean HTTPS URL. Links are not automatically fetched or certified.</span></label>
               <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={fact.active} onChange={(event) => edit(fact.id, { active: event.target.checked })} /> Active after publication (untick to archive)</label>
@@ -198,9 +198,9 @@ function FactsWorkspace({ client }: { client: AltieFactsClient }) {
         <h2 className="text-lg font-semibold">Bundled app, retail and Deliverect reference</h2>
         <p className="text-sm text-slate-600">Reviewed with the application release. You can copy a reference into an editorial draft, but core behaviour and safety rules remain maintained in code.</p>
         <label className="block text-sm">Find a reference<input className={field} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-        {visibleBuiltIn.map((reference) => <details key={reference.id} className="min-w-0 rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer break-words font-medium">{reference.title}</summary><p className="mt-2 whitespace-pre-wrap break-words text-sm">{reference.body}</p><p className="mt-2 break-words text-xs text-slate-500">{reference.source} � Reviewed {reference.reviewedAt} � {reference.audience}</p><button type="button" className={`${button} mt-3`} disabled={blocked || draft.length >= MAX_ALTIE_FACTS} onClick={() => add(reference)}>Copy to editable draft</button></details>)}
+        {visibleBuiltIn.map((reference) => <details key={reference.id} className="min-w-0 rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer break-words font-medium">{reference.title}</summary><p className="mt-2 whitespace-pre-wrap break-words text-sm">{reference.body}</p><p className="mt-2 break-words text-xs text-slate-500">{reference.source} · Reviewed {reference.reviewedAt} · {reference.audience}</p><button type="button" className={`${button} mt-3`} disabled={blocked || draft.length >= MAX_ALTIE_FACTS} onClick={() => add(reference)}>Copy to editable draft</button></details>)}
       </section>
-      {history && <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4"><h2 className="text-lg font-semibold">Latest saved revisions</h2><p className="text-sm text-slate-600">Each saved revision includes an immutable full snapshot and actor audit, committed atomically. Showing the latest 20 summaries; automated rollback is not part of this starter.</p>{history.length ? history.map((revision) => <p key={revision.revision} className="break-words text-sm">Revision {revision.revision} � {revision.action} � {revision.at} � actor {revision.actorId}</p>) : <p className="text-sm">No saved editorial revisions.</p>}</section>}
+      {history && <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4"><h2 className="text-lg font-semibold">Latest saved revisions</h2><p className="text-sm text-slate-600">Each saved revision includes an immutable full snapshot and actor audit, committed atomically. Showing the latest 20 summaries; automated rollback is not part of this starter.</p>{history.length ? history.map((revision) => <p key={revision.revision} className="break-words text-sm">Revision {revision.revision} · {revision.action} · {revision.at} · actor {revision.actorId}</p>) : <p className="text-sm">No saved editorial revisions.</p>}</section>}
     </>}
     <ModalShell isOpen={confirmation !== null} onClose={() => setConfirmation(null)} size="md"
       title={confirmation === 'publish' ? 'Publish saved facts?' : 'Replace draft?'}
