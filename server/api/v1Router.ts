@@ -6762,6 +6762,11 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     const requestedChannelLinkIds = assignment.requestedChannelLinkIds;
     const activeChannelLinkIds = assignment.visibleChannelLinkIds;
     const temporarilyMissingChannelLinkIds = assignment.temporarilyMissingChannelLinkIds;
+    const explicitlyUnassignedChannelLinkIds = channelLinkIds === undefined
+      ? []
+      : (existingIntegration.allowedChannelLinkIds || [])
+          .map(String)
+          .filter((id) => !requestedChannelLinkIds.includes(id));
 
     const thirdPartyAssignments = matchingStores
       .filter((store: any) => requestedChannelLinkIds.includes(String(store.channelLinkId || '')))
@@ -6779,6 +6784,17 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     // Discovery is observational. A transient empty/partial Deliverect response
     // must never mutate tenant ownership. Persist visibility diagnostics while
     // retaining the explicit assignment until an administrator unassigns it.
+    // When an explicit assignment payload removes a previously assigned channel,
+    // record that deliberate control-plane change immediately rather than waiting
+    // for a later upstream discovery refresh to repair the store projection.
+    const unassignedAt = new Date().toISOString();
+    for (const removedId of explicitlyUnassignedChannelLinkIds) {
+      await FirestorePlatformService.saveTenantStore(tenantId, {
+        channelLinkId: removedId,
+        assigned: false,
+        unassignedAt,
+      });
+    }
     for (const missingId of temporarilyMissingChannelLinkIds) {
       await FirestorePlatformService.saveTenantStore(tenantId, {
         channelLinkId: missingId,
@@ -6847,6 +6863,7 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       // separately so a transient upstream omission never looks like an unassignment.
       allowedChannelLinkIds: requestedChannelLinkIds,
       temporarilyMissingChannelLinkIds,
+      explicitlyUnassignedChannelLinkIds,
       warning: temporarilyMissingChannelLinkIds.length
         ? `${temporarilyMissingChannelLinkIds.length} channel link(s) were not returned by this Deliverect discovery response; their tenant assignments were preserved.`
         : undefined,
