@@ -206,37 +206,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     productTransitionSignature,
   ]);
 
-  const bringProductsIntoView = useCallback(() => {
-    const run = () => {
-      const productSection = document.getElementById('main-product-listing');
-      const categoryNav = document.getElementById('category-nav-section');
-      const stickyHeader = document.getElementById('sticky-header-container');
-      if (!productSection || !categoryNav) return;
-
-      const headerHeight = stickyHeader?.getBoundingClientRect().height || 0;
-      const navHeight = categoryNav.getBoundingClientRect().height || 0;
-      const desiredTop = headerHeight + navHeight + 10;
-      const rect = productSection.getBoundingClientRect();
-      const viewportHeight = window.visualViewport?.height || window.innerHeight;
-
-      // Avoid a needless jump when products are already positioned naturally below
-      // the header/filter dock. Otherwise, bring the first results into a useful view.
-      const alreadyWellPositioned =
-        rect.top >= desiredTop - 18 &&
-        rect.top <= Math.min(desiredTop + 90, viewportHeight * 0.45);
-      if (alreadyWellPositioned) return;
-
-      const targetTop = Math.max(0, window.scrollY + rect.top - desiredTop);
-      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      window.scrollTo({
-        top: targetTop,
-        behavior: reducedMotion ? 'auto' : 'smooth',
-      });
-    };
-
-    window.requestAnimationFrame(() => window.requestAnimationFrame(run));
-  }, []);
-
   useEffect(() => {
     let active = true;
     const client = getCommerceClient() as any;
@@ -480,11 +449,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onOpenAislesModal={onOpenAislesModal}
         onToggleFavouritesFilter={() => {
           setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }));
-          bringProductsIntoView();
         }}
         onToggleBuyAgainFilter={() => {
           setFilterState((prev) => ({ ...prev, onlyBuyAgain: !prev.onlyBuyAgain }));
-          bringProductsIntoView();
         }}
         onClearAllergenFilters={() => {
           setFilterState((prev) => ({
@@ -492,9 +459,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             excludedAllergens: [],
             selectedDietaryTags: [],
           }));
-          bringProductsIntoView();
         }}
-        onProductIntent={bringProductsIntoView}
       />
 
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}
@@ -537,8 +502,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         id="main-product-listing"
         aria-live="polite"
         aria-busy={productsLoading || searchLoading}
-        className={`px-4 sm:px-6 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
-          resultsTransitioning ? 'opacity-75 translate-y-0.5' : 'opacity-100 translate-y-0'
+        className={`px-4 sm:px-6 transition-opacity duration-150 ease-out motion-reduce:transition-none ${
+          resultsTransitioning ? 'opacity-90' : 'opacity-100'
         }`}
       >
         {/* ACTIVE DEAL FILTER HIGHLIGHT CARD */}
@@ -828,7 +793,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </button>
                 )}
               </div>
-            ) : productsLoading || searchLoading ? (
+            ) : (productsLoading && products.length === 0) || searchLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
                 {[...Array(8)].map((_, i) => (
                   <ProductCardSkeleton key={i} />
@@ -896,9 +861,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         isOpen={isFilterModalOpen}
         onClose={() => {
           setIsFilterModalOpen(false);
-          if (filterModalInitialSignatureRef.current !== filterSignature) {
-            bringProductsIntoView();
-          }
         }}
         products={products}
         filterState={filterState}
