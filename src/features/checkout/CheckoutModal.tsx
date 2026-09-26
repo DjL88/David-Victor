@@ -131,6 +131,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus>('preparing_payment');
   const [statusMessage, setStatusMessage] = useState<string>('Initializing payment session...');
   const [failureReason, setFailureReason] = useState<string>('');
+  const [checkoutOutcomeUncertain, setCheckoutOutcomeUncertain] = useState<boolean>(false);
 
   // QA Simulation Drawer Toggle
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
@@ -438,18 +439,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onBasketUpdated?.(checkoutBasket);
       }
 
-      const result = await defaultCommerceClient.checkoutBasket(checkoutBasket.id, {
-        paymentTokenRef,
-        authorizationMaximum,
-        schedulingType,
-        slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
-        fulfillmentType: isCollection ? 'pickup' : 'delivery',
-        deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
-        dispatchValidationId: isCollection ? undefined : checkoutBasket.dispatchValidationId,
-        dispatchValidationExpiresAt: isCollection
-          ? undefined
-          : checkoutBasket.dispatchValidationExpiresAt,
-      });
+      setCheckoutOutcomeUncertain(false);
+      let result: any;
+      try {
+        result = await defaultCommerceClient.checkoutBasket(checkoutBasket.id, {
+          paymentTokenRef,
+          authorizationMaximum,
+          schedulingType,
+          slotId: schedulingType === 'SCHEDULED' ? selectedSlot?.id : undefined,
+          fulfillmentType: isCollection ? 'pickup' : 'delivery',
+          deliveryAddress: isCollection ? undefined : (deliveryAddress || undefined),
+          dispatchValidationId: isCollection ? undefined : checkoutBasket.dispatchValidationId,
+          dispatchValidationExpiresAt: isCollection
+            ? undefined
+            : checkoutBasket.dispatchValidationExpiresAt,
+        });
+      } catch (_checkoutError: any) {
+        // Once the checkout request has been sent, transport failure is not proof
+        // that payment/order creation failed. Fail closed and require the customer
+        // to inspect My Orders rather than presenting an immediate duplicate-attempt CTA.
+        setCheckoutOutcomeUncertain(true);
+        setFailureReason(safeCheckoutFailureMessage('checkout_request_unknown', isCollection));
+        setPhase('order_failed');
+        return;
+      }
 
       const checkoutId = (result as any)?.checkoutId || (result as any)?.id;
       if (
@@ -553,11 +566,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               setPhase('tracking');
             } else if (statusRes.status === 'order_failed') {
               clearInterval(pollInterval);
-              setFailureReason(safeCheckoutFailureMessage('order_status_failed', isCollection));
+              setCheckoutOutcomeUncertain(false);
+              setFailureReason(safeCheckoutFailureMessage('order_failed', isCollection));
               setPhase('order_failed');
             }
           } catch (_err: any) {
             clearInterval(pollInterval);
+            setCheckoutOutcomeUncertain(true);
             setFailureReason(safeCheckoutFailureMessage('order_status_failed', isCollection));
             setPhase('order_failed');
           }
@@ -577,6 +592,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setCustomerDetailsError(null);
     setConfirmedOrder(null);
     setConfirmedOrderId(null);
+    setCheckoutOutcomeUncertain(false);
   }, [initialBasket?.id]);
 
   // Keep basket and store synced with props and track CHECKOUT_STARTED
@@ -730,6 +746,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Simulate Hosted Payment Completion
   const handleCompleteHostedPayment = async () => {
+    setCheckoutOutcomeUncertain(false);
     setPhase('polling_status');
     setStatusMessage('Preparing payment...');
 
@@ -764,11 +781,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setPhase('tracking');
         } else if (res.status === 'order_failed') {
           clearInterval(pollInterval);
-          setFailureReason(safeCheckoutFailureMessage('payment_status_failed'));
+          setCheckoutOutcomeUncertain(false);
+          setFailureReason(safeCheckoutFailureMessage('order_failed'));
           setPhase('order_failed');
         }
       } catch (_err: any) {
         clearInterval(pollInterval);
+        setCheckoutOutcomeUncertain(true);
         setFailureReason(safeCheckoutFailureMessage('payment_status_failed'));
         setPhase('order_failed');
       }
@@ -1814,33 +1833,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {/* PHASE 4: PAYMENT FAILED */}
         {phase === 'order_failed' && (
           <div className="text-center py-6 space-y-4">
-            <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+            <div
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
+                checkoutOutcomeUncertain
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-red-100 text-red-600'
+              }`}
+            >
               <AlertTriangle className="w-8 h-8" />
             </div>
 
             <div>
               <h3 className="text-lg font-black text-gray-900">
-                {isCollectionBasket ? 'Order Unsuccessful' : 'Payment Unsuccessful'}
+                {checkoutOutcomeUncertain
+                  ? t('checkout.statusUnknown')
+                  : isCollectionBasket
+                    ? 'Order Unsuccessful'
+                    : 'Payment Unsuccessful'}
               </h3>
-              <p className="text-xs text-red-700 font-semibold mt-1">{failureReason}</p>
+              <p
+                className={`text-xs font-semibold mt-1 ${
+                  checkoutOutcomeUncertain ? 'text-amber-800' : 'text-red-700'
+                }`}
+              >
+                {failureReason}
+              </p>
               <p className="text-xs text-gray-500 mt-2 max-w-xs mx-auto">
                 {checkoutFailureGuidance(isCollectionBasket)}
               </p>
             </div>
 
             <div className="pt-3 space-y-2 max-w-sm mx-auto">
-              <button
-                type="button"
-                onClick={() => {
-                  setSimPaymentFailure(false);
-                  defaultCommerceClient.setSimulationFlags({ simulatePaymentFailure: false });
-                  setPhase('review');
-                }}
-                style={primaryBtnStyle}
-                className="w-full py-3.5 rounded-2xl font-bold text-sm shadow-md"
-              >
-                {isCollectionBasket ? 'Try Placing Order Again' : 'Try Payment Again'}
-              </button>
+              {!checkoutOutcomeUncertain && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimPaymentFailure(false);
+                    defaultCommerceClient.setSimulationFlags({ simulatePaymentFailure: false });
+                    setPhase('review');
+                  }}
+                  style={primaryBtnStyle}
+                  className="w-full py-3.5 rounded-2xl font-bold text-sm shadow-md"
+                >
+                  {isCollectionBasket ? 'Try Placing Order Again' : 'Try Payment Again'}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1874,11 +1911,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <p className="mt-1 text-xs text-emerald-800">
                 The store has received your order. We&apos;re syncing the live order details now.
               </p>
-              {confirmedOrderId && (
-                <p className="mt-2 text-[11px] font-mono text-emerald-700 break-all">
-                  {confirmedOrderId}
-                </p>
-              )}
             </div>
             <div className="flex items-center justify-center gap-2 text-xs font-semibold text-emerald-800">
               <Loader2 className="w-4 h-4 animate-spin" />
