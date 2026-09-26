@@ -1089,32 +1089,22 @@ export class ChannelMenuIngestionService {
         .doc(cleanTenantId)
         .collection('channelHostedMenus');
 
-      if (cleanMenuId) {
-        const snap = await collection
-          .doc(safeSegment(`${cleanChannelLinkId}_${cleanMenuId}`))
-          .get();
-        if (snap.exists) {
-          normalizedStoragePath = String(
-            snap.data()?.normalizedStoragePath || ''
-          );
-        }
-      } else {
-        const snap = await collection
-          .where('channelLinkId', '==', cleanChannelLinkId)
-          .limit(25)
-          .get();
-        const candidates = snap.docs
-          .map((doc) => doc.data())
-          .filter((entry) => entry?.normalizedStoragePath)
-          .sort((a, b) =>
-            String(b?.updatedAt || '').localeCompare(
-              String(a?.updatedAt || '')
-            )
-          );
-        normalizedStoragePath = String(
-          candidates[0]?.normalizedStoragePath || ''
+      const snap = await collection
+        .where('channelLinkId', '==', cleanChannelLinkId)
+        .limit(50)
+        .get();
+      const candidates = snap.docs
+        .map((doc) => doc.data())
+        .filter((entry) =>
+          entry?.normalizedStoragePath &&
+          (!cleanMenuId || String(entry?.menuId || '') === cleanMenuId)
+        )
+        .sort((a, b) =>
+          String(b?.updatedAt || '').localeCompare(
+            String(a?.updatedAt || '')
+          )
         );
-      }
+      normalizedStoragePath = String(candidates[0]?.normalizedStoragePath || '');
     }
 
     if (!normalizedStoragePath) return null;
@@ -1132,13 +1122,6 @@ export class ChannelMenuIngestionService {
     channelLinkId: string,
     menuId: string
   ): Promise<any | null> {
-    const path =
-      `hosted-catalog/tenants/${safeSegment(tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
-    try {
-      const raw = await this.loadPrivateObject(path);
-      return JSON.parse(raw.toString('utf8'));
-    } catch {
-      return null;
-    }
+    return this.getLatestNormalizedMenu(tenantId, channelLinkId, menuId);
   }
 }
