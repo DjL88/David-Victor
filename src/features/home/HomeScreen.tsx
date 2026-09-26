@@ -379,8 +379,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   useEffect(() => {
     if (!selectedCategoryId && sortMode !== 'DEFAULT') {
       setSortMode('DEFAULT');
+      return;
     }
-  }, [selectedCategoryId, sortMode]);
+    if (sortMode === 'BRAND_ASC' && !canSortByBrand) {
+      setSortMode('DEFAULT');
+    }
+  }, [selectedCategoryId, sortMode, canSortByBrand]);
 
   // Pagination & lazy loading: 25 items per page
   const ITEMS_PER_PAGE = 25;
