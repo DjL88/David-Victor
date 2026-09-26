@@ -38,17 +38,28 @@ describe('audit P0 tenant-scope routes', () => {
     }
   });
 
-  it('fails /admin/auth/me closed when live admin tenant scope is omitted', async () => {
-    const verifyIdToken = vi.fn();
+  it('authenticates a platform admin without inventing a retailer tenant', async () => {
+    const verifyIdToken = vi.fn().mockResolvedValue({
+      uid: 'platform-1',
+      email: 'platform@example.test',
+      email_verified: true,
+      role: 'platformSuperAdmin',
+      platformSuperAdmin: true,
+    });
     setMockAdminAuthForTest({ verifyIdToken } as any);
 
     const res = await fetch(`${baseUrl}/admin/auth/me`, {
       headers: { Authorization: 'Bearer real-token' },
     });
+    const body = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ code: 'TENANT_SCOPE_REQUIRED' });
-    expect(verifyIdToken).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({
+      role: 'platformSuperAdmin',
+      tenantId: 'platform',
+    });
+    expect(body.tenantId).not.toBe('brand-alpha');
+    expect(verifyIdToken).toHaveBeenCalled();
   });
 
   it('does not expose settlement metadata for an order owned by another tenant', async () => {
