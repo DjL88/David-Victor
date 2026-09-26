@@ -42,6 +42,66 @@ describe('AdminChangeSetService', () => {
     ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_IDEMPOTENCY_CONFLICT' });
   });
 
+  it('keeps request and approval scope stable when persisted map keys are reordered', async () => {
+    const first = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{
+        actionName: 'branding.proposeUpdate',
+        input: {
+          primaryColour: '#112233',
+          copyOverrides: {
+            'en-GB': {
+              basket: 'Basket',
+              checkout: 'Checkout',
+            },
+          },
+        },
+      }],
+      idempotencyKey: 'canonical-branding-map',
+    });
+
+    const replay = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{
+        actionName: 'branding.proposeUpdate',
+        input: {
+          copyOverrides: {
+            'en-GB': {
+              checkout: 'Checkout',
+              basket: 'Basket',
+            },
+          },
+          primaryColour: '#112233',
+        },
+      }],
+      idempotencyKey: 'canonical-branding-map',
+    });
+
+    expect(replay.id).toBe(first.id);
+    expect(replay.requestHash).toBe(first.requestHash);
+
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: first.id,
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+    });
+    expect(approved.approvalScopeHash).toBe(first.approvalScopeHash);
+
+    await expect(
+      AdminChangeSetService.transitionChangeSet({
+        tenantId: 'tenant-a',
+        changeSetId: first.id,
+        actorId: 'admin-1',
+        status: 'APPLYING',
+      })
+    ).resolves.toMatchObject({ status: 'APPLYING' });
+  });
+
   it('requires a second administrator for high-risk assistant approval', async () => {
     const changeSet = await AdminChangeSetService.createProposedChangeSet({
       tenantId: 'tenant-a',
