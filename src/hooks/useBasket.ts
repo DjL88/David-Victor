@@ -28,6 +28,7 @@ export function useBasket(
   const basketCreatePromiseRef = useRef<Promise<Basket> | null>(null);
   const basketMutationBatcherRef = useRef<BasketMutationBatcher<Basket> | null>(null);
   const mutationScopeRef = useRef('');
+  const mutationEpochRef = useRef(0);
   const [optimisticQuantities, setOptimisticQuantities] = useState<Record<string, number>>({});
   const optimisticQuantitiesRef = useRef<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
@@ -66,11 +67,18 @@ export function useBasket(
   const getBasketMutationBatcher = useCallback(() => {
     if (!basketMutationBatcherRef.current) {
       const batchScope = mutationScopeRef.current;
+      const batchEpoch = mutationEpochRef.current;
+      const assertBatchScope = () => {
+        if (
+          mutationScopeRef.current !== batchScope ||
+          mutationEpochRef.current !== batchEpoch
+        ) {
+          throw new Error('Basket scope changed before the queued update completed.');
+        }
+      };
       basketMutationBatcherRef.current = new BasketMutationBatcher<Basket>(
         async (basketId, items) => {
-          if (mutationScopeRef.current !== batchScope) {
-            throw new Error('Basket scope changed before the queued update was sent.');
-          }
+          assertBatchScope();
 
           let updatedBasket: Basket | null = null;
 
@@ -94,9 +102,7 @@ export function useBasket(
           if (!updatedBasket) {
             throw new Error('Basket update did not return an authoritative basket.');
           }
-          if (mutationScopeRef.current !== batchScope) {
-            throw new Error('Basket scope changed while the queued update was in flight.');
-          }
+          assertBatchScope();
 
           rememberBasket(updatedBasket);
           return updatedBasket;
@@ -108,6 +114,7 @@ export function useBasket(
   }, [client, rememberBasket]);
 
   useEffect(() => {
+    mutationEpochRef.current += 1;
     mutationScopeRef.current = `${tenantId}:${activeStoreId}:${fulfillmentType}`;
     basketMutationBatcherRef.current?.dispose(
       new Error('Basket scope changed before the queued update completed.')
@@ -117,6 +124,7 @@ export function useBasket(
     setOptimisticQuantities({});
 
     return () => {
+      mutationEpochRef.current += 1;
       basketMutationBatcherRef.current?.dispose();
       basketMutationBatcherRef.current = null;
     };
@@ -344,6 +352,12 @@ export function useBasket(
           setOptimisticQuantity(product.plu, null);
         }
         const errorMsg = String(err?.message || err || '');
+        if (
+          errorMsg.includes('Basket scope changed') ||
+          errorMsg.includes('Basket mutation batcher is disposed')
+        ) {
+          return { success: false, reason: 'BASKET_SCOPE_CHANGED' };
+        }
         const isFulfillmentError =
           errorMsg.includes('Delivery checkout is not enabled') ||
           err?.code === 'INVALID_FULFILLMENT' ||
