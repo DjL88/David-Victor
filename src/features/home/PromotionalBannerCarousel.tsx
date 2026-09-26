@@ -424,7 +424,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
       </div>
 
       {/* STANDARDIZED CAROUSEL CONTAINER */}
-      <div className="relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl h-[300px] sm:h-[310px] md:h-[320px] bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950">
+      <div
+        className={`relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950 ${
+          effectiveTab === 'deals'
+            ? 'h-[350px] sm:h-[360px] md:h-[365px]'
+            : 'h-[300px] sm:h-[310px] md:h-[320px]'
+        }`}
+      >
         {/* ========================================================= */}
         {/* VIEW 1: FEATURED PROMOTIONAL BANNER                       */}
         {/* ========================================================= */}
@@ -611,7 +617,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
         {/* VIEW 2: COMBO DEALS (GENUINE BUNDLES & COMBO DEALS)        */}
         {/* ========================================================= */}
         {effectiveTab === 'deals' && (
-          <div className="relative h-full w-full bg-gradient-to-br from-gray-950 via-emerald-950/85 to-gray-950 text-white p-4 sm:p-5 md:p-6 flex flex-col justify-between overflow-hidden rounded-none sm:rounded-3xl">
+          <div className="relative h-full w-full bg-gradient-to-br from-gray-950 via-emerald-950/85 to-gray-950 text-white p-3 sm:p-4 md:p-5 flex flex-col justify-between overflow-hidden rounded-none sm:rounded-3xl">
             {/* Header */}
             <div className="flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -646,7 +652,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             {/* Carousel Track for Combo Deals */}
             <div
               ref={dealsTrackRef}
-              className="flex items-stretch gap-3.5 overflow-x-auto no-scrollbar py-2 my-auto scroll-smooth w-full max-w-full px-1"
+              className="flex items-stretch gap-3.5 overflow-x-auto overscroll-x-contain no-scrollbar py-2 my-auto scroll-smooth w-full max-w-full px-1"
             >
               {bundles.map((bundle) => {
                 const groups = bundle.sections || bundle.modifierGroups || [];
@@ -671,14 +677,14 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                 return (
                   <div
                     key={`bundle-${bundle.id}`}
-                    className={`w-72 sm:w-80 shrink-0 h-[220px] sm:h-[230px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-2.5 ${
+                    className={`w-72 sm:w-80 shrink-0 h-[240px] sm:h-[250px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3 ${
                       isOutOfStock
                         ? 'border-white/5 opacity-75'
                         : 'border-emerald-500/40 hover:border-emerald-400/70 hover:bg-white/15'
                     }`}
                   >
                     {/* Clean Image Container (tags removed) */}
-                    <div className="relative aspect-[5/2] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
+                    <div className="relative aspect-[12/5] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
                       <img
                         src={
                           bundle.imageUrl ||
@@ -700,7 +706,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                         </h4>
 
                         {/* Description / Sections */}
-                        <p className="text-[10px] text-gray-300 line-clamp-1 leading-tight">
+                        <p className="text-[11px] text-gray-300 line-clamp-1 leading-tight">
                           {bundle.description || sectionNames}
                         </p>
 
@@ -742,7 +748,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                               onOpenBundleDialog?.(bundle);
                             }
                           }}
-                          className={`w-full py-1.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
+                          className={`w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
                             isOutOfStock
                               ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700'
                               : 'bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black'
@@ -763,13 +769,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                 return (
                   <div
                     key={deal.id}
-                    className={`w-72 sm:w-80 shrink-0 h-[225px] sm:h-[235px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-2.5 ${
+                    className={`w-72 sm:w-80 shrink-0 h-[240px] sm:h-[250px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3 ${
                       isSelected
                         ? 'border-emerald-400 ring-2 ring-emerald-400/40 bg-white/15 shadow-lg'
                         : 'border-white/10 hover:border-white/25 hover:bg-white/12'
                     }`}
                   >
-                    <div className="relative aspect-[5/2] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
+                    <div className="relative aspect-[12/5] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
                       <img
                         src={deal.imageUrl}
                         alt={deal.title}
@@ -797,7 +803,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-gray-300 line-clamp-1 leading-tight">
+                        <p className="text-[11px] text-gray-300 line-clamp-1 leading-tight">
                           {deal.description}
                         </p>
                       </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Product, ProductAvailabilitySummary, Story, Category, Store, BasketItem, moneyToMajor } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { BundleProduct } from '../../commerce/bundleModels';
@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Tag,
   AlertCircle,
+  ArrowUpDown,
 } from 'lucide-react';
 import { ProductCardSkeleton } from '../../components/SkeletonLoader';
 import { formatMoney } from '../../utils/formatters';
@@ -35,7 +36,13 @@ import { DietaryPreferencesModal, CatalogFilterState } from '../catalog/DietaryP
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { isProductMatchingFilters } from '../../domain/allergens';
 import {
+  hasSortableBrand,
+  sortStorefrontProducts,
+  type StorefrontSortMode,
+} from '../catalog/storefrontSort';
+import {
   shouldBlockCatalog,
+  shouldShowCatalogSkeleton,
   shouldShowStaleCatalogNotice,
 } from '../catalog/catalogFreshnessPresentation';
 
@@ -123,6 +130,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const { favourites, isFavourite, toggleFavourite } = useFavourites();
   const isStoreSelected = selectedStore !== null;
   const [mainCarouselTab, setMainCarouselTab] = useState<'featured' | 'deals'>('featured');
+  const [sortMode, setSortMode] = useState<StorefrontSortMode>('DEFAULT');
 
   // Filter state for dietary preferences & favourites toggle
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -139,7 +147,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onCatalogFilterStateChange?.(resolved);
   };
   const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
-  const filterModalInitialSignatureRef = useRef('');
 
   const filterSignature = useMemo(
     () =>
@@ -204,38 +211,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     activeDealFilter?.id,
     filterSignature,
     productTransitionSignature,
+    sortMode,
   ]);
-
-  const bringProductsIntoView = useCallback(() => {
-    const run = () => {
-      const productSection = document.getElementById('main-product-listing');
-      const categoryNav = document.getElementById('category-nav-section');
-      const stickyHeader = document.getElementById('sticky-header-container');
-      if (!productSection || !categoryNav) return;
-
-      const headerHeight = stickyHeader?.getBoundingClientRect().height || 0;
-      const navHeight = categoryNav.getBoundingClientRect().height || 0;
-      const desiredTop = headerHeight + navHeight + 10;
-      const rect = productSection.getBoundingClientRect();
-      const viewportHeight = window.visualViewport?.height || window.innerHeight;
-
-      // Avoid a needless jump when products are already positioned naturally below
-      // the header/filter dock. Otherwise, bring the first results into a useful view.
-      const alreadyWellPositioned =
-        rect.top >= desiredTop - 18 &&
-        rect.top <= Math.min(desiredTop + 90, viewportHeight * 0.45);
-      if (alreadyWellPositioned) return;
-
-      const targetTop = Math.max(0, window.scrollY + rect.top - desiredTop);
-      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      window.scrollTo({
-        top: targetTop,
-        behavior: reducedMotion ? 'auto' : 'smooth',
-      });
-    };
-
-    window.requestAnimationFrame(() => window.requestAnimationFrame(run));
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -309,6 +286,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
   const catalogBlocksProducts = shouldBlockCatalog(catalogFreshness);
   const showStaleCatalogNotice = shouldShowStaleCatalogNotice(catalogFreshness);
+  const showCatalogSkeleton = shouldShowCatalogSkeleton(
+    productsLoading,
+    products.length,
+    searchLoading
+  );
 
   const renderableBaseProducts = useMemo(() => {
     return getRenderableProducts(products).filter(matchesFilters);
@@ -376,17 +358,45 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return getRenderableProducts(merchandised.map((m) => m.product));
   }, [renderableBaseProducts, activeDealFilter, searchQuery, selectedCategoryId, fullMatchingCatalog]);
 
+  const sortedFilteredProducts = useMemo(
+    () => sortStorefrontProducts(filteredProducts, sortMode),
+    [filteredProducts, sortMode]
+  );
+
+  const sortedCategorySearchResults = useMemo(
+    () => sortStorefrontProducts(categorySearchResults, sortMode),
+    [categorySearchResults, sortMode]
+  );
+
+  const sortCandidateProducts =
+    searchQuery.trim() && selectedCategoryId
+      ? categorySearchResults
+      : filteredProducts;
+  const canSortByBrand = hasSortableBrand(sortCandidateProducts);
+  const showCategorySort =
+    Boolean(selectedCategoryId) && sortCandidateProducts.length > 1;
+
+  useEffect(() => {
+    if (!selectedCategoryId && sortMode !== 'DEFAULT') {
+      setSortMode('DEFAULT');
+      return;
+    }
+    if (sortMode === 'BRAND_ASC' && !canSortByBrand) {
+      setSortMode('DEFAULT');
+    }
+  }, [selectedCategoryId, sortMode, canSortByBrand]);
+
   // Pagination & lazy loading: 25 items per page
   const ITEMS_PER_PAGE = 25;
   const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
 
   useEffect(() => {
     setVisibleCount(ITEMS_PER_PAGE);
-  }, [selectedCategoryId, searchQuery, activeDealFilter, filterState]);
+  }, [selectedCategoryId, searchQuery, activeDealFilter, filterState, sortMode]);
 
   const paginatedProducts = useMemo(() => {
-    return filteredProducts.slice(0, visibleCount);
-  }, [filteredProducts, visibleCount]);
+    return sortedFilteredProducts.slice(0, visibleCount);
+  }, [sortedFilteredProducts, visibleCount]);
 
   // Helper to find category name for products shown from other aisles
   const getProductCategoryName = (product: Product): string => {
@@ -474,17 +484,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onOpenStorePicker={onOpenStorePicker}
         filterState={filterState}
         onOpenFiltersModal={() => {
-          filterModalInitialSignatureRef.current = filterSignature;
           setIsFilterModalOpen(true);
         }}
         onOpenAislesModal={onOpenAislesModal}
         onToggleFavouritesFilter={() => {
           setFilterState((prev) => ({ ...prev, onlyFavourites: !prev.onlyFavourites }));
-          bringProductsIntoView();
         }}
         onToggleBuyAgainFilter={() => {
           setFilterState((prev) => ({ ...prev, onlyBuyAgain: !prev.onlyBuyAgain }));
-          bringProductsIntoView();
         }}
         onClearAllergenFilters={() => {
           setFilterState((prev) => ({
@@ -492,9 +499,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             excludedAllergens: [],
             selectedDietaryTags: [],
           }));
-          bringProductsIntoView();
         }}
-        onProductIntent={bringProductsIntoView}
       />
 
       {/* Offers Near You Carousel / Row (when viewing all categories, no search, no active deal filter) */}
@@ -537,10 +542,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         id="main-product-listing"
         aria-live="polite"
         aria-busy={productsLoading || searchLoading}
-        className={`px-4 sm:px-6 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
-          resultsTransitioning ? 'opacity-75 translate-y-0.5' : 'opacity-100 translate-y-0'
+        className={`px-4 sm:px-6 transition-opacity duration-150 ease-out motion-reduce:transition-none ${
+          resultsTransitioning ? 'opacity-90' : 'opacity-100'
         }`}
       >
+        {showCategorySort && (
+          <div className="mb-3 flex justify-end">
+            <label
+              htmlFor="category-sort-items"
+              className="inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 shadow-xs"
+            >
+              <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+              <span className="whitespace-nowrap">Sort items</span>
+              <select
+                id="category-sort-items"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as StorefrontSortMode)}
+                className="min-w-0 max-w-[11rem] bg-transparent font-semibold text-gray-900 outline-none"
+                aria-label="Sort items in this aisle"
+              >
+                <option value="DEFAULT">Recommended</option>
+                <option value="PRICE_ASC">Price: low to high</option>
+                <option value="PRICE_DESC">Price: high to low</option>
+                {canSortByBrand && <option value="BRAND_ASC">Brand: A to Z</option>}
+                <option value="NAME_ASC">Name: A to Z</option>
+                <option value="NAME_DESC">Name: Z to A</option>
+              </select>
+            </label>
+          </div>
+        )}
         {/* ACTIVE DEAL FILTER HIGHLIGHT CARD */}
         {activeDealFilter && (
           <div
@@ -670,7 +700,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
               {categorySearchResults.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-                  {categorySearchResults.map((product) => (
+                  {sortedCategorySearchResults.map((product) => (
                     <ProductCard
                       key={`cat-search-${product.plu}`}
                       product={product}
@@ -828,7 +858,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </button>
                 )}
               </div>
-            ) : productsLoading || searchLoading ? (
+            ) : showCatalogSkeleton ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
                 {[...Array(8)].map((_, i) => (
                   <ProductCardSkeleton key={i} />
@@ -896,9 +926,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         isOpen={isFilterModalOpen}
         onClose={() => {
           setIsFilterModalOpen(false);
-          if (filterModalInitialSignatureRef.current !== filterSignature) {
-            bringProductsIntoView();
-          }
         }}
         products={products}
         filterState={filterState}
