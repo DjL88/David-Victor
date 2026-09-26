@@ -371,6 +371,88 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect((amended?.finalPrice as any)?.currency).toBe('GBP');
       expect(amended?.amendment?.reason).toContain('Only 2 bunches available');
     });
+
+    it('deduplicates exact amendment retries and ignores an older provider-timestamped amendment', async () => {
+      const orderId = `quest_ord_${Date.now()}_amend_ordering`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 900,
+        authorizedMaximum: 900,
+        finalAmount: 900,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-amend-ordering',
+            plu: 'AMEND-ORDERING',
+            name: 'Ordered item',
+            originalQuantity: 3,
+            pickedQuantity: 0,
+            originalPrice: { amount: 300, currency: 'GBP' },
+            finalPrice: { amount: 300, currency: 'GBP' },
+            state: 'PENDING',
+          }],
+        },
+      } as any, testTenant);
+
+      const now = Date.now();
+      const newer = {
+        event: 'ITEM_QUANTITY_AMENDED',
+        orderId,
+        plu: 'AMEND-ORDERING',
+        amendedQuantity: 2,
+        amendedPrice: 300,
+        timestamp: new Date(now - 1_000).toISOString(),
+      };
+      const newerRaw = JSON.stringify(newer);
+
+      const first = await WebhookService.processWebhook(
+        newer,
+        newerRaw,
+        buildSignatureHeaders(newerRaw),
+        testTenant
+      );
+      expect(first.status).toBe('PROCESSED');
+
+      const duplicate = await WebhookService.processWebhook(
+        newer,
+        newerRaw,
+        buildSignatureHeaders(newerRaw),
+        testTenant
+      );
+      expect(duplicate.status).toBe('DEDUPLICATED');
+
+      const older = {
+        ...newer,
+        amendedQuantity: 1,
+        amendedPrice: 100,
+        timestamp: new Date(now - 2_000).toISOString(),
+      };
+      const olderRaw = JSON.stringify(older);
+      const stale = await WebhookService.processWebhook(
+        older,
+        olderRaw,
+        buildSignatureHeaders(olderRaw),
+        testTenant
+      );
+      expect(stale.status).toBe('IGNORED');
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const amended = updated?.picking?.items?.find((item: any) => item.plu === 'AMEND-ORDERING');
+      expect(amended?.pickedQuantity).toBe(2);
+      expect((amended?.finalPrice as any)?.amount).toBe(300);
+      expect(amended?.lastPickingMutationAt).toBe(newer.timestamp);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(600);
+    });
   });
 
   // ========================================================
@@ -444,6 +526,213 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect((substituted?.finalPrice as any)?.amount ?? substituted?.finalPrice).toBe(120);
       expect(substituted?.substitution?.substituteName).toBe('Coca-Cola 500ml Bottle');
       expect((substituted?.substitution?.substitutePrice as any)?.amount ?? substituted?.substitution?.substitutePrice).toBe(180);
+    });
+
+    it('prices 1x original -> 2x replacement once at the protected ORIGINAL LINE TOTAL and is idempotent', async () => {
+      const orderId = `quest_ord_${Date.now()}_line_total`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 200,
+        authorizedMaximum: 200,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-water-1l',
+            plu: 'WATER-1L',
+            name: 'Water 1L',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 200, currency: 'GBP' },
+            finalPrice: { amount: 200, currency: 'GBP' },
+            state: 'PENDING',
+            substitutionPreference: 'BEST_MATCH',
+            substituteCandidates: [{
+              plu: 'WATER-500',
+              name: 'Water 500ml',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              priority: 1,
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'WATER-1L',
+        substitutePlu: 'WATER-500',
+        substituteName: 'Water 500ml',
+        substitutePrice: 130,
+        reason: '1L unavailable',
+      };
+      const raw = JSON.stringify(payload);
+      const first = await WebhookService.processWebhook(
+        payload,
+        raw,
+        buildSignatureHeaders(raw),
+        testTenant
+      );
+      expect(first.status).toBe('PROCESSED');
+
+      let updated = await FirestorePlatformService.getOrderProjection(orderId);
+      let line = updated?.picking?.items?.find((item: any) => item.plu === 'WATER-1L');
+      expect(line?.pickedQuantity).toBe(2);
+      expect(line?.substitution?.replacementQuantity).toBe(2);
+      expect(line?.substitution?.decisionStatus).toBeUndefined();
+      expect(line?.substitution?.economics?.originalEffectiveLineTotal.amount).toBe(200);
+      expect(line?.substitution?.economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(line?.substitution?.economics?.customerChargeLineTotal.amount).toBe(200);
+      expect(line?.substitution?.economics?.retailValueDelta.amount).toBe(60);
+      expect(line?.substitution?.economics?.customerPriceDelta.amount).toBe(0);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
+
+      // Exact retry is journal-deduplicated and cannot apply another line charge.
+      const retry = await WebhookService.processWebhook(
+        payload,
+        raw,
+        buildSignatureHeaders(raw),
+        testTenant
+      );
+      expect(retry.status).toBe('DEDUPLICATED');
+      updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
+    });
+
+    it('preserves original promo allocation and refuses to stack replacement promo provenance', async () => {
+      const orderId = `quest_ord_${Date.now()}_promo_provenance`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 150,
+        authorizedMaximum: 150,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-promo',
+            plu: 'ORIGINAL-PROMO',
+            name: 'Original Promo Item',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 200, currency: 'GBP' },
+            finalPrice: { amount: 200, currency: 'GBP' },
+            state: 'PENDING',
+            bundlePricing: {
+              protectedUnitPrices: [{ amount: 150, currency: 'GBP' }],
+              bundleInstanceIds: ['bundle-original-1'],
+            },
+            substituteCandidates: [{
+              plu: 'REPLACEMENT-PROMO',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              effectivePrice: { amount: 100, currency: 'GBP' },
+              promotionProvenance: ['replacement-promo-should-not-stack'],
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'ORIGINAL-PROMO',
+        substitutePlu: 'REPLACEMENT-PROMO',
+        substitutePrice: 130,
+      };
+      const raw = JSON.stringify(payload);
+      await WebhookService.processWebhook(payload, raw, buildSignatureHeaders(raw), testTenant);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const line = updated?.picking?.items?.find((item: any) => item.plu === 'ORIGINAL-PROMO');
+      const economics = line?.substitution?.economics;
+      expect(economics?.originalEffectiveLineTotal.amount).toBe(150);
+      expect(economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(economics?.replacementEffectiveLineTotal.amount).toBe(260);
+      expect(economics?.customerChargeLineTotal.amount).toBe(150);
+      expect(economics?.originalPromotionProvenance).toEqual(['bundle-original-1']);
+      expect(economics?.replacementPromotionProvenance).toEqual([]);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(150);
+    });
+
+    it('uses a persisted replacement promotion only when the original line was not promotional', async () => {
+      const orderId = `quest_ord_${Date.now()}_replacement_promo`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 300,
+        authorizedMaximum: 300,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-original-standard',
+            plu: 'ORIGINAL-STANDARD',
+            name: 'Original Standard Item',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 300, currency: 'GBP' },
+            finalPrice: { amount: 300, currency: 'GBP' },
+            state: 'PENDING',
+            substituteCandidates: [{
+              plu: 'REPLACEMENT-PROMO-ELIGIBLE',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              effectivePrice: { amount: 100, currency: 'GBP' },
+              promotionProvenance: ['promo:replacement-2-for-200'],
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'ORIGINAL-STANDARD',
+        substitutePlu: 'REPLACEMENT-PROMO-ELIGIBLE',
+        substitutePrice: 130,
+      };
+      const raw = JSON.stringify(payload);
+      await WebhookService.processWebhook(payload, raw, buildSignatureHeaders(raw), testTenant);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const line = updated?.picking?.items?.find((item: any) => item.plu === 'ORIGINAL-STANDARD');
+      const economics = line?.substitution?.economics;
+      expect(economics?.replacementQuantity).toBe(2);
+      expect(economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(economics?.replacementEffectiveLineTotal.amount).toBe(200);
+      expect(economics?.customerChargeLineTotal.amount).toBe(200);
+      expect(economics?.retailValueDelta.amount).toBe(-40);
+      expect(economics?.customerPriceDelta.amount).toBe(-100);
+      expect(economics?.originalPromotionProvenance).toEqual([]);
+      expect(economics?.replacementPromotionProvenance).toEqual(['promo:replacement-2-for-200']);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
     });
 
     it('resolves substitution preference & candidates via SubstitutionCallbackService', async () => {

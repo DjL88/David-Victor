@@ -21,10 +21,103 @@ export const DEFAULT_SUBSTITUTION_POLICY: TenantSubstitutionPolicy = {
   allowCustomerSelected: true,
   defaultPreference: 'BEST_MATCH',
   bestMatchPricePolicy: 'LOWER_OF_ORIGINAL_AND_SUBSTITUTE',
-  customerSelectedPricePolicy: 'SUBSTITUTE_PRICE',
+  // Base policy is line-total price protection for every substitution type.
+  customerSelectedPricePolicy: 'LOWER_OF_ORIGINAL_AND_SUBSTITUTE',
   maxCustomerCandidates: 3,
   allowCancelOrderPreference: true,
 };
+
+export interface SubstitutionLineEconomicsInput {
+  originalQuantity: number;
+  originalUnitPrice: Money;
+  replacementQuantity: number;
+  replacementUnitPrice: Money;
+  /**
+   * Effective replacement unit price after an already-computed eligible
+   * replacement promotion. Omit when no verified replacement promotion exists.
+   */
+  replacementEffectiveUnitPrice?: Money;
+  /**
+   * Frozen effective prices for original promotional/bundle units. These are
+   * checkout-time allocations and must never be re-run during substitution.
+   */
+  protectedOriginalUnitPrices?: Money[];
+}
+
+export interface SubstitutionLineEconomics {
+  originalQuantity: number;
+  replacementQuantity: number;
+  originalEffectiveLineTotal: Money;
+  replacementRetailLineTotal: Money;
+  replacementEffectiveLineTotal: Money;
+  customerChargeLineTotal: Money;
+  retailValueDelta: Money;
+  customerPriceDelta: Money;
+  priceProtectionAmount: Money;
+}
+
+function assertCompatibleMoney(currency: string, value: Money, label: string): number {
+  if (!value || !Number.isInteger(value.amount) || value.amount < 0) {
+    throw new Error(`${label} must be a non-negative integer minor-unit Money value.`);
+  }
+  if (value.currency !== currency) {
+    throw new Error(`${label} currency ${value.currency} does not match ${currency}.`);
+  }
+  return value.amount;
+}
+
+/**
+ * Authoritative default substitution pricing.
+ *
+ * Protection is applied to the ORIGINAL EFFECTIVE LINE TOTAL, never per
+ * replacement unit. A quantity uplift therefore cannot multiply the protected
+ * original amount. Signed deltas are intentionally retained for reporting.
+ */
+export function calculateSubstitutionLineEconomics(
+  input: SubstitutionLineEconomicsInput
+): SubstitutionLineEconomics {
+  const originalQuantity = Math.max(0, Math.trunc(input.originalQuantity));
+  const replacementQuantity = Math.max(0, Math.trunc(input.replacementQuantity));
+  if (originalQuantity <= 0 || replacementQuantity <= 0) {
+    throw new Error('Substitution quantities must be positive integers.');
+  }
+
+  const currency = input.originalUnitPrice.currency;
+  const originalUnit = assertCompatibleMoney(currency, input.originalUnitPrice, 'originalUnitPrice');
+  const replacementUnit = assertCompatibleMoney(currency, input.replacementUnitPrice, 'replacementUnitPrice');
+  const replacementEffectiveUnit = input.replacementEffectiveUnitPrice
+    ? assertCompatibleMoney(currency, input.replacementEffectiveUnitPrice, 'replacementEffectiveUnitPrice')
+    : replacementUnit;
+
+  const frozenOriginalUnits = (input.protectedOriginalUnitPrices || [])
+    .slice(0, originalQuantity)
+    .map((price) => assertCompatibleMoney(currency, price, 'protectedOriginalUnitPrice'));
+
+  const originalEffectiveLineAmount =
+    frozenOriginalUnits.reduce((sum, amount) => sum + amount, 0) +
+    Math.max(0, originalQuantity - frozenOriginalUnits.length) * originalUnit;
+  const replacementRetailAmount = replacementUnit * replacementQuantity;
+  const replacementEffectiveAmount = replacementEffectiveUnit * replacementQuantity;
+  const customerChargeAmount = Math.min(
+    originalEffectiveLineAmount,
+    replacementEffectiveAmount
+  );
+
+  return {
+    originalQuantity,
+    replacementQuantity,
+    originalEffectiveLineTotal: toMoney(originalEffectiveLineAmount, currency),
+    replacementRetailLineTotal: toMoney(replacementRetailAmount, currency),
+    replacementEffectiveLineTotal: toMoney(replacementEffectiveAmount, currency),
+    customerChargeLineTotal: toMoney(customerChargeAmount, currency),
+    retailValueDelta: toMoney(replacementRetailAmount - originalEffectiveLineAmount, currency),
+    customerPriceDelta: toMoney(customerChargeAmount - originalEffectiveLineAmount, currency),
+    priceProtectionAmount: toMoney(
+      Math.max(0, replacementEffectiveAmount - customerChargeAmount),
+      currency
+    ),
+  };
+}
 
 /**
  * Calculates the charged price for a substitute item based on the active policy.

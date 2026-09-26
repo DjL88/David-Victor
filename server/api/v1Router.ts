@@ -40,6 +40,7 @@ import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionS
 import { resolveDeliverectWebhookTenantHandover } from '../deliverect/DeliverectWebhookTenantResolution';
 import { PickingStatusIngressService, type PickingStatusIngressReceipt } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
+import { SubstitutionEconomicsExportService } from '../substitutionEconomicsExportService';
 import { NotificationService } from '../notificationService';
 import { CustomerAccountService } from '../customerAccountService';
 import { OrderReferenceService } from '../orderReferenceService';
@@ -7531,6 +7532,27 @@ v1Router.get('/analytics/insights', requireAdminAuth('operationsEditor'), async 
 /**
  * Get raw de-identified analytics events log (Protected by Admin RBAC - Item 18)
  */
+/**
+ * Export authoritative Quest substitution economics for finance/audit review.
+ * Signed deltas are preserved as integer minor units; tenant scope is resolved
+ * from the authenticated request and rechecked by the export service.
+ */
+v1Router.get('/analytics/substitutions/export', requireAdminAuth('operationsEditor'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = resolveTenant(req);
+    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit as string) || 1000));
+    const csv = await SubstitutionEconomicsExportService.exportTenantCsv(tenantId, limit);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="substitution-economics-${tenantId}.csv"`
+    );
+    res.status(200).send(csv);
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to export substitution economics');
+  }
+});
+
 v1Router.get('/analytics/events', requireAdminAuth('operationsEditor'), async (req: Request, res: Response) => {
   try {
     const tenantId = resolveTenant(req);

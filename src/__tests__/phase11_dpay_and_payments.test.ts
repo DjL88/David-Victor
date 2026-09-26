@@ -331,14 +331,15 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
         {
           channelLinkId: testChannelLinkId,
           mode: { type: 'token', tokenId: 'tok_visa_4242' },
-          amount: 2000, // £20.00
+          amount: 2000, // £20.00 current authorization
           currency: 'GBP',
           captureMode: 'manual',
+          customerApprovedMaxAmount: { amount: 2400, currency: 'GBP' },
         },
         testTenant
       );
 
-      // Customer approves additional £4.00 (e.g. higher-priced substitute)
+      // Customer-approved ceiling was persisted with the original tokenized request.
       const reauthorized = await PaymentService.reauthorize(payment.paymentId, 400, testTenant);
       expect(reauthorized.authorizedAmount).toBe(2400);
 
@@ -349,6 +350,44 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
       expect(captured.residualHoldAmount).toBe(50);
     });
   });
+
+    it('rejects cross-tenant payment lookup before provider access', async () => {
+      const payment = await PaymentService.requestPayment(
+        {
+          channelLinkId: testChannelLinkId,
+          mode: { type: 'token', tokenId: 'tok_tenant_scope' },
+          amount: 1000,
+          currency: 'GBP',
+          captureMode: 'manual',
+        },
+        testTenant
+      );
+
+      await expect(
+        PaymentService.getPayment(payment.paymentId, 'brand-beta')
+      ).rejects.toThrow(/does not belong to the resolved tenant/i);
+    });
+
+    it('rejects reauthorization above the ceiling persisted with the original payment request', async () => {
+      const payment = await PaymentService.requestPayment(
+        {
+          channelLinkId: testChannelLinkId,
+          mode: { type: 'token', tokenId: 'tok_ceiling_guard' },
+          amount: 2000,
+          currency: 'GBP',
+          captureMode: 'manual',
+          customerApprovedMaxAmount: { amount: 2200, currency: 'GBP' },
+        },
+        testTenant
+      );
+
+      await expect(
+        PaymentService.reauthorize(payment.paymentId, 201, testTenant)
+      ).rejects.toThrow(/customer-approved authorization ceiling/i);
+
+      const unchanged = await PaymentService.getPayment(payment.paymentId, testTenant);
+      expect(unchanged.authorizedAmount).toBe(2000);
+    });
 
   // ========================================================
   // PAY-10: Checkout Integration with Authorized Payment ID
