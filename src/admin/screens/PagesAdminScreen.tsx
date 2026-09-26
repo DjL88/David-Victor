@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
 import { pageVariantMetadata } from '../../commerce/cmsVariants';
 import { auth } from '../../firebase';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import type { Category, Product } from '../../commerce/models';
 import { SUPPORTED_LOCALES, resolveEnabledLocales } from '../../i18n/locales';
 import {
   FileText,
@@ -43,46 +45,147 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [savedPageSignature, setSavedPageSignature] = useState<string>('');
+  const [catalogCategories, setCatalogCategories] = useState<Category[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const activeTenantRef = useRef(tenantId);
+  const selectedPageRef = useRef(selectedPage);
+  activeTenantRef.current = tenantId;
+  selectedPageRef.current = selectedPage;
   const pageSignature = (page: CmsPage) => JSON.stringify(page);
   const dirty = savedPageSignature !== pageSignature(selectedPage);
+  const commerceClient = useMemo(() => getCommerceClient(tenantId) as any, [tenantId]);
+  const categoryOptions = useMemo(() => {
+    const rows: Array<{ id: string; name: string; depth: number }> = [];
+    const walk = (items: Category[], depth = 0) => {
+      for (const category of items || []) {
+        rows.push({ id: category.id, name: category.name, depth });
+        if (category.subcategories?.length) walk(category.subcategories, depth + 1);
+      }
+    };
+    walk(catalogCategories);
+    return rows;
+  }, [catalogCategories]);
+  const visibleCatalogProducts = useMemo(() => {
+    const q = catalogSearch.trim().toLowerCase();
+    return catalogProducts
+      .filter((product) => !q || product.name.toLowerCase().includes(q) || product.plu.toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [catalogProducts, catalogSearch]);
 
   useEffect(() => {
-    defaultAdminClient.getBranding(tenantId)
-      .then((tenant) => setTenantLocales(resolveEnabledLocales(tenant.enabledLocales, tenant.locale || 'en-GB')))
-      .catch(() => setTenantLocales(SUPPORTED_LOCALES));
+    const requestTenantId = tenantId;
+    setCatalogCategories([]);
+    setCatalogProducts([]);
+    setCatalogSearch('');
+    setCatalogLoading(true);
+    setCatalogError('');
+
+    void Promise.all([
+      commerceClient.getCategories?.() || Promise.resolve([]),
+      commerceClient.getProducts?.() || Promise.resolve([]),
+    ])
+      .then(([categories, products]) => {
+        if (activeTenantRef.current !== requestTenantId) return;
+        setCatalogCategories(Array.isArray(categories) ? categories : []);
+        setCatalogProducts(Array.isArray(products) ? products : []);
+      })
+      .catch((err) => {
+        if (activeTenantRef.current !== requestTenantId) return;
+        console.error('Could not load live catalogue selectors for Pages:', err);
+        setCatalogError('Live category and product selectors are currently unavailable. Existing page references are unchanged.');
+      })
+      .finally(() => {
+        if (activeTenantRef.current === requestTenantId) setCatalogLoading(false);
+      });
+  }, [tenantId, commerceClient]);
+
+  useEffect(() => {
+    const requestTenantId = tenantId;
+    defaultAdminClient.getBranding(requestTenantId)
+      .then((tenant) => {
+        if (activeTenantRef.current !== requestTenantId) return;
+        setTenantLocales(resolveEnabledLocales(tenant.enabledLocales, tenant.locale || 'en-GB'));
+      })
+      .catch(() => {
+        if (activeTenantRef.current === requestTenantId) setTenantLocales(SUPPORTED_LOCALES);
+      });
   }, [tenantId]);
 
   useEffect(() => {
+    const requestTenantId = tenantId;
+    const controller = new AbortController();
     setLoading(true);
+    setSaving(false);
+    setSaveSuccess(false);
     setError('');
-    auth.currentUser?.getIdToken().then((token) => fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } }))
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to load pages')))
-      .then((data) => {
-        const loaded = data.pages || [];
+    setPages([]);
+    const nextBlank = blankPage();
+    setSelectedPage(nextBlank);
+    setSavedPageSignature('');
+    setSelectedBlockId(null);
+
+    void (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages`, {
+          headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('Failed to load pages');
+        const data = await res.json();
+        if (activeTenantRef.current !== requestTenantId) return;
+        const loaded = Array.isArray(data.pages) ? data.pages : [];
         const initialPage = loaded[0] || blankPage();
         setPages(loaded);
         setSelectedPage(initialPage);
         setSavedPageSignature(loaded[0] ? pageSignature(initialPage) : '');
-        setSelectedBlockId(null);
-      })
-      .catch((err) => { console.error(err); setPages([]); setSelectedPage(blankPage()); setError('Could not load CMS pages. Check your admin session and try again.'); })
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (controller.signal.aborted || activeTenantRef.current !== requestTenantId) return;
+        console.error(err);
+        setError('CMS pages are currently unavailable. Existing content has not been replaced or deleted. Retry before publishing changes.');
+      } finally {
+        if (activeTenantRef.current === requestTenantId) setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
   }, [tenantId]);
 
   const handleSavePage = async () => {
-    setSaving(true); setError('');
-    try {
+    const requestTenantId = tenantId;
+    const pageToSave = selectedPage;
+    const submittedSignature = pageSignature(pageToSave);
+    setSaving(true);
     setError('');
-    const token = await auth.currentUser?.getIdToken();
-    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId }, body: JSON.stringify(selectedPage) });
-    if (!response.ok) throw new Error('Failed to save CMS page');
-    const saved = await response.json();
-    setSelectedPage(saved);
-    setSavedPageSignature(pageSignature(saved));
-    setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
-    setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
-    finally { setSaving(false); }
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages/${encodeURIComponent(pageToSave.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+        body: JSON.stringify(pageToSave),
+      });
+      if (!response.ok) throw new Error('Failed to save CMS page');
+      const saved = await response.json();
+      if (activeTenantRef.current !== requestTenantId) return;
+      setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
+      setSavedPageSignature(pageSignature(saved));
+      if (pageSignature(selectedPageRef.current) === submittedSignature) {
+        setSelectedPage(saved);
+      }
+      setSaveSuccess(true);
+      setTimeout(() => {
+        if (activeTenantRef.current === requestTenantId) setSaveSuccess(false);
+      }, 2500);
+    } catch (err) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error(err);
+      setError('Could not save this page. Your edits are still on screen and have not been reported as published.');
+    } finally {
+      if (activeTenantRef.current === requestTenantId) setSaving(false);
+    }
   };
 
   const variant = pageVariantMetadata(selectedPage);
@@ -651,8 +754,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                     </div>
                   )}
 
-                  {block.type === 'ProductCarousel' && (
-                    <div className="space-y-2">
+                  {block.type === 'CategoryCarousel' && (
+                    <div className="space-y-3">
                       <input
                         type="text"
                         placeholder="Carousel Title"
@@ -664,9 +767,122 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                         }}
                         className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-bold"
                       />
-                      <div className="text-[11px] text-gray-500 font-mono">
-                        Referenced Deliverect PLUs: {block.productPlus.join(', ')}
+                      {catalogError ? (
+                        <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">{catalogError}</p>
+                      ) : catalogLoading ? (
+                        <p className="text-[11px] text-gray-500">Loading live tenant categories…</p>
+                      ) : (
+                        <fieldset className="space-y-2">
+                          <legend className="text-[11px] font-bold text-gray-700">Categories in this rail</legend>
+                          <div className="max-h-48 overflow-auto rounded-xl border border-gray-200 p-2">
+                            {categoryOptions.length === 0 ? (
+                              <p className="px-2 py-1 text-[11px] text-gray-500">No live categories are available for this tenant.</p>
+                            ) : categoryOptions.map((category) => {
+                              const checked = block.categoryIds.includes(category.id);
+                              return (
+                                <label key={category.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-gray-50" style={{ paddingLeft: `${8 + category.depth * 14}px` }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const updated = [...selectedPage.blocks];
+                                      const current = (updated[idx] as any).categoryIds as string[];
+                                      (updated[idx] as any).categoryIds = checked
+                                        ? current.filter((id) => id !== category.id)
+                                        : [...current, category.id];
+                                      setSelectedPage({ ...selectedPage, blocks: updated });
+                                    }}
+                                  />
+                                  <span className="min-w-0 break-words">{category.name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                      )}
+                    </div>
+                  )}
+
+                  {block.type === 'ProductCarousel' && (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Carousel Title"
+                        value={block.title}
+                        onChange={(e) => {
+                          const updated = [...selectedPage.blocks];
+                          (updated[idx] as any).title = e.target.value;
+                          setSelectedPage({ ...selectedPage, blocks: updated });
+                        }}
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-bold"
+                      />
+                      <div className="flex flex-wrap gap-1.5" aria-label="Selected products">
+                        {block.productPlus.length === 0 ? (
+                          <span className="text-[11px] text-gray-500">No products selected.</span>
+                        ) : block.productPlus.map((plu) => {
+                          const product = catalogProducts.find((item) => item.plu === plu);
+                          return (
+                            <button
+                              key={plu}
+                              type="button"
+                              onClick={() => {
+                                const updated = [...selectedPage.blocks];
+                                (updated[idx] as any).productPlus = block.productPlus.filter((item) => item !== plu);
+                                setSelectedPage({ ...selectedPage, blocks: updated });
+                              }}
+                              className="max-w-full rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-800"
+                              aria-label={`Remove ${product?.name || plu}`}
+                            >
+                              <span className="break-words">{product?.name || plu} ×</span>
+                            </button>
+                          );
+                        })}
                       </div>
+                      {catalogError ? (
+                        <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">{catalogError}</p>
+                      ) : catalogLoading ? (
+                        <p className="text-[11px] text-gray-500">Loading live tenant products…</p>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="block text-[11px] font-bold text-gray-700">
+                            Find products
+                            <input
+                              type="search"
+                              value={catalogSearch}
+                              onChange={(e) => setCatalogSearch(e.target.value)}
+                              placeholder="Search name or PLU"
+                              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-xs font-normal"
+                            />
+                          </label>
+                          <div className="max-h-52 overflow-auto rounded-xl border border-gray-200 p-2">
+                            {visibleCatalogProducts.length === 0 ? (
+                              <p className="px-2 py-1 text-[11px] text-gray-500">No matching live products.</p>
+                            ) : visibleCatalogProducts.map((product) => {
+                              const checked = block.productPlus.includes(product.plu);
+                              return (
+                                <label key={product.plu} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const updated = [...selectedPage.blocks];
+                                      const current = (updated[idx] as any).productPlus as string[];
+                                      (updated[idx] as any).productPlus = checked
+                                        ? current.filter((plu) => plu !== product.plu)
+                                        : [...current, product.plu];
+                                      setSelectedPage({ ...selectedPage, blocks: updated });
+                                    }}
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block break-words text-xs font-semibold text-gray-800">{product.name}</span>
+                                    <span className="block break-all font-mono text-[10px] text-gray-500">{product.plu}</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
