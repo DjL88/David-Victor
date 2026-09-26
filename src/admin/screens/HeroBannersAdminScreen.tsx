@@ -159,6 +159,9 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     setProducts([]);
     setStores([]);
     setIsEditorOpen(false);
+    setUploadingImage(false);
+    setProductSearch('');
+    setToastMessage(null);
     void loadData(requestTenantId);
     const unsub = subscribePromoBanners((updatedTenantId) => {
       if (activeTenantRef.current !== requestTenantId) return;
