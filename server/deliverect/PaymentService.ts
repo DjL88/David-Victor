@@ -913,6 +913,22 @@ export class PaymentService {
     const resolvedTenant = requirePaymentTenantId(tenantId);
     this.assertOrderTenant(order, resolvedTenant);
 
+    const authoritativeCancellationStates = new Set([
+      'ORDER_CANCELLED',
+      'CANCELLED',
+      'ORDER_CANCELLED_UNAVAILABLE_ITEM',
+      'ORDER_FAILED',
+      'FAILED',
+    ]);
+    const authoritativeOrderState = String(order.status || '').toUpperCase();
+    if (!authoritativeCancellationStates.has(authoritativeOrderState)) {
+      throw new CommerceError(
+        ErrorCode.RULE_VIOLATION,
+        'Payment refund/release is blocked until an authoritative cancelled or failed order state is recorded.',
+        409
+      );
+    }
+
     let paymentId = order.paymentId;
     if (!paymentId && order.checkoutId) {
       const checkout = await FirestorePlatformService.getCheckoutProjection(order.checkoutId);
@@ -951,7 +967,7 @@ export class PaymentService {
         settledAt: new Date().toISOString(),
       };
 
-      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+      await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
         paymentState: 'REFUNDED',
         settlementDetails: refundResult,
       });
@@ -993,7 +1009,7 @@ export class PaymentService {
         settledAt: new Date().toISOString(),
       };
 
-      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+      await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
         paymentState: 'VOIDED',
         settlementDetails: voidResult,
       });
