@@ -371,6 +371,88 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect((amended?.finalPrice as any)?.currency).toBe('GBP');
       expect(amended?.amendment?.reason).toContain('Only 2 bunches available');
     });
+
+    it('deduplicates exact amendment retries and ignores an older provider-timestamped amendment', async () => {
+      const orderId = `quest_ord_${Date.now()}_amend_ordering`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 900,
+        authorizedMaximum: 900,
+        finalAmount: 900,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-amend-ordering',
+            plu: 'AMEND-ORDERING',
+            name: 'Ordered item',
+            originalQuantity: 3,
+            pickedQuantity: 0,
+            originalPrice: { amount: 300, currency: 'GBP' },
+            finalPrice: { amount: 300, currency: 'GBP' },
+            state: 'PENDING',
+          }],
+        },
+      } as any, testTenant);
+
+      const now = Date.now();
+      const newer = {
+        event: 'ITEM_QUANTITY_AMENDED',
+        orderId,
+        plu: 'AMEND-ORDERING',
+        amendedQuantity: 2,
+        amendedPrice: 300,
+        timestamp: new Date(now - 1_000).toISOString(),
+      };
+      const newerRaw = JSON.stringify(newer);
+
+      const first = await WebhookService.processWebhook(
+        newer,
+        newerRaw,
+        buildSignatureHeaders(newerRaw),
+        testTenant
+      );
+      expect(first.status).toBe('PROCESSED');
+
+      const duplicate = await WebhookService.processWebhook(
+        newer,
+        newerRaw,
+        buildSignatureHeaders(newerRaw),
+        testTenant
+      );
+      expect(duplicate.status).toBe('DEDUPLICATED');
+
+      const older = {
+        ...newer,
+        amendedQuantity: 1,
+        amendedPrice: 100,
+        timestamp: new Date(now - 2_000).toISOString(),
+      };
+      const olderRaw = JSON.stringify(older);
+      const stale = await WebhookService.processWebhook(
+        older,
+        olderRaw,
+        buildSignatureHeaders(olderRaw),
+        testTenant
+      );
+      expect(stale.status).toBe('IGNORED');
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const amended = updated?.picking?.items?.find((item: any) => item.plu === 'AMEND-ORDERING');
+      expect(amended?.pickedQuantity).toBe(2);
+      expect((amended?.finalPrice as any)?.amount).toBe(300);
+      expect(amended?.lastPickingMutationAt).toBe(newer.timestamp);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(600);
+    });
   });
 
   // ========================================================
