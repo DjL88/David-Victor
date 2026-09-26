@@ -66,6 +66,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     const requestTenantId = tenantId;
     const controller = new AbortController();
     setLoading(true);
+    setSaving(false);
+    setSaveSuccess(false);
     setError('');
     setPages([]);
     const nextBlank = blankPage();
