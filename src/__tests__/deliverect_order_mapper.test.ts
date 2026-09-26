@@ -1,7 +1,30 @@
+
+describe('DeliverectOrderMapper order/POS status normalization', () => {
+  it('keeps documented preparation and ready/finalized codes out of delivered state', () => {
+    expect(normalizeDeliverectOrderProjectionStatus(20)).toBe('ACCEPTED');
+    expect(normalizeDeliverectOrderProjectionStatus(50)).toBe('PREPARING');
+    expect(normalizeDeliverectOrderProjectionStatus(70)).toBe('READY');
+    expect(normalizeDeliverectOrderProjectionStatus(90)).toBe('READY');
+    expect(normalizeDeliverectOrderProjectionStatus(95)).toBe('READY');
+  });
+
+  it('does not revive the legacy numeric 5 => delivered conflation', () => {
+    expect(normalizeDeliverectOrderProjectionStatus(5)).toBe('5');
+    expect(normalizeDeliverectOrderProjectionStatus('5')).toBe('5');
+  });
+
+  it('keeps explicit courier-independent terminal order states conservative', () => {
+    expect(normalizeDeliverectOrderProjectionStatus(110)).toBe('CANCELLED');
+    expect(normalizeDeliverectOrderProjectionStatus(121)).toBe('ORDER_FAILED');
+    expect(normalizeDeliverectOrderProjectionStatus('FINALIZED')).toBe('READY');
+  });
+});
+
 import { describe, expect, it } from 'vitest';
 import {
   DeliverectOrderMapper,
   normalizeDeliverectFulfillmentType,
+  normalizeDeliverectOrderProjectionStatus,
 } from '../../server/deliverect/DeliverectOrderMapper';
 
 describe('DeliverectOrderMapper fulfillment normalization', () => {
