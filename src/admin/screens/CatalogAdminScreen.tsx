@@ -358,8 +358,8 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
                     <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="font-semibold text-gray-600">No products found</p>
                     <p className="text-[11px] text-gray-400 mt-1">
-                      {searchQuery || filterCategory !== 'all'
-                        ? 'Try clearing your search or category filter.'
+                      {searchQuery || filterCategory !== 'all' || filterLifecycle !== 'all'
+                        ? 'Try clearing your search, category, or lifecycle filter.'
                         : 'No items found in this store catalog.'}
                     </p>
                   </td>
@@ -367,6 +367,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
               )}
               {!loading && !loadError && pagedProducts.map((p) => {
                 const isOutOfStock = p.stockStatus === 'OUT_OF_STOCK';
+                const isArchived = (p.metadata as any)?.lifecycleStatus === 'ARCHIVED';
                 return (
                   <tr key={p.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="py-3 px-4">
@@ -395,12 +396,16 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
                     <td className="py-3 px-4">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                          isOutOfStock
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          isArchived
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                            : isOutOfStock
+                              ? 'bg-red-50 text-red-700 border border-red-200'
+                              : p.active === false
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         }`}
                       >
-                        {p.active === false ? 'Inactive' : isOutOfStock ? 'Out of Stock' : p.stockStatus === 'IN_STOCK' ? 'In Stock' : 'Stock unknown'}
+                        {isArchived ? 'Archived' : p.active === false ? 'Inactive' : isOutOfStock ? 'Out of Stock' : p.stockStatus === 'IN_STOCK' ? 'In Stock' : 'Stock unknown'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
