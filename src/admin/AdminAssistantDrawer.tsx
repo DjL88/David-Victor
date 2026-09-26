@@ -377,7 +377,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
         actions: [{ actionName: intent.actionName, input: intent.input }],
       });
       const changeSet = response?.changeSet;
-      if (!changeSet?.id || (changeSet.tenantId && changeSet.tenantId !== tenantId)) {
+      if (!changeSet?.id || changeSet.tenantId !== tenantId) {
         throw new Error('Proposal response did not match the active brand.');
       }
 
