@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSearchMerchEntityOptions, resolveSearchMerchTargetName } from '../admin/searchMerchEntityOptions';
-import { Category, Product } from '../commerce/models';
+import type { Category, Product } from '../commerce/models';
 
 const products: Product[] = [
   {
