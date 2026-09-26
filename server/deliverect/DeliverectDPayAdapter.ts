@@ -13,6 +13,7 @@ import {
   type IntegrationEnvironment,
 } from '../integrationProfile';
 import { IntegrationContext } from './IntegrationContext';
+import { resolvePaymentProviderContext } from './PaymentProviderRegistry';
 
 export class DeliverectDPayAdapter implements DPayAdapter {
   readonly adapterName = 'DeliverectDPayAdapter';
@@ -57,6 +58,8 @@ export class DeliverectDPayAdapter implements DPayAdapter {
       normalizeIntegrationEnvironment(process.env.DELIVERECT_ENV || 'staging');
 
     if (this.tenantId) {
+      const paymentProvider = await resolvePaymentProviderContext(this.tenantId, environment);
+      environment = paymentProvider.environment;
       const integration = await FirestorePlatformService.getIntegrationConfig(
         this.tenantId
       ).catch(() => null);
