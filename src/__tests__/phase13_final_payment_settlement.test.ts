@@ -606,6 +606,55 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
   // 4. Order Cancellation & Reversal Workflows (Refund / Void)
   // ========================================================
   describe('Order Cancellation & Payment Reversal Workflow', () => {
+    it('does not refund or release payment from a cancellation request before authoritative cancellation truth', async () => {
+      const orderId = `ord_cancel_unconfirmed_${Date.now()}`;
+      const paymentId = `pay_cancel_unconfirmed_${Date.now()}`;
+
+      (demoAdapter as any).payments.set(paymentId, {
+        paymentId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        paymentMethodToken: 'bt_tok_valid',
+        amount: 1800,
+        authorizedAmount: 1800,
+        capturedAmount: 0,
+        residualHoldAmount: 0,
+        currency: 'GBP',
+        state: 'AUTHORIZED',
+        status: 'authorized',
+        captureMode: 'manual',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        history: [],
+      });
+
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        orderReference: 'REF-CANCEL-UNCONFIRMED',
+        channelLinkId: 'store-1',
+        status: 'STORE_ACCEPTED',
+        paymentState: 'AUTHORIZED',
+        paymentId,
+        total: 1800,
+        authorizedMaximum: 1800,
+        itemsCount: 1,
+        fulfillmentType: 'delivery',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
+
+      await expect(
+        PaymentService.handleOrderCancellation(orderId, testTenant, 'Cancellation requested')
+      ).rejects.toThrow(/authoritative cancelled or failed order state/i);
+
+      const payment = await demoAdapter.getPayment(paymentId);
+      expect(payment.status).toBe('authorized');
+      const order = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(order?.status).toBe('STORE_ACCEPTED');
+      expect(order?.paymentState).toBe('AUTHORIZED');
+    });
+
     it('voids authorization and releases hold if cancelled while in AUTHORIZED state', async () => {
       const orderId = `ord_cancel_auth_${Date.now()}`;
       const paymentId = `pay_cancel_auth_${Date.now()}`;
@@ -632,7 +681,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         orderId,
         orderReference: 'REF-CANCEL-AUTH',
         channelLinkId: 'store-1',
-        status: 'STORE_ACCEPTED',
+        status: 'ORDER_CANCELLED',
         paymentState: 'AUTHORIZED',
         paymentId,
         total: 3000,
@@ -678,7 +727,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         orderId,
         orderReference: 'REF-CANCEL-CAP',
         channelLinkId: 'store-1',
-        status: 'READY',
+        status: 'ORDER_CANCELLED',
         paymentState: 'CAPTURED',
         paymentId,
         total: 2500,
