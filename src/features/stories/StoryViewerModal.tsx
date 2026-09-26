@@ -59,7 +59,11 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true);
   const [directVideoFailed, setDirectVideoFailed] = useState<boolean>(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const isOpen = currentIndex !== null && currentIndex >= 0 && currentIndex < stories.length;
   const currentStory = isOpen ? stories[currentIndex] : null;
@@ -89,6 +93,28 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       .filter((p): p is Product => p !== undefined);
   }, [currentStory, products]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    previousFocusRef.current = previous;
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const target = previousFocusRef.current;
+      if (target?.isConnected) target.focus();
+      previousFocusRef.current = null;
+    };
+  }, [isOpen]);
+
   // Reset state on story switch
   useEffect(() => {
     setProgress(0);
@@ -108,7 +134,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   useEffect(() => {
     if (!isOpen || parsedMedia.provider !== 'direct' || !videoRef.current) return;
 
-    if (isPaused) {
+    if (isPaused || prefersReducedMotion) {
       videoRef.current.pause();
     } else {
       const playPromise = videoRef.current.play();
@@ -118,11 +144,11 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
         });
       }
     }
-  }, [isOpen, isPaused, parsedMedia.provider, currentIndex]);
+  }, [isOpen, isPaused, prefersReducedMotion, parsedMedia.provider, currentIndex]);
 
   // Timer-based progress bar for images and embedded videos (YouTube/Vimeo/Loom)
   useEffect(() => {
-    if (!isOpen || isPaused || progress >= 100) return;
+    if (!isOpen || isPaused || prefersReducedMotion || progress >= 100) return;
     if (parsedMedia.provider === 'direct' && !directVideoFailed) return;
 
     const frameSecs = currentFrame?.duration || (parsedMedia.mediaType === 'video' ? 12 : 6);
@@ -138,7 +164,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [isOpen, isPaused, progress, parsedMedia.provider, parsedMedia.mediaType, directVideoFailed, currentFrame?.duration]);
+  }, [isOpen, isPaused, prefersReducedMotion, progress, parsedMedia.provider, parsedMedia.mediaType, directVideoFailed, currentFrame?.duration]);
 
   // Auto-advance when progress reaches 100%
   useEffect(() => {
@@ -152,9 +178,40 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
       if (e.key === 'ArrowRight') onNext();
       if (e.key === 'ArrowLeft') onPrev();
+      if (e.key !== 'Tab') return;
+
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) || []
+      ).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+
+      if (focusable.length === 0) {
+        e.preventDefault();
+        closeButtonRef.current?.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!dialogRef.current?.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -201,6 +258,10 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   return (
     <div
       id="story-viewer-modal"
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="story-viewer-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md select-none overflow-x-hidden"
     >
       {/* Story Container (Card Shape) */}
@@ -373,6 +434,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
 
               {/* Close Button */}
               <button
+                ref={closeButtonRef}
                 type="button"
                 id="close-story-btn"
                 onClick={(e) => {
@@ -407,7 +469,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
         {/* BOTTOM STORY CONTENT & CALL TO ACTION */}
         <div className="relative z-20 p-5 pb-7 flex flex-col gap-3 pointer-events-auto">
           <div>
-            <h2 className="text-xl font-extrabold text-white leading-tight drop-shadow-md">
+            <h2 id="story-viewer-title" className="text-xl font-extrabold text-white leading-tight drop-shadow-md break-words">
               {currentStory.title}
             </h2>
             {currentStory.caption && (
