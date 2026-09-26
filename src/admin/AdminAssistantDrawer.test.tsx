@@ -158,6 +158,46 @@ describe('AdminAssistantDrawer trusted proposal flow', () => {
     )).toBe(false);
   });
 
+  it('rejects a ChangeSet response for a different tenant', async () => {
+    client.chatWithAssistant.mockResolvedValue({
+      message: 'I can prepare that branding change for review.',
+      provider: 'local-agent',
+      suggestions: [],
+      navigation: null,
+      proposalIntent: {
+        actionName: 'branding.proposeUpdate',
+        input: { primaryColour: '#112233' },
+        mode: 'PROPOSE_ONLY',
+        requiresReview: true,
+      },
+    });
+    client.createAssistantChangeSet.mockResolvedValue({
+      changeSet: {
+        id: 'cs-foreign',
+        tenantId: 'tenant-b',
+        status: 'APPROVAL_REQUIRED',
+      },
+      mode: 'PROPOSAL_ONLY',
+      autonomousExecutionEnabled: false,
+    });
+
+    await act(async () => {
+      root.render(<AdminAssistantDrawer open onClose={vi.fn()} />);
+    });
+    await act(async () => {
+      button('What can I customise for this brand?').click();
+      await flush();
+    });
+    await act(async () => {
+      button('Review proposal').click();
+      await flush();
+    });
+
+    expect(container.textContent).toContain('Nothing was approved or applied');
+    expect(container.textContent).not.toContain('cs-foreign');
+    expect(container.textContent).not.toContain('Proposal ready for review');
+  });
+
   it('does not expose raw proposal failure text or claim a write occurred', async () => {
     client.chatWithAssistant.mockResolvedValue({
       message: 'I can prepare that branding change for review.',
