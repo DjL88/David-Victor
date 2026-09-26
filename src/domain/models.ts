@@ -350,6 +350,11 @@ export interface DomainPaymentProjection {
   status: DPayPaymentStatus;
   amount: Money;
   authorizedAmount: Money;
+  /**
+   * Immutable customer-approved authorization ceiling captured with the
+   * original tokenized payment request. Reauthorization may never exceed it.
+   */
+  customerApprovedMaxAmount?: Money;
   capturedAmount: Money;
   captureMode: 'manual' | 'immediate';
   currency: string;
