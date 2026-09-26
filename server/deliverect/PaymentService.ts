@@ -344,7 +344,7 @@ export class PaymentService {
   static async voidAuthorization(
     paymentId: string,
     reason?: string,
-    tenantId: string
+    tenantId?: string
   ): Promise<DPayPaymentResponse> {
     const resolvedTenant = requirePaymentTenantId(tenantId);
     await this.assertPaymentTenant(paymentId, resolvedTenant);
@@ -371,7 +371,7 @@ export class PaymentService {
     paymentId: string,
     refundAmountMinor: number,
     reason?: string,
-    tenantId: string
+    tenantId?: string
   ): Promise<DPayPaymentResponse> {
     const resolvedTenant = requirePaymentTenantId(tenantId);
     await this.assertPaymentTenant(paymentId, resolvedTenant);
