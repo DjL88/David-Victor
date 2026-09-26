@@ -46,7 +46,7 @@ import { OrderReferenceService } from '../orderReferenceService';
 import { CheckoutLockService } from '../checkoutLockService';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
-import { circuitBreakers } from '../circuitBreaker';
+import { circuitBreakers, getCircuitBreakerStats } from '../circuitBreaker';
 import { checkoutAndPaymentRateLimiter } from '../rateLimiter';
 import { CheckoutResult } from '../../src/domain/models';
 import { TenantConfig, Product } from '../../src/commerce/models';
@@ -6996,6 +6996,64 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to discover commerce stores');
+  }
+});
+
+/**
+ * Sanitized integration/API activity for tenant operators. This intentionally
+ * exposes processing state, non-secret OAuth scopes and circuit health, but
+ * never bearer tokens, HMAC values, credentials, raw request bodies or PII.
+ */
+v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const admin = (req as AuthenticatedRequest).adminUser;
+    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Tenant access denied', code: 'TENANT_ACCESS_DENIED' });
+    }
+
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const [menuPushes, webhooks, context] = await Promise.all([
+      ChannelMenuIngestionService.listRecentIngress(tenantId, limit),
+      FirestorePlatformService.listRecentWebhookEvents(tenantId, limit),
+      IntegrationContext.getContext(tenantId),
+    ]);
+    const grantedScopes = await context.tokenManager.getGrantedScopes().catch(() => []);
+    const circuitStats = Object.fromEntries(
+      Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
+    );
+
+    res.json({
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      integration: {
+        environment: context.environment,
+        credentialMode: context.credentialMode,
+        configured: context.isConfigured,
+        accountId: context.deliverectAccountId || null,
+        allowedChannelLinkIds: context.allowedChannelLinkIds || [],
+        grantedScopes,
+        commerceScopeGranted: grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce'),
+      },
+      circuits: circuitStats,
+      menuPushes: menuPushes.map((entry) => ({
+        ...entry,
+        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
+      })),
+      webhooks: webhooks.map((event) => ({
+        webhookEventId: event.webhookEventId,
+        provider: event.provider,
+        environment: event.environment,
+        receivedAt: event.receivedAt,
+        processedAt: event.processedAt,
+        verified: event.verified,
+        eventType: event.eventType,
+        processingStatus: event.processingStatus,
+        errorCode: event.errorCode,
+      })),
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to load integration API logs');
   }
 });
 
