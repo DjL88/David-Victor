@@ -3873,7 +3873,8 @@ export class FirestoreService {
   static async replaceStoreProductSnoozes(
     tenantId: string,
     channelLinkId: string,
-    snoozes: StoreProductSnoozeState[]
+    snoozes: StoreProductSnoozeState[],
+    options: { observedAt?: string } = {}
   ): Promise<void> {
     const cleanTenantId = String(tenantId || '').trim();
     const cleanChannelLinkId = String(channelLinkId || '').trim();
@@ -3881,49 +3882,100 @@ export class FirestoreService {
       throw BFFError.invalidInput('tenantId and channelLinkId are required for product snooze state.');
     }
 
-    if (!inMemoryStoreSnoozes[cleanTenantId]) inMemoryStoreSnoozes[cleanTenantId] = {};
-    const next: Record<string, StoreProductSnoozeState> = {};
+    const toMillis = (value: unknown): number | null => {
+      const parsed = Date.parse(String(value || ''));
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const strictlyNewer = (candidate: unknown, previous: unknown): boolean => {
+      const candidateMs = toMillis(candidate);
+      const previousMs = toMillis(previous);
+      if (candidateMs === null || previousMs === null) return false;
+      return candidateMs > previousMs;
+    };
+    const sameSnooze = (left?: StoreProductSnoozeState, right?: StoreProductSnoozeState): boolean =>
+      Boolean(left && right) &&
+      left!.snoozed === right!.snoozed &&
+      left!.snoozeStart === right!.snoozeStart &&
+      left!.snoozeEnd === right!.snoozeEnd &&
+      left!.updatedAt === right!.updatedAt;
+    const sameOperational = (
+      left?: StoreProductOperationalState,
+      right?: StoreProductOperationalState
+    ): boolean =>
+      Boolean(left && right) &&
+      left!.availability === right!.availability &&
+      left!.snoozed === right!.snoozed &&
+      left!.snoozeStart === right!.snoozeStart &&
+      left!.snoozeEnd === right!.snoozeEnd &&
+      left!.updatedAt === right!.updatedAt;
+
+    // De-duplicate a full snapshot deterministically by PLU. A duplicate carrying
+    // older observation evidence cannot replace a newer entry in the same payload.
+    const requested: Record<string, StoreProductSnoozeState> = {};
     for (const snooze of snoozes) {
       const plu = String(snooze?.plu || '').trim();
       if (!plu || snooze.snoozed !== true) continue;
-      next[plu] = {
+      const normalized: StoreProductSnoozeState = {
         ...snooze,
         tenantId: cleanTenantId,
         channelLinkId: cleanChannelLinkId,
         plu,
         snoozed: true,
-        updatedAt: snooze.updatedAt || new Date().toISOString(),
+        updatedAt: String(snooze.updatedAt || options.observedAt || '').trim(),
         source: 'DELIVERECT_WEBHOOK',
       };
+      const existing = requested[plu];
+      if (!existing || strictlyNewer(normalized.updatedAt, existing.updatedAt)) {
+        requested[plu] = normalized;
+      }
     }
 
-    const nextStates = Object.values(next);
-    if (nextStates.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+    const requestedStates = Object.values(requested);
+    if (requestedStates.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
       throw new BFFError(
         'OPERATIONAL_STATE_LIMIT_EXCEEDED',
         `A store snooze snapshot may contain at most ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} products.`,
         413
       );
     }
-    inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
 
-    // Read operational truth once, then compute the delta in memory. The old
-    // implementation called upsertStoreProductOperationalState once per PLU,
-    // producing thousands of serial Firestore round trips for large retailers.
-    const previousOperational = await this.getStoreProductOperationalStates(
-      cleanTenantId,
-      cleanChannelLinkId
-    );
-    if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
-      inMemoryStoreProductOperationalStates[cleanTenantId] = {};
-    }
-    if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
-    }
+    const observedAtMs = toMillis(options.observedAt);
+    const latestRequested = requestedStates.reduce<StoreProductSnoozeState | null>((latest, state) => {
+      if (!latest) return toMillis(state.updatedAt) === null ? null : state;
+      return strictlyNewer(state.updatedAt, latest.updatedAt) ? state : latest;
+    }, null);
+    const snapshotObservedAt =
+      observedAtMs !== null
+        ? String(options.observedAt)
+        : latestRequested?.updatedAt;
 
+    // Read each operational collection once, with the 15k+1 fail-closed bound.
+    // All ordering decisions are made before any memory or durable mutation.
+    const [previousSnoozes, previousOperational] = await Promise.all([
+      this.getStoreProductSnoozes(cleanTenantId, cleanChannelLinkId),
+      this.getStoreProductOperationalStates(cleanTenantId, cleanChannelLinkId),
+    ]);
+
+    const candidateSnoozes: Record<string, StoreProductSnoozeState> = {};
+    const candidateOperational: Record<string, StoreProductOperationalState> = {
+      ...previousOperational,
+    };
     const operationalWrites: StoreProductOperationalState[] = [];
-    for (const state of nextStates) {
-      const previous = previousOperational[state.plu];
+
+    for (const state of requestedStates) {
+      const previousSnooze = previousSnoozes[state.plu];
+      const previousOperationalState = previousOperational[state.plu];
+      const previousUpdatedAt =
+        previousOperationalState?.updatedAt || previousSnooze?.updatedAt;
+
+      // Existing state wins unless the incoming item is provably newer. Equal or
+      // malformed timestamps are not evidence for a destructive state change.
+      if (previousUpdatedAt && !strictlyNewer(state.updatedAt, previousUpdatedAt)) {
+        if (previousSnooze) candidateSnoozes[state.plu] = previousSnooze;
+        continue;
+      }
+
+      candidateSnoozes[state.plu] = state;
       const nextOperational: StoreProductOperationalState = {
         tenantId: cleanTenantId,
         channelLinkId: cleanChannelLinkId,
@@ -3935,34 +3987,85 @@ export class FirestoreService {
         updatedAt: state.updatedAt,
         source: 'DELIVERECT_WEBHOOK',
       };
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][state.plu] = nextOperational;
-      if (
-        previous?.availability !== 'SNOOZED' ||
-        previous?.snoozeStart !== state.snoozeStart ||
-        previous?.snoozeEnd !== state.snoozeEnd
-      ) {
+      candidateOperational[state.plu] = nextOperational;
+      if (!sameOperational(previousOperationalState, nextOperational)) {
         operationalWrites.push(nextOperational);
       }
     }
 
-    const clearedAt = new Date().toISOString();
-    for (const [plu, state] of Object.entries(previousOperational)) {
-      if (state.availability !== 'SNOOZED' || next[plu]) continue;
+    // Items omitted from a full snapshot are unsnoozed only when the snapshot
+    // itself has explicit observation evidence newer than the existing PLU.
+    // Without that proof, retain the previous snooze rather than regress truth.
+    for (const [plu, previousSnooze] of Object.entries(previousSnoozes)) {
+      if (requested[plu]) continue;
+      const previousOperationalState = previousOperational[plu];
+      const previousUpdatedAt =
+        previousOperationalState?.updatedAt || previousSnooze.updatedAt;
+
+      if (!snapshotObservedAt || !strictlyNewer(snapshotObservedAt, previousUpdatedAt)) {
+        candidateSnoozes[plu] = previousSnooze;
+        continue;
+      }
+
+      if (previousOperationalState?.availability === 'SNOOZED') {
+        const active: StoreProductOperationalState = {
+          tenantId: cleanTenantId,
+          channelLinkId: cleanChannelLinkId,
+          plu,
+          availability: 'ACTIVE',
+          snoozed: false,
+          updatedAt: snapshotObservedAt,
+          source: 'DELIVERECT_WEBHOOK',
+        };
+        candidateOperational[plu] = active;
+        if (!sameOperational(previousOperationalState, active)) {
+          operationalWrites.push(active);
+        }
+      }
+    }
+
+    // A productState row can exist even if an older snooze document was already
+    // cleaned up. Apply the same omission guard to those independent PLU states.
+    for (const [plu, previousState] of Object.entries(previousOperational)) {
+      if (
+        previousState.availability !== 'SNOOZED' ||
+        requested[plu] ||
+        previousSnoozes[plu]
+      ) {
+        continue;
+      }
+      if (!snapshotObservedAt || !strictlyNewer(snapshotObservedAt, previousState.updatedAt)) {
+        continue;
+      }
       const active: StoreProductOperationalState = {
         tenantId: cleanTenantId,
         channelLinkId: cleanChannelLinkId,
         plu,
         availability: 'ACTIVE',
         snoozed: false,
-        updatedAt: clearedAt,
+        updatedAt: snapshotObservedAt,
         source: 'DELIVERECT_WEBHOOK',
       };
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][plu] = active;
-      operationalWrites.push(active);
+      candidateOperational[plu] = active;
+      if (!sameOperational(previousState, active)) operationalWrites.push(active);
     }
 
+    const publishMemory = () => {
+      if (!inMemoryStoreSnoozes[cleanTenantId]) inMemoryStoreSnoozes[cleanTenantId] = {};
+      inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = { ...candidateSnoozes };
+      if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
+        inMemoryStoreProductOperationalStates[cleanTenantId] = {};
+      }
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {
+        ...candidateOperational,
+      };
+    };
+
     const db = getFirestoreDb();
-    if (!db) return;
+    if (!db || isFirestorePermissionDenied()) {
+      publishMemory();
+      return;
+    }
 
     const storeRef = db
       .collection('tenants')
@@ -3972,42 +4075,52 @@ export class FirestoreService {
     const snoozeCollection = storeRef.collection('snoozes');
     const productStateCollection = storeRef.collection('productState');
 
-    try {
-      // Bounded single read for the replace set. Fetch one sentinel row so a
-      // >15k dataset is rejected rather than silently truncating availability.
-      const existing = await snoozeCollection
-        .limit(MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE + 1)
-        .get();
-      if (existing.docs.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
-        throw new BFFError(
-          'OPERATIONAL_STATE_LIMIT_EXCEEDED',
-          `Store ${cleanChannelLinkId} has more than ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} snooze records; refusing a partial replacement.`,
-          503
+    const mutations: Array<(batch: any) => void> = [];
+    for (const [plu, previous] of Object.entries(previousSnoozes)) {
+      if (!candidateSnoozes[plu]) {
+        mutations.push((batch) => batch.delete(snoozeCollection.doc(plu.replace(/\//g, '_'))));
+      } else if (!sameSnooze(previous, candidateSnoozes[plu])) {
+        const state = candidateSnoozes[plu];
+        mutations.push((batch) =>
+          batch.set(
+            snoozeCollection.doc(plu.replace(/\//g, '_')),
+            cleanUndefined(state),
+            { merge: true }
+          )
         );
       }
+    }
+    for (const [plu, state] of Object.entries(candidateSnoozes)) {
+      if (previousSnoozes[plu]) continue;
+      mutations.push((batch) =>
+        batch.set(
+          snoozeCollection.doc(plu.replace(/\//g, '_')),
+          cleanUndefined(state),
+          { merge: true }
+        )
+      );
+    }
+    for (const state of operationalWrites) {
+      mutations.push((batch) =>
+        batch.set(
+          productStateCollection.doc(state.plu.replace(/\//g, '_')),
+          cleanUndefined(state),
+          { merge: true }
+        )
+      );
+    }
 
-      const nextIds = new Set(nextStates.map((state) => state.plu.replace(/\//g, '_')));
-      const mutations: Array<(batch: any) => void> = [];
-
-      existing.docs.forEach((doc: any) => {
-        if (!nextIds.has(String(doc.id))) mutations.push((batch) => batch.delete(doc.ref));
-      });
-      nextStates.forEach((state) => {
-        const id = state.plu.replace(/\//g, '_');
-        mutations.push((batch) => batch.set(snoozeCollection.doc(id), cleanUndefined(state), { merge: true }));
-      });
-      operationalWrites.forEach((state) => {
-        const id = state.plu.replace(/\//g, '_');
-        mutations.push((batch) => batch.set(productStateCollection.doc(id), cleanUndefined(state), { merge: true }));
-      });
-
+    try {
       for (let index = 0; index < mutations.length; index += FIRESTORE_OPERATIONAL_BATCH_SIZE) {
         const batch = db.batch();
-        for (const apply of mutations.slice(index, index + FIRESTORE_OPERATIONAL_BATCH_SIZE)) apply(batch);
+        for (const apply of mutations.slice(index, index + FIRESTORE_OPERATIONAL_BATCH_SIZE)) {
+          apply(batch);
+        }
         await batch.commit();
       }
+      // Do not expose candidate memory truth until every durable batch succeeds.
+      publishMemory();
     } catch (err: any) {
-      if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
       throw err;
     }
@@ -4033,7 +4146,16 @@ export class FirestoreService {
         .collection('operationalStores')
         .doc(cleanChannelLinkId)
         .collection('snoozes')
+        .limit(MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE + 1)
         .get();
+      if (snap.docs.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+        throw new BFFError(
+          'OPERATIONAL_STATE_LIMIT_EXCEEDED',
+          `Store ${cleanChannelLinkId} has more than ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} snooze records; refusing a partial snapshot.`,
+          503
+        );
+      }
+
       const result: Record<string, StoreProductSnoozeState> = { ...fallback };
       snap.forEach((doc: any) => {
         const data = doc.data() as StoreProductSnoozeState;
@@ -4041,6 +4163,7 @@ export class FirestoreService {
       });
       return result;
     } catch (err: any) {
+      if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
       return fallback;
     }
