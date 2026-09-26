@@ -222,9 +222,9 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       accountId: 'account-a',
       locationId: 'location-a',
       products: {
-        'prod-2': { _id: 'prod-2', plu: 'DRINK-2', gtin: [], name: 'Replacement', price: 200, productType: 1 },
+        'prod-1': { _id: 'prod-1', plu: 'DRINK-1', gtin: [], name: 'Replacement', price: 200, productType: 1 },
       },
-      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-2'] }],
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-1'] }],
     });
 
     await expect(ChannelMenuIngestionService.acceptVerifiedMenuPush({
@@ -232,8 +232,12 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     })).rejects.toThrow(/operational handover failed/i);
 
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(tenantId, 'channel-1', 'menu-1');
-    expect(hosted?.products).toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })]));
-    expect(hosted?.products).not.toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-2' })]));
+    expect(hosted?.products).toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Water', priceMinor: 125, active: true }),
+    ]));
+    expect(hosted?.products).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Replacement', priceMinor: 200 }),
+    ]));
     failure.mockRestore();
   });
 
@@ -776,6 +780,94 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     expect(after?.products).toHaveLength(120);
     expect(after?.products).toEqual(
       expect.arrayContaining([expect.objectContaining({ plu: 'SKU-119' })])
+    );
+  });
+
+  it('atomically rejects an older worker that overlaps a newer publish', async () => {
+    const tenantId = `tenant-overlap-order-${Date.now()}`;
+    const older = sampleMenu({
+      products: {
+        'prod-old': {
+          _id: 'prod-old',
+          plu: 'OLD-1',
+          gtin: [],
+          name: 'Older product',
+          price: 100,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-old'] }],
+    });
+    const newer = sampleMenu({
+      products: {
+        'prod-new': {
+          _id: 'prod-new',
+          plu: 'NEW-1',
+          gtin: [],
+          name: 'Newer product',
+          price: 200,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-new'] }],
+    });
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: older,
+      rawBody: JSON.stringify(older),
+    });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: newer,
+      rawBody: JSON.stringify(newer),
+    });
+
+    expect(queue.jobs).toHaveLength(2);
+    const olderJob = queue.jobs[0];
+    const newerJob = queue.jobs[1];
+    olderJob.receivedAt = '2026-09-26T12:00:00.000Z';
+    newerJob.receivedAt = '2026-09-26T12:01:00.000Z';
+
+    let olderReachedPublish!: () => void;
+    let releaseOlder!: () => void;
+    const olderAtPublish = new Promise<void>((resolve) => {
+      olderReachedPublish = resolve;
+    });
+    const olderRelease = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const operational = vi
+      .spyOn(DeliverectOperationalWebhookService, 'process')
+      .mockImplementation(async (_tenantId, _eventType, menu: any) => {
+        if (JSON.stringify(menu).includes('OLD-1')) {
+          olderReachedPublish();
+          await olderRelease;
+        }
+        return undefined as any;
+      });
+
+    const olderProcessing = ChannelMenuIngestionService.processJob(olderJob);
+    await olderAtPublish;
+    const newerResult = await ChannelMenuIngestionService.processJob(newerJob);
+    expect(newerResult).toEqual({ processed: 1 });
+
+    releaseOlder();
+    const staleResult = await olderProcessing;
+    operational.mockRestore();
+
+    expect(staleResult).toEqual({ processed: 0 });
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted?.receivedAt).toBe(newerJob.receivedAt);
+    expect(hosted?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'NEW-1', active: true })])
+    );
+    expect(hosted?.products).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'OLD-1', active: true })])
     );
   });
 
