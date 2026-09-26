@@ -279,20 +279,6 @@ export function useCatalog(selectedStoreId?: string) {
         nextSummaries = filtered.summaries;
       }
 
-      setProducts(nextProducts);
-      setSummaries(nextSummaries);
-      setBundleSummaries(nextBundleSummaries);
-      setIsStale(false);
-
-      if (
-        snapshotRef.current &&
-        snapshotRef.current.tenantId === tenantId &&
-        snapshotRef.current.storeId === selectedStoreId
-      ) {
-        snapshotRef.current.products = nextProducts;
-        snapshotRef.current.summaries = nextSummaries;
-      }
-
       if (
         requestId !== productsRequestRef.current ||
         requestScope !== `${tenantId}:${selectedStoreId || 'root'}:${selectedCategoryId || 'all'}`
