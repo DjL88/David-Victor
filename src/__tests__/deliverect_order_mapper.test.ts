@@ -1,3 +1,9 @@
+import { describe, expect, it } from 'vitest';
+import {
+  DeliverectOrderMapper,
+  normalizeDeliverectFulfillmentType,
+  normalizeDeliverectOrderProjectionStatus,
+} from '../../server/deliverect/DeliverectOrderMapper';
 
 describe('DeliverectOrderMapper order/POS status normalization', () => {
   it('keeps documented preparation and ready/finalized codes out of delivered state', () => {
@@ -20,12 +26,6 @@ describe('DeliverectOrderMapper order/POS status normalization', () => {
   });
 });
 
-import { describe, expect, it } from 'vitest';
-import {
-  DeliverectOrderMapper,
-  normalizeDeliverectFulfillmentType,
-  normalizeDeliverectOrderProjectionStatus,
-} from '../../server/deliverect/DeliverectOrderMapper';
 
 describe('DeliverectOrderMapper fulfillment normalization', () => {
   it('maps the observed staging orderType=1 order to Bwydi pickup/Collection', () => {
