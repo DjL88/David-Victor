@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DeliverectOperationalWebhookService } from '../../server/deliverect/DeliverectOperationalWebhookService';
 import { FirestorePlatformService } from '../../server/firestoreService';
 
@@ -204,6 +204,54 @@ describe('Deliverect operational webhooks', () => {
       availability: 'ACTIVE',
       snoozed: false,
     });
+  });
+
+
+  it('replaces a 15k-SKU operational snapshot without serial per-SKU upserts', async () => {
+    const tenantId = `tenant-scale-${Date.now()}`;
+    const channelLinkId = 'channel-scale-15k';
+    const snoozes = Array.from({ length: 15_000 }, (_, index) => ({
+      tenantId,
+      channelLinkId,
+      plu: `SKU-${index}`,
+      snoozed: true,
+      updatedAt: '2026-09-26T12:00:00.000Z',
+      source: 'DELIVERECT_WEBHOOK' as const,
+    }));
+    const perSkuUpsert = vi.spyOn(FirestorePlatformService, 'upsertStoreProductOperationalState');
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      snoozes
+    );
+
+    expect(perSkuUpsert).not.toHaveBeenCalled();
+    const operational = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(Object.keys(operational)).toHaveLength(15_000);
+    expect(operational['SKU-0']).toMatchObject({ availability: 'SNOOZED', snoozed: true });
+    expect(operational['SKU-14999']).toMatchObject({ availability: 'SNOOZED', snoozed: true });
+    perSkuUpsert.mockRestore();
+  }, 10_000);
+
+  it('fails closed rather than partially applying an operational snapshot above 15k SKUs', async () => {
+    const tenantId = `tenant-over-limit-${Date.now()}`;
+    const channelLinkId = 'channel-scale-over-limit';
+    const snoozes = Array.from({ length: 15_001 }, (_, index) => ({
+      tenantId,
+      channelLinkId,
+      plu: `SKU-${index}`,
+      snoozed: true,
+      updatedAt: '2026-09-26T12:00:00.000Z',
+      source: 'DELIVERECT_WEBHOOK' as const,
+    }));
+
+    await expect(
+      FirestorePlatformService.replaceStoreProductSnoozes(tenantId, channelLinkId, snoozes)
+    ).rejects.toMatchObject({ code: 'OPERATIONAL_STATE_LIMIT_EXCEEDED', statusCode: 413 });
   });
 
 });
