@@ -130,9 +130,11 @@ describe('Retail Channel local basket', () => {
     const commerceApi = vi.spyOn(client, 'getCommerceBasketApi');
     let submittedUrl = '';
     let submittedBody: any;
+    let submittedHeaders: HeadersInit | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       submittedUrl = String(url);
       submittedBody = JSON.parse(String(init?.body));
+      submittedHeaders = init?.headers;
       return {
         ok: true,
         status: 201,
@@ -148,7 +150,12 @@ describe('Retail Channel local basket', () => {
     });
 
     expect(commerceApi).not.toHaveBeenCalled();
-    expect(submittedUrl).toBe('https://api.staging.deliverect.com/leitchtech/order/channel-3');
+    expect(submittedUrl).toBe('https://api.staging.deliverect.io/leitchtech/order/channel-3');
+    expect(submittedHeaders).toMatchObject({
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'x-deliverect-version': 'retail',
+    });
     expect(submittedBody).toMatchObject({
       channelOrderId: 'LT-1001',
       payment: { amount: 750, due: 750 },

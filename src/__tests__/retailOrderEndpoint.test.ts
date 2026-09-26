@@ -11,14 +11,14 @@ const base = {
 describe('DV-07a retail order endpoint resolver', () => {
   it('reproduces the current staging URL with the default template', () => {
     const resolved = resolveRetailOrderEndpoint(base);
-    expect(resolved.url).toBe('https://api.staging.deliverect.com/leitchtech/order/cl_123');
-    expect(resolved.headers).toEqual({});
-    expect(resolved.source.headers).toBe('none');
+    expect(resolved.url).toBe('https://api.staging.deliverect.io/leitchtech/order/cl_123');
+    expect(resolved.headers).toEqual({ 'x-deliverect-version': 'retail' });
+    expect(resolved.source.headers).toBe('default');
   });
 
   it.each([
-    ['/generic-retail/order/{channelLinkId}', 'https://api.staging.deliverect.com/generic-retail/order/cl_123'],
-    ['/{channelName}/retail/order/{channelLinkId}', 'https://api.staging.deliverect.com/leitchtech/retail/order/cl_123'],
+    ['/generic-retail/order/{channelLinkId}', 'https://api.staging.deliverect.io/generic-retail/order/cl_123'],
+    ['/{channelName}/retail/order/{channelLinkId}', 'https://api.staging.deliverect.io/leitchtech/retail/order/cl_123'],
   ])('resolves supported experiment template %s', (pathTemplate, expected) => {
     expect(resolveRetailOrderEndpoint({ ...base, tenantConfig: { pathTemplate } }).url).toBe(expected);
   });
@@ -30,7 +30,7 @@ describe('DV-07a retail order endpoint resolver', () => {
       accountId: 'account/one',
       tenantConfig: { pathTemplate: '/{channelName}/{accountId}/order/{channelLinkId}' },
     });
-    expect(resolved.url).toBe('https://api.staging.deliverect.com/my%20channel/account%2Fone/order/cl_123');
+    expect(resolved.url).toBe('https://api.staging.deliverect.io/my%20channel/account%2Fone/order/cl_123');
   });
 
   it('rejects missing accountId when the template uses it', () => {
@@ -61,9 +61,9 @@ describe('DV-07a retail order endpoint resolver', () => {
     const defaults = resolveRetailOrderEndpoint({
       ...base, environment: 'production', env: {}, tenantConfig: {},
     });
-    expect(defaults.url).toBe('https://api.deliverect.com/leitchtech/order/cl_123');
-    expect(defaults.headers).toEqual({});
-    expect(defaults.source).toEqual({ baseUrl: 'default', pathTemplate: 'default', headers: 'none' });
+    expect(defaults.url).toBe('https://api.deliverect.io/leitchtech/order/cl_123');
+    expect(defaults.headers).toEqual({ 'x-deliverect-version': 'retail' });
+    expect(defaults.source).toEqual({ baseUrl: 'default', pathTemplate: 'default', headers: 'default' });
   });
 
   it.each([
@@ -82,18 +82,18 @@ describe('DV-07a retail order endpoint resolver', () => {
 
   it('uses environment-native staging and production hosts when deployment env vars are absent', () => {
     expect(resolveRetailOrderEndpoint({ ...base, env: {} }).url)
-      .toBe('https://api.staging.deliverect.com/leitchtech/order/cl_123');
+      .toBe('https://api.staging.deliverect.io/leitchtech/order/cl_123');
     expect(resolveRetailOrderEndpoint({ ...base, environment: 'production', env: {} }).url)
-      .toBe('https://api.deliverect.com/leitchtech/order/cl_123');
+      .toBe('https://api.deliverect.io/leitchtech/order/cl_123');
   });
 
-  it('does not add the Retail catalogue header when an optional tenant headers object is empty', () => {
+  it('keeps the proven Retail header when an optional tenant headers object is empty', () => {
     const resolved = resolveRetailOrderEndpoint({
       ...base,
       tenantConfig: { headers: {} },
     });
-    expect(resolved.headers).toEqual({});
-    expect(resolved.source.headers).toBe('none');
+    expect(resolved.headers).toEqual({ 'x-deliverect-version': 'retail' });
+    expect(resolved.source.headers).toBe('default');
   });
 
   it('still fails closed for an unknown environment without tenant or env configuration', () => {

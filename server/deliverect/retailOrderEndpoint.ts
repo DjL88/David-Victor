@@ -12,16 +12,17 @@ export interface ResolvedRetailOrderEndpoint {
   source: {
     baseUrl: 'tenant' | 'env' | 'default';
     pathTemplate: 'tenant' | 'env' | 'default';
-    headers: 'tenant' | 'env' | 'none';
+    headers: 'tenant' | 'env' | 'default';
   };
 }
 
-// Order creation is a Channel API operation. The channel name/scope belongs in
-// the path; the Retail catalogue version header is not part of Deliverect's
-// documented Create / Cancel Order contract. Keep both fields configurable for
-// explicitly approved experiments, but make the standard Channel route the
-// safe default.
+// This is the exact Channel/Retail contract proven by Deliverect staging and
+// Quest: the Channel name belongs in the path, the order host uses deliverect.io,
+// and the request is explicitly versioned as retail. Keep every field
+// configurable for future provider changes, but do not silently substitute the
+// Commerce API host/headers for this Channel endpoint.
 const DEFAULT_TEMPLATE = '/{channelName}/order/{channelLinkId}';
+const DEFAULT_HEADERS = { 'x-deliverect-version': 'retail' };
 const ALLOWED_HEADERS = new Set(['x-deliverect-version']);
 const ALLOWED_VERSIONS = new Set(['retail', 'stable', 'rapid']);
 const ALLOWED_PLACEHOLDERS = new Set(['channelName', 'channelLinkId', 'accountId']);
@@ -96,9 +97,9 @@ export function resolveRetailOrderEndpoint(args: {
   // supplying the normal staging host.
   const environmentDefault =
     args.environment === 'production'
-      ? 'https://api.deliverect.com'
+      ? 'https://api.deliverect.io'
       : args.environment === 'staging'
-        ? 'https://api.staging.deliverect.com'
+        ? 'https://api.staging.deliverect.io'
         : undefined;
   const baseRaw = tenant.baseUrl || envBase || environmentDefault;
   if (!baseRaw) throw new BFFError('INTEGRATION_NOT_CONFIGURED', 'Retail order base URL is not configured for this environment', 503);
@@ -115,7 +116,7 @@ export function resolveRetailOrderEndpoint(args: {
     ? tenant.headers
     : hasEnvHeaders
       ? parsedEnvHeaders
-      : {};
+      : DEFAULT_HEADERS;
   const headers = validateRetailOrderHeaders(selectedHeaders);
 
   const values: Record<string, string | undefined> = {
@@ -133,7 +134,7 @@ export function resolveRetailOrderEndpoint(args: {
     source: {
       baseUrl: tenant.baseUrl ? 'tenant' : envBase ? 'env' : 'default',
       pathTemplate: tenant.pathTemplate ? 'tenant' : envTemplate ? 'env' : 'default',
-      headers: hasTenantHeaders ? 'tenant' : hasEnvHeaders ? 'env' : 'none',
+      headers: hasTenantHeaders ? 'tenant' : hasEnvHeaders ? 'env' : 'default',
     },
   };
 }
