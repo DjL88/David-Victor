@@ -4208,25 +4208,36 @@ v1Router.post(
           afterSnapshot: execution.result,
           warning: 'Branding write completed but persisted verification did not confirm the expected revision.',
         });
-        await FirestorePlatformService.addAuditLog(tenantId, {
-          userId: authAdmin.uid,
-          userName: authAdmin.name || authAdmin.email || 'Admin',
-          userRole: authAdmin.role,
-          tenantId,
-          category: 'Branding',
-          action: 'Assistant branding verification failed',
-          details: JSON.stringify({
+        changeSet = partiallyFailed;
+        try {
+          await FirestorePlatformService.addAuditLog(tenantId, {
+            userId: authAdmin.uid,
+            userName: authAdmin.name || authAdmin.email || 'Admin',
+            userRole: authAdmin.role,
+            tenantId,
+            category: 'Branding',
+            action: 'Assistant branding verification failed',
+            details: JSON.stringify({
+              changeSetId: partiallyFailed.id,
+              revisionId: execution.revisionId,
+              appliedMayHaveOccurred: true,
+            }),
+            actorType: 'human',
             changeSetId: partiallyFailed.id,
-            revisionId: execution.revisionId,
+            actionRisk: 'LOW_WRITE',
+            beforeState: partiallyFailed.beforeSnapshot,
+            afterState: execution.result,
+            reversible: partiallyFailed.reversible,
+          });
+        } catch {
+          return res.status(503).json({
+            error: 'Branding may have been written and verification failed; the failure audit receipt also could not be persisted.',
+            code: 'ADMIN_CHANGESET_AUDIT_RECEIPT_FAILED',
+            changeSet: partiallyFailed,
             appliedMayHaveOccurred: true,
-          }),
-          actorType: 'human',
-          changeSetId: partiallyFailed.id,
-          actionRisk: 'LOW_WRITE',
-          beforeState: partiallyFailed.beforeSnapshot,
-          afterState: execution.result,
-          reversible: partiallyFailed.reversible,
-        });
+            retrySafe: false,
+          });
+        }
         return res.status(409).json({
           error: 'Branding may have been written, but persisted verification failed. Review live Branding before retrying.',
           code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
