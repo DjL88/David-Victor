@@ -53,3 +53,4 @@ cases for visible, clipped, missing, off-screen and invalid targets. Browser lay
 reduced-motion behaviour and a live AI conversation still require browser
 validation. Authored tests, executed tests, CI status and production deployment
 must be reported separately.
+
