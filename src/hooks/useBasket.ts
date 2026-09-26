@@ -13,6 +13,7 @@ import {
   getDisplayedBasketItemCount,
   getDisplayedBasketQuantity,
 } from './basketOptimisticState';
+import { BasketMutationBatcher } from './BasketMutationBatcher';
 
 export function useBasket(
   selectedStore: Store | null,
@@ -25,7 +26,9 @@ export function useBasket(
   const [basket, setBasket] = useState<Basket | null>(null);
   const basketRef = useRef<Basket | null>(null);
   const basketCreatePromiseRef = useRef<Promise<Basket> | null>(null);
-  const basketMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const basketMutationBatcherRef = useRef<BasketMutationBatcher<Basket> | null>(null);
+  const mutationScopeRef = useRef('');
+  const mutationEpochRef = useRef(0);
   const [optimisticQuantities, setOptimisticQuantities] = useState<Record<string, number>>({});
   const optimisticQuantitiesRef = useRef<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
@@ -60,6 +63,72 @@ export function useBasket(
   useEffect(() => {
     basketRef.current = basket;
   }, [basket]);
+
+  const getBasketMutationBatcher = useCallback(() => {
+    if (!basketMutationBatcherRef.current) {
+      const batchScope = mutationScopeRef.current;
+      const batchEpoch = mutationEpochRef.current;
+      const assertBatchScope = () => {
+        if (
+          mutationScopeRef.current !== batchScope ||
+          mutationEpochRef.current !== batchEpoch
+        ) {
+          throw new Error('Basket scope changed before the queued update completed.');
+        }
+      };
+      basketMutationBatcherRef.current = new BasketMutationBatcher<Basket>(
+        async (basketId, items) => {
+          assertBatchScope();
+
+          let updatedBasket: Basket | null = null;
+
+          // The live HTTP client exposes a bulk absolute-quantity mutation. Use
+          // it for short click bursts so several product taps share one
+          // replace/reprice/reconcile cycle instead of N upstream round trips.
+          if (client.updateBasketItems) {
+            updatedBasket = await client.updateBasketItems(basketId, items);
+          } else {
+            // Adapter fallback preserves the same authoritative semantics while
+            // keeping writes serialized for clients without bulk support.
+            for (const item of items) {
+              updatedBasket = await client.updateBasketItem(
+                basketId,
+                item.plu,
+                item.quantity
+              );
+            }
+          }
+
+          if (!updatedBasket) {
+            throw new Error('Basket update did not return an authoritative basket.');
+          }
+          assertBatchScope();
+
+          rememberBasket(updatedBasket);
+          return updatedBasket;
+        },
+        80
+      );
+    }
+    return basketMutationBatcherRef.current;
+  }, [client, rememberBasket]);
+
+  useEffect(() => {
+    mutationEpochRef.current += 1;
+    mutationScopeRef.current = `${tenantId}:${activeStoreId}:${fulfillmentType}`;
+    basketMutationBatcherRef.current?.dispose(
+      new Error('Basket scope changed before the queued update completed.')
+    );
+    basketMutationBatcherRef.current = null;
+    optimisticQuantitiesRef.current = {};
+    setOptimisticQuantities({});
+
+    return () => {
+      mutationEpochRef.current += 1;
+      basketMutationBatcherRef.current?.dispose();
+      basketMutationBatcherRef.current = null;
+    };
+  }, [activeStoreId, client, fulfillmentType, tenantId]);
 
   // Backwards-compatible single basket array (no multi-store split)
   const allBaskets = useMemo(() => {
@@ -246,32 +315,11 @@ export function useBasket(
           currentBasket.items.find((i) => i.plu === product.plu)?.quantity || 0;
 
 
-        let resolveMutation!: (basket: Basket) => void;
-        let rejectMutation!: (reason?: unknown) => void;
-        const mutationResult = new Promise<Basket>((resolve, reject) => {
-          resolveMutation = resolve;
-          rejectMutation = reject;
+        const updatedBasket = await getBasketMutationBatcher().enqueue({
+          basketId: currentBasket.id,
+          plu: product.plu,
+          quantity: newQuantity,
         });
-
-        basketMutationQueueRef.current = basketMutationQueueRef.current
-          .then(async () => {
-            try {
-              const updatedBasket = await client.updateBasketItem(
-                currentBasket!.id,
-                product.plu,
-                newQuantity
-              );
-              rememberBasket(updatedBasket);
-              resolveMutation(updatedBasket);
-            } catch (error) {
-              rejectMutation(error);
-            }
-          })
-          .catch(() => {
-            // Keep the queue alive; the individual mutationResult carries the error.
-          });
-
-        const updatedBasket = await mutationResult;
         if (optimisticQuantitiesRef.current[product.plu] === newQuantity) {
           setOptimisticQuantity(product.plu, null);
         }
@@ -304,6 +352,34 @@ export function useBasket(
           setOptimisticQuantity(product.plu, null);
         }
         const errorMsg = String(err?.message || err || '');
+        if (
+          errorMsg.includes('Basket scope changed') ||
+          errorMsg.includes('Basket mutation batcher is disposed')
+        ) {
+          return { success: false, reason: 'BASKET_SCOPE_CHANGED' };
+        }
+
+        // A failed/unknown mutation response can leave the browser uncertain
+        // about what the server accepted. Re-read the same active basket once
+        // before showing the error so optimistic rollback converges on
+        // authoritative state instead of leaving a stale local quantity.
+        const failedBasketId = basketRef.current?.id;
+        const failedScope = mutationScopeRef.current;
+        if (failedBasketId) {
+          try {
+            const authoritative = await client.getBasket(failedBasketId);
+            if (
+              mutationScopeRef.current === failedScope &&
+              basketRef.current?.id === failedBasketId
+            ) {
+              rememberBasket(authoritative);
+            }
+          } catch {
+            // Keep the last-known basket if reconciliation is unavailable; the
+            // next drawer/open or user action will retry the authoritative read.
+          }
+        }
+
         const isFulfillmentError =
           errorMsg.includes('Delivery checkout is not enabled') ||
           err?.code === 'INVALID_FULFILLMENT' ||
@@ -331,7 +407,15 @@ export function useBasket(
         return { success: false };
       }
     },
-    [activeStoreId, client, fulfillmentType, rememberBasket, selectedStore, setOptimisticQuantity]
+    [
+      activeStoreId,
+      client,
+      fulfillmentType,
+      getBasketMutationBatcher,
+      rememberBasket,
+      selectedStore,
+      setOptimisticQuantity,
+    ]
   );
 
   const addMultipleItems = useCallback(
