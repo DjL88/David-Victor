@@ -1,3 +1,4 @@
+import { ModalShell } from '../../components/common/ModalShell';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Story, AdminUser, Store, Product, StoryStockMatchMode } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
@@ -625,12 +626,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
 
       {/* EDIT MODAL WITH LINKED ITEMS & AND / OR STOCK RULES */}
       {editingStory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <Film className="w-5 h-5 text-indigo-600" />
-              <span>{isNew ? 'Create New Story' : 'Edit Story & Inventory Rules'}</span>
-            </h3>
+        <ModalShell isOpen onClose={() => setEditingStory(null)} title={isNew ? 'Create New Story' : 'Edit Story & Inventory Rules'} size="2xl">
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div>
@@ -1278,8 +1274,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

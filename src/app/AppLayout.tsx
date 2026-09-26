@@ -25,6 +25,7 @@ import { StoreSwitchDiffModal } from '../features/stores/StoreSwitchDiffModal';
 import { CartDrawerModal } from '../features/cart/CartDrawerModal';
 import { BrandSplashScreen } from '../components/BrandSplashScreen';
 import { LtPlatformWatermark } from '../components/LtPlatformWatermark';
+import { CmsFooter } from '../components/CmsFooter';
 import {
   consumeLtSplashEligibility,
   isLtFooterWatermarkEnabled,
@@ -795,7 +796,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
 
         {/* Tab Views */}
         <main className="w-full max-w-full">
-          {activeTab === 'home' && activeRoute.kind !== 'cms' && (
+          {!selectedStore && tenant?.featureFlags?.enableRootCatalogBrowse === false && ['home', 'search'].includes(activeTab) && activeRoute.kind !== 'cms' && (
+            <section className="mx-auto max-w-xl p-6 text-center"><h1 className="text-xl font-bold">Choose a location to browse</h1><p className="my-3">Select your store to see its available products.</p><button className="rounded-xl border px-5 py-3 font-semibold" onClick={() => setIsStorePickerOpen(true)}>Choose a store</button></section>
+          )}
+          {activeTab === 'home' && activeRoute.kind !== 'cms' && (selectedStore || tenant?.featureFlags?.enableRootCatalogBrowse !== false) && (
             <HomeScreen
               stories={stories}
               storiesLoading={storiesLoading}
@@ -851,7 +855,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
             />
           )}
 
-          {activeTab === 'search' && (
+          {activeTab === 'search' && (selectedStore || tenant?.featureFlags?.enableRootCatalogBrowse !== false) && (
             <SearchScreen
               query={searchQuery}
               onQueryChange={updateSearchQueryRoute}
@@ -889,6 +893,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         </main>
       </div>
 
+      <CmsFooter />
       {isLtFooterWatermarkEnabled(tenant?.featureFlags) && <LtPlatformWatermark />}
 
       {/* Floating Persistent Cart Bar (when items in cart) */}
@@ -1059,7 +1064,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
         deliveryStoresCount={deliveryStores.length}
         collectionStoresCount={collectionStores.length}
         hasDeliveryCoverage={hasDeliveryCoverage}
-        deliveryEnabled={tenant?.featureFlags?.enableCollection === false ? false : deliveryStores.length > 0}
+        deliveryEnabled={appMode === 'demo' && deliveryStores.length > 0}
+        collectionEnabled={tenant?.featureFlags?.enableCollection !== false}
         onSelectFulfillment={(mode) => setFulfillmentType(mode)}
         onClose={() => setIsFulfilmentModalOpen(false)}
         dismissible={true}

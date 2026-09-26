@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CmsPage } from '../../commerce/cmsModels';
 import type { Category, Product } from '../../commerce/models';
 import { CmsPageView } from './CmsPageView';
+import { useTenant } from '../../tenant/TenantContext';
+import { useI18n } from '../../i18n/I18nContext';
+import { isCmsPagePublished } from '../../commerce/cmsPublication';
 
 interface CmsPageScreenProps {
   slug: string;
@@ -20,6 +23,8 @@ export const CmsPageScreen: React.FC<CmsPageScreenProps> = ({
   onSelectCategory,
   onAddToCart,
 }) => {
+  const { tenant } = useTenant();
+  const { locale } = useI18n();
   const [pages, setPages] = useState<CmsPage[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,15 +46,16 @@ export const CmsPageScreen: React.FC<CmsPageScreenProps> = ({
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, tenant?.tenantId]);
 
   const page = useMemo(() => {
     const normalized = slug.replace(/^\/+|\/+$/g, '').toLowerCase();
-    return pages.find((candidate) =>
-      candidate.status === 'published' &&
+    const candidates = pages.filter((candidate) =>
+      isCmsPagePublished(candidate) &&
       candidate.slug.replace(/^\/+|\/+$/g, '').toLowerCase() === normalized
-    ) || null;
-  }, [pages, slug]);
+    );
+    return candidates.find(page => page.locale === locale) || candidates.find(page => page.locale === tenant?.locale) || candidates.find(page => page.locale === 'en-GB') || null;
+  }, [pages, slug, locale, tenant?.locale]);
 
   useEffect(() => {
     if (!page) return;

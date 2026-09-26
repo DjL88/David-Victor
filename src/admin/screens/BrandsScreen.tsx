@@ -290,7 +290,7 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
                   <Sliders className="w-4 h-4" />
                 </button>
                 <a
-                  href={`?brand=${t.tenantId}`}
+                    href={`/?brand=${encodeURIComponent(t.tenantId)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors"
@@ -317,9 +317,9 @@ export const BrandsScreen: React.FC<BrandsScreenProps> = ({ currentUser, onSelec
       {/* 7-Step Brand Provisioning Wizard Modal */}
       {isWizardOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 sm:p-8 space-y-6 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto min-w-0 p-6 sm:p-8 space-y-6 animate-in fade-in zoom-in-95">
             {/* Wizard Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between pb-4 border-b border-gray-100">
               <div>
                 <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">
                   Step {wizardStep} of 7

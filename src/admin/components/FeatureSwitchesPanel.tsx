@@ -47,7 +47,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
     Boolean(flags?.[definition.key] ?? definition.defaultEnabled ?? false);
 
   const handleToggle = (definition: TenantFeatureDefinition) => {
-    if (!flags) return;
+    if (!flags || definition.unavailableReason) return;
     if (definition.platformOnly && !isPlatformSuperAdmin) return;
     setFlags({ ...flags, [definition.key]: !isFeatureEnabled(definition) });
   };
@@ -76,7 +76,7 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save feature flags:', err);
-      setError('Feature switches could not be saved. No changes were applied.');
+      setError('The save could not be confirmed. Reload to check persisted switches before retrying.');
     } finally {
       setSaving(false);
     }
@@ -131,10 +131,12 @@ export const FeatureSwitchesPanel: React.FC<FeatureSwitchesPanelProps> = ({
                 <span className="text-xs font-bold text-gray-900 block">{f.title}</span>
                 <span className="text-[11px] text-gray-500 block leading-snug">{f.description}</span>
                 <span className="text-[10px] uppercase tracking-wide text-gray-400">Owned by {f.owner.toLowerCase()}</span>
+                {f.unavailableReason && <span className="block text-xs text-amber-800">{f.unavailableReason}</span>}
               </div>
 
               <button
                 type="button"
+                disabled={saving || !!f.unavailableReason}
                 onClick={() => handleToggle(f)}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors shrink-0 ${
                   isFeatureEnabled(f) ? 'bg-indigo-600' : 'bg-gray-200'

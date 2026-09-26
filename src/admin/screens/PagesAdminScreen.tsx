@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
 import { pageVariantMetadata } from '../../commerce/cmsVariants';
-import { auth } from '../../firebase';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import type { Category, Product } from '../../commerce/models';
@@ -129,9 +128,9 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
 
     void (async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
+        const headers = await defaultAdminClient.getHeadersAsync();
         const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages`, {
-          headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+          headers: { ...headers, 'X-Tenant-ID': requestTenantId },
           signal: controller.signal,
         });
         if (!res.ok) throw new Error('Failed to load pages');
@@ -161,10 +160,10 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
     setSaving(true);
     setError('');
     try {
-      const token = await auth.currentUser?.getIdToken();
+      const headers = await defaultAdminClient.getHeadersAsync();
       const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages/${encodeURIComponent(pageToSave.id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+        headers: { ...headers, 'X-Tenant-ID': requestTenantId },
         body: JSON.stringify(pageToSave),
       });
       if (!response.ok) throw new Error('Failed to save CMS page');
@@ -204,8 +203,8 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   };
   const deletePage = async () => {
     if (!pages.some((page) => page.id === selectedPage.id) || !window.confirm(`Delete “${selectedPage.title}”?`)) return;
-    const token = await auth.currentUser?.getIdToken();
-    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } });
+    const headers = await defaultAdminClient.getHeadersAsync();
+    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'DELETE', headers: { ...headers, 'X-Tenant-ID': tenantId } });
     if (!response.ok) throw new Error('Failed to delete CMS page');
     const next = pages.filter((page) => page.id !== selectedPage.id);
     const nextPage = next[0] || blankPage();
@@ -370,7 +369,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-300">
             <span>{loading ? 'Loading tenant pages…' : `${pages.length} tenant page${pages.length === 1 ? '' : 's'}`}</span>
           </span>
@@ -410,7 +409,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* PAGE METADATA & SEO (LEFT 4 COLS) */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className="lg:col-span-4 min-w-0 space-y-4">
           <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-bold">Site pages</h3><button type="button" onClick={createPage} className="text-xs font-bold text-indigo-700 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />New</button></div>
             <div className="space-y-1 max-h-48 overflow-auto">{pages.map((page) => <button type="button" key={page.id} onClick={() => { setSelectedPage(page); setSavedPageSignature(pageSignature(page)); setSelectedBlockId(null); }} className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPage.id === page.id ? 'bg-indigo-50 text-indigo-800 font-bold' : 'hover:bg-gray-50'}`}>{page.navigationLabel || page.title}<span className="float-right text-[10px] opacity-60">{page.status}</span></button>)}</div>
@@ -448,7 +447,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
                   type="text"
                   value={selectedPage.slug}
                   onChange={(e) => setSelectedPage({ ...selectedPage, slug: e.target.value })}
-                  className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white font-mono"
                 />
               </div>
             </div>
@@ -573,7 +572,7 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
         </div>
 
         {/* STRUCTURED BLOCKS BUILDER (RIGHT 8 COLS) */}
-        <div className="lg:col-span-8 space-y-4">
+        <div className="lg:col-span-8 min-w-0 space-y-4">
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div>

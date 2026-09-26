@@ -19,6 +19,7 @@ interface FulfilmentModalProps {
    * unimplemented.
    */
   deliveryEnabled: boolean;
+  collectionEnabled?: boolean;
   onSelectFulfillment: (type: 'delivery' | 'pickup') => void;
   onClose?: () => void;
   dismissible?: boolean;
@@ -31,6 +32,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
   collectionStoresCount,
   hasDeliveryCoverage,
   deliveryEnabled,
+  collectionEnabled = true,
   onSelectFulfillment,
   onClose,
   dismissible = true,
@@ -140,7 +142,8 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
           <button
             type="button"
             id="fulfilment-option-pickup"
-            onClick={() => onSelectFulfillment('pickup')}
+            disabled={!collectionEnabled || collectionStoresCount === 0}
+            onClick={() => { if (collectionEnabled && collectionStoresCount > 0) onSelectFulfillment('pickup'); }}
             className="w-full p-4 rounded-2xl border border-blue-200 hover:border-blue-500 bg-white hover:bg-blue-50/40 shadow-xs text-left flex items-center justify-between transition-all group cursor-pointer"
           >
             <div className="flex items-center gap-3.5 min-w-0">
@@ -155,7 +158,7 @@ export const FulfilmentModal: React.FC<FulfilmentModalProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {collectionStoresCount} {t(collectionStoresCount === 1 ? 'fulfilment.localBranch' : 'fulfilment.localBranches')}
+                  {collectionEnabled ? `${collectionStoresCount} ${t(collectionStoresCount === 1 ? 'fulfilment.localBranch' : 'fulfilment.localBranches')}` : 'Collection is currently unavailable'}
                 </p>
               </div>
             </div>

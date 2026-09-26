@@ -24,7 +24,7 @@ export const FeaturesScreen: React.FC<FeaturesScreenProps> = ({
         </div>
       </div>
 
-      <FeatureSwitchesPanel tenantId={tenantId} currentUser={currentUser} />
+      <FeatureSwitchesPanel key={`${tenantId}:${currentUser.id}:${currentUser.role}`} tenantId={tenantId} currentUser={currentUser} />
     </div>
   );
 };

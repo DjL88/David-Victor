@@ -4,11 +4,18 @@ import { MetricsService } from '../../server/metricsService';
 import { circuitBreakers } from '../../server/circuitBreaker';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
 
-describe('Phase 16: Pilot Execution & Live Staging Dry Run', () => {
+describe('Phase 16: Simulated demo pilot (not live certification)', () => {
   beforeEach(() => {
     process.env.APP_MODE = 'demo';
     setServerRuntimeMode('demo');
     MetricsService.reset();
+  });
+
+  it('rejects simulated evidence in a live environment', async () => {
+    await expect(new PilotValidationRunner('brand-alpha', 'staging').executeHappyPathPilot()).rejects.toThrow('cannot certify');
+    setServerRuntimeMode('staging');
+    await expect(new PilotValidationRunner('brand-alpha', 'demo').executeHappyPathPilot()).rejects.toThrow('cannot certify');
+    await expect(new PilotValidationRunner('brand-alpha', 'demo').executeFailureScenarios()).rejects.toThrow('demo mode');
   });
 
   it('successfully executes the end-to-end happy path pilot flow across all 10 milestones', async () => {

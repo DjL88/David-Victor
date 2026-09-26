@@ -400,8 +400,8 @@ export const MembershipsScreen: React.FC<MembershipsScreenProps> = ({
       {/* ADD MEMBER MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-200 p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div className="w-full min-w-0 max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-2xl shadow-xl border border-gray-200 p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between pb-3 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
                   <UserPlus className="w-5 h-5" />

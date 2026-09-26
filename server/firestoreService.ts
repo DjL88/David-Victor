@@ -1842,7 +1842,15 @@ export class FirestoreService {
    * Updates fee policy for tenant.
    */
   static async updateTenantFeePolicy(tenantId: string, policy: Partial<TenantFeePolicy>): Promise<TenantFeePolicy> {
-    const current = await this.getTenantFeePolicy(tenantId);
+    let current: TenantFeePolicy;
+    try { current = await this.getTenantFeePolicy(tenantId); }
+    catch (error) {
+      if (!(error instanceof BFFError) || error.code !== 'POLICY_NOT_FOUND') throw error;
+      await this.getTenantConfig(tenantId);
+      // Only an explicit Admin save creates the first policy. Runtime reads
+      // remain unconfigured until that write succeeds; outages never use defaults.
+      current = { deliveryFeeMode: 'FREE', serviceFeeMode: 'NONE', serviceFeeAmount: 0, bagFee: 0, serviceFeeEnabled: false, smallOrderFeeEnabled: false };
+    }
     const updated = { ...current, ...policy };
     const db = getFirestoreDb();
     if (!db) {

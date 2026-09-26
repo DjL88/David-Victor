@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useTenant } from '../../tenant/TenantContext';
 import { Product, ProductAvailabilitySummary, BasketItem } from '../../commerce/models';
 import { ProductCard } from '../../components/ProductCard';
 import { getRenderableProducts } from '../../rules/availabilityRules';
@@ -35,6 +36,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
 }) => {
   const { isFavourite, toggleFavourite } = useFavourites();
   const { t } = useI18n();
+  const { tenant } = useTenant();
   const popularKeywords = ['Strawberries', 'Milk', 'Sourdough', 'Pizza', 'Rosé', 'IPA', 'Paracetamol', 'Crisps'];
 
   const renderableResults = useMemo(() => {
@@ -67,7 +69,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       </div>
 
       {/* Popular Suggestions if query empty */}
-      {!query.trim() && (
+      {!query.trim() && tenant?.featureFlags?.enableSearchSuggestions === true && (
         <div className="mb-6">
           <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
