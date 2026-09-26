@@ -69,7 +69,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const anchorRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
   const [dockMode, setDockMode] = useState<'normal' | 'top'>('normal');
-  const [navHeight, setNavHeight] = useState(0);
 
   useEffect(() => {
     let frame = 0;
@@ -83,7 +82,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
         const measuredHeight = Math.ceil(nav.getBoundingClientRect().height);
         if (measuredHeight > 0) {
-          setNavHeight((current) => current === measuredHeight ? current : measuredHeight);
           document.documentElement.style.setProperty('--category-nav-height', `${measuredHeight}px`);
         }
 
