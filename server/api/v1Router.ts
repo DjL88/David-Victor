@@ -3762,7 +3762,9 @@ v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
     (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || ''
   ).trim();
   if (!tenantId) {
-    if (isDemoMode() || isTestMode()) {
+    // Only explicit Demo mode may use the seeded demo tenant. Test execution
+    // must still exercise live/staging fail-closed tenant semantics.
+    if (isDemoMode()) {
       tenantId = 'brand-alpha';
     } else {
       return res.status(400).json({
