@@ -589,8 +589,6 @@ export class ChannelMenuIngestionService {
       params.menuId
     );
     const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
-    if (previousProducts.length < 20) return undefined;
-
     const previousKeys = new Set<string>(
       previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
     );
@@ -684,6 +682,29 @@ export class ChannelMenuIngestionService {
           channelLinkId,
           menuId
         ).catch(() => null);
+        const previousReceivedAt = Date.parse(String(previousNormalized?.receivedAt || ''));
+        const candidateReceivedAt = Date.parse(String(job.receivedAt || ''));
+        if (
+          Number.isFinite(previousReceivedAt) &&
+          Number.isFinite(candidateReceivedAt) &&
+          candidateReceivedAt < previousReceivedAt
+        ) {
+          throw new BFFError(
+            'STALE_MENU_SNAPSHOT',
+            'Buffered Menu Push predates the currently published catalogue and was not applied.',
+            409
+          );
+        }
+        const previousProducts = Array.isArray(previousNormalized?.products)
+          ? previousNormalized.products
+          : [];
+        if (previousProducts.length > 0 && parsed.products.length === 0) {
+          throw new BFFError(
+            'EMPTY_MENU_SNAPSHOT_REJECTED',
+            'An empty Menu Push cannot replace a non-empty last-known-good catalogue.',
+            422
+          );
+        }
         const nextKeys = new Set(
           parsed.products.map((product: any) => this.productKey(product)).filter(Boolean)
         );
