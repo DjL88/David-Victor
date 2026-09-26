@@ -852,7 +852,7 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                 void sendMessage();
               }
             }}
-            placeholder="Ask Admin AI…"
+            placeholder="Ask Altie…"
             rows={2}
             className="w-full resize-none bg-transparent px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400"
           />

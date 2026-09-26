@@ -1,3 +1,4 @@
+import { ModalShell } from '../../components/common/ModalShell';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store, Category } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
@@ -1012,8 +1013,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
 
       {/* EDIT MODAL */}
       {editingRule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto min-w-0">
+        <ModalShell isOpen={true} onClose={() => setEditingRule(null)} title={rules.some((r) => r.id === editingRule.id) ? 'Edit product rule' : 'Create product rule'}>
+          <div className="space-y-4 min-w-0">
             <div><h3 className="text-base font-bold text-gray-900">{rules.some((r) => r.id === editingRule.id) ? 'Edit product rule' : 'Create product rule'}</h3><p className="text-xs text-gray-500 mt-1">When the <strong>Where</strong> condition matches, the selected <strong>Action</strong> is applied.</p></div>
             {ruleError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">{ruleError}</div>}
 
@@ -1148,7 +1149,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

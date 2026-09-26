@@ -7,9 +7,9 @@ export const LtPlatformWatermark: React.FC = () => (
   >
     <span>Powered by</span>
     <img
-      src="/brand/lt-logo-full.svg"
+      src="/brand/lt-logo.png"
       alt="Leitch Technologies"
-      className="h-6 w-auto opacity-45 grayscale"
+      className="h-14 w-14 object-contain"
     />
   </footer>
 );

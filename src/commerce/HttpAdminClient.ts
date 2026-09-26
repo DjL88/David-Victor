@@ -585,7 +585,10 @@ export class HttpAdminClient implements AdminClient {
       headers,
     });
     if (!res.ok) {
-      throw new Error(`Failed to retrieve fee policy for tenant ${tId}: ${res.statusText}`);
+      const payload = await res.json().catch(() => ({}));
+      const error = new Error(`Failed to retrieve fee policy (HTTP ${res.status})`);
+      Object.assign(error, { code: payload.code || payload.error?.code });
+      throw error;
     }
     return res.json();
   }

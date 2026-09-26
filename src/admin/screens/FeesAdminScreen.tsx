@@ -34,7 +34,12 @@ export const FeesAdminScreen: React.FC<FeesAdminScreenProps> = ({
     try {
       const data = await defaultAdminClient.getFeePolicy(tenantId);
       setPolicy(data);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === 'POLICY_NOT_FOUND') {
+        setPolicy({ deliveryFeeMode: 'FREE', serviceFeeMode: 'NONE', serviceFeeAmount: 0, bagFee: 0, smallOrderFeeEnabled: false, serviceFeeEnabled: false });
+        setError('No fee policy has been configured. These are unsaved zero-fee fields; review and save to create the first policy.');
+        return;
+      }
       console.error(err);
       setPolicy(null);
       setError('Unable to load fee settings.');

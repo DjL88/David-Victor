@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CmsPage } from '../src/commerce/cmsModels';
+import { isCmsPagePublished } from '../src/commerce/cmsPublication';
 import { getFirestoreDb } from './firebase';
 import { isDemoMode, isTestMode } from './runtimeMode';
 import { BFFError } from './errors';
@@ -52,18 +53,18 @@ export class CmsService {
         throw new BFFError('DATABASE_UNAVAILABLE', 'CMS pages are unavailable because durable storage is not connected.', 503);
       }
       const pages = readStore()[tenantId] || [];
-      return sortPages(publishedOnly ? pages.filter((page) => page.status === 'published') : pages);
+      return sortPages(publishedOnly ? pages.filter((page) => isCmsPagePublished(page)) : pages);
     }
 
     try {
       const snap = await db.collection('tenants').doc(tenantId).collection('pages').get();
       const pages: CmsPage[] = [];
       snap.forEach((doc) => pages.push(doc.data() as CmsPage));
-      return sortPages(publishedOnly ? pages.filter((page) => page.status === 'published') : pages);
+      return sortPages(publishedOnly ? pages.filter((page) => isCmsPagePublished(page)) : pages);
     } catch (err) {
       if (!fallbackAllowed()) throw err;
       const pages = readStore()[tenantId] || [];
-      return sortPages(publishedOnly ? pages.filter((page) => page.status === 'published') : pages);
+      return sortPages(publishedOnly ? pages.filter((page) => isCmsPagePublished(page)) : pages);
     }
   }
 

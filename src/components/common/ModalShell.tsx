@@ -69,7 +69,7 @@ export const ModalShell: React.FC<ModalShellProps> = ({
     >
       <div
         id={id}
-        className={`w-full ${SIZE_CLASSES[size]} bg-white rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col my-auto ${className}`}
+        className={`w-full min-w-0 ${SIZE_CLASSES[size]} bg-white rounded-3xl p-4 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col my-auto ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -92,7 +92,7 @@ export const ModalShell: React.FC<ModalShellProps> = ({
                   type="button"
                   id={`${id}-close-button`}
                   onClick={onClose}
-                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors focus:outline-hidden"
+                  className="p-3 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
                   aria-label="Close dialog"
                 >
                   <X className="w-5 h-5" />
@@ -103,7 +103,7 @@ export const ModalShell: React.FC<ModalShellProps> = ({
         )}
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto min-h-0">{children}</div>
+        <div className="flex-1 overflow-auto overscroll-contain min-h-0 min-w-0 break-words">{children}</div>
 
         {/* Modal Footer */}
         {footer && <div className="mt-4 pt-3 border-t border-gray-100 shrink-0">{footer}</div>}

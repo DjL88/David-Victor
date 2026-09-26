@@ -23,6 +23,7 @@ import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
 import { ApiLogsScreen } from './screens/ApiLogsScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
+import { AltieFactsScreen } from './screens/AltieFactsScreen';
 import { AdminWorkspaceProvider, type AdminGuideStep, type AdminNavigateOptions } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
 import { isSafeAdminAssistantNavigation } from './assistantNavigationSafety';
@@ -53,11 +54,13 @@ import {
   BotMessageSquare,
   ArrowUp,
   ScrollText,
+  BookOpen,
 } from 'lucide-react';
 
 export type AdminTab =
   | 'brands'
   | 'memberships'
+  | 'altie_facts'
   | 'connection_health'
   | 'api_logs'
   | 'catalog'
@@ -284,6 +287,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       ? [
           { id: 'brands', label: 'Brands', icon: Building2 },
           { id: 'memberships', label: 'Team & Access', icon: Users },
+          { id: 'altie_facts', label: 'Altie Facts', icon: BookOpen },
         ]
       : [
           { id: 'memberships', label: 'Team & Access', icon: Users },
@@ -577,6 +581,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
         <main ref={adminMainRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth p-4 pt-16 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
             {tenantLoadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 flex items-center justify-between gap-3"><span>{tenantLoadError}</span><button type="button" onClick={loadTenant} className="font-bold underline">Retry</button></div>}
+            {activeTab === 'altie_facts' && <AltieFactsScreen user={currentUser} tenantId={currentTenantId} />}
             {activeTab === 'brands' && (
               <BrandsScreen
                 currentUser={currentUser}

@@ -515,7 +515,7 @@ export class ChannelMenuIngestionService {
           eventId,
           menuIds,
           channelLinkIds,
-          error: String(err?.message || err),
+          error: 'MENU_PROCESSING_FAILED',
         });
         throw err;
       }
@@ -523,7 +523,7 @@ export class ChannelMenuIngestionService {
         ...record,
         status: 'QUEUE_FAILED',
         updatedAt: new Date().toISOString(),
-        error: String(err?.message || err),
+        error: 'MENU_QUEUE_FAILED',
       });
       // The verified payload is already durably buffered and journalled. The
       // route returns a retryable 503 for this receipt so Deliverect redelivery
@@ -1007,7 +1007,7 @@ export class ChannelMenuIngestionService {
       await this.saveIngressRecord({
         ...processing,
         status: 'FAILED',
-        error: String(err?.message || err),
+        error: 'MENU_PROCESSING_FAILED',
         updatedAt: new Date().toISOString(),
       });
       throw err;

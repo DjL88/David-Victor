@@ -21,7 +21,7 @@ describe('tenant feature switch registry', () => {
   it('makes ownership explicit so settings can be consolidated without fake controls', () => {
     for (const definition of TENANT_FEATURE_DEFINITIONS) {
       expect(definition.owner).toMatch(/^(CONTENT|CATALOGUE|FULFILMENT|COMPLIANCE|CHECKOUT|INTEGRATION|PLATFORM)$/);
-      if (definition.platformOnly) {
+      if (definition.platformOnly || definition.unavailableReason) {
         expect(definition.tenantConfigurable).toBe(false);
       } else {
         expect(definition.tenantConfigurable).toBe(true);

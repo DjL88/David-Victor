@@ -538,8 +538,8 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
       {/* EDIT / CREATE BANNER MODAL */}
       {isEditorOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 space-y-5 my-8">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl border border-gray-100 p-6 space-y-5 my-auto">
+            <div className="sticky top-0 z-10 bg-white flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
                   <Sparkles className="w-4 h-4" />

@@ -14,6 +14,7 @@ import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackS
 import { MetricsService } from '../metricsService';
 import { circuitBreakers } from '../circuitBreaker';
 import crypto from 'crypto';
+import { isDemoMode } from '../runtimeMode';
 
 export interface PilotEvidenceStep {
   step: string;
@@ -61,6 +62,9 @@ export class PilotValidationRunner {
    * Runs the complete end-to-end happy path pilot flow.
    */
   public async executeHappyPathPilot(): Promise<PilotExecutionReport> {
+    if (this.environment !== 'demo' || !isDemoMode()) {
+      throw new Error('This pilot runner uses simulated fixtures and is available only in demo mode. It cannot certify a live integration.');
+    }
     const startedAt = new Date().toISOString();
     const correlationId = `pilot-${Date.now()}`;
 
@@ -283,6 +287,9 @@ export class PilotValidationRunner {
    * Executes and records validation of failure and resilience scenarios.
    */
   public async executeFailureScenarios(): Promise<string[]> {
+    if (this.environment !== 'demo' || !isDemoMode()) {
+      throw new Error('Simulated pilot scenarios are available only in demo mode.');
+    }
     // 1. Webhook HMAC Tampering Rejection
     const tamperedPayload = { orderId: 'ord-tamper-fail', status: 'CANCELLED' };
     const rawTampered = Buffer.from(JSON.stringify(tamperedPayload));

@@ -20,6 +20,7 @@ describe('storefront router foundation', () => {
     expect(parseStorefrontRoute('/orders/order-123', '')).toEqual({ kind: 'orders', orderId: 'order-123' });
     expect(parseStorefrontRoute('/account', '')).toEqual({ kind: 'account' });
     expect(parseStorefrontRoute('/about-us', '')).toEqual({ kind: 'cms', slug: 'about-us' });
+    expect(parseStorefrontRoute('/pages/about-us', '')).toEqual({ kind: 'cms', slug: 'about-us' });
   });
 
   it('generates stable product category search and tab paths', () => {

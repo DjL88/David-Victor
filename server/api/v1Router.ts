@@ -5248,7 +5248,7 @@ v1Router.get('/admin/tenants/:id/fee-policy', requireAdminAuth(), async (req: Re
     const policy = await FirestorePlatformService.getTenantFeePolicy(req.params.id);
     res.json(policy);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleCommerceError(res, err, 'Fee policy unavailable');
   }
 });
 

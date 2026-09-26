@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Address, Store } from '../commerce/models';
 import { CmsPage } from '../commerce/cmsModels';
+import { cmsNavigationPages } from '../commerce/cmsPublication';
 import { useTenant } from '../tenant/TenantContext';
 import { useTenantStyles } from '../tenant/useTenant';
 import { useI18n } from '../i18n/I18nContext';
@@ -62,40 +63,16 @@ export const Header: React.FC<HeaderProps> = ({
   const [allHeaderPages, setAllHeaderPages] = useState<CmsPage[]>([]);
 
   useEffect(() => {
-    fetch('/api/v1/cms/pages')
-      .then((res) => res.ok ? res.json() : { pages: [] })
-      .then((data) => {
-        const pages = (data.pages || []) as CmsPage[];
-        setAllHeaderPages(pages);
-      })
-      .catch(() => setAllHeaderPages([]));
+    const controller = new AbortController();
+    setAllHeaderPages([]);
+    fetch('/api/v1/cms/pages', { signal: controller.signal })
+      .then(res => res.ok ? res.json() : { pages: [] })
+      .then(data => { if (!controller.signal.aborted) setAllHeaderPages(Array.isArray(data.pages) ? data.pages : []); })
+      .catch(() => { if (!controller.signal.aborted) setAllHeaderPages([]); });
+    return () => controller.abort();
   }, [tenant?.tenantId]);
 
-  const headerPages = useMemo(() => {
-    const eligible = allHeaderPages.filter(
-      (page) => page.status === 'published' && ['header', 'both'].includes(page.navigationVisibility)
-    );
-    const bySlug = new Map<string, CmsPage[]>();
-    eligible.forEach((page) => {
-      const group = bySlug.get(page.slug) || [];
-      group.push(page);
-      bySlug.set(page.slug, group);
-    });
-    return Array.from(bySlug.values())
-      .map((group) =>
-        group.find((page) => page.locale === locale) ||
-        group.find((page) => page.locale === tenant?.locale) ||
-        group.find((page) => page.locale === 'en-GB') ||
-        group[0]
-      )
-      .filter((page): page is CmsPage => Boolean(page))
-      .sort((a, b) => (a.navigationOrder ?? 999) - (b.navigationOrder ?? 999));
-  }, [allHeaderPages, locale, tenant?.locale]);
-
-  const openCmsPage = (page: CmsPage) => {
-    sessionStorage.setItem('__cms_page_slug', page.slug);
-    onNavigateTab?.('account');
-  };
+  const headerPages = useMemo(() => cmsNavigationPages(allHeaderPages, 'header', locale, tenant?.locale || 'en-GB'), [allHeaderPages, locale, tenant?.locale]);
 
   // Subscribe to Firebase Auth for real customer identity
   useEffect(() => {
@@ -399,7 +376,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {headerPages.length > 0 && (
         <nav aria-label="Brand pages" className="w-full max-w-7xl mx-auto px-4 pb-2 flex items-center gap-4 overflow-x-auto">
-          {headerPages.map((page) => <button key={page.id} type="button" onClick={() => openCmsPage(page)} className="text-xs font-bold whitespace-nowrap text-gray-600 hover:text-gray-950">{page.navigationLabel || page.title}</button>)}
+          {headerPages.map((page) => <a key={page.id} href={`/pages/${encodeURIComponent(page.slug)}`} className="text-xs font-bold whitespace-nowrap text-gray-600 hover:text-gray-950">{page.navigationLabel || page.title}</a>)}
         </nav>
       )}
 

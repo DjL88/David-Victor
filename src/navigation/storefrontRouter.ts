@@ -40,6 +40,7 @@ export function parseStorefrontRoute(
   if (parts[0] === 'checkout') return { kind: 'checkout' };
   if (parts[0] === 'orders') return { kind: 'orders', orderId: parts[1] || undefined };
   if (parts[0] === 'account') return { kind: 'account' };
+  if (parts[0] === 'pages' && parts[1]) return { kind: 'cms', slug: parts.slice(1).join('/') };
 
   // Unknown top-level slugs are intentionally reserved for CMS pages.
   return { kind: 'cms', slug: parts.join('/') };

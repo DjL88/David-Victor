@@ -382,6 +382,9 @@ export function getFirebaseAdminAuth(): AdminAuth | null {
 export const getFirebaseAuth = getFirebaseAdminAuth;
 
 export function getFirebaseStorage(): AdminStorage | null {
+  if ((process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') && !process.env.TEST_LIVE_STORAGE) {
+    return null;
+  }
   if (storageInstance) return storageInstance;
   const app = getFirebaseAdminApp();
   if (!app) return null;
