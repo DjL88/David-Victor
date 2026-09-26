@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { qualifyAutomaticDeals } from '../commerce/automaticDealEngine';
 
 const p=(plu:string, price:number)=>({id:plu,plu,gtin:[],name:plu,price,categoryIds:[],productTags:[],displayLabels:[],allergens:[],active:true,stockStatus:'IN_STOCK'} as any);
+const moneyProduct=(plu:string, amount:number, currency:string)=>({id:plu,plu,gtin:[],name:plu,price:{amount,currency},categoryIds:[],productTags:[],displayLabels:[],allergens:[],active:true,stockStatus:'IN_STOCK'} as any);
 const modifier=(id:string,plu:string,price:number)=>({id,name:id,plu:id+'###',standalonePlu:plu,standalonePriceMinor:price,priceMinor:0,active:true,snoozed:false});
 const deal=(id:string,priceMinor:number,plus:string[])=>({id,plu:id,name:id,priceMinor,currency:'GBP',isCombo:true,stockStatus:'IN_STOCK',sections:plus.map((plu,i)=>({id:id+i,name:'s'+i,min:1,max:1,modifiers:[modifier(id+i,plu,plu==='A'?300:plu==='B'?200:100)]}))} as any);
 
@@ -44,3 +45,35 @@ describe('automatic basket deal engine',()=>{
   const upsell=result[0].components.find((component)=>component.componentPlu==='D');
   expect(upsell?.protectedUnitPricesMinor).toEqual([80]);
  });
+
+
+describe('automatic deal currency and quantity safety', () => {
+  it('does not qualify a bundle when an explicitly-priced component is in another currency', () => {
+    const result = qualifyAutomaticDeals(
+      [{ plu: 'A', quantity: 1 }, { plu: 'B', quantity: 1 }, { plu: 'C', quantity: 1 }],
+      [deal('meal', 500, ['A', 'B', 'C'])],
+      [moneyProduct('A', 300, 'GBP'), moneyProduct('B', 200, 'EUR'), moneyProduct('C', 100, 'GBP')],
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('keeps integer minor units exact when product Money values match the bundle currency', () => {
+    const result = qualifyAutomaticDeals(
+      [{ plu: 'A', quantity: 1 }, { plu: 'B', quantity: 1 }, { plu: 'C', quantity: 1 }],
+      [deal('meal', 499, ['A', 'B', 'C'])],
+      [moneyProduct('A', 300, 'GBP'), moneyProduct('B', 200, 'GBP'), moneyProduct('C', 100, 'GBP')],
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].targetBundleTotalMinor).toBe(499);
+    expect(result[0].discountTotalMinor).toBe(101);
+  });
+
+  it('never lets a fractional weighted quantity satisfy a whole-unit bundle requirement', () => {
+    const result = qualifyAutomaticDeals(
+      [{ plu: 'A', quantity: 0.5 }, { plu: 'B', quantity: 1 }, { plu: 'C', quantity: 1 }],
+      [deal('meal', 500, ['A', 'B', 'C'])],
+      [p('A', 300), p('B', 200), p('C', 100)],
+    );
+    expect(result).toEqual([]);
+  });
+});

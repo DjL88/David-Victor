@@ -83,13 +83,15 @@ describe('Phase 14: Analytics & Notifications Engine', () => {
   });
 
   describe('2. Genuine Analytics Insights Calculation (Section 38)', () => {
-    it('returns genuine empty state (totalSessions: 0, totalOrders: 0) without fabricating metrics', async () => {
+    it('returns genuine empty state without fabricating financial evidence', async () => {
       const insights = await AnalyticsService.getInsights(tenantId, '30d');
 
       expect(insights.totalSessions).toBe(0);
-      expect(insights.totalOrders).toBe(0);
-      expect(insights.totalGrossMerchandiseValue).toBe(0);
-      expect(insights.overallConversionRate).toBe(0);
+      expect(insights.totalOrders).toBeNull();
+      expect(insights.totalGrossMerchandiseValue).toBeNull();
+      expect(insights.averageOrderValue).toBeNull();
+      expect(insights.overallConversionRate).toBeNull();
+      expect(insights.evidence.financialStatus).toBe('NO_CAPTURE_EVIDENCE');
       expect(insights.funnel).toEqual([]);
       expect(insights.products).toEqual([]);
       expect(insights.searches).toEqual([]);
@@ -98,7 +100,9 @@ describe('Phase 14: Analytics & Notifications Engine', () => {
 
     it('accurately aggregates funnel progression, product metrics, and searches from real events', async () => {
       // Seed 2 sessions
-      // Session 1: Lands -> Views Product A -> Adds to Basket -> Starts Checkout -> Submits Order (£35.00)
+      // Session 1: Lands -> Views Product A -> Adds to Basket -> Starts Checkout -> Submits Order.
+      // The browser submission is not financial truth; a separate trusted payment-capture
+      // event below supplies the settled amount/currency evidence.
       await AnalyticsService.trackEvent(tenantId, {
         type: 'SESSION_STARTED',
         sessionId: 'ses_1',
@@ -125,7 +129,14 @@ describe('Phase 14: Analytics & Notifications Engine', () => {
         type: 'ORDER_SUBMITTED',
         sessionId: 'ses_1',
         coarseRegion: 'CM1',
-        properties: { totalAmount: 3500 },
+        properties: { totalAmount: 999999 },
+      });
+      await AnalyticsService.trackEvent(tenantId, {
+        type: 'PAYMENT_CAPTURED',
+        sessionId: 'ses_1',
+        coarseRegion: 'CM1',
+        orderReferenceHash: 'order_hash_phase14',
+        properties: { totalAmount: 3500, currency: 'GBP' },
       });
 
       // Session 2: Lands -> Searches "bread" -> Views Product B -> Drops off
@@ -178,11 +189,12 @@ describe('Phase 14: Analytics & Notifications Engine', () => {
       expect(insights.searches[0].query).toBe('bread');
       expect(insights.searches[0].frequency).toBe(1);
 
-      // Regional metrics
+      // Coarse geography is observed, but payment/order attribution is not
+      // inferred onto a region without explicit server-side attribution evidence.
       expect(insights.regions.length).toBe(2);
       const cm1Region = insights.regions.find((r) => r.postcodeDistrict === 'CM1');
-      expect(cm1Region?.ordersCount).toBe(1);
-      expect(cm1Region?.revenue).toBe(3500);
+      expect(cm1Region?.ordersCount).toBeNull();
+      expect(cm1Region?.revenue).toBeNull();
     });
   });
 

@@ -15,15 +15,28 @@ import { getServerRuntimeMode } from '../runtimeMode';
 import { getDispatchAdapter } from './index';
 import { DispatchOrchestrationService } from './DispatchOrchestrationService';
 import { getCircuitBreaker } from '../circuitBreaker';
+import { calculateSubstitutionLineEconomics } from '../../src/commerce/substitutionPricing';
 
 const dPayAdapters = new Map<string, DPayAdapter>();
 
+function requirePaymentTenantId(tenantId?: string): string {
+  const normalizedTenantId = String(tenantId || '').trim();
+  if (!normalizedTenantId || normalizedTenantId === 'default') {
+    throw new CommerceError(
+      ErrorCode.INVALID_INPUT,
+      'An explicit tenantId is required for every payment operation.',
+      400
+    );
+  }
+  return normalizedTenantId;
+}
+
 export function getDPayAdapter(
-  tenantId: string = 'brand-alpha',
+  tenantId: string,
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): DPayAdapter {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = requirePaymentTenantId(tenantId);
   const appMode = getServerRuntimeMode();
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   let adapter = dPayAdapters.get(key);
@@ -49,7 +62,7 @@ export function setDPayAdapter(
   environment: string = process.env.DELIVERECT_ENV || 'staging',
   deliverectAccountId: string = 'default'
 ): void {
-  const normalizedTenantId = tenantId && tenantId !== 'default' ? tenantId : 'brand-alpha';
+  const normalizedTenantId = requirePaymentTenantId(tenantId || (getServerRuntimeMode() === 'demo' || process.env.NODE_ENV === 'test' ? 'brand-alpha' : undefined));
   const appMode = getServerRuntimeMode();
   const key = `${normalizedTenantId}:${environment}:${deliverectAccountId}:${appMode}`;
   dPayAdapters.set(key, adapter);
@@ -69,6 +82,27 @@ export interface CeilingCalculationOptions {
 }
 
 export class PaymentService {
+  private static async assertPaymentTenant(paymentId: string, tenantId: string): Promise<void> {
+    const projection = await FirestorePlatformService.getPaymentProjection(paymentId);
+    if (projection && projection.tenantId !== tenantId) {
+      throw new CommerceError(
+        ErrorCode.PAYMENT_NOT_AUTHORISED,
+        'Payment does not belong to the resolved tenant.',
+        404
+      );
+    }
+  }
+
+  private static assertOrderTenant(order: OrderProjection, tenantId: string): void {
+    if (order.tenantId && order.tenantId !== tenantId) {
+      throw new CommerceError(
+        ErrorCode.ORDER_NOT_FOUND,
+        'Order not found for the resolved tenant.',
+        404
+      );
+    }
+  }
+
   /**
    * Section 20: Explicit Customer-Approved Authorization Ceiling.
    *
@@ -170,8 +204,8 @@ export class PaymentService {
   /**
    * Retrieves payment gateways for a store/channel link (PAY-01).
    */
-  static async getPaymentGateways(channelLinkId: string, tenantId?: string): Promise<PaymentGatewayProfile[]> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+  static async getPaymentGateways(channelLinkId: string, tenantId: string): Promise<PaymentGatewayProfile[]> {
+    const resolvedTenant = requirePaymentTenantId(tenantId);
     const adapter = getDPayAdapter(resolvedTenant);
     return getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.getPaymentGateways(channelLinkId)
@@ -186,6 +220,7 @@ export class PaymentService {
     request: DPayPaymentRequest,
     tenantId: string
   ): Promise<DPayPaymentResponse> {
+    const resolvedTenant = requirePaymentTenantId(tenantId);
     // Check for raw PAN/CVC leaks
     const payloadStr = JSON.stringify(request);
     if (payloadStr.includes('pan') || payloadStr.includes('cvc') || payloadStr.includes('cvv')) {
@@ -234,19 +269,23 @@ export class PaymentService {
       }
     }
 
-    const adapter = getDPayAdapter(tenantId);
-    const response = await getCircuitBreaker(tenantId, 'dpay').execute(() =>
+    const adapter = getDPayAdapter(resolvedTenant);
+    const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.requestPayment(request)
     );
 
     // Save payment projection
     const projection: DomainPaymentProjection = {
       paymentId: response.paymentId,
-      tenantId,
+      tenantId: resolvedTenant,
       channelLinkId: request.channelLinkId,
       status: response.status,
       amount: { amount: response.amount, currency: response.currency },
       authorizedAmount: { amount: response.authorizedAmount, currency: response.currency },
+      customerApprovedMaxAmount: {
+        amount: request.customerApprovedMaxAmount?.amount ?? request.amount,
+        currency: request.customerApprovedMaxAmount?.currency ?? request.currency,
+      },
       capturedAmount: { amount: response.capturedAmount, currency: response.currency },
       captureMode: response.captureMode,
       currency: response.currency,
@@ -266,8 +305,9 @@ export class PaymentService {
   /**
    * Retrieves payment status and projection.
    */
-  static async getPayment(paymentId: string, tenantId?: string): Promise<DPayPaymentResponse> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+  static async getPayment(paymentId: string, tenantId: string): Promise<DPayPaymentResponse> {
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    await this.assertPaymentTenant(paymentId, resolvedTenant);
     const adapter = getDPayAdapter(resolvedTenant);
     return getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.getPayment(paymentId)
@@ -277,8 +317,9 @@ export class PaymentService {
   /**
    * Captures an authorized payment (PAY-07, PAY-08).
    */
-  static async capture(paymentId: string, finalAmountMinor: number, tenantId?: string): Promise<DPayPaymentResponse> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+  static async capture(paymentId: string, finalAmountMinor: number, tenantId: string): Promise<DPayPaymentResponse> {
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    await this.assertPaymentTenant(paymentId, resolvedTenant);
     const adapter = getDPayAdapter(resolvedTenant);
     const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.capture(paymentId, finalAmountMinor)
@@ -305,7 +346,8 @@ export class PaymentService {
     reason?: string,
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    await this.assertPaymentTenant(paymentId, resolvedTenant);
     const adapter = getDPayAdapter(resolvedTenant);
     const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.voidAuthorization(paymentId, reason)
@@ -331,7 +373,8 @@ export class PaymentService {
     reason?: string,
     tenantId?: string
   ): Promise<DPayPaymentResponse> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    await this.assertPaymentTenant(paymentId, resolvedTenant);
     const adapter = getDPayAdapter(resolvedTenant);
     const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.refund(paymentId, refundAmountMinor, reason)
@@ -351,9 +394,30 @@ export class PaymentService {
   static async reauthorize(
     paymentId: string,
     additionalAmountMinor: number,
-    tenantId?: string
+    tenantId: string
   ): Promise<DPayPaymentResponse> {
-    const resolvedTenant = tenantId || 'brand-alpha';
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    await this.assertPaymentTenant(paymentId, resolvedTenant);
+    const projection = await FirestorePlatformService.getPaymentProjection(paymentId);
+    if (!projection?.customerApprovedMaxAmount) {
+      throw new CommerceError(
+        ErrorCode.PAYMENT_NOT_AUTHORISED,
+        'Reauthorization is blocked because no customer-approved maximum is persisted for this payment.',
+        422
+      );
+    }
+    const currentAuthorized = projection.authorizedAmount.amount;
+    const requestedAuthorized = currentAuthorized + additionalAmountMinor;
+    if (
+      projection.customerApprovedMaxAmount.currency !== projection.authorizedAmount.currency ||
+      requestedAuthorized > projection.customerApprovedMaxAmount.amount
+    ) {
+      throw new CommerceError(
+        ErrorCode.PAYMENT_NOT_AUTHORISED,
+        'Reauthorization would exceed the persisted customer-approved authorization ceiling.',
+        422
+      );
+    }
     const adapter = getDPayAdapter(resolvedTenant);
     const response = await getCircuitBreaker(resolvedTenant, 'dpay').execute(() =>
       adapter.reauthorize(paymentId, additionalAmountMinor)
@@ -401,6 +465,55 @@ export class PaymentService {
         ).toUpperCase();
 
         if (itemState === 'REMOVED' || itemState === 'OUT_OF_STOCK') {
+          continue;
+        }
+
+        if (itemState === 'SUBSTITUTED') {
+          const persistedLineTotal = item.substitution?.economics?.customerChargeLineTotal;
+          if (persistedLineTotal) {
+            if (!Number.isInteger(persistedLineTotal.amount) || persistedLineTotal.amount < 0) {
+              throw new CommerceError(
+                ErrorCode.INVALID_INPUT,
+                `Invalid persisted substitution line total for ${item.plu}`,
+                422
+              );
+            }
+            itemsSubtotal += persistedLineTotal.amount;
+            continue;
+          }
+
+          // Legacy/imported substituted lines are reconciled to the same safe
+          // line-total rule rather than falling back to per-unit protection.
+          const originalQty = Math.max(1, Math.trunc(item.originalQuantity || 1));
+          const replacementQty = Math.max(
+            1,
+            Math.trunc(
+              item.substitution?.replacementQuantity ??
+              item.pickedQuantity ??
+              1
+            )
+          );
+          const originalRaw = (item as any).price ?? item.originalPrice;
+          const replacementRaw =
+            item.substitution?.substitutePrice ??
+            item.finalPrice ??
+            item.originalPrice;
+          const originalAmount =
+            typeof originalRaw === 'number' ? Math.round(originalRaw) : Math.round(originalRaw?.amount ?? 0);
+          const replacementAmount =
+            typeof replacementRaw === 'number' ? Math.round(replacementRaw) : Math.round(replacementRaw?.amount ?? 0);
+          const currency =
+            (typeof originalRaw === 'object' && originalRaw?.currency) ||
+            (typeof replacementRaw === 'object' && replacementRaw?.currency) ||
+            'GBP';
+          const economics = calculateSubstitutionLineEconomics({
+            originalQuantity: originalQty,
+            originalUnitPrice: { amount: originalAmount, currency },
+            replacementQuantity: replacementQty,
+            replacementUnitPrice: { amount: replacementAmount, currency },
+            protectedOriginalUnitPrices: item.bundlePricing?.protectedUnitPrices || [],
+          });
+          itemsSubtotal += economics.customerChargeLineTotal.amount;
           continue;
         }
 
@@ -552,13 +665,15 @@ export class PaymentService {
    */
   static async settleOrderPayment(
     orderId: string,
-    tenantId: string = 'brand-alpha',
+    tenantId: string,
     options?: { reauthorizeIfNeeded?: boolean; actor?: any }
   ): Promise<SettlementResult> {
     const order = await FirestorePlatformService.getOrderProjection(orderId);
     if (!order) {
       throw new CommerceError(ErrorCode.ORDER_NOT_FOUND, `Order '${orderId}' not found for payment settlement`, 404);
     }
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    this.assertOrderTenant(order, resolvedTenant);
 
     // Resolve payment ID
     let paymentId = order.paymentId;
@@ -604,7 +719,7 @@ export class PaymentService {
 
     // Resolve authorized amount from payment projection or order
     const payment = (await FirestorePlatformService.getPaymentProjection(paymentId)) ||
-      (await PaymentService.getPayment(paymentId, tenantId).catch(() => null));
+      (await PaymentService.getPayment(paymentId, resolvedTenant).catch(() => null));
 
     const authorizedAmount = payment?.authorizedAmount?.amount ??
       (payment?.authorizedAmount as any) ??
@@ -616,7 +731,7 @@ export class PaymentService {
     // CASE 1: finalAmount <= authorizedAmount (PAY-07)
     if (finalAmount <= authorizedAmount) {
       try {
-        await PaymentService.capture(paymentId, finalAmount, tenantId);
+        await PaymentService.capture(paymentId, finalAmount, resolvedTenant);
         const residualHold = Math.max(0, authorizedAmount - finalAmount);
 
         const settlementResult: SettlementResult = {
@@ -691,14 +806,25 @@ export class PaymentService {
 
     // CASE 2: finalAmount > authorizedAmount (PAY-08)
     const excessAmount = finalAmount - authorizedAmount;
+    const customerApprovedMaximum =
+      payment?.customerApprovedMaxAmount?.amount ??
+      order.authorizedMaximum ??
+      authorizedAmount;
+
+    if (finalAmount > customerApprovedMaximum) {
+      // Never allow a worker/admin boolean to manufacture customer consent.
+      // The existing authorization remains untouched until a new independently
+      // evidenced customer ceiling is persisted.
+      options = { ...options, reauthorizeIfNeeded: false };
+    }
 
     if (options?.reauthorizeIfNeeded) {
       try {
         console.log(`[PaymentService] Reauthorizing payment ${paymentId} by ${excessAmount} minor units...`);
-        await PaymentService.reauthorize(paymentId, excessAmount, tenantId);
+        await PaymentService.reauthorize(paymentId, excessAmount, resolvedTenant);
         
         // Reauthorization succeeded: now capture finalAmount
-        await PaymentService.capture(paymentId, finalAmount, tenantId);
+        await PaymentService.capture(paymentId, finalAmount, resolvedTenant);
         const settlementResult: SettlementResult = {
           status: 'SETTLED',
           orderId,
@@ -776,13 +902,31 @@ export class PaymentService {
    */
   static async handleOrderCancellation(
     orderId: string,
-    tenantId: string = 'brand-alpha',
+    tenantId: string,
     reason?: string,
     actor?: any
   ): Promise<SettlementResult> {
     const order = await FirestorePlatformService.getOrderProjection(orderId);
     if (!order) {
       throw new CommerceError(ErrorCode.ORDER_NOT_FOUND, `Order '${orderId}' not found`, 404);
+    }
+    const resolvedTenant = requirePaymentTenantId(tenantId);
+    this.assertOrderTenant(order, resolvedTenant);
+
+    const authoritativeCancellationStates = new Set([
+      'ORDER_CANCELLED',
+      'CANCELLED',
+      'ORDER_CANCELLED_UNAVAILABLE_ITEM',
+      'ORDER_FAILED',
+      'FAILED',
+    ]);
+    const authoritativeOrderState = String(order.status || '').toUpperCase();
+    if (!authoritativeCancellationStates.has(authoritativeOrderState)) {
+      throw new CommerceError(
+        ErrorCode.RULE_VIOLATION,
+        'Payment refund/release is blocked until an authoritative cancelled or failed order state is recorded.',
+        409
+      );
     }
 
     let paymentId = order.paymentId;
@@ -803,14 +947,14 @@ export class PaymentService {
     }
 
     const payment = (await FirestorePlatformService.getPaymentProjection(paymentId)) ||
-      (await PaymentService.getPayment(paymentId, tenantId).catch(() => null));
+      (await PaymentService.getPayment(paymentId, resolvedTenant).catch(() => null));
 
     const isCaptured = payment?.status === 'captured' || order.paymentState === 'CAPTURED';
 
     if (isCaptured) {
       // Already captured: refund
       const refundAmount = payment?.capturedAmount?.amount ?? order.capturedAmount ?? order.finalAmount ?? order.total;
-      await PaymentService.refund(paymentId, refundAmount, reason || 'Order cancelled', tenantId);
+      await PaymentService.refund(paymentId, refundAmount, reason || 'Order cancelled', resolvedTenant);
 
       const refundResult: SettlementResult = {
         status: 'REFUNDED',
@@ -823,7 +967,7 @@ export class PaymentService {
         settledAt: new Date().toISOString(),
       };
 
-      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+      await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
         paymentState: 'REFUNDED',
         settlementDetails: refundResult,
       });
@@ -846,7 +990,7 @@ export class PaymentService {
       const providerRelease = await PaymentService.voidAuthorization(
         paymentId,
         reason || 'Order cancelled before capture',
-        tenantId
+        resolvedTenant
       );
       const authorizedAmount =
         providerRelease.authorizedAmount ??
@@ -865,7 +1009,7 @@ export class PaymentService {
         settledAt: new Date().toISOString(),
       };
 
-      await FirestorePlatformService.updateOrderProjectionState(orderId, 'ORDER_CANCELLED', {
+      await FirestorePlatformService.updateOrderProjectionState(orderId, order.status, {
         paymentState: 'VOIDED',
         settlementDetails: voidResult,
       });

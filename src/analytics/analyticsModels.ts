@@ -145,65 +145,65 @@ export interface FunnelStageMetric {
 
 export interface ProductPerformanceMetric {
   plu: string;
-  name: string;
-  category: string;
-  impressions: number;
+  name: string | null;
+  category: string | null;
+  impressions: number | null;
   productViews: number;
-  addToBasketCount: number;
-  ordersCount: number;
-  conversionRate: number; // percentage
-  revenue: number;
-  outOfStockImpressions: number;
+  addToBasketCount: number | null;
+  ordersCount: number | null;
+  conversionRate: number | null; // percentage when product-view evidence exists
+  revenue: number | null;
+  outOfStockImpressions: number | null;
   questRemovals: number;
   questSubstitutions: number;
   quantityReductions: number;
-  pickSuccessRate: number; // percentage e.g. 96.4%
-  estimatedLostRevenue: number;
+  pickSuccessRate: number | null; // percentage when picking outcome evidence exists
+  estimatedLostRevenue: number | null;
 }
 
 export interface StoryPerformanceMetric {
   storyId: string;
-  title: string;
+  title: string | null;
   tag?: string;
   impressions: number;
-  uniqueViewers?: number;
+  uniqueViewers: number | null;
   opens: number;
   productClicks: number;
-  addToBaskets: number;
-  orders: number;
-  capturedSales: number;
-  directConversionRate: number; // Purchased directly through story CTA
-  assistedConversionRate: number; // Viewed story, completed purchase later in session
+  addToBaskets: number | null;
+  orders: number | null;
+  capturedSales: number | null;
+  directConversionRate: number | null; // Requires paid story-attribution evidence
+  assistedConversionRate: number | null; // Requires paid assisted-attribution evidence
 }
 
 export interface SearchQueryMetric {
   query: string;
   frequency: number;
-  resultsCount: number;
+  resultsCount: number | null;
   resultClicks: number;
-  addToBasketCount: number;
-  conversionRate: number;
+  addToBasketCount: number | null;
+  conversionRate: number; // Result click-through rate; not purchase conversion
   noResult: boolean;
 }
 
 export interface RegionalMetric {
-  country: string;
-  region: string; // Coarse administrative region e.g. "Essex", "Greater London"
-  city: string;
-  postcodeDistrict: string; // e.g. "CM1", "CM2", "E1"
+  country: string | null;
+  region: string; // Observed coarse-region value; do not infer a city/country from it
+  city: string | null;
+  postcodeDistrict: string | null;
   sessions: number;
-  serviceabilityRate: number; // % of sessions that found a serviceable store
-  noServiceableStoreRate: number;
-  conversionRate: number;
-  ordersCount: number;
-  revenue: number;
+  serviceabilityRate: number | null; // % when serviceability checks exist
+  noServiceableStoreRate: number | null;
+  conversionRate: number | null;
+  ordersCount: number | null;
+  revenue: number | null;
 }
 
 export interface AbandonedBasketMetric {
   abandonedCount: number;
-  recoveredCount: number;
-  recoveryRate: number;
-  averageAbandonedValue: number;
+  recoveredCount: number | null;
+  recoveryRate: number | null;
+  averageAbandonedValue: number | null;
   topAbandonedPlus: Array<{ plu: string; name: string; frequency: number }>;
 }
 
@@ -211,22 +211,38 @@ export interface ArtieRecommendationMetric {
   presented: number;
   accepted: number;
   paid: number;
-  presentedToAcceptedRate: number;
-  presentedToPaidRate: number;
-  acceptedToPaidRate: number;
+  presentedToAcceptedRate: number | null;
+  presentedToPaidRate: number | null;
+  acceptedToPaidRate: number | null;
   attributedRevenue: number;
+}
+
+export interface InsightsEvidence {
+  source: 'analytics_events';
+  status: 'AVAILABLE' | 'EMPTY';
+  observedAt: string | null;
+  eventCount: number;
+  serviceabilityChecks: number;
+  pickingOutcomeEvents: number;
+  searchEvents: number;
+  recommendationChains: number;
+  financialSource: 'payment_captured_events';
+  financialCaptureEvents: number;
+  financialAmountEvents: number;
+  financialCurrency: string | null;
+  financialStatus: 'NO_CAPTURE_EVIDENCE' | 'AVAILABLE' | 'PARTIAL' | 'MIXED_CURRENCY';
 }
 
 export interface InsightsDashboardData {
   timeframe: '7d' | '30d' | '90d';
   totalSessions: number;
   activeStoresCount: number;
-  totalOrders: number;
-  totalGrossMerchandiseValue: number;
-  averageOrderValue: number;
-  overallConversionRate: number;
-  serviceabilityRate: number;
-  pickingSuccessRate: number;
+  totalOrders: number | null;
+  totalGrossMerchandiseValue: number | null;
+  averageOrderValue: number | null;
+  overallConversionRate: number | null;
+  serviceabilityRate: number | null;
+  pickingSuccessRate: number | null;
   funnel: FunnelStageMetric[];
   products: ProductPerformanceMetric[];
   stories: StoryPerformanceMetric[];
@@ -234,4 +250,5 @@ export interface InsightsDashboardData {
   regions: RegionalMetric[];
   abandonedBasket: AbandonedBasketMetric[];
   artieRecommendations: ArtieRecommendationMetric;
+  evidence: InsightsEvidence;
 }

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store } from '../../commerce/models';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store, Category } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
-import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload, Download } from 'lucide-react';
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -39,29 +39,67 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [substitutionImporting, setSubstitutionImporting] = useState(false);
   const [substitutionImportMessage, setSubstitutionImportMessage] = useState<string | null>(null);
+  const [substitutionExporting, setSubstitutionExporting] = useState(false);
+  const [selectorLoading, setSelectorLoading] = useState(false);
+  const [selectorError, setSelectorError] = useState<string | null>(null);
+  const rulesRequestRef = useRef(0);
+  const selectorRequestRef = useRef(0);
 
   useEffect(() => {
-    loadRules();
+    // Never render the previous tenant's rules while a new tenant is loading.
+    setRules([]);
+    setDispatchRules(DEFAULT_DISPATCH_RULES);
+    setSchedulingPolicy(DEFAULT_TENANT_SCHEDULING_POLICY);
+    setEditingRule(null);
+    setRuleError(null);
+    void loadRules();
+    return () => {
+      rulesRequestRef.current += 1;
+    };
   }, [tenantId]);
 
-  // Live catalog data for the condition editor's PLU/tag pickers, so staff
-  // select real values instead of guessing/typing them from memory.
+  // Load the authoritative root catalogue and tenant stores together. Every
+  // response is request-fenced so a slower previous tenant can never replace
+  // selectors for the currently selected tenant.
   useEffect(() => {
-    const commerceClient = getCommerceClient(tenantId) as any;
+    const requestId = ++selectorRequestRef.current;
+    const commerceClient = getCommerceClient(tenantId);
+
+    setSelectorLoading(true);
+    setSelectorError(null);
+    setCatalogProducts([]);
+    setCatalogCategories([]);
+    setTenantStores([]);
+
     Promise.all([
-      commerceClient.getProducts?.() || Promise.resolve([]),
-      commerceClient.getCatalog?.() || Promise.resolve(null),
+      commerceClient.getRootCatalog({ refresh: true }),
+      defaultAdminClient.getStores(tenantId),
     ])
-      .then(([products, catalog]: [Product[], any]) => {
-        setCatalogProducts(products || []);
-        const flatten = (categories: any[], depth = 0): Array<{ id: string; name: string }> =>
+      .then(([catalog, stores]) => {
+        if (requestId !== selectorRequestRef.current) return;
+
+        const flatten = (categories: Category[], depth = 0): Array<{ id: string; name: string }> =>
           (categories || []).flatMap((category) => [
             { id: String(category.id), name: `${'— '.repeat(depth)}${category.name || category.id}` },
             ...flatten(category.subcategories || [], depth + 1),
           ]);
-        setCatalogCategories(flatten(catalog?.categories || []));
+
+        setCatalogProducts(catalog.products || []);
+        setCatalogCategories(flatten(catalog.categories || []));
+        setTenantStores(stores || []);
       })
-      .catch((err: unknown) => console.warn('[ProductRulesScreen] Could not load catalog for condition pickers:', err));
+      .catch((err: unknown) => {
+        if (requestId !== selectorRequestRef.current) return;
+        console.warn('[ProductRulesScreen] Could not load tenant selector data:', err);
+        setSelectorError('Live product, category, tag and store selectors could not be loaded. Existing values remain editable as text.');
+      })
+      .finally(() => {
+        if (requestId === selectorRequestRef.current) setSelectorLoading(false);
+      });
+
+    return () => {
+      if (selectorRequestRef.current === requestId) selectorRequestRef.current += 1;
+    };
   }, [tenantId]);
 
   const availableTags = useMemo(() => {
@@ -81,21 +119,17 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [catalogProducts]);
 
+  const availableBrands = useMemo(
+    () => Array.from(new Set(catalogProducts.map((product) => product.brand?.trim()).filter((brand): brand is string => Boolean(brand)))).sort((a, b) => a.localeCompare(b)),
+    [catalogProducts],
+  );
+
   const tagLabel = (value: unknown) =>
     availableTags.find((tag) => tag.value === String(value))?.label || String(value);
   const categoryLabel = (value: unknown) =>
     catalogCategories.find((category) => category.id === String(value))?.name || String(value);
 
-  // Live store geography for the "Applies in" picker, so staff choose real
-  // Country/Nation/Region/County values derived from actual store addresses
-  // instead of typing country codes from memory.
-  useEffect(() => {
-    defaultAdminClient
-      .getStores(tenantId)
-      .then((stores) => setTenantStores(stores || []))
-      .catch((err) => console.warn('[ProductRulesScreen] Could not load stores for geography picker:', err));
-  }, [tenantId]);
-
+  // Store geography comes from the same tenant-fenced selector request above.
   const availableGeographyTokens = useMemo(() => {
     const tokenSet = new Set<string>();
     tenantStores.forEach((s) => {
@@ -110,6 +144,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   }, [tenantStores]);
 
   const loadRules = async () => {
+    const requestId = ++rulesRequestRef.current;
     setLoading(true);
     try {
       const [pRules, dRules, sPolicy] = await Promise.all([
@@ -117,13 +152,16 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
         defaultAdminClient.getDispatchRules(tenantId),
         defaultAdminClient.getSchedulingPolicy?.(tenantId) ?? Promise.resolve(DEFAULT_TENANT_SCHEDULING_POLICY),
       ]);
+      if (requestId !== rulesRequestRef.current) return;
       setRules(pRules);
       setDispatchRules(dRules);
       setSchedulingPolicy(sPolicy);
     } catch (err) {
+      if (requestId !== rulesRequestRef.current) return;
       console.warn('[ProductRulesScreen] Error loading rules:', err);
+      setRuleError('Product rules could not be loaded for this tenant.');
     } finally {
-      setLoading(false);
+      if (requestId === rulesRequestRef.current) setLoading(false);
     }
   };
 
@@ -327,6 +365,21 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       setRuleError(error?.message || 'Substitution CSV could not be imported.');
     } finally {
       setSubstitutionImporting(false);
+    }
+  };
+
+  const handleSubstitutionEconomicsExport = async () => {
+    setSubstitutionExporting(true);
+    setRuleError(null);
+    try {
+      if (!defaultAdminClient.downloadSubstitutionEconomicsCsv) {
+        throw new Error('Substitution economics export is not available in this admin client.');
+      }
+      await defaultAdminClient.downloadSubstitutionEconomicsCsv(tenantId);
+    } catch (error: any) {
+      setRuleError(error?.message || 'Substitution economics could not be exported.');
+    } finally {
+      setSubstitutionExporting(false);
     }
   };
 
@@ -845,6 +898,33 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </div>
           </div>
         </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-gray-900">Substitution pricing safety</h3>
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Fixed default</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-700">Replacement quantity is independent from the original quantity. The customer charge is always the lower of the protected original effective <strong>line total</strong> and the replacement effective line total.</p>
+              <ul className="mt-2 space-y-1 text-[11px] text-gray-600 list-disc pl-4">
+                <li>Original promotion allocation stays frozen and is never recalculated because of a substitution.</li>
+                <li>A verified replacement promotion is considered only when the original line was not promotional.</li>
+                <li>Cheaper replacements reduce the charge; dearer replacements never create a positive substitution uplift.</li>
+                <li>Retail delta, customer delta and price-protection value are retained separately for finance reporting.</li>
+              </ul>
+              <p className="mt-2 text-[11px] font-semibold text-emerald-800">This payment-safety policy is read-only. Product rules may restrict which replacements are eligible, but cannot weaken the protected customer charge.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSubstitutionEconomicsExport()}
+              disabled={substitutionExporting}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {substitutionExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {substitutionExporting ? 'Exporting…' : 'Download economics CSV'}
+            </button>
+          </div>
+        </div>
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div><h3 className="text-sm font-bold text-gray-900">Preferred substitution PLU map</h3><p className="text-xs text-gray-600 mt-0.5">Upload CSV headers <code>originalPlu,substitutePlu</code>. Repeat an original PLU to set its preferred order. Availability, matching tags, category and price rules are still enforced.</p>{substitutionImportMessage&&<p className="mt-2 text-xs font-bold text-emerald-700">{substitutionImportMessage}</p>}</div>
@@ -1000,34 +1080,39 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               {/* Where Editor */}
               <div data-admin-ai-target="product-rule-conditions" className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
                 <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
-                {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
-                  <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
-                  <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
-                  {condition.field === 'productTag' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
-                      <option value="">Select product tag…</option>
-                      {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
-                    </select>
-                  ) : condition.field === 'category' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
-                      <option value="">Select category…</option>
-                      {catalogCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                    </select>
-                  ) : condition.field === 'isAlcohol' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
+                {selectorLoading && <p className="text-[10px] font-semibold text-indigo-700">Loading live tenant catalogue and store selectors…</p>}
+                {selectorError && <p role="alert" className="text-[10px] font-semibold text-amber-700">{selectorError}</p>}
+                {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-stretch sm:items-center min-w-0">
+                  <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any,value:''};setEditingRule({...editingRule,matchConditions:a})}} className="w-full min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
+                  <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="w-full min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
+                  {condition.field === 'isAlcohol' ? (
+                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="w-full min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white">
                       <option value="">Choose…</option><option value="true">Yes — alcoholic</option><option value="false">No — non-alcoholic</option>
                     </select>
                   ) : (
-                    <input type="text" value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white" placeholder={condition.field==='plu'?'Search PLU or product name…':'Value'} list={condition.field==='plu'?'rule-plu-options':undefined}/>
+                    <input
+                      type="text"
+                      value={String(condition.value||'')}
+                      onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}}
+                      className="w-full min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"
+                      placeholder={condition.operator==='in'?'Enter the rule value expected by this condition…':condition.field==='plu'?'Search PLU or product name…':condition.field==='category'?'Search or enter category…':condition.field==='productTag'?'Search or enter product tag…':condition.field==='brand'?'Search or enter brand…':'Value'}
+                      list={condition.field==='plu'?'rule-plu-options':condition.field==='category'?'rule-category-options':condition.field==='productTag'?'rule-tag-options':condition.field==='brand'?'rule-brand-options':undefined}
+                    />
                   )}
-                  <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
+                  <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="justify-self-end sm:justify-self-auto p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
                 </div>)}
-                {/* Live catalog data backing the PLU/tag condition pickers above, instead of staff guessing exact values */}
+                <p className="text-[10px] text-gray-400">Suggestions come from this tenant's live root catalogue. Inputs remain editable so existing rule values are never erased when a catalogue value is temporarily absent.</p>
                 <datalist id="rule-plu-options">
                   {catalogProducts.map((p) => <option key={p.plu} value={p.plu}>{p.name}</option>)}
                 </datalist>
+                <datalist id="rule-category-options">
+                  {catalogCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </datalist>
                 <datalist id="rule-tag-options">
                   {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
+                </datalist>
+                <datalist id="rule-brand-options">
+                  {availableBrands.map((brand) => <option key={brand} value={brand} />)}
                 </datalist>
               </div>
 
@@ -1041,7 +1126,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
                   {action.type==='PREVENT_PURCHASE'&&<input value={(action as any).reason||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],reason:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Reason shown to customer"/>}
                   {action.type==='BADGE'&&<input value={(action as any).label||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],label:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Badge text"/>}
                   {action.type==='WARNING'&&<input value={(action as any).text||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],text:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Warning message"/>}
-                  {action.type==='SUBSTITUTION_POLICY'&&<div className="space-y-2 text-xs text-gray-700"><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],neverSubstitute:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Never substitute matching products</label><label className="block">Maximum price increase (£)<input type="number" min="0" step="0.01" value={(((action as any).maxPriceIncreaseMinor||0)/100).toFixed(2)} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maxPriceIncreaseMinor:Math.max(0,Math.round((Number(e.target.value)||0)*100))};setEditingRule({...editingRule,actions:a})}} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100"/></label><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).requireSameCategory!==false} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],requireSameCategory:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Confine automatic substitutes to the same category</label><label className="block">Preferred substitute PLUs (first choice first)<textarea value={((action as any).preferredSubstitutePlus||[]).join('\n')} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],preferredSubstitutePlus:e.target.value.split(/[\n,]/).map((value)=>value.trim()).filter(Boolean)};setEditingRule({...editingRule,actions:a})}} className="mt-1 min-h-20 w-full px-3 py-2 border border-gray-200 rounded-lg font-mono disabled:bg-gray-100" placeholder={'MILK-ALT-1\nMILK-ALT-2'}/></label><p className="text-[11px] text-gray-500">Customer-selected items remain a single explicit choice. Automatic recommendations also require matching product tags and live availability.</p></div>}
+                  {action.type==='SUBSTITUTION_POLICY'&&<div className="space-y-2 text-xs text-gray-700"><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],neverSubstitute:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Never substitute matching products</label><label className="block">Maximum replacement shelf-price increase for candidate eligibility (£)<input type="number" min="0" step="0.01" value={(((action as any).maxPriceIncreaseMinor||0)/100).toFixed(2)} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maxPriceIncreaseMinor:Math.max(0,Math.round((Number(e.target.value)||0)*100))};setEditingRule({...editingRule,actions:a})}} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100"/></label><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).requireSameCategory!==false} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],requireSameCategory:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Confine automatic substitutes to the same category</label><label className="block">Preferred substitute PLUs (first choice first)<textarea value={((action as any).preferredSubstitutePlus||[]).join('\n')} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],preferredSubstitutePlus:e.target.value.split(/[\n,]/).map((value)=>value.trim()).filter(Boolean)};setEditingRule({...editingRule,actions:a})}} className="mt-1 min-h-20 w-full px-3 py-2 border border-gray-200 rounded-lg font-mono disabled:bg-gray-100" placeholder={'MILK-ALT-1\nMILK-ALT-2'}/></label><p className="text-[11px] text-gray-500">This controls replacement eligibility only and never raises the protected customer charge. Customer-selected items remain a single explicit choice. Automatic recommendations also require matching product tags and live availability.</p></div>}
                 </div>)}
               </div>
 

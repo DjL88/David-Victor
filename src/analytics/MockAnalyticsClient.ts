@@ -144,23 +144,26 @@ export class MockAnalyticsClient implements AnalyticsClient {
       // In staging/production, strictly aggregate verified events; never fabricate fake metrics
       const tenantEvents = this.events.filter((e) => e.tenantId === tenantId);
       const sessionCount = tenantEvents.filter((e) => e.type === 'SESSION_STARTED').length;
-      const orderCount = tenantEvents.filter((e) => e.type === 'ORDER_SUBMITTED' || e.type === 'ORDER_ACCEPTED').length;
+      const submittedCount = tenantEvents.filter((e) => e.type === 'ORDER_SUBMITTED').length;
+      const deliveredCount = tenantEvents.filter((e) => e.type === 'ORDER_DELIVERED').length;
+      const paymentCaptures = tenantEvents.filter((e) => e.type === 'PAYMENT_CAPTURED');
       return {
         timeframe,
         totalSessions: sessionCount,
-        activeStoresCount: 0,
-        totalOrders: orderCount,
-        totalGrossMerchandiseValue: 0,
-        averageOrderValue: 0,
-        overallConversionRate: sessionCount > 0 ? Number(((orderCount / sessionCount) * 100).toFixed(2)) : 0,
-        serviceabilityRate: 0,
-        pickingSuccessRate: 0,
+        activeStoresCount: new Set(tenantEvents.map((e) => e.storeId).filter(Boolean)).size,
+        totalOrders: paymentCaptures.length > 0 ? paymentCaptures.length : null,
+        totalGrossMerchandiseValue: null,
+        averageOrderValue: null,
+        overallConversionRate: sessionCount > 0 ? Number(((deliveredCount / sessionCount) * 100).toFixed(2)) : null,
+        serviceabilityRate: null,
+        pickingSuccessRate: null,
         funnel: [
           { stage: 'brand_store_landing', label: 'Brand / Store Landing', visitors: sessionCount, conversionFromPrevious: 100, overallConversion: 100, dropoffRate: 0 },
           { stage: 'product_view', label: 'Product / Catalog View', visitors: tenantEvents.filter(e => e.type === 'PRODUCT_VIEW').length, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
           { stage: 'add_to_basket', label: 'Added to Basket', visitors: tenantEvents.filter(e => e.type === 'ADD_TO_BASKET').length, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
           { stage: 'checkout', label: 'Checkout Started', visitors: tenantEvents.filter(e => e.type === 'CHECKOUT_STARTED').length, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
-          { stage: 'order_submitted', label: 'Order Submitted', visitors: orderCount, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
+          { stage: 'order_submitted', label: 'Order Submitted', visitors: submittedCount, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
+          { stage: 'payment_captured', label: 'Payment Captured', visitors: paymentCaptures.length, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
           { stage: 'delivered', label: 'Delivered to Door', visitors: tenantEvents.filter(e => e.type === 'ORDER_DELIVERED').length, conversionFromPrevious: 0, overallConversion: 0, dropoffRate: 0 },
         ],
         products: [],
@@ -168,7 +171,22 @@ export class MockAnalyticsClient implements AnalyticsClient {
         searches: [],
         regions: [],
         abandonedBasket: [],
-        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
+        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: null, presentedToPaidRate: null, acceptedToPaidRate: null, attributedRevenue: 0 },
+        evidence: {
+          source: 'analytics_events',
+          status: tenantEvents.length > 0 ? 'AVAILABLE' : 'EMPTY',
+          observedAt: tenantEvents.reduce<string | null>((latest, event) => !latest || event.timestamp > latest ? event.timestamp : latest, null),
+          eventCount: tenantEvents.length,
+          serviceabilityChecks: 0,
+          pickingOutcomeEvents: 0,
+          searchEvents: tenantEvents.filter((e) => e.type === 'SEARCH' || e.type === 'SEARCH_PERFORMED' || e.type === 'SEARCH_NO_RESULTS').length,
+          recommendationChains: 0,
+          financialSource: 'payment_captured_events',
+          financialCaptureEvents: paymentCaptures.length,
+          financialAmountEvents: 0,
+          financialCurrency: null,
+          financialStatus: paymentCaptures.length > 0 ? 'PARTIAL' : 'NO_CAPTURE_EVIDENCE',
+        },
       };
     }
 
@@ -498,6 +516,21 @@ export class MockAnalyticsClient implements AnalyticsClient {
         },
       ],
       artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
+      evidence: {
+        source: 'analytics_events',
+        status: 'AVAILABLE',
+        observedAt: new Date().toISOString(),
+        eventCount: this.events.filter((e) => e.tenantId === tenantId).length,
+        serviceabilityChecks: Math.max(1, Math.round(totalSessions * scale)),
+        pickingOutcomeEvents: Math.max(1, Math.round(totalOrders * scale)),
+        searchEvents: Math.max(1, Math.round(2140 * scale)),
+        recommendationChains: 0,
+        financialSource: 'payment_captured_events',
+        financialCaptureEvents: totalOrders,
+        financialAmountEvents: totalOrders,
+        financialCurrency: 'GBP',
+        financialStatus: 'AVAILABLE',
+      },
     };
   }
 

@@ -15,6 +15,13 @@ const productPriceMinor = (product?: Product): number | undefined => {
   return value && Number.isInteger(value.amount) ? value.amount : undefined;
 };
 
+const productCurrency = (product?: Product): string | undefined => {
+  if (!product) return undefined;
+  const value: any = product.price ?? product.basePrice;
+  const currency = value && typeof value === 'object' ? value.currency : (product as any).currency;
+  return typeof currency === 'string' && currency.trim() ? currency.trim().toUpperCase() : undefined;
+};
+
 function buildCandidate(
   bundle: BundleProduct,
   pool: Map<string, number>,
@@ -23,6 +30,7 @@ function buildCandidate(
   const selections: SelectedBundleModifier[] = [];
   const local = new Map(pool);
   const sections = bundle.sections || bundle.modifierGroups || [];
+  const bundleCurrency = String(bundle.currency || 'GBP').trim().toUpperCase();
 
   for (const section of sections.filter((s) => !s.isUpsell && s.min > 0)) {
     let needed = section.min;
@@ -30,7 +38,9 @@ function buildCandidate(
       const plu = String(modifier.standalonePlu || '').trim();
       const product = productByPlu.get(plu);
       const shelf = productPriceMinor(product);
+      const currency = productCurrency(product);
       if (!plu || !product || product.active === false || product.stockStatus === 'OUT_OF_STOCK' || shelf === undefined) continue;
+      if (currency && currency !== bundleCurrency) continue;
       const take = Math.min(local.get(plu) || 0, needed);
       if (take > 0) {
         selections.push({ modifierId: modifier.id, plu: modifier.plu, name: modifier.name, quantity: take, price: modifier.priceMinor ?? modifier.price ?? 0, priceMinor: modifier.priceMinor ?? modifier.price ?? 0, standalonePlu: plu, standalonePriceMinor: shelf, sectionId: section.id, sectionName: section.name });
@@ -56,7 +66,9 @@ function buildCandidate(
       const product = productByPlu.get(declared) || productByPlu.get(modifierPlu);
       const plu = product?.plu || declared || modifierPlu;
       const shelf = productPriceMinor(product);
+      const currency = productCurrency(product);
       if (!plu || product?.active === false || product?.stockStatus === 'OUT_OF_STOCK') continue;
+      if (currency && currency !== bundleCurrency) continue;
       const available = local.get(plu) || 0;
       const take = Math.min(available, room);
       if (take <= 0) continue;
@@ -87,7 +99,10 @@ export function qualifyAutomaticDeals(
   products: Product[],
 ): AutomaticDealAllocation[] {
   const remaining = new Map<string, number>();
-  for (const item of items) remaining.set(item.plu, (remaining.get(item.plu) || 0) + Math.max(0, item.quantity));
+  for (const item of items) {
+    const quantity = Number.isFinite(item.quantity) ? Math.floor(Math.max(0, item.quantity)) : 0;
+    if (quantity > 0) remaining.set(item.plu, (remaining.get(item.plu) || 0) + quantity);
+  }
   const productByPlu = new Map(products.map((product) => [product.plu, product]));
   const chosen: AutomaticDealAllocation[] = [];
 

@@ -168,7 +168,24 @@ export interface PickingSubstitution {
   substitutePlu: string;
   substituteName: string;
   substitutePrice: Money;
-  chargedPrice: Money; // calculated via tenant substitution pricing policy
+  /** Replacement quantity is independent from the original ordered quantity. */
+  replacementQuantity?: number;
+  chargedPrice: Money; // legacy/unit display value; authoritative charge is economics.customerChargeLineTotal when present
+  economics?: {
+    originalQuantity: number;
+    replacementQuantity: number;
+    originalEffectiveLineTotal: Money;
+    replacementRetailLineTotal: Money;
+    replacementEffectiveLineTotal: Money;
+    customerChargeLineTotal: Money;
+    /** Signed reporting delta: replacement retail value - protected original effective value. */
+    retailValueDelta: Money;
+    /** Signed reporting delta: customer charge - protected original effective value. */
+    customerPriceDelta: Money;
+    priceProtectionAmount: Money;
+    originalPromotionProvenance?: string[];
+    replacementPromotionProvenance?: string[];
+  };
   reason?: string;
 }
 
@@ -218,9 +235,29 @@ export interface PickingItem {
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
   preferredSubstitutePrice?: Money;
+  preferredSubstituteQuantity?: number;
+  substituteCandidates?: Array<{
+    plu: string;
+    name?: string;
+    quantity?: number;
+    price?: Money;
+    /**
+     * Frozen replacement-side effective unit price. Only populate from an
+     * internally verified promotion calculation; never infer it from a provider callback.
+     */
+    effectivePrice?: Money;
+    promotionProvenance?: string[];
+    priority?: number;
+  }>;
   bundlePricing?: PickingBundlePricing;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
+  /**
+   * Provider occurrence time for the newest accepted line mutation. Used only
+   * to prevent a late/older amendment callback from regressing newer line truth.
+   */
+  lastPickingMutationAt?: string;
+  lastPickingMutationEventId?: string;
   unit?: string;
 }
 
