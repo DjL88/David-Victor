@@ -47,16 +47,20 @@ describe('Phase 16: deterministic pilot certification', () => {
     expect(report.steps[6].data?.customerChargeLineTotal).toEqual({ amount: 220, currency: 'GBP' });
 
     expect(report.steps[7].data?.authoritativeFinalAmount).toBe(220);
-    expect(report.capturedAmount).toEqual({ amount: 220, currency: 'GBP' });
-    expect(report.residualHoldReleased).toEqual({ amount: 20, currency: 'GBP' });
+    expect(report.steps[8].step).toContain('Settlement Amount Contract');
+    expect(report.steps[8].data?.expectedCaptureAmount).toEqual({ amount: 220, currency: 'GBP' });
+    expect(report.steps[8].data?.expectedResidualHoldRelease).toEqual({ amount: 20, currency: 'GBP' });
+    expect(report.steps[8].data?.providerRuntimeVerified).toBe(false);
+    expect(report.capturedAmount).toBeUndefined();
+    expect(report.residualHoldReleased).toBeUndefined();
 
     expect(report.steps[9].step).toContain('Persisted Projection Truth');
     expect(report.steps[9].data).toMatchObject({
       orderStatus: 'PICKED',
-      paymentState: 'CAPTURED',
-      capturedAmount: 220,
+      paymentState: 'AUTHORIZED',
       runtimeVerified: false,
     });
+    expect(report.steps[9].data?.capturedAmount).toBeUndefined();
   });
 
   it('fails closed when asked to represent staging runtime evidence', async () => {

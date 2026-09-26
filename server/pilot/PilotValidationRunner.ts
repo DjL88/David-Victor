@@ -243,24 +243,22 @@ export class PilotValidationRunner {
         replacementRetailLineTotal: economics.replacementRetailLineTotal,
       });
 
-      capturedAmount = MoneyUtil.fromMinorUnits(authoritativeFinalAmount, 'GBP');
-      residualHoldReleased = MoneyUtil.fromMinorUnits(
+      const expectedCaptureAmount = MoneyUtil.fromMinorUnits(authoritativeFinalAmount, 'GBP');
+      const expectedResidualHoldRelease = MoneyUtil.fromMinorUnits(
         authorizedAmount.amount - authoritativeFinalAmount,
         'GBP'
       );
-      this.recordStep('9. Settlement Arithmetic Contract', true, {
+      this.recordStep('9. Settlement Amount Contract (No Provider Claim)', true, {
         authorizedAmount,
-        capturedAmount,
-        residualHoldReleased,
+        expectedCaptureAmount,
+        expectedResidualHoldRelease,
         providerRuntimeVerified: false,
       });
 
       const finalOrder = {
         ...pickedOrder,
         status: 'PICKED',
-        paymentState: 'CAPTURED',
-        capturedAmount: capturedAmount.amount,
-        residualHoldReleased: residualHoldReleased.amount,
+        paymentState: 'AUTHORIZED',
         updatedAt: new Date().toISOString(),
       };
       await FirestorePlatformService.saveOrderProjection(finalOrder as any, this.tenantId);
