@@ -151,6 +151,7 @@ import {
 } from './schemas';
 
 import { safeApiActivityErrorCode } from '../apiActivityJournal';
+import { assertCheckoutTenantScope } from '../checkoutOwnership';
 import { resolvePersistentChannelAssignments } from '../deliverect/locationAssignmentPersistence';
 export const v1Router = Router();
 
@@ -2349,7 +2350,17 @@ v1Router.post(
 v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
   try {
     const { checkoutId } = req.params;
+    const resolvedTenant = resolveTenant(req);
+    const callerUid = await getCallerUid(req);
     let checkout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
+
+    // A local projection is authoritative enough to reject a foreign tenant
+    // before any provider refresh. Do not spend an upstream call or reveal
+    // whether a guessed checkout ID exists in another tenant.
+    if (checkout) {
+      assertCheckoutTenantScope(checkout, resolvedTenant);
+      assertCheckoutRecoveryOwnership(checkout, callerUid);
+    }
 
     const shouldRefreshFromDeliverect =
       !checkout ||
@@ -2357,7 +2368,6 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
       checkout.status === 'CHECKOUT_SUBMITTING';
 
     if (shouldRefreshFromDeliverect) {
-      const resolvedTenant = resolveTenant(req);
       const adapter = await getDeliverectAdapterAsync(resolvedTenant);
       if (adapter.getCheckout) {
         try {
@@ -2381,9 +2391,8 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
     }
 
-    // Privacy boundary: signed-in checkouts remain owned by that customer and
-    // guest checkouts cannot be claimed later merely by presenting their ID.
-    const callerUid = await getCallerUid(req);
+    // Re-check after a successful provider refresh before any response.
+    assertCheckoutTenantScope(checkout, resolvedTenant);
     assertCheckoutRecoveryOwnership(checkout, callerUid);
 
     // CHECK-03: Recover confirmation from the linked order projection even when
@@ -2400,7 +2409,14 @@ v1Router.get('/checkouts/:checkoutId', async (req: Request, res: Response) => {
 v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response) => {
   try {
     const { checkoutId } = req.params;
+    const resolvedTenant = resolveTenant(req);
+    const callerUid = await getCallerUid(req);
     let checkout = await FirestorePlatformService.getCheckoutProjection(checkoutId);
+
+    if (checkout) {
+      assertCheckoutTenantScope(checkout, resolvedTenant);
+      assertCheckoutRecoveryOwnership(checkout, callerUid);
+    }
 
     const shouldRefreshFromDeliverect =
       !checkout ||
@@ -2408,7 +2424,6 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
       checkout.status === 'CHECKOUT_SUBMITTING';
 
     if (shouldRefreshFromDeliverect) {
-      const resolvedTenant = resolveTenant(req);
       const adapter = await getDeliverectAdapterAsync(resolvedTenant);
       if (adapter.getCheckout) {
         try {
@@ -2432,7 +2447,7 @@ v1Router.get('/checkouts/:checkoutId/status', async (req: Request, res: Response
       return res.status(404).json({ error: 'Checkout not found', code: 'CHECKOUT_NOT_FOUND' });
     }
 
-    const callerUid = await getCallerUid(req);
+    assertCheckoutTenantScope(checkout, resolvedTenant);
     assertCheckoutRecoveryOwnership(checkout, callerUid);
 
     // CHECK-03: Same recovery path as the full checkout endpoint. This also
