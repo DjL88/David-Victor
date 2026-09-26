@@ -193,9 +193,17 @@ function handleStorefrontCatalogError(res: Response, err: any): void {
     code: err?.code || 'UPSTREAM_CATALOGUE_ERROR',
     message: message.slice(0, 500),
   });
+  const safeCode =
+    err?.code === 'INTEGRATION_NOT_CONFIGURED' ||
+    err?.code === 'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED'
+      ? err.code
+      : 'CATALOG_TEMPORARILY_UNAVAILABLE';
   res.status(503).json({
-    error: 'We are refreshing this store\'s catalogue. Please try again shortly.',
-    code: 'CATALOG_TEMPORARILY_UNAVAILABLE',
+    error:
+      safeCode === 'INTEGRATION_NOT_CONFIGURED'
+        ? 'This store is not available for ordering yet.'
+        : 'We are refreshing this store\'s catalogue. Please try again shortly.',
+    code: safeCode,
   });
 }
 
