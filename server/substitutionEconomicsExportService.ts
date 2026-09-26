@@ -2,10 +2,16 @@ import { FirestorePlatformService, OrderProjection } from './firestoreService';
 
 export interface SubstitutionEconomicsExportRow {
   tenantId: string;
+  locationId: string;
   orderId: string;
+  orderReference: string;
   plu: string;
   originalPlu: string;
+  originalName: string;
+  originalUnitPrice: number;
   substitutePlu: string;
+  substituteName: string;
+  replacementUnitPrice: number;
   decisionStatus: string;
   originalQuantity: number;
   replacementQuantity: number;
@@ -23,10 +29,16 @@ export interface SubstitutionEconomicsExportRow {
 
 const COLUMNS: Array<keyof SubstitutionEconomicsExportRow> = [
   'tenantId',
+  'locationId',
   'orderId',
+  'orderReference',
   'plu',
   'originalPlu',
+  'originalName',
+  'originalUnitPrice',
   'substitutePlu',
+  'substituteName',
+  'replacementUnitPrice',
   'decisionStatus',
   'originalQuantity',
   'replacementQuantity',
@@ -75,10 +87,26 @@ export class SubstitutionEconomicsExportService {
 
         rows.push({
           tenantId: cleanTenantId,
+          locationId: String(
+            (order as any).locationId ||
+            (order as any).deliverectLocationId ||
+            order.channelLinkId ||
+            ''
+          ),
           orderId: order.orderId,
+          orderReference: String(
+            order.orderReference ||
+            (order as any).channelOrderReference ||
+            (order as any).channelOrderDisplayId ||
+            order.orderId
+          ),
           plu: item.plu,
           originalPlu: substitution.originalPlu,
+          originalName: substitution.originalName || item.name || '',
+          originalUnitPrice: substitution.originalPrice.amount,
           substitutePlu: substitution.substitutePlu,
+          substituteName: substitution.substituteName || '',
+          replacementUnitPrice: substitution.substitutePrice.amount,
           decisionStatus: substitution.decisionStatus || '',
           originalQuantity: economics.originalQuantity,
           replacementQuantity: economics.replacementQuantity,
