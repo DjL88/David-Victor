@@ -14,8 +14,8 @@ interface ApiLogsScreenProps { tenantId: string; }
 
 const statusClass = (status: string) => {
   const value = status.toUpperCase();
-  if (['PROCESSED', 'CLOSED', 'SUCCESS', 'HEALTHY'].includes(value)) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (['FAILED', 'QUEUE_FAILED', 'OPEN', 'ERROR'].includes(value)) return 'bg-red-50 text-red-700 border-red-200';
+  if (['PROCESSED', 'CLOSED', 'SUCCESS', 'HEALTHY', 'AVAILABLE'].includes(value)) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (['FAILED', 'QUEUE_FAILED', 'OPEN', 'ERROR', 'UNAVAILABLE'].includes(value)) return 'bg-red-50 text-red-700 border-red-200';
   if (['UNKNOWN', 'NOT OBSERVED'].includes(value)) return 'bg-slate-50 text-slate-600 border-slate-200';
   return 'bg-amber-50 text-amber-700 border-amber-200';
 };
@@ -121,6 +121,9 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
   const scopeLabel = scopeEvidence === 'REPORTED' ? 'genericCommerce reported'
     : scopeEvidence === 'NOT_REPORTED' ? 'genericCommerce not reported' : 'Scope status unknown';
   const channelIds = data?.integration?.allowedChannelLinkIds;
+  const menuSource = data?.sources?.menuPushes;
+  const webhookSource = data?.sources?.webhooks;
+  const oauthSource = data?.sources?.oauthScopes;
   const menuPushes = data?.menuPushes || [];
   const filterOptions = useMemo(() => {
     const values = (selector: (entry: typeof menuPushes[number]) => string[]) =>
@@ -185,6 +188,24 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
         {data && <p className="mt-1">Showing the last successful snapshot for this tenant; it may be out of date.</p>}
       </div>}
 
+      {data?.sources && <section className="rounded-xl border border-slate-200 bg-white p-4" aria-label="API evidence sources">
+        <h2 className="font-semibold text-slate-900">Evidence sources</h2>
+        <p className="mt-1 text-xs text-slate-500">Unavailable or partial sources do not prove that activity is absent.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {([
+            ['Menu history', data.sources.menuPushes],
+            ['Webhook history', data.sources.webhooks],
+            ['Integration config', data.sources.integration],
+            ['OAuth scopes', data.sources.oauthScopes],
+          ] as const).map(([label, source]) => <div key={label} className="rounded-lg bg-slate-50 p-3">
+            <div className="text-xs font-medium text-slate-600">{label}</div>
+            <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(source.status)}`}>{source.status}</span>
+            <div className="mt-1 text-[11px] text-slate-500">{source.source || 'Source not recorded'} · {formatDate(source.observedAt)}</div>
+            {source.errorCode && <div className="mt-1 break-words font-mono text-[10px] text-slate-500">{source.errorCode}</div>}
+          </div>)}
+        </div>
+      </section>}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Environment</div>
@@ -198,7 +219,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
             {scopeEvidence === 'REPORTED' ? <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />}
             {scopeLabel}
           </div>
-          <div className="mt-1 text-xs text-slate-500 break-words">{(data?.integration?.grantedScopes || []).join(', ') || 'No scope evidence returned; missing permission is not established.'}</div>
+          <div className="mt-1 text-xs text-slate-500 break-words">{(data?.integration?.grantedScopes || []).join(', ') || (oauthSource?.status === 'AVAILABLE' ? 'No scopes were reported in the observed token.' : 'No scope evidence returned; missing permission is not established.')}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Commerce circuit</div>
@@ -275,7 +296,15 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
                   <details className="mt-1"><summary className="cursor-pointer underline">Event reference</summary><p className="mt-1 break-all font-mono">{entry.eventId}</p></details>
                 </td>
               </tr>)}
-              {filteredMenuPushes.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{data?.menuPushes.length ? 'No Menu Push entries match the current filters.' : data ? 'No Menu Push entries returned for this tenant.' : 'Menu Push activity has not been loaded.'}</td></tr>}
+              {filteredMenuPushes.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{
+                data?.menuPushes.length
+                  ? 'No Menu Push entries match the current filters.'
+                  : menuSource?.status === 'UNAVAILABLE'
+                    ? 'Menu Push history is unavailable; no-activity cannot be established.'
+                    : menuSource?.status === 'PARTIAL'
+                      ? 'Only partial Menu Push history is available; no additional activity is not established.'
+                      : data ? 'No Menu Push entries returned by the available source.' : 'Menu Push activity has not been loaded.'
+              }</td></tr>}
             </tbody>
           </table>
         </div>
@@ -298,7 +327,13 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(entry.processingStatus)}`}>{entry.processingStatus}</span></td>
                 <td className="px-4 py-3 text-xs text-slate-600">{entry.errorCode || 'Not recorded'}</td>
               </tr>)}
-              {!data?.webhooks.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">{data ? 'No webhook entries returned for this tenant.' : 'Webhook activity has not been loaded.'}</td></tr>}
+              {!data?.webhooks.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">{
+                webhookSource?.status === 'UNAVAILABLE'
+                  ? 'Webhook history is unavailable; no-activity cannot be established.'
+                  : webhookSource?.status === 'PARTIAL'
+                    ? 'Only partial webhook history is available; no additional activity is not established.'
+                    : data ? 'No webhook entries returned by the available source.' : 'Webhook activity has not been loaded.'
+              }</td></tr>}
             </tbody>
           </table>
         </div>

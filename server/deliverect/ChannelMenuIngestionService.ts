@@ -863,6 +863,8 @@ export class ChannelMenuIngestionService {
         processedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         error: undefined,
+        errorCode: undefined,
+        errorStage: undefined,
       });
       console.info('[Channel Menu Processed]', {
         tenantId: job.tenantId,

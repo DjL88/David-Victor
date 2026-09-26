@@ -1,7 +1,16 @@
 export type ScopeEvidence = 'REPORTED' | 'NOT_REPORTED' | 'UNKNOWN';
 export type ObservedCircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+export type ApiActivitySourceStatus = 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | 'UNKNOWN';
 
 type JsonRecord = Record<string, unknown>;
+
+export interface ApiLogSourceEvidence {
+  status: ApiActivitySourceStatus;
+  source?: string;
+  observedAt?: string;
+  nextCursor?: string | null;
+  errorCode?: string;
+}
 
 export interface ApiLogMenuEntry {
   eventId: string;
@@ -17,6 +26,8 @@ export interface ApiLogMenuEntry {
   locationIds: string[];
   locationNames: string[];
   hasError: boolean;
+  errorCode?: string;
+  errorStage?: string;
   reviewReason?: string;
 }
 
@@ -42,15 +53,24 @@ export interface ApiLogSnapshot {
     allowedChannelLinkIds: string[] | null;
     grantedScopes: string[];
   } | null;
+  sources: {
+    menuPushes: ApiLogSourceEvidence;
+    webhooks: ApiLogSourceEvidence;
+    integration: ApiLogSourceEvidence;
+    mappings: ApiLogSourceEvidence;
+    oauthScopes: ApiLogSourceEvidence;
+  } | null;
+  pagination: {
+    menuCursor: string | null;
+    webhookCursor: string | null;
+  } | null;
   commerceCircuit: { state: ObservedCircuitState; failures: number | null } | null;
   menuPushes: ApiLogMenuEntry[];
   webhooks: ApiLogWebhookEntry[];
 }
 
 const record = (value: unknown): JsonRecord | null =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as JsonRecord
-    : null;
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
 const strings = (value: unknown): string[] => Array.isArray(value)
@@ -58,8 +78,23 @@ const strings = (value: unknown): string[] => Array.isArray(value)
   : [];
 const errorCode = (value: unknown): string | undefined =>
   typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : undefined;
+const sourceStatus = (value: unknown): ApiActivitySourceStatus => {
+  const status = text(value)?.toUpperCase();
+  return status === 'AVAILABLE' || status === 'PARTIAL' || status === 'UNAVAILABLE' || status === 'UNKNOWN'
+    ? status
+    : 'UNKNOWN';
+};
+const sourceEvidence = (value: unknown): ApiLogSourceEvidence => {
+  const input = record(value);
+  return {
+    status: sourceStatus(input?.status),
+    source: text(input?.source),
+    observedAt: text(input?.observedAt),
+    nextCursor: input?.nextCursor === null ? null : text(input?.nextCursor),
+    errorCode: errorCode(input?.errorCode),
+  };
+};
 
-/** Reject mismatched or incomplete payloads rather than displaying another tenant or fake emptiness. */
 export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnapshot {
   const input = record(value);
   if (!tenantId || input?.tenantId !== tenantId ||
@@ -67,6 +102,8 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
     throw new Error('API log response is unavailable or does not match the selected tenant.');
   }
   const integration = record(input.integration);
+  const rawSources = record(input.sources);
+  const pagination = record(input.pagination);
   const rawCircuit = record(record(input.circuits)?.[`${tenantId}:commerce`]);
   const circuitState = rawCircuit?.state;
   const circuitObserved = circuitState === 'CLOSED' || circuitState === 'OPEN' || circuitState === 'HALF_OPEN';
@@ -85,6 +122,17 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
         ? strings(integration.allowedChannelLinkIds) : null,
       grantedScopes: strings(integration.grantedScopes),
     } : null,
+    sources: rawSources ? {
+      menuPushes: sourceEvidence(rawSources.menuPushes),
+      webhooks: sourceEvidence(rawSources.webhooks),
+      integration: sourceEvidence(rawSources.integration),
+      mappings: sourceEvidence(rawSources.mappings),
+      oauthScopes: sourceEvidence(rawSources.oauthScopes),
+    } : null,
+    pagination: pagination ? {
+      menuCursor: pagination.menuCursor === null ? null : text(pagination.menuCursor) || null,
+      webhookCursor: pagination.webhookCursor === null ? null : text(pagination.webhookCursor) || null,
+    } : null,
     commerceCircuit: circuitObserved ? {
       state: circuitState,
       failures: typeof rawCircuit?.failures === 'number' && Number.isFinite(rawCircuit.failures) && rawCircuit.failures >= 0
@@ -93,6 +141,7 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
     menuPushes: input.menuPushes.map((entry): ApiLogMenuEntry => {
       const item = record(entry);
       if (!item || !text(item.eventId)) throw new Error('Malformed menu activity entry.');
+      const safeErrorCode = errorCode(item.errorCode);
       return {
         eventId: text(item.eventId)!,
         status: text(item.status) || 'UNKNOWN',
@@ -106,7 +155,9 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
         accountNames: strings(item.accountNames),
         locationIds: strings(item.locationIds),
         locationNames: strings(item.locationNames),
-        hasError: Boolean(item.error),
+        hasError: item.hasError === true || Boolean(safeErrorCode) || Boolean(item.error),
+        errorCode: safeErrorCode,
+        errorStage: errorCode(item.errorStage),
         reviewReason: errorCode(record(item.review)?.reason),
       };
     }),
@@ -125,15 +176,24 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
   };
 }
 
-/** The legacy endpoint returns [] after OAuth failure: an empty array is not proof of missing permission. */
 export function getScopeEvidence(snapshot: ApiLogSnapshot | null): ScopeEvidence {
   const scopes = snapshot?.integration?.grantedScopes || [];
+  const oauthStatus = snapshot?.sources?.oauthScopes.status;
+  if (oauthStatus && oauthStatus !== 'AVAILABLE') return 'UNKNOWN';
+  if (oauthStatus === 'AVAILABLE') {
+    return scopes.some((scope) => scope.toLowerCase() === 'genericcommerce') ? 'REPORTED' : 'NOT_REPORTED';
+  }
   if (scopes.length === 0) return 'UNKNOWN';
   return scopes.some((scope) => scope.toLowerCase() === 'genericcommerce') ? 'REPORTED' : 'NOT_REPORTED';
 }
 
 export function menuProcessingDetail(entry: ApiLogMenuEntry): string {
-  if (entry.hasError) return 'Processing error recorded; use the event ID for investigation.';
+  if (entry.hasError) {
+    const reference = [entry.errorStage, entry.errorCode].filter(Boolean).join(' / ');
+    return reference
+      ? `Processing error recorded (${reference}); use the event ID for investigation.`
+      : 'Processing error recorded; use the event ID for investigation.';
+  }
   switch (entry.status.toUpperCase()) {
     case 'PROCESSED': return 'Processing completed';
     case 'RECEIVED': return 'Received; processing not yet confirmed';
