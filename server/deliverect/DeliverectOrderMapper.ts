@@ -17,6 +17,42 @@ export interface RawDeliverectOrderItem {
   [key: string]: any;
 }
 
+export function normalizeDeliverectOrderProjectionStatus(value: unknown): string {
+  const text = String(value ?? 'ORDER_CONFIRMED').trim();
+  if (!/^\d+$/.test(text)) {
+    const named = text.toUpperCase();
+    // POS finalisation is not customer handover. Keep explicit finalized wording
+    // at the conservative customer-ready stage when an order snapshot carries it.
+    if (named === 'FINALIZED' || named === 'AUTO_FINALIZED') return 'READY';
+    return named || 'ORDER_CONFIRMED';
+  }
+
+  // Deliverect order/POS snapshot semantics only. Courier lifecycle events are
+  // handled by the signed Dispatch/courier webhook path and must never be fed
+  // through this mapper to infer delivery from the same numeric code.
+  const numeric = Number(text);
+  const orderStatus: Record<number, string> = {
+    10: 'ORDER_CONFIRMED',
+    20: 'ACCEPTED',
+    40: 'PREPARING',
+    50: 'PREPARING',
+    60: 'READY',
+    70: 'READY',
+    90: 'READY',
+    95: 'READY',
+    // 100 is a cancellation request, not confirmation.
+    110: 'CANCELLED',
+    120: 'ORDER_FAILED',
+    121: 'ORDER_FAILED',
+    124: 'ORDER_FAILED',
+  };
+
+  // Unknown/ambiguous numeric statuses stay unknown instead of being promoted
+  // to a later customer lifecycle state. In particular legacy code 5 is not
+  // treated as DELIVERED.
+  return orderStatus[numeric] || text;
+}
+
 export interface RawDeliverectOrder {
   _id?: string;
   id?: string;
@@ -180,12 +216,10 @@ export class DeliverectOrderMapper {
       totalAmount = normalizedItems.reduce((acc, item) => acc + item.price.amount * item.quantity, 0);
     }
 
-    // Status map
-    let status = String(raw.status || 'ORDER_CONFIRMED');
-    if (status === '10' || status === '1') status = 'STORE_ACCEPTED';
-    if (status === '20' || status === '2') status = 'PREPARING';
-    if (status === '50' || status === '5') status = 'DELIVERED';
-    if (status === '110' || status === '11') status = 'CANCELLED';
+    // This mapper persists order/POS snapshots. Courier events use the
+    // dedicated signed webhook path, so ambiguous numeric codes must never be
+    // interpreted here as proof of customer handover/delivery.
+    const status = normalizeDeliverectOrderProjectionStatus(raw.status);
 
     // Fulfilment is canonicalized once. Never default an unknown Deliverect order to delivery.
     const fulfillmentType = normalizeDeliverectFulfillmentType(raw);

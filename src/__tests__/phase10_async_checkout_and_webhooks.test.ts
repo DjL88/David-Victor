@@ -128,11 +128,88 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
   describe('Deliverect numeric status coverage', () => {
     it('normalizes duplicate, in-delivery and system failure codes', () => {
       expect(normalizeDeliverectOrderStatus(30)).toBe('DUPLICATE');
+      expect(normalizeDeliverectOrderStatus(100)).toBe('100');
       expect(normalizeDeliverectOrderStatus('80')).toBe('OUT_FOR_DELIVERY');
       expect(normalizeDeliverectOrderStatus(121)).toBe('ORDER_FAILED');
       expect(normalizeDeliverectOrderStatus('124')).toBe('ORDER_FAILED');
     });
   });
+
+  it('persists POS preparation/finalisation snapshots without promoting them to delivered', async () => {
+    const preparingId = `order_pos_preparing_${Date.now()}`;
+    const finalizedId = `order_pos_finalized_${Date.now()}`;
+
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: preparingId,
+        orderId: preparingId,
+        orderReference: `REF-POS-50-${Date.now()}`,
+        status: 50,
+        fulfillmentType: 'pickup',
+        items: [],
+        total: 0,
+        currency: 'GBP',
+      } as any,
+      testTenant
+    );
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: finalizedId,
+        orderId: finalizedId,
+        orderReference: `REF-POS-90-${Date.now()}`,
+        status: 90,
+        fulfillmentType: 'pickup',
+        items: [],
+        total: 0,
+        currency: 'GBP',
+      } as any,
+      testTenant
+    );
+
+    const preparing = await FirestorePlatformService.getOrderProjection(preparingId);
+    const finalized = await FirestorePlatformService.getOrderProjection(finalizedId);
+    expect(preparing?.status).toBe('PREPARING');
+    expect(finalized?.status).toBe('READY');
+    expect(preparing?.status).not.toBe('DELIVERED');
+    expect(finalized?.status).not.toBe('DELIVERED');
+  });
+  it('acknowledges cancellation request status 100 without marking the order cancelled', async () => {
+    const orderId = `order_cancel_requested_${Date.now()}`;
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: orderId,
+        orderId,
+        orderReference: `REF-CANCEL-REQUEST-${Date.now()}`,
+        status: 'ACCEPTED',
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any,
+      testTenant
+    );
+
+    const payload = {
+      orderId,
+      channelOrderId: 'LT-CANCEL-REQUEST',
+      status: 100,
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+    const result = await WebhookService.processWebhook(
+      payload,
+      rawBody,
+      { 'x-deliverect-signature': signature },
+      testTenant
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('IGNORED');
+    expect(result.newState).toBe('ACCEPTED');
+    const persisted = await FirestorePlatformService.getOrderProjection(orderId);
+    expect(persisted?.status).toBe('ACCEPTED');
+  });
+
   it('acknowledges an undocumented numeric order status without corrupting lifecycle state', async () => {
     const orderId = `order_unknown_numeric_${Date.now()}`;
     await FirestorePlatformService.saveOrderProjection(
