@@ -241,6 +241,12 @@ export interface PickingItem {
     name?: string;
     quantity?: number;
     price?: Money;
+    /**
+     * Frozen replacement-side effective unit price. Only populate from an
+     * internally verified promotion calculation; never infer it from a provider callback.
+     */
+    effectivePrice?: Money;
+    promotionProvenance?: string[];
     priority?: number;
   }>;
   bundlePricing?: PickingBundlePricing;
