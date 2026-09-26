@@ -2078,6 +2078,25 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (allowedCategoryIds.size === 0) allowedCategoryIds.add(options.categoryId);
       filtered = filtered.filter((p) => (p.categoryIds || []).some((categoryId) => allowedCategoryIds.has(categoryId)));
     }
+
+    // Archived/inactive products remain visible to Admin for history, never to
+    // customer search. Among live items, promote products independently
+    // verified by both Channel Push + Commerce and demote ambiguous/snoozed
+    // evidence without pretending it is certain stock quantity.
+    filtered = filtered
+      .filter((product) => product.active !== false && (product.metadata as any)?.lifecycleStatus !== 'ARCHIVED')
+      .map((product, index) => ({ product, index }))
+      .sort((a, b) => {
+        const confidenceA = Number((a.product.metadata as any)?.catalogConfidenceScore ?? 75);
+        const confidenceB = Number((b.product.metadata as any)?.catalogConfidenceScore ?? 75);
+        const availabilityA = this.isAvailableProduct(a.product) ? 0 : -100;
+        const availabilityB = this.isAvailableProduct(b.product) ? 0 : -100;
+        const scoreA = confidenceA + availabilityA;
+        const scoreB = confidenceB + availabilityB;
+        return scoreB - scoreA || a.index - b.index;
+      })
+      .map(({ product }) => product);
+
     if (options?.limit && options.limit > 0) filtered = filtered.slice(0, options.limit);
 
     if (storeId) {
