@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Category, Store } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { CatalogFilterState } from './DietaryPreferencesModal';
@@ -66,59 +66,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   const { primaryBtnStyle, primaryColour } = useTenantStyles();
   const { t } = useI18n();
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const navRef = useRef<HTMLDivElement>(null);
-  const [dockMode, setDockMode] = useState<'normal' | 'top'>('normal');
-
-  useEffect(() => {
-    let frame = 0;
-
-    const updateDocking = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        const anchor = anchorRef.current;
-        const nav = navRef.current;
-        if (!anchor || !nav) return;
-
-        const measuredHeight = Math.ceil(nav.getBoundingClientRect().height);
-        if (measuredHeight > 0) {
-          document.documentElement.style.setProperty('--category-nav-height', `${measuredHeight}px`);
-        }
-
-        if (window.innerWidth >= 768) {
-          setDockMode('normal');
-          return;
-        }
-
-        const header = document.getElementById('sticky-header-container');
-        const headerBottom = header?.getBoundingClientRect().bottom || 0;
-        const rect = anchor.getBoundingClientRect();
-
-        // Mobile filters now have one simple behaviour:
-        // stay in normal document flow until they naturally reach the header,
-        // then dock beneath it. Scrolling back up releases them immediately.
-        setDockMode(rect.top <= headerBottom + 4 ? 'top' : 'normal');
-      });
-    };
-
-    updateDocking();
-    window.addEventListener('scroll', updateDocking, { passive: true });
-    window.addEventListener('resize', updateDocking);
-    window.visualViewport?.addEventListener('resize', updateDocking);
-    window.visualViewport?.addEventListener('scroll', updateDocking);
-
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateDocking) : null;
-    if (navRef.current) observer?.observe(navRef.current);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener('scroll', updateDocking);
-      window.removeEventListener('resize', updateDocking);
-      window.visualViewport?.removeEventListener('resize', updateDocking);
-      window.visualViewport?.removeEventListener('scroll', updateDocking);
-    };
-  }, []);
 
   const selectCategoryWithIntent = (categoryId: string | null) => {
     onSelectCategory(categoryId);
@@ -203,30 +150,22 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
     (filterState?.excludedAllergens?.length || 0) > 0 ||
     (filterState?.selectedDietaryTags?.length || 0) > 0;
 
-  // Native sticky positioning is smoother than toggling between normal flow
-  // and fixed positioning while the user scrolls. dockMode now only controls
-  // the visual shadow/data attribute used by the scroll-snap rules.
-  const dockClass =
-    dockMode === 'top'
-      ? 'sticky z-[35] shadow-md'
-      : 'sticky z-30 shadow-xs';
-
+  // Pure CSS sticky docking avoids per-scroll layout reads and state churn.
+  // Header.tsx measures the real white-label header and updates this CSS variable.
   const dockStyle: React.CSSProperties = {
     top: 'var(--storefront-header-height, 104px)',
   };
 
   return (
     <div
-      ref={anchorRef}
       id="category-nav-anchor"
       className="relative w-full max-w-full"
     >
       <div
-        ref={navRef}
         id="category-nav-section"
         style={dockStyle}
-        data-dock-mode={dockMode}
-        className={`${dockClass} bg-white/95 backdrop-blur-md border-y border-gray-200/80 px-3 sm:px-6 py-2 transition-[box-shadow,background-color] w-full max-w-full space-y-1.5`}
+        data-dock-mode="sticky"
+        className="sticky z-[35] bg-white/95 backdrop-blur-md border-y border-gray-200/80 px-3 sm:px-6 py-2 shadow-sm transition-[box-shadow,background-color] w-full max-w-full space-y-1.5"
       >
       {/* ROW 1: AISLE CATEGORIES & NAVIGATION */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 w-full max-w-full">
