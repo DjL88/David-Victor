@@ -1,4 +1,5 @@
 import { FirestorePlatformService } from '../firestoreService';
+import { IntegrationContext } from './IntegrationContext';
 
 export type ChannelProvisioningEventType = 'STORE_PROVISION' | 'CHANNEL_REGISTRATION';
 
@@ -74,6 +75,28 @@ export class ChannelProvisioningService {
     if (!channelLinkId) warnings.push('CHANNEL_LINK_ID_MISSING');
     if (!locationId) warnings.push('LOCATION_ID_MISSING');
 
+    let assigned = false;
+    if (channelLinkId) {
+      const integration = await FirestorePlatformService.getIntegrationConfig(tenantId);
+      if (Array.isArray(integration.allowedChannelLinkIds)) {
+        assigned = integration.allowedChannelLinkIds.map(String).includes(channelLinkId);
+      } else {
+        const environment = integration.activeEnv || integration.environment || 'staging';
+        const profile = await FirestorePlatformService.getIntegrationProfile(tenantId, environment);
+        if (profile) {
+          assigned = profile.allowedChannelLinkIds.map(String).includes(channelLinkId);
+        } else {
+          await FirestorePlatformService.updateIntegrationConfig(tenantId, {
+            allowedChannelLinkIds: [channelLinkId],
+            lastSyncAt: new Date().toISOString(),
+          });
+          IntegrationContext.invalidate(tenantId);
+          assigned = true;
+        }
+      }
+      if (!assigned) warnings.push('CHANNEL_NOT_ASSIGNED');
+    }
+
     const quarantined = warnings.length > 0;
 
     if (channelLinkId) {
@@ -104,11 +127,10 @@ export class ChannelProvisioningService {
         externalLocationId,
         lifecycleStatus,
         status: channelStatus === 'ACTIVE' ? 'ACTIVE' : channelStatus === 'INACTIVE' ? 'INACTIVE' : undefined,
-        // Registration/provisioning establishes tenant ownership. Operational
-        // INACTIVE/DISABLED state is represented above and never doubles as an
-        // ownership mutation; otherwise a Deliverect lifecycle callback can
-        // make the storefront lose its location/catalogue association.
-        assigned: true,
+        // Canonical ownership lives in integrations/{tenantId}.allowedChannelLinkIds
+        // (or the environment profile for older tenants). Operational callbacks
+        // cannot silently reassign a deliberately unassigned channel.
+        assigned,
         provisioningState,
         provisioningSource: 'DELIVERECT_CHANNEL',
         lastProvisioningEventAt: new Date().toISOString(),
