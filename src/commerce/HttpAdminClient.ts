@@ -964,6 +964,35 @@ export class HttpAdminClient implements AdminClient {
     URL.revokeObjectURL(url);
   }
 
+  async downloadSubstitutionEconomicsCsv(tenantId?: string): Promise<void> {
+    const tId = String(tenantId || this.currentTenantId || '').trim();
+    if (!tId) throw new Error('Tenant is required for substitution economics export.');
+
+    const headers = {
+      ...(await this.getHeadersAsync()),
+      'X-Tenant-ID': tId,
+    };
+    const res = await fetch(`${this.baseUrl}/analytics/substitutions/export`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Substitution export failed (HTTP ${res.status})`);
+    }
+
+    const csv = await res.text();
+    const disposition = res.headers.get('content-disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] || `substitution-economics-${tId}.csv`;
+    const blob = new Blob([csv], { type: 'text/csv; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // Product rules & policies
   async getProductRules(tenantId?: string): Promise<VisualRule[]> {
     const tId = tenantId || this.currentTenantId;
