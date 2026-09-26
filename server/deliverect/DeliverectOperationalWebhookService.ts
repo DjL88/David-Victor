@@ -41,6 +41,14 @@ function requiredChannelLinkId(payload: any): string {
   return value;
 }
 
+let lastOperationalObservedAtMs = 0;
+
+function nextOperationalObservedAt(): string {
+  const now = Date.now();
+  lastOperationalObservedAtMs = Math.max(now, lastOperationalObservedAtMs + 1);
+  return new Date(lastOperationalObservedAtMs).toISOString();
+}
+
 function normaliseSnoozeItem(
   tenantId: string,
   channelLinkId: string,
@@ -78,7 +86,7 @@ export class DeliverectOperationalWebhookService {
     payload: any,
     rawBody: Buffer | string
   ): Promise<DeliverectOperationalWebhookResult> {
-    const observedAt = new Date().toISOString();
+    const observedAt = nextOperationalObservedAt();
     const channelLinkId = requiredChannelLinkId(payload);
     const rawBuffer = Buffer.isBuffer(rawBody)
       ? rawBody
