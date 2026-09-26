@@ -27,6 +27,7 @@ export function useBasket(
   const basketRef = useRef<Basket | null>(null);
   const basketCreatePromiseRef = useRef<Promise<Basket> | null>(null);
   const basketMutationBatcherRef = useRef<BasketMutationBatcher<Basket> | null>(null);
+  const mutationScopeRef = useRef('');
   const [optimisticQuantities, setOptimisticQuantities] = useState<Record<string, number>>({});
   const optimisticQuantitiesRef = useRef<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
@@ -64,8 +65,13 @@ export function useBasket(
 
   const getBasketMutationBatcher = useCallback(() => {
     if (!basketMutationBatcherRef.current) {
+      const batchScope = mutationScopeRef.current;
       basketMutationBatcherRef.current = new BasketMutationBatcher<Basket>(
         async (basketId, items) => {
+          if (mutationScopeRef.current !== batchScope) {
+            throw new Error('Basket scope changed before the queued update was sent.');
+          }
+
           let updatedBasket: Basket | null = null;
 
           // The live HTTP client exposes a bulk absolute-quantity mutation. Use
@@ -88,6 +94,9 @@ export function useBasket(
           if (!updatedBasket) {
             throw new Error('Basket update did not return an authoritative basket.');
           }
+          if (mutationScopeRef.current !== batchScope) {
+            throw new Error('Basket scope changed while the queued update was in flight.');
+          }
 
           rememberBasket(updatedBasket);
           return updatedBasket;
@@ -99,11 +108,19 @@ export function useBasket(
   }, [client, rememberBasket]);
 
   useEffect(() => {
+    mutationScopeRef.current = `${tenantId}:${activeStoreId}:${fulfillmentType}`;
+    basketMutationBatcherRef.current?.dispose(
+      new Error('Basket scope changed before the queued update completed.')
+    );
+    basketMutationBatcherRef.current = null;
+    optimisticQuantitiesRef.current = {};
+    setOptimisticQuantities({});
+
     return () => {
       basketMutationBatcherRef.current?.dispose();
       basketMutationBatcherRef.current = null;
     };
-  }, [client, tenantId]);
+  }, [activeStoreId, client, fulfillmentType, tenantId]);
 
   // Backwards-compatible single basket array (no multi-store split)
   const allBaskets = useMemo(() => {
