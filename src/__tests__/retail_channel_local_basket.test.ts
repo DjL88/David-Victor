@@ -116,6 +116,7 @@ describe('Retail Channel local basket', () => {
       currency: 'GBP',
       featureFlags: {},
     } as any);
+    vi.spyOn(FirestorePlatformService, 'saveBasketItemSubstitutionPreference').mockResolvedValue(undefined as any);
     client.resolveStoreChannelLinkId = vi.fn().mockResolvedValue({
       channelLinkId: 'channel-3',
       store: { id: 'channel-3', channelLinkId: 'channel-3', name: 'Market Lane', currency: 'GBP' },
@@ -143,7 +144,14 @@ describe('Retail Channel local basket', () => {
     });
 
     const empty = await client.createBasket('channel-3', 'pickup');
-    await client.updateBasketItem(empty.id, 'PLU-3', 2);
+    await client.updateBasketItems(empty.id, [{
+      plu: 'PLU-3',
+      quantity: 2,
+      substitutionPreference: 'CUSTOMER_SELECTED',
+      preferredSubstitutePlu: 'PLU-ALT',
+      preferredSubstituteName: 'Chosen Alternative',
+      preferredSubstitutePrice: { amount: 350, currency: 'GBP' },
+    }]);
     const result = await client.submitRetailOrder(empty.id, {
       channelOrderReference: 'LT-1001',
       tenantId,
@@ -159,7 +167,16 @@ describe('Retail Channel local basket', () => {
     expect(submittedBody).toMatchObject({
       channelOrderId: 'LT-1001',
       payment: { amount: 750, due: 750 },
-      items: [{ plu: 'PLU-3', quantity: 2, price: 375 }],
+      items: [{
+        plu: 'PLU-3',
+        quantity: 2,
+        price: 375,
+        itemUnavailableActions: [
+          'ITEM_AMENDMENT',
+          'ITEM_REMOVE',
+          'ITEM_SUBSTITUTION_CATALOG',
+        ],
+      }],
     });
     expect(result.orderId).toBe('upstream-order-1');
     expect(result.status).toBe('ORDER_CONFIRMED');

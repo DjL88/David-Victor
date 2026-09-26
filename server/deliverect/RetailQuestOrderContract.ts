@@ -44,11 +44,9 @@ export function projectRetailQuestOrder(input: RetailQuestContractInput): any {
       throw new Error('Retail item requires PLU, positive integer quantity and non-negative integer unit price.');
     }
     const preference = item.substitutionPreference || 'BEST_MATCH';
-    const actions = item.itemUnavailableActions?.length
-      ? item.itemUnavailableActions
-      : item.deliverectUnavailableActions?.length
-        ? item.deliverectUnavailableActions
-        : buildQuestItemUnavailableActions(preference);
+    // Preference is customer intent. Incoming/echoed action arrays can be
+    // stale and must never override it at the final Quest contract boundary.
+    const actions = buildQuestItemUnavailableActions(preference);
     return {
       plu: item.plu,
       name: item.name || item.plu,

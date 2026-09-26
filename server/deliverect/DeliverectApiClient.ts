@@ -3909,35 +3909,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
         protectedPrices.length > 0 ? Math.round(protectedUnitPricePools.get(item.plu)![0]) : unitPrice;
 
       const preference = item.substitutionPreference || 'BEST_MATCH';
-      const echoedActions =
-        Array.isArray(item.itemUnavailableActions) && item.itemUnavailableActions.length > 0
-          ? item.itemUnavailableActions
-          : Array.isArray(item.deliverectUnavailableActions) && item.deliverectUnavailableActions.length > 0
-            ? item.deliverectUnavailableActions
-            : undefined;
-      const computedActions = buildQuestItemUnavailableActions(preference);
-      const itemUnavailableActions = echoedActions || computedActions;
-
-      // Deliverect's own echoed value (from a prior basket GET/reconcile)
-      // takes precedence over what we compute from substitutionPreference.
-      // That's deliberate, but it was previously silent: if Deliverect
-      // narrows a line (e.g. no substitute group configured for that PLU in
-      // the Retail catalog), the customer's preference is overridden with
-      // no visibility anywhere. Surface the mismatch so a "substitution
-      // never offered in Quest for this PLU" report is diagnosable instead
-      // of looking identical to a real customer choice.
-      if (echoedActions) {
-        const echoedSet = new Set(echoedActions.map((a: string) => String(a).toUpperCase()));
-        const computedSet = new Set(computedActions.map((a) => a.toUpperCase()));
-        const isNarrower =
-          computedSet.size > echoedSet.size ||
-          [...computedSet].some((a) => !echoedSet.has(a));
-        if (isNarrower) {
-          console.warn(
-            `[DeliverectApiClient] itemUnavailableActions for PLU ${item.plu} was narrowed by Deliverect's echoed basket value: computed ${JSON.stringify(computedActions)} from preference "${preference}", but Deliverect returned ${JSON.stringify(echoedActions)}. Likely cause: no substitute/linked-alternative configured for this PLU in the Deliverect Retail catalog.`
-          );
-        }
-      }
+      // The saved customer preference is authoritative. Any actions echoed by
+      // a prior catalogue/basket response describe that earlier projection and
+      // must not silently downgrade a later customer choice.
+      const itemUnavailableActions = buildQuestItemUnavailableActions(preference);
       const preferredPlu = String(item.preferredSubstitutePlu || '').trim();
       const preferredName = String(item.preferredSubstituteName || preferredPlu).trim();
       const preferredPrice = item.preferredSubstitutePrice;
@@ -3961,6 +3936,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         price: outboundUnitPrice,
         quantity: item.quantity,
         ...(item.note ? { remark: item.note } : {}),
+        substitutionPreference: preference,
         itemUnavailableActions,
         ...(substituteCandidate ? { substituteCandidate } : {}),
       };
@@ -4039,14 +4015,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
         unitPriceMinor: item.price,
         quantity: item.quantity,
         note: item.remark,
-        substitutionPreference:
-          item.itemUnavailableActions?.includes('ITEM_SUBSTITUTION_CUSTOMER')
-            ? 'CUSTOMER_SELECTED'
-            : item.itemUnavailableActions?.includes('ITEM_SUBSTITUTION')
-              ? 'BEST_MATCH'
-              : item.itemUnavailableActions?.includes('CANCEL_ORDER')
-                ? 'CANCEL_ORDER_IF_UNAVAILABLE'
-                : 'DO_NOT_SUBSTITUTE',
+        substitutionPreference: item.substitutionPreference || 'BEST_MATCH',
         preferredSubstitutePlu: item.substituteCandidate?.[0]?.plu,
         preferredSubstituteName: item.substituteCandidate?.[0]?.name,
         preferredSubstitutePriceMinor: item.substituteCandidate?.[0]?.price,
