@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MarketingScheduleEditor } from '../components/MarketingScheduleEditor';
 import {
   CategoryPromoBanner,
@@ -92,7 +92,10 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const activeTenantRef = useRef(tenantId);
+  activeTenantRef.current = tenantId;
 
   // Modal editor state
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
@@ -125,35 +128,49 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     return rows;
   }, [categories]);
 
-  const loadData = async () => {
+  const loadData = async (requestTenantId = tenantId) => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const fetchedBanners = await fetchPromoBannersForTenant(tenantId);
-      setBanners(fetchedBanners);
-      const [cats, prods, storeList] = await Promise.all([
+      const [fetchedBanners, cats, prods, storeList] = await Promise.all([
+        fetchPromoBannersForTenant(requestTenantId),
         commerceClient.getCategories?.() || Promise.resolve([]),
         commerceClient.getProducts?.() || Promise.resolve([]),
         defaultAdminClient.getStores?.() || Promise.resolve([]),
       ]);
+      if (activeTenantRef.current !== requestTenantId) return;
+      setBanners(fetchedBanners);
       setCategories(cats);
       setProducts(prods);
       setStores(storeList);
     } catch (e) {
+      if (activeTenantRef.current !== requestTenantId) return;
       console.warn('Failed to load admin hero banner dependencies:', e);
+      setLoadError('Hero banners or their live catalogue selectors are currently unavailable. Existing banners have not been replaced.');
     } finally {
-      setLoading(false);
+      if (activeTenantRef.current === requestTenantId) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    const requestTenantId = tenantId;
+    setBanners([]);
+    setCategories([]);
+    setProducts([]);
+    setStores([]);
+    setIsEditorOpen(false);
+    setUploadingImage(false);
+    setProductSearch('');
+    setToastMessage(null);
+    void loadData(requestTenantId);
     const unsub = subscribePromoBanners((updatedTenantId) => {
-      if (!updatedTenantId || updatedTenantId === tenantId) {
-        setBanners(getPromoBanners(tenantId));
+      if (activeTenantRef.current !== requestTenantId) return;
+      if (!updatedTenantId || updatedTenantId === requestTenantId) {
+        setBanners(getPromoBanners(requestTenantId));
       }
     });
     return () => unsub();
-  }, [tenantId]);
+  }, [tenantId, commerceClient]);
 
   useEffect(() =>
     onAdminAiPrefill('hero_banners', ({ prefill }) => {
@@ -222,15 +239,30 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
       return;
     }
 
-    await savePromoBanner(currentEditingBanner, tenantId);
-    setIsEditorOpen(false);
-    showToast(isEditingExisting ? 'Banner updated.' : 'Banner created.');
+    const requestTenantId = tenantId;
+    try {
+      await savePromoBanner(currentEditingBanner, requestTenantId);
+      if (activeTenantRef.current !== requestTenantId) return;
+      setIsEditorOpen(false);
+      showToast(isEditingExisting ? 'Banner updated.' : 'Banner created.');
+    } catch (error) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error('Failed to save hero banner:', error);
+      showToast('Banner could not be saved. Your editor remains open and no successful publish has been reported.');
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this hero banner?')) {
-      await deletePromoBanner(id, tenantId);
-      showToast('Banner deleted.');
+      const requestTenantId = tenantId;
+      try {
+        await deletePromoBanner(id, requestTenantId);
+        if (activeTenantRef.current === requestTenantId) showToast('Banner deleted.');
+      } catch (error) {
+        if (activeTenantRef.current !== requestTenantId) return;
+        console.error('Failed to delete hero banner:', error);
+        showToast('Banner could not be deleted. Refresh before trying again.');
+      }
     }
   };
 
@@ -240,13 +272,27 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
     const copy = [...banners];
     const item = copy.splice(index, 1)[0];
     copy.splice(newIdx, 0, item);
-    await reorderPromoBanners(copy, tenantId);
+    const requestTenantId = tenantId;
+    try {
+      await reorderPromoBanners(copy, requestTenantId);
+    } catch (error) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error('Failed to reorder hero banners:', error);
+      showToast('Banner order could not be saved. The previous order remains authoritative.');
+    }
   };
 
   const handleResetDefaults = async () => {
     if (window.confirm('Reset all banners to their default configuration?')) {
-      await resetPromoBanners(tenantId);
-      showToast('Banners reset to defaults.');
+      const requestTenantId = tenantId;
+      try {
+        await resetPromoBanners(requestTenantId);
+        if (activeTenantRef.current === requestTenantId) showToast('Banners reset to defaults.');
+      } catch (error) {
+        if (activeTenantRef.current !== requestTenantId) return;
+        console.error('Failed to reset hero banners:', error);
+        showToast('Banners could not be reset. Existing configuration remains authoritative.');
+      }
     }
   };
 
@@ -255,19 +301,25 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const requestTenantId = tenantId;
     setUploadingImage(true);
     try {
-      const uploaded = await defaultAdminClient.uploadAssetFile(file, 'HERO_IMAGE', tenantId);
+      const uploaded = await defaultAdminClient.uploadAssetFile(file, 'HERO_IMAGE', requestTenantId);
+      if (activeTenantRef.current !== requestTenantId) return;
       if (uploaded && uploaded.publicUrl) {
         setCurrentEditingBanner((prev) => ({
           ...prev,
           backgroundImageUrl: uploaded.publicUrl,
         }));
+      } else {
+        showToast('Hero image upload did not return a usable media URL. The previous image is unchanged.');
       }
-    } catch (err: any) {
-      showToast(`Hero image upload failed: ${err.message || err}`);
+    } catch (err) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error('Hero image upload failed:', err);
+      showToast('Hero image upload failed. The previous image is unchanged.');
     } finally {
-      setUploadingImage(false);
+      if (activeTenantRef.current === requestTenantId) setUploadingImage(false);
     }
   };
 
@@ -347,6 +399,14 @@ export const HeroBannersAdminScreen: React.FC<HeroBannersAdminScreenProps> = ({
         {loading ? (
           <div className="p-12 text-center text-gray-400 text-xs font-medium bg-white rounded-3xl border border-gray-100">
             Loading hero banners...
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="p-6 text-center bg-rose-50 rounded-3xl border border-rose-200 space-y-2">
+            <h3 className="text-sm font-extrabold text-rose-900">Hero banners unavailable</h3>
+            <p className="text-xs text-rose-800 max-w-xl mx-auto">{loadError}</p>
+            <button type="button" onClick={() => void loadData(tenantId)} className="mt-2 px-4 py-2 rounded-xl bg-white border border-rose-200 text-rose-800 text-xs font-bold">
+              Retry
+            </button>
           </div>
         ) : banners.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-3xl border border-gray-200/80 space-y-3">

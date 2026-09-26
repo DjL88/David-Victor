@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Languages, RefreshCw } from 'lucide-react';
 import { AdminUser, TenantConfig } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
@@ -29,12 +29,15 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const activeTenantRef = useRef(tenantId);
+  activeTenantRef.current = tenantId;
 
-  const load = async () => {
+  const load = async (requestTenantId = tenantId) => {
     setLoading(true);
     setError('');
     try {
-      const next = await defaultAdminClient.getBranding(tenantId);
+      const next = await defaultAdminClient.getBranding(requestTenantId);
+      if (activeTenantRef.current !== requestTenantId) return;
       const safeDefault = normaliseSupportedLocale(next.locale, 'en-GB');
       const configuredLocales = (next.enabledLocales || []).filter(isSupportedLocale);
       const locales = configuredLocales.length
@@ -47,15 +50,21 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
         locales.includes(current) ? current : (safeDefault || locales[0] || 'en-GB')
       );
       setCopyOverrides((next.copyOverrides || {}) as StorefrontCopyOverrides);
-    } catch (err: any) {
-      setError(err?.message || 'Could not load language settings.');
+    } catch (err) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error('Could not load language settings:', err);
+      setError('Languages & wording are currently unavailable. Existing tenant wording has not been treated as blank or reset.');
     } finally {
-      setLoading(false);
+      if (activeTenantRef.current === requestTenantId) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load();
+    const requestTenantId = tenantId;
+    setConfig(null);
+    setSaving(false);
+    setSaved(false);
+    void load(requestTenantId);
   }, [tenantId]);
 
   useEffect(() =>
@@ -86,7 +95,7 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
         }));
       }
     }),
-  [copyLocale]);
+  [copyLocale, tenantId]);
 
   const selectableLocales = useMemo(
     () =>
@@ -115,8 +124,9 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
           .filter(([, entries]) => Object.keys(entries as Record<string, string>).length > 0)
       );
 
+      const requestTenantId = tenantId;
       const updated = await defaultAdminClient.updateBranding(
-        tenantId,
+        requestTenantId,
         {
           locale: defaultLocale,
           enabledLocales: Array.from(new Set([defaultLocale, ...enabledLocales])),
@@ -124,21 +134,40 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
         },
         currentUser
       );
+      if (activeTenantRef.current !== requestTenantId) return;
       setConfig(updated);
       setSaved(true);
-      window.setTimeout(() => setSaved(false), 3000);
-    } catch (err: any) {
-      setError(err?.message || 'Could not save language settings.');
+      window.setTimeout(() => {
+        if (activeTenantRef.current === requestTenantId) setSaved(false);
+      }, 3000);
+    } catch (err) {
+      if (activeTenantRef.current !== tenantId) return;
+      console.error('Could not save language settings:', err);
+      setError('Could not save languages & wording. Your edits remain on screen and have not been reported as saved.');
     } finally {
-      setSaving(false);
+      if (activeTenantRef.current === tenantId) setSaving(false);
     }
   };
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="p-8 flex items-center justify-center text-gray-500">
         <RefreshCw className="w-5 h-5 animate-spin mr-2" />
         <span>Loading languages & wording…</span>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900">
+          <p className="font-bold">Languages & wording unavailable</p>
+          <p className="mt-1 text-xs">{error || 'The tenant configuration could not be loaded.'}</p>
+          <button type="button" onClick={() => void load(tenantId)} className="mt-3 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
