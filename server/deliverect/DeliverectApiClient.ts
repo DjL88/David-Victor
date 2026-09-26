@@ -1485,7 +1485,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           .getStoreProductSnoozes(this.tenantId || 'brand-alpha', channelLinkId)
           .catch(() => ({}));
 
-        const hostedProducts = (Array.isArray(hosted.products)
+        let hostedProducts = (Array.isArray(hosted.products)
           ? hosted.products
           : []
         ).map((product: Product) => {
@@ -1500,6 +1500,116 @@ export class DeliverectApiClient implements DeliverectAdapter {
             stockStatus: 'OUT_OF_STOCK' as const,
           };
         });
+
+        let commerceOverlayStatus: 'VERIFIED' | 'UNAVAILABLE' = 'UNAVAILABLE';
+        let commerceOnlyCount = 0;
+        try {
+          const rawCommerce = await this.getRawStoreMenus(storeId);
+          const rawMenus: any[] = Array.isArray(rawCommerce.payload)
+            ? rawCommerce.payload
+            : Array.isArray((rawCommerce.payload as any)?._items)
+              ? (rawCommerce.payload as any)._items
+              : rawCommerce.payload
+                ? [rawCommerce.payload]
+                : [];
+          if (rawMenus.length > 0) {
+            const { selectedMenu } = selectStoreMenu(rawMenus, menuId, fulfillmentType);
+            const tagDefinitions = await this.getProductTagDefinitions();
+            const liveParsed = this.parseDeliverectMenu(selectedMenu, true, tagDefinitions);
+            const liveByPlu = new Map(
+              liveParsed.products.map((product: Product) => [String(product.plu || '').trim(), product])
+            );
+            const hostedPlus = new Set(
+              hostedProducts.map((product: Product) => String(product.plu || '').trim()).filter(Boolean)
+            );
+            commerceOnlyCount = liveParsed.products.filter(
+              (product: Product) => !hostedPlus.has(String(product.plu || '').trim())
+            ).length;
+
+            hostedProducts = hostedProducts.map((product: Product) => {
+              if (product?.metadata?.lifecycleStatus === 'ARCHIVED') return product;
+              const live = liveByPlu.get(String(product.plu || '').trim());
+              if (!live) {
+                return {
+                  ...product,
+                  metadata: {
+                    ...(product.metadata || {}),
+                    catalogConfidence: 'LOW',
+                    catalogConfidenceScore: 55,
+                    catalogSignals: ['CHANNEL_PUSH_ONLY', 'NOT_FOUND_IN_COMMERCE'],
+                    commerceVerified: false,
+                  },
+                };
+              }
+
+              const productGtins = new Set((product.gtin || []).map(String).filter(Boolean));
+              const liveGtins = new Set((live.gtin || []).map(String).filter(Boolean));
+              const gtinComparable = productGtins.size > 0 && liveGtins.size > 0;
+              const gtinMatch = gtinComparable && [...productGtins].some((gtin) => liveGtins.has(gtin));
+              const nameMatch =
+                String(product.name || '').trim().toLowerCase() ===
+                String(live.name || '').trim().toLowerCase();
+              const score = nameMatch && (!gtinComparable || gtinMatch) ? 100 : gtinMatch ? 90 : 80;
+              const confidence = score >= 95 ? 'HIGH' : score >= 80 ? 'MEDIUM' : 'LOW';
+              const liveUnavailable =
+                live.active === false ||
+                live.stockStatus === 'OUT_OF_STOCK' ||
+                live.snoozed === true ||
+                live.isSnoozed === true;
+
+              return {
+                ...product,
+                ...(live.price !== undefined ? { price: live.price } : {}),
+                ...(live.priceMinor !== undefined ? { priceMinor: live.priceMinor } : {}),
+                ...(live.stockQuantity !== undefined ? { stockQuantity: live.stockQuantity } : {}),
+                ...(liveUnavailable
+                  ? {
+                      stockStatus: 'OUT_OF_STOCK' as const,
+                      snoozed: live.snoozed || live.isSnoozed || product.snoozed,
+                      isSnoozed: live.snoozed || live.isSnoozed || product.isSnoozed,
+                    }
+                  : {}),
+                metadata: {
+                  ...(product.metadata || {}),
+                  catalogConfidence: confidence,
+                  catalogConfidenceScore: score,
+                  catalogSignals: [
+                    'CHANNEL_PUSH',
+                    'COMMERCE_MATCH',
+                    ...(liveUnavailable ? ['COMMERCE_UNAVAILABLE_OR_SNOOZED'] : []),
+                  ],
+                  commerceVerified: true,
+                },
+              };
+            });
+            commerceOverlayStatus = 'VERIFIED';
+          }
+        } catch (commerceError: any) {
+          // Commerce is a live verification/operational overlay. A valid pushed
+          // Channel catalogue remains customer-safe truth when Commerce auth or
+          // availability is degraded; expose the degradation through diagnostics
+          // and Admin logs instead of failing the storefront.
+          hostedProducts = hostedProducts.map((product: Product) => ({
+            ...product,
+            metadata: {
+              ...(product.metadata || {}),
+              catalogConfidence:
+                product?.metadata?.lifecycleStatus === 'ARCHIVED' ? 'LOW' : 'MEDIUM',
+              catalogConfidenceScore:
+                product?.metadata?.lifecycleStatus === 'ARCHIVED' ? 0 : 70,
+              catalogSignals: [
+                ...(Array.isArray(product?.metadata?.catalogSignals)
+                  ? (product.metadata!.catalogSignals as string[])
+                  : []),
+                'COMMERCE_OVERLAY_UNAVAILABLE',
+              ],
+              commerceVerified: false,
+            },
+          }));
+          console.warn(
+            `[DeliverectApiClient] Commerce overlay unavailable for ${channelLinkId}; serving durable Channel catalogue: ${commerceError?.message || commerceError}`
+          );
+        }
 
         const activeCount = hostedProducts.filter(
           (product: Product) => product.active !== false
@@ -1531,6 +1641,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
             )
           ),
           hiddenByRuleCount: 0,
+          commerceOverlayStatus,
+          commerceOnlyCount,
+          confidenceHighCount: hostedProducts.filter((product: Product) => product?.metadata?.catalogConfidence === 'HIGH').length,
+          confidenceLowCount: hostedProducts.filter((product: Product) => product?.metadata?.catalogConfidence === 'LOW').length,
           timestamp: new Date().toISOString(),
         };
 
