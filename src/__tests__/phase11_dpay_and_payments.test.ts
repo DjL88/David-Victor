@@ -331,14 +331,15 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
         {
           channelLinkId: testChannelLinkId,
           mode: { type: 'token', tokenId: 'tok_visa_4242' },
-          amount: 2000, // £20.00
+          amount: 2000, // £20.00 current authorization
           currency: 'GBP',
           captureMode: 'manual',
+          customerApprovedMaxAmount: { amount: 2400, currency: 'GBP' },
         },
         testTenant
       );
 
-      // Customer approves additional £4.00 (e.g. higher-priced substitute)
+      // Customer-approved ceiling was persisted with the original tokenized request.
       const reauthorized = await PaymentService.reauthorize(payment.paymentId, 400, testTenant);
       expect(reauthorized.authorizedAmount).toBe(2400);
 
