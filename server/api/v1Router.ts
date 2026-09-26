@@ -4091,7 +4091,7 @@ v1Router.get('/admin/assistant/change-sets/:changeSetId', requireAdminAuth(), as
   }
 });
 
-// Approval is a recorded human decision only. Applying approved changes remains fail-closed.
+// Approval is a scoped, expiring human decision. It authorises only the exact validated ChangeSet.
 v1Router.post(
   '/admin/assistant/change-sets/:changeSetId/approve',
   requireAdminAuth(),
@@ -4117,6 +4117,8 @@ v1Router.post(
         details: JSON.stringify({
           changeSetId: changeSet.id,
           actions: changeSet.actions.map((action) => action.actionName),
+          approvalScopeHash: changeSet.approvalScopeHash,
+          approvalExpiresAt: changeSet.approvalExpiresAt,
         }),
         actorType: 'human',
         changeSetId: changeSet.id,
@@ -4190,37 +4192,119 @@ v1Router.post(
         revisionId: changeSet.revisionIds[0],
       });
 
+      let verification;
+      try {
+        verification = await AdminResourceAdapterRegistry.verifyRevisionPersisted({
+          tenantId,
+          actionName: changeSet.actions[0].actionName,
+          revisionId: execution.revisionId,
+        });
+      } catch {
+        const partiallyFailed = await AdminChangeSetService.transitionChangeSet({
+          tenantId,
+          changeSetId: changeSet.id,
+          actorId: authAdmin.uid,
+          status: 'PARTIALLY_FAILED',
+          afterSnapshot: execution.result,
+          warning: 'Branding write completed but persisted verification did not confirm the expected revision.',
+        });
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: authAdmin.uid,
+          userName: authAdmin.name || authAdmin.email || 'Admin',
+          userRole: authAdmin.role,
+          tenantId,
+          category: 'Branding',
+          action: 'Assistant branding verification failed',
+          details: JSON.stringify({
+            changeSetId: partiallyFailed.id,
+            revisionId: execution.revisionId,
+            appliedMayHaveOccurred: true,
+          }),
+          actorType: 'human',
+          changeSetId: partiallyFailed.id,
+          actionRisk: 'LOW_WRITE',
+          beforeState: partiallyFailed.beforeSnapshot,
+          afterState: execution.result,
+          reversible: partiallyFailed.reversible,
+        });
+        return res.status(409).json({
+          error: 'Branding may have been written, but persisted verification failed. Review live Branding before retrying.',
+          code: 'ADMIN_CHANGESET_VERIFICATION_FAILED',
+          changeSet: partiallyFailed,
+          appliedMayHaveOccurred: true,
+          retrySafe: false,
+        });
+      }
+
       const applied = await AdminChangeSetService.transitionChangeSet({
         tenantId,
         changeSetId: changeSet.id,
         actorId: authAdmin.uid,
         status: 'APPLIED',
-        afterSnapshot: execution.result,
+        afterSnapshot: verification.persistedSnapshot,
       });
+      changeSet = applied;
 
-      await FirestorePlatformService.addAuditLog(tenantId, {
-        userId: authAdmin.uid,
-        userName: authAdmin.name || authAdmin.email || 'Admin',
-        userRole: authAdmin.role,
+      const receipt = {
+        receiptId: `altie_${crypto.createHash('sha256').update(`${tenantId}:${applied.id}:${verification.revisionId}`).digest('hex').slice(0, 24)}`,
         tenantId,
-        category: 'Branding',
-        action: 'Assistant branding change applied',
-        details: JSON.stringify({
-          changeSetId: applied.id,
-          revisionId: execution.revisionId,
-        }),
-        actorType: 'human',
         changeSetId: applied.id,
-        actionRisk: 'LOW_WRITE',
-        beforeState: applied.beforeSnapshot,
-        afterState: applied.afterSnapshot,
-        reversible: applied.reversible,
-      });
+        actionName: applied.actions[0].actionName,
+        status: applied.status,
+        approvedBy: applied.approvedBy,
+        approvedAt: applied.approvedAt,
+        approvalExpiresAt: applied.approvalExpiresAt,
+        approvalConsumedAt: applied.approvalConsumedAt,
+        appliedBy: authAdmin.uid,
+        appliedAt: applied.appliedAt,
+        revisionId: verification.revisionId,
+        verifiedAt: verification.verifiedAt,
+        resource: verification.resource,
+      };
+
+      try {
+        await FirestorePlatformService.addAuditLog(tenantId, {
+          userId: authAdmin.uid,
+          userName: authAdmin.name || authAdmin.email || 'Admin',
+          userRole: authAdmin.role,
+          tenantId,
+          category: 'Branding',
+          action: 'Assistant branding change applied and verified',
+          details: JSON.stringify({ receipt }),
+          actorType: 'human',
+          changeSetId: applied.id,
+          actionRisk: 'LOW_WRITE',
+          beforeState: applied.beforeSnapshot,
+          afterState: verification.persistedSnapshot,
+          reversible: applied.reversible,
+        });
+      } catch {
+        return res.status(503).json({
+          error: 'Branding was applied and verified, but its audit receipt could not be persisted.',
+          code: 'ADMIN_CHANGESET_AUDIT_RECEIPT_FAILED',
+          changeSet: applied,
+          verification: {
+            verified: true,
+            verifiedAt: verification.verifiedAt,
+            revisionId: verification.revisionId,
+            resource: verification.resource,
+          },
+          appliedMayHaveOccurred: true,
+          retrySafe: false,
+        });
+      }
 
       res.json({
         changeSet: applied,
-        revisionId: execution.revisionId,
-        result: execution.result,
+        revisionId: verification.revisionId,
+        result: verification.persistedSnapshot,
+        verification: {
+          verified: true,
+          verifiedAt: verification.verifiedAt,
+          revisionId: verification.revisionId,
+          resource: verification.resource,
+        },
+        receipt,
         autonomousExecutionEnabled: false,
       });
     } catch (err: any) {
@@ -4229,6 +4313,9 @@ v1Router.post(
         'ADMIN_REVISION_NOT_VALIDATED',
         'ADMIN_REVISION_LIVE_STATE_CONFLICT',
         'ADMIN_CHANGESET_APPLY_NOT_CONNECTED',
+        'ADMIN_CHANGESET_APPROVAL_EXPIRED',
+        'ADMIN_CHANGESET_APPROVAL_SCOPE_MISMATCH',
+        'ADMIN_CHANGESET_APPROVAL_REQUIRED',
       ]);
       if (changeSet?.status === 'APPLYING' && definitelyNotApplied.has(err?.code)) {
         try {
