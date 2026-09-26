@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { AdminChangeSetService } from './adminChangeSetService';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ADMIN_CHANGESET_APPROVAL_TTL_MS, AdminChangeSetService } from './adminChangeSetService';
 
 describe('AdminChangeSetService', () => {
   beforeEach(() => AdminChangeSetService.resetForTest());
+  afterEach(() => vi.useRealTimers());
 
   it('creates a validated proposal but never enables execution', async () => {
     const changeSet = await AdminChangeSetService.createProposedChangeSet({
@@ -162,6 +163,110 @@ describe('AdminChangeSetService', () => {
     });
     expect(rolledBack.status).toBe('ROLLED_BACK');
     expect(rolledBack.rollbackRevisionIds).toEqual(['rev-rollback']);
+  });
+
+  it('keeps a change set tenant-bound and rejects stale-tenant reuse', async () => {
+    const changeSet = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+      revisionIds: ['rev-a'],
+    });
+
+    await expect(
+      AdminChangeSetService.getChangeSet('tenant-b', changeSet.id)
+    ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_NOT_FOUND' });
+
+    await expect(
+      AdminChangeSetService.approveChangeSet({
+        tenantId: 'tenant-b',
+        changeSetId: changeSet.id,
+        actorId: 'admin-1',
+        actorRole: 'tenantAdmin',
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_NOT_FOUND' });
+  });
+
+  it('expires scoped approvals before apply', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-26T15:00:00.000Z'));
+    const proposed = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+      revisionIds: ['rev-1'],
+    });
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+    });
+
+    expect(approved.approvalScopeHash).toBeTruthy();
+    expect(approved.approvalExpiresAt).toBe(
+      new Date(Date.now() + ADMIN_CHANGESET_APPROVAL_TTL_MS).toISOString()
+    );
+
+    vi.advanceTimersByTime(ADMIN_CHANGESET_APPROVAL_TTL_MS + 1);
+    await expect(
+      AdminChangeSetService.transitionChangeSet({
+        tenantId: 'tenant-a',
+        changeSetId: proposed.id,
+        actorId: 'admin-1',
+        status: 'APPLYING',
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_APPROVAL_EXPIRED' });
+  });
+
+  it('does not refresh an approval when the approval request is replayed', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-26T15:00:00.000Z'));
+    const proposed = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+      revisionIds: ['rev-1'],
+    });
+    const first = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+    });
+    vi.advanceTimersByTime(30_000);
+    const replay = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'admin-1',
+      actorRole: 'tenantAdmin',
+    });
+
+    expect(replay.approvedAt).toBe(first.approvedAt);
+    expect(replay.approvalExpiresAt).toBe(first.approvalExpiresAt);
+
+    const applying = await AdminChangeSetService.transitionChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'admin-1',
+      status: 'APPLYING',
+    });
+    expect(applying.approvalConsumedAt).toBeTruthy();
+    expect(applying.approvalConsumedBy).toBe('admin-1');
+  });
+
+  it('rejects unsupported action names instead of inventing a write path', async () => {
+    await expect(
+      AdminChangeSetService.createProposedChangeSet({
+        tenantId: 'tenant-a',
+        actorId: 'admin-1',
+        actorRole: 'tenantAdmin',
+        actions: [{ actionName: 'integrations.rotateSecret', input: {} }],
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_ACTION_UNKNOWN' });
   });
 
   it('does not allow read actions to be wrapped as write proposals', async () => {
