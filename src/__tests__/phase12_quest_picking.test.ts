@@ -446,6 +446,151 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect((substituted?.substitution?.substitutePrice as any)?.amount ?? substituted?.substitution?.substitutePrice).toBe(180);
     });
 
+    it('prices 1x original -> 2x replacement once at the protected ORIGINAL LINE TOTAL and is idempotent', async () => {
+      const orderId = `quest_ord_${Date.now()}_line_total`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 200,
+        authorizedMaximum: 200,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-water-1l',
+            plu: 'WATER-1L',
+            name: 'Water 1L',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 200, currency: 'GBP' },
+            finalPrice: { amount: 200, currency: 'GBP' },
+            state: 'PENDING',
+            substitutionPreference: 'BEST_MATCH',
+            substituteCandidates: [{
+              plu: 'WATER-500',
+              name: 'Water 500ml',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              priority: 1,
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'WATER-1L',
+        substitutePlu: 'WATER-500',
+        substituteName: 'Water 500ml',
+        substitutePrice: 130,
+        reason: '1L unavailable',
+      };
+      const raw = JSON.stringify(payload);
+      const first = await WebhookService.processWebhook(
+        payload,
+        raw,
+        buildSignatureHeaders(raw),
+        testTenant
+      );
+      expect(first.status).toBe('PROCESSED');
+
+      let updated = await FirestorePlatformService.getOrderProjection(orderId);
+      let line = updated?.picking?.items?.find((item: any) => item.plu === 'WATER-1L');
+      expect(line?.pickedQuantity).toBe(2);
+      expect(line?.substitution?.replacementQuantity).toBe(2);
+      expect(line?.substitution?.decisionStatus).toBeUndefined();
+      expect(line?.substitution?.economics?.originalEffectiveLineTotal.amount).toBe(200);
+      expect(line?.substitution?.economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(line?.substitution?.economics?.customerChargeLineTotal.amount).toBe(200);
+      expect(line?.substitution?.economics?.retailValueDelta.amount).toBe(60);
+      expect(line?.substitution?.economics?.customerPriceDelta.amount).toBe(0);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
+
+      // Exact retry is journal-deduplicated and cannot apply another line charge.
+      const retry = await WebhookService.processWebhook(
+        payload,
+        raw,
+        buildSignatureHeaders(raw),
+        testTenant
+      );
+      expect(retry.status).toBe('DEDUPLICATED');
+      updated = await FirestorePlatformService.getOrderProjection(orderId);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
+    });
+
+    it('preserves original promo allocation and refuses to stack replacement promo provenance', async () => {
+      const orderId = `quest_ord_${Date.now()}_promo_provenance`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 150,
+        authorizedMaximum: 150,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-promo',
+            plu: 'ORIGINAL-PROMO',
+            name: 'Original Promo Item',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 200, currency: 'GBP' },
+            finalPrice: { amount: 200, currency: 'GBP' },
+            state: 'PENDING',
+            bundlePricing: {
+              protectedUnitPrices: [{ amount: 150, currency: 'GBP' }],
+              bundleInstanceIds: ['bundle-original-1'],
+            },
+            substituteCandidates: [{
+              plu: 'REPLACEMENT-PROMO',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              effectivePrice: { amount: 100, currency: 'GBP' },
+              promotionProvenance: ['replacement-promo-should-not-stack'],
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'ORIGINAL-PROMO',
+        substitutePlu: 'REPLACEMENT-PROMO',
+        substitutePrice: 130,
+      };
+      const raw = JSON.stringify(payload);
+      await WebhookService.processWebhook(payload, raw, buildSignatureHeaders(raw), testTenant);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const line = updated?.picking?.items?.find((item: any) => item.plu === 'ORIGINAL-PROMO');
+      const economics = line?.substitution?.economics;
+      expect(economics?.originalEffectiveLineTotal.amount).toBe(150);
+      expect(economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(economics?.replacementEffectiveLineTotal.amount).toBe(260);
+      expect(economics?.customerChargeLineTotal.amount).toBe(150);
+      expect(economics?.originalPromotionProvenance).toEqual(['bundle-original-1']);
+      expect(economics?.replacementPromotionProvenance).toEqual([]);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(150);
+    });
+
     it('resolves substitution preference & candidates via SubstitutionCallbackService', async () => {
       const orderId = `quest_ord_${Date.now()}_06`;
       const testOrder = {
