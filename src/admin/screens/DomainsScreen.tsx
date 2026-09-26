@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TenantConfig } from '../../commerce/models';
 import { getAdminClient } from '../../commerce/AdminClient';
 import {
@@ -58,34 +58,43 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
   const [newHostname, setNewHostname] = useState('');
   const [isPrimary, setIsPrimary] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const activeTenantRef = useRef(tenantId);
+  activeTenantRef.current = tenantId;
 
   const currentTenant = useMemo(
     () => allTenants.find((tenant) => tenant.tenantId === tenantId),
     [allTenants, tenantId]
   );
 
-  const loadDomains = async () => {
+  const loadDomains = async (requestTenantId = tenantId) => {
     setIsLoading(true);
-    setErrorMessage(null);
+    setLoadError(null);
     try {
       const client = getAdminClient();
       if (!client.listAllDomains) throw new Error('Domain management is not available in this Admin client.');
       const data = await client.listAllDomains();
+      if (activeTenantRef.current !== requestTenantId) return;
       // The API already applies tenant scoping for tenant admins. Filter again
       // in the UI so even Platform Super Admin sees only the deliberately
       // selected tenant on this page.
-      setDomains((data || []).filter((domain: DomainMapping) => domain.tenantId === tenantId));
-    } catch (error: any) {
+      setDomains((data || []).filter((domain: DomainMapping) => domain.tenantId === requestTenantId));
+    } catch (error) {
+      if (activeTenantRef.current !== requestTenantId) return;
       console.error('Failed to load domains:', error);
-      setErrorMessage(error?.message || 'Failed to load domain mappings.');
+      setLoadError('Domain status is currently unavailable. Existing mappings have not been treated as missing or removed.');
     } finally {
-      setIsLoading(false);
+      if (activeTenantRef.current === requestTenantId) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadDomains();
+    const requestTenantId = tenantId;
+    setDomains([]);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    void loadDomains(requestTenantId);
   }, [tenantId]);
 
   const copyValue = async (value: string) => {
@@ -109,11 +118,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     try {
       const client = getAdminClient();
       if (!client.addOrUpdateDomain) throw new Error('Domain management is not available in this Admin client.');
-      await client.addOrUpdateDomain({ hostname, tenantId, isPrimary });
+      const requestTenantId = tenantId;
+      await client.addOrUpdateDomain({ hostname, tenantId: requestTenantId, isPrimary });
+      if (activeTenantRef.current !== requestTenantId) return;
       setNewHostname('');
       setIsPrimary(false);
-      setSuccessMessage(`"${hostname}" is claimed for this tenant. Apply the exact DNS changes shown below, then refresh its status.`);
-      await loadDomains();
+      setSuccessMessage(`"${hostname}" has been requested and claimed for this tenant. Verification, HTTPS and live routing remain separate until their status checks succeed.`);
+      await loadDomains(requestTenantId);
     } catch (error: any) {
       console.error('Failed to save domain mapping:', error);
       setErrorMessage(error?.message || 'Failed to save domain mapping.');
@@ -129,13 +140,18 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     try {
       const client = getAdminClient();
       if (!client.verifyDomainOwnership) throw new Error('Domain ownership verification is not available in this Admin client.');
+      const requestTenantId = tenantId;
       const result = await client.verifyDomainOwnership(domainId);
+      if (activeTenantRef.current !== requestTenantId) return;
+      const resultDomain = result?.domain as DomainMapping | undefined;
       setSuccessMessage(
-        result?.domain?.status === 'active'
-          ? `"${hostname}" is verified and live.`
-          : result?.nextStep || `Firebase is still checking DNS and provisioning HTTPS for "${hostname}".`
+        resultDomain?.status === 'active'
+          ? `"${hostname}" is verified, HTTPS-ready and live.`
+          : resultDomain?.status === 'verified' || resultDomain?.ownershipVerifiedAt
+            ? `Ownership for "${hostname}" is verified. HTTPS and live routing are not yet confirmed.`
+            : result?.nextStep || `DNS ownership for "${hostname}" is still being checked. HTTPS and live routing remain unconfirmed.`
       );
-      await loadDomains();
+      await loadDomains(requestTenantId);
     } catch (error: any) {
       if (error?.code === 'DOMAIN_OWNERSHIP_NOT_VERIFIED') {
         setErrorMessage(`DNS has not propagated the TXT ownership record for "${hostname}" yet. Check the exact record below and retry.`);
@@ -158,11 +174,15 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     try {
       const client = getAdminClient();
       if (!client.verifyDomainOwnership) throw new Error('Domain status checks are not available in this Admin client.');
+      const requestTenantId = tenantId;
       await Promise.all(pending.map((domain) => client.verifyDomainOwnership!(domain.domainId || domain.hostname)));
-      await loadDomains();
-    } catch (error: any) {
-      setErrorMessage(error?.message || 'One or more domain status checks failed.');
-      await loadDomains();
+      if (activeTenantRef.current !== requestTenantId) return;
+      await loadDomains(requestTenantId);
+    } catch (error) {
+      if (activeTenantRef.current !== tenantId) return;
+      console.error('One or more domain status checks failed:', error);
+      setErrorMessage('One or more domain status checks failed. No pending domain has been reported as verified, HTTPS-ready or live as a result.');
+      await loadDomains(tenantId);
     } finally {
       setVerifyingId(null);
     }
@@ -176,9 +196,11 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     try {
       const client = getAdminClient();
       if (!client.deleteDomain) throw new Error('Domain management is not available in this Admin client.');
+      const requestTenantId = tenantId;
       await client.deleteDomain(domainId);
+      if (activeTenantRef.current !== requestTenantId) return;
       setSuccessMessage(`"${hostname}" was unbound from this tenant.`);
-      await loadDomains();
+      await loadDomains(requestTenantId);
     } catch (error: any) {
       console.error('Failed to delete domain:', error);
       setErrorMessage(error?.message || 'Failed to remove domain mapping.');
@@ -288,6 +310,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
             <RefreshCw className="mx-auto h-6 w-6 animate-spin text-indigo-600" />
             <p className="mt-2 text-xs font-medium text-gray-500">Checking domain status…</p>
           </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center">
+            <AlertTriangle className="mx-auto h-7 w-7 text-rose-600" />
+            <p className="mt-3 text-sm font-bold text-rose-900">Domain status unavailable</p>
+            <p className="mx-auto mt-1 max-w-lg text-xs text-rose-800">{loadError}</p>
+            <button type="button" onClick={() => void loadDomains(tenantId)} className="mt-3 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">Retry</button>
+          </div>
         ) : domains.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
             <Globe className="mx-auto h-8 w-8 text-gray-400" />
@@ -298,7 +327,9 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
           <div className="space-y-3">
             {domains.map((domain) => {
               const id = domain.domainId || domain.hostname;
-              const ownershipReady = domain.status === 'verified' || domain.status === 'active';
+              const requested = true;
+              const claimed = Boolean(domain.domainId || domain.verificationToken || domain.verificationRecordValue);
+              const ownershipReady = Boolean(domain.ownershipVerifiedAt) || domain.status === 'verified' || domain.status === 'active';
               const tlsReady = domain.tlsStatus === 'ready' || domain.status === 'active';
               const active = domain.status === 'active';
               const deleting = deletingId === id;
@@ -334,12 +365,13 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-px border-y border-gray-100 bg-gray-100 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-px border-y border-gray-100 bg-gray-100 lg:grid-cols-5">
                     {[
-                      ['1', 'Claimed', true],
-                      ['2', 'Ownership', ownershipReady],
-                      ['3', 'HTTPS', tlsReady],
-                      ['4', 'Live', active],
+                      ['1', 'Requested', requested],
+                      ['2', 'Claimed', claimed],
+                      ['3', 'Verified', ownershipReady],
+                      ['4', 'HTTPS', tlsReady],
+                      ['5', 'Live', active],
                     ].map(([step, label, complete]) => (
                       <div key={String(step)} className="bg-white px-3 py-3">
                         <div className="flex items-center gap-2 text-[11px]">
