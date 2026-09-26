@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import type { TenantConfig } from '../../src/commerce/models';
 import { FirestorePlatformService } from '../firestoreService';
 import { getFirestoreDb } from '../firebase';
@@ -397,6 +398,62 @@ export class AdminResourceAdapterRegistry {
     }
     const applied = await projectBrandingRevision(args);
     return { revisionId: applied.revisionId, result: applied.tenant };
+  }
+
+  static async verifyRevision(args: {
+    tenantId: string;
+    actionName: string;
+    revisionId: string;
+  }): Promise<{
+    verified: true;
+    verifiedAt: string;
+    revisionId: string;
+    resourceType: 'tenantBranding';
+    resourceId: string;
+    resultHash: string;
+    result: TenantConfig;
+  }> {
+    if (args.actionName !== 'branding.proposeUpdate') {
+      throw Object.assign(new Error('This admin action does not have a persisted verification adapter.'), {
+        code: 'ADMIN_ACTION_VERIFY_NOT_CONNECTED',
+        statusCode: 409,
+      });
+    }
+
+    const revision = await ConfigurationRevisionService.getRevision<BrandingSnapshot>(
+      args.tenantId,
+      args.revisionId
+    );
+    const published = await ConfigurationRevisionService.resolvePublishedConfiguration<BrandingSnapshot>(
+      args.tenantId,
+      'tenantBranding',
+      args.tenantId
+    );
+    const liveTenant = await FirestorePlatformService.getTenantConfig(args.tenantId);
+    const liveSnapshot = brandingSnapshot(liveTenant);
+
+    if (
+      revision.resourceType !== 'tenantBranding' ||
+      revision.resourceId !== args.tenantId ||
+      revision.status !== 'PUBLISHED' ||
+      published?.pointer.currentRevisionId !== revision.revisionId ||
+      diffConfiguration(revision.payload, liveSnapshot).length > 0
+    ) {
+      throw Object.assign(
+        new Error('Persisted Branding state could not be verified against the approved revision.'),
+        { code: 'ADMIN_REVISION_VERIFICATION_FAILED', statusCode: 409 }
+      );
+    }
+
+    return {
+      verified: true,
+      verifiedAt: new Date().toISOString(),
+      revisionId: revision.revisionId,
+      resourceType: 'tenantBranding',
+      resourceId: args.tenantId,
+      resultHash: crypto.createHash('sha256').update(JSON.stringify(liveSnapshot)).digest('hex'),
+      result: liveTenant,
+    };
   }
 
   static async rollbackRevision(args: {
