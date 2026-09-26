@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TenantConfig } from '../../commerce/models';
 import { getAdminClient } from '../../commerce/AdminClient';
+import { resolveDomainLifecycle } from '../domainLifecycle';
 import {
   Globe,
   CheckCircle2,
@@ -327,11 +328,12 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
           <div className="space-y-3">
             {domains.map((domain) => {
               const id = domain.domainId || domain.hostname;
-              const requested = true;
-              const claimed = Boolean(domain.domainId || domain.verificationToken || domain.verificationRecordValue);
-              const ownershipReady = Boolean(domain.ownershipVerifiedAt) || domain.status === 'verified' || domain.status === 'active';
-              const tlsReady = domain.tlsStatus === 'ready' || domain.status === 'active';
-              const active = domain.status === 'active';
+              const lifecycle = resolveDomainLifecycle(domain);
+              const requested = lifecycle.requested;
+              const claimed = lifecycle.claimed;
+              const ownershipReady = lifecycle.verified;
+              const tlsReady = lifecycle.httpsReady;
+              const active = lifecycle.live;
               const deleting = deletingId === id;
 
               return (
