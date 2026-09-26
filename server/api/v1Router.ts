@@ -149,6 +149,7 @@ import {
   AdminAssistantChangeSetSchema,
 } from './schemas';
 
+import { safeApiActivityErrorCode } from '../apiActivityJournal';
 import { resolvePersistentChannelAssignments } from '../deliverect/locationAssignmentPersistence';
 export const v1Router = Router();
 
@@ -2283,14 +2284,16 @@ v1Router.post(
         {
           fulfillmentType: checkoutResult.fulfillmentType,
           selectedQuote: (options as any)?.selectedQuote,
-          quoteId: options?.selectedQuoteId || options?.dispatchValidationId,
+          // A Deliverect dispatch validationId is availability evidence, not a
+          // courier quote id. Only pass an actual selectedQuoteId here.
+          quoteId: options?.selectedQuoteId,
           providerId: options?.selectedProviderId,
           providerDisplayName: options?.selectedProviderDisplayName,
           deliveryAddress: options?.deliveryAddress || checkoutResult.order.fulfillment?.address,
           itemsCount: checkoutResult.order.originalBasket?.items?.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) || 1,
           orderCreatedAt: checkoutResult.order.createdAt || new Date().toISOString(),
           requiresAgeCheck: Boolean(options?.requiresAgeCheck || (checkoutResult.order as any).requiresAgeCheck),
-          minimumAge: options?.minimumAge || (checkoutResult.order as any).minimumAge || 18,
+          minimumAge: options?.minimumAge ?? (checkoutResult.order as any).minimumAge,
           requiresPin: Boolean(options?.requiresPin),
           idempotencyKey: options?.idempotencyKey || checkoutResult.checkoutId,
         }
@@ -6761,6 +6764,11 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     const requestedChannelLinkIds = assignment.requestedChannelLinkIds;
     const activeChannelLinkIds = assignment.visibleChannelLinkIds;
     const temporarilyMissingChannelLinkIds = assignment.temporarilyMissingChannelLinkIds;
+    const explicitlyUnassignedChannelLinkIds = channelLinkIds === undefined
+      ? []
+      : (existingIntegration.allowedChannelLinkIds || [])
+          .map(String)
+          .filter((id) => !requestedChannelLinkIds.includes(id));
 
     const thirdPartyAssignments = matchingStores
       .filter((store: any) => requestedChannelLinkIds.includes(String(store.channelLinkId || '')))
@@ -6778,6 +6786,17 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
     // Discovery is observational. A transient empty/partial Deliverect response
     // must never mutate tenant ownership. Persist visibility diagnostics while
     // retaining the explicit assignment until an administrator unassigns it.
+    // When an explicit assignment payload removes a previously assigned channel,
+    // record that deliberate control-plane change immediately rather than waiting
+    // for a later upstream discovery refresh to repair the store projection.
+    const unassignedAt = new Date().toISOString();
+    for (const removedId of explicitlyUnassignedChannelLinkIds) {
+      await FirestorePlatformService.saveTenantStore(tenantId, {
+        channelLinkId: removedId,
+        assigned: false,
+        unassignedAt,
+      });
+    }
     for (const missingId of temporarilyMissingChannelLinkIds) {
       await FirestorePlatformService.saveTenantStore(tenantId, {
         channelLinkId: missingId,
@@ -6846,6 +6865,7 @@ v1Router.post('/admin/tenants/:id/integration/select-account', requireAdminAuth(
       // separately so a transient upstream omission never looks like an unassignment.
       allowedChannelLinkIds: requestedChannelLinkIds,
       temporarilyMissingChannelLinkIds,
+      explicitlyUnassignedChannelLinkIds,
       warning: temporarilyMissingChannelLinkIds.length
         ? `${temporarilyMissingChannelLinkIds.length} channel link(s) were not returned by this Deliverect discovery response; their tenant assignments were preserved.`
         : undefined,
@@ -7137,16 +7157,91 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
     }
 
     const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
-    const [menuPushes, webhooks, context, mappings] = await Promise.all([
-      ChannelMenuIngestionService.listRecentIngress(tenantId, limit),
-      FirestorePlatformService.listRecentWebhookEvents(tenantId, limit),
+    const menuCursor = typeof req.query.menuCursor === 'string' ? req.query.menuCursor : null;
+    const webhookCursor = typeof req.query.webhookCursor === 'string' ? req.query.webhookCursor : null;
+    const observedAt = new Date().toISOString();
+
+    // Journal reads are deliberately independent of integration/profile health.
+    // A broken credential mapping must not erase durable operational evidence.
+    const [menuResult, webhookResult, contextResult, mappingsResult] = await Promise.allSettled([
+      ChannelMenuIngestionService.listRecentIngressPage(tenantId, { limit, cursor: menuCursor }),
+      FirestorePlatformService.listRecentWebhookEventsPage(tenantId, { limit, cursor: webhookCursor }),
       IntegrationContext.getContext(tenantId),
-      linkedAccountsAdapter.getTenantMappings(tenantId).catch(() => ({ accounts: [], locations: [], stores: [] } as any)),
+      linkedAccountsAdapter.getTenantMappings(tenantId),
     ]);
+
+    const menuPage: any = menuResult.status === 'fulfilled'
+      ? menuResult.value
+      : {
+          items: [],
+          status: 'UNAVAILABLE',
+          source: 'MEMORY',
+          observedAt,
+          nextCursor: null,
+          errorCode: safeApiActivityErrorCode(menuResult.reason, 'MENU_ACTIVITY_READ_FAILED'),
+        };
+    const webhookPage: any = webhookResult.status === 'fulfilled'
+      ? webhookResult.value
+      : {
+          items: [],
+          status: 'UNAVAILABLE',
+          source: 'MEMORY',
+          observedAt,
+          nextCursor: null,
+          errorCode: safeApiActivityErrorCode(webhookResult.reason, 'WEBHOOK_ACTIVITY_READ_FAILED'),
+        };
+
+    const context: any = contextResult.status === 'fulfilled' ? contextResult.value : null;
+    const mappings: any = mappingsResult.status === 'fulfilled'
+      ? mappingsResult.value
+      : { accounts: [], locations: [], stores: [] };
+
+    let grantedScopes: string[] = [];
+    let oauthObservation: {
+      status: 'UNKNOWN' | 'AVAILABLE' | 'UNAVAILABLE';
+      observedAt: string;
+      mode: 'PASSIVE' | 'ACTIVE';
+      errorCode?: string;
+    } = {
+      status: 'UNKNOWN',
+      observedAt,
+      mode: 'PASSIVE',
+    };
+
+    // Passive log browsing never mints/refreshes a provider token. An explicit
+    // active diagnostic is isolated and cannot affect whether journals render.
     if (String(req.query.refreshOAuth || '').toLowerCase() === 'true') {
-      await context.tokenManager.invalidateCacheAndWait();
+      oauthObservation = { status: 'UNKNOWN', observedAt: new Date().toISOString(), mode: 'ACTIVE' };
+      if (!context) {
+        oauthObservation = {
+          status: 'UNAVAILABLE',
+          observedAt: new Date().toISOString(),
+          mode: 'ACTIVE',
+          errorCode: 'INTEGRATION_CONTEXT_UNAVAILABLE',
+        };
+      } else {
+        try {
+          await context.tokenManager.invalidateCacheAndWait();
+          const observedScopes = await context.tokenManager.getGrantedScopes();
+          grantedScopes = Array.isArray(observedScopes)
+            ? observedScopes.filter((scope: unknown): scope is string => typeof scope === 'string' && Boolean(scope.trim()))
+            : [];
+          oauthObservation = {
+            status: 'AVAILABLE',
+            observedAt: new Date().toISOString(),
+            mode: 'ACTIVE',
+          };
+        } catch (err: any) {
+          oauthObservation = {
+            status: 'UNAVAILABLE',
+            observedAt: new Date().toISOString(),
+            mode: 'ACTIVE',
+            errorCode: safeApiActivityErrorCode(err, 'OAUTH_SCOPE_OBSERVATION_FAILED'),
+          };
+        }
+      }
     }
-    const grantedScopes = await context.tokenManager.getGrantedScopes().catch(() => []);
+
     const circuitStats = Object.fromEntries(
       Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
     );
@@ -7169,9 +7264,22 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
       (mappings.stores || []).map((store: any) => [String(store.channelLinkId || ''), store])
     );
 
-    const enrichedMenuPushes = menuPushes.map((entry) => {
-      const stores = entry.channelLinkIds
-        .map((id) => storeByChannelLink.get(String(id)))
+    const menuStage = (status: unknown): string => {
+      switch (String(status || '').toUpperCase()) {
+        case 'RECEIVED': return 'RECEIVED';
+        case 'QUEUED':
+        case 'QUEUE_FAILED': return 'QUEUE';
+        case 'PROCESSING':
+        case 'FAILED': return 'PROCESSING';
+        case 'REVIEW_REQUIRED': return 'REVIEW';
+        case 'PROCESSED': return 'PUBLISHED';
+        default: return 'UNKNOWN';
+      }
+    };
+
+    const enrichedMenuPushes = (menuPage.items || []).map((entry: any) => {
+      const stores = (entry.channelLinkIds || [])
+        .map((id: string) => storeByChannelLink.get(String(id)))
         .filter(Boolean);
       const locations = stores
         .map((store: any) => locationByKey.get(String(store.physicalLocationId || '')))
@@ -7179,29 +7287,47 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
       const accounts = stores
         .map((store: any) => accountByKey.get(String(store.accountLinkId || '')))
         .filter(Boolean);
-      const serviceNames = entry.channelLinkIds.flatMap((channelLinkId) => [
+      const serviceNames = (entry.channelLinkIds || []).flatMap((channelLinkId: string) => [
         ...locations.flatMap((location: any) => location.services || []),
         ...stores.flatMap((store: any) => store.services || []),
       ]
         .filter((service: any) => String(service?.id || '') === String(channelLinkId))
         .map((service: any) => String(service?.name || '')));
 
+      const hasError = Boolean(entry.hasError);
+      const status = String(entry.status || 'UNKNOWN').toUpperCase();
+      const internalErrorCode = hasError
+        ? status === 'QUEUE_FAILED'
+          ? 'MENU_QUEUE_FAILED'
+          : status === 'FAILED'
+            ? 'MENU_PROCESSING_FAILED'
+            : 'MENU_ACTIVITY_ERROR'
+        : undefined;
+
       return {
-        ...entry,
+        eventId: entry.eventId,
+        correlationId: entry.eventId,
+        stage: menuStage(status),
+        status: entry.status,
+        receivedAt: entry.receivedAt,
+        updatedAt: entry.updatedAt,
+        processedAt: entry.processedAt,
+        menuIds: unique(entry.menuIds || []),
         menuNames: unique(entry.menuNames || []),
+        channelLinkIds: unique(entry.channelLinkIds || []),
+        channelNames: unique([
+          ...(entry.channelNames || []),
+          ...serviceNames,
+          ...(context?.channelName ? [context.channelName] : []),
+        ]),
         accountIds: unique([
           ...(entry.accountIds || []),
           ...accounts.map((account: any) => account.deliverectAccountId),
-          context.deliverectAccountId,
+          ...(context?.deliverectAccountId ? [context.deliverectAccountId] : []),
         ]),
         accountNames: unique([
           ...(entry.accountNames || []),
           ...accounts.map((account: any) => account.displayName),
-        ]),
-        channelNames: unique([
-          ...(entry.channelNames || []),
-          ...serviceNames,
-          context.channelName,
         ]),
         locationIds: unique([
           ...(entry.locationIds || []),
@@ -7212,14 +7338,74 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
           ...locations.map((location: any) => location.name),
           ...stores.map((store: any) => store.name),
         ]),
-        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
+        byteSize: entry.byteSize,
+        hasError,
+        // Compatibility for the existing UI: truthy means an error exists, but
+        // raw upstream/provider text never crosses this boundary.
+        error: hasError ? 'REDACTED' : undefined,
+        errorCode: internalErrorCode,
+        review: entry.review ? {
+          reason: entry.review.reason,
+          previousProductCount: entry.review.previousProductCount,
+          nextProductCount: entry.review.nextProductCount,
+          removedProductCount: entry.review.removedProductCount,
+          removedPercent: entry.review.removedPercent,
+        } : undefined,
       };
     });
+
+    const webhooks = (webhookPage.items || []).map((event: any) => ({
+      webhookEventId: event.webhookEventId,
+      correlationId: event.webhookEventId,
+      provider: event.provider,
+      environment: event.environment,
+      receivedAt: event.receivedAt,
+      processedAt: event.processedAt,
+      verified: typeof event.verified === 'boolean' ? event.verified : null,
+      eventType: event.eventType,
+      processingStatus: event.processingStatus,
+      stage: event.processingStatus === 'PROCESSED'
+        ? 'PROCESSED'
+        : event.verified === false
+          ? 'VERIFICATION'
+          : event.processingStatus === 'FAILED'
+            ? 'PROCESSING'
+            : 'RECEIVED',
+      errorCode: event.errorCode
+        ? safeApiActivityErrorCode({ code: event.errorCode }, 'WEBHOOK_PROCESSING_FAILED')
+        : undefined,
+    }));
 
     res.json({
       tenantId,
       generatedAt: new Date().toISOString(),
-      integration: {
+      sources: {
+        menuPushes: {
+          status: menuPage.status,
+          source: menuPage.source,
+          observedAt: menuPage.observedAt,
+          nextCursor: menuPage.nextCursor,
+          errorCode: menuPage.errorCode,
+        },
+        webhooks: {
+          status: webhookPage.status,
+          source: webhookPage.source,
+          observedAt: webhookPage.observedAt,
+          nextCursor: webhookPage.nextCursor,
+          errorCode: webhookPage.errorCode,
+        },
+        integration: {
+          status: context ? (mappingsResult.status === 'fulfilled' ? 'AVAILABLE' : 'PARTIAL') : 'UNAVAILABLE',
+          observedAt,
+          ...(contextResult.status === 'rejected'
+            ? { errorCode: safeApiActivityErrorCode(contextResult.reason, 'INTEGRATION_CONTEXT_UNAVAILABLE') }
+            : mappingsResult.status === 'rejected'
+              ? { errorCode: safeApiActivityErrorCode(mappingsResult.reason, 'INTEGRATION_MAPPING_UNAVAILABLE') }
+              : {}),
+        },
+        oauth: oauthObservation,
+      },
+      integration: context ? {
         environment: context.environment,
         credentialMode: context.credentialMode,
         configured: context.isConfigured,
@@ -7235,21 +7421,15 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
           null,
         allowedChannelLinkIds: context.allowedChannelLinkIds || [],
         grantedScopes,
-        commerceScopeGranted: grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce'),
-      },
+        commerceScopeGranted:
+          oauthObservation.status === 'AVAILABLE'
+            ? grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce')
+            : null,
+        oauthObservation,
+      } : null,
       circuits: circuitStats,
       menuPushes: enrichedMenuPushes,
-      webhooks: webhooks.map((event) => ({
-        webhookEventId: event.webhookEventId,
-        provider: event.provider,
-        environment: event.environment,
-        receivedAt: event.receivedAt,
-        processedAt: event.processedAt,
-        verified: event.verified,
-        eventType: event.eventType,
-        processingStatus: event.processingStatus,
-        errorCode: event.errorCode,
-      })),
+      webhooks,
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to load integration API logs');
