@@ -1,12 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  SearchOptimisationConfig,
-  TypoAlias,
-  SearchSynonym,
-  QueryRewrite,
-  PinnedSearchProduct,
-  ProductBoostRule,
-} from '../../commerce/searchMerchModels';
+import { SearchOptimisationConfig } from '../../commerce/searchMerchModels';
 import { DEFAULT_SEARCH_CONFIG, setActiveSearchConfig } from '../../commerce/searchMerchEngine';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
@@ -68,7 +61,9 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
 
   useEffect(() => {
     let isMounted = true;
-    setConfig(createEmptySearchConfig(tenantId));
+    const freshConfig = createEmptySearchConfig(tenantId);
+    setConfig(freshConfig);
+    setActiveSearchConfig(freshConfig);
     setSaveSuccess(false);
     setSaveError(null);
     setConfigLoadError(null);
@@ -137,6 +132,15 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
     boostMultiplier: 1.5,
   });
   const [newExclusionPlu, setNewExclusionPlu] = useState('');
+
+  useEffect(() => {
+    setNewTypo({ typo: '', resolvesTo: '' });
+    setNewSynonym({ term: '', synonyms: '' });
+    setNewRewrite({ incomingQuery: '', rewrittenQuery: '' });
+    setNewPin({ query: '', productPlu: '', position: 1 });
+    setNewBoost({ type: 'product', targetId: '', targetName: '', boostMultiplier: 1.5 });
+    setNewExclusionPlu('');
+  }, [tenantId]);
 
   const handleSave = async () => {
     if (configLoadState !== 'ready') {
@@ -410,6 +414,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         </span>
       </div>
 
+      <fieldset disabled={configLoadState !== 'ready'} className="min-w-0 space-y-6">
       {/* TABS */}
       <div className="flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 pb-2">
         {[
@@ -836,6 +841,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           </div>
         </div>
       )}
+      </fieldset>
     </div>
   );
 };
