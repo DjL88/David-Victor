@@ -527,28 +527,34 @@ export class SubstitutionCallbackService {
 
       case 'CUSTOMER_SELECTED': {
         const candidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
-        const rawCandidates = await this.rankSubstituteCandidates(
-          (pickingItem as any).substituteCandidates || (pickingItem as any).candidates || [],
-          plu,
-          originalPrice?.amount,
-          channelLinkId,
-          tenantId
-        );
-        for (const c of rawCandidates) {
+        const preferredPlu = String(pickingItem.preferredSubstitutePlu || '').trim();
+        const rawCandidates = [
+          ...((pickingItem as any).substituteCandidates || (pickingItem as any).candidates || []),
+        ];
+
+        // CUSTOMER_SELECTED is a singular customer instruction, not a ranked
+        // recommendation mode. Returning the whole saved candidate set made
+        // Quest show every possible substitute even after the customer chose
+        // one. Preserve only the selected PLU here; availability and regulated
+        // product boundaries are still enforced against the store catalogue in
+        // storeCatalogCandidates(). If no explicit choice survived checkout,
+        // leave the list empty so the governed automatic fallback can run.
+        const selected = preferredPlu
+          ? rawCandidates.find((candidate: any) => String(candidate?.plu || '').trim() === preferredPlu)
+          : undefined;
+
+        if (preferredPlu) {
+          const selectedPrice =
+            (pickingItem as any).preferredSubstitutePrice ??
+            selected?.price ??
+            selected?.approvedPrice;
           candidates.push({
-            plu: c.plu,
-            name: c.name,
+            plu: preferredPlu,
+            name: pickingItem.preferredSubstituteName || selected?.name,
             approvedPrice:
-              typeof c.price === 'number'
-                ? { amount: c.price, currency: 'GBP' }
-                : c.approvedPrice || (typeof c.price === 'object' ? c.price : undefined),
-          });
-        }
-        if (candidates.length === 0 && pickingItem.preferredSubstitutePlu) {
-          candidates.push({
-            plu: pickingItem.preferredSubstitutePlu,
-            name: pickingItem.preferredSubstituteName,
-            approvedPrice: pickingItem.preferredSubstitutePrice,
+              typeof selectedPrice === 'number'
+                ? { amount: selectedPrice, currency: 'GBP' }
+                : selectedPrice || originalPrice,
           });
         }
         return {

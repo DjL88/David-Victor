@@ -473,6 +473,9 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
               finalPrice: 650,
               state: 'PENDING' as const,
               substitutionPreference: 'CUSTOMER_SELECTED' as const,
+              preferredSubstitutePlu: 'PLU-COFFEE-COLOMBIA',
+              preferredSubstituteName: 'Single Origin Colombia 250g',
+              preferredSubstitutePrice: 700,
               substituteCandidates: [
                 {
                   plu: 'PLU-COFFEE-DARK',
@@ -502,8 +505,12 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect(callbackResult?.orderId).toBe(orderId);
       expect(callbackResult?.plu).toBe('PLU-COFFEE-ESPRESSO');
       expect(callbackResult?.substitutionPolicy).toBe('CUSTOMER_SELECTED');
-      expect(callbackResult?.candidates).toHaveLength(2);
-      expect(callbackResult?.candidates[0].plu).toBe('PLU-COFFEE-DARK');
+      expect(callbackResult?.candidates).toHaveLength(1);
+      expect(callbackResult?.candidates[0]).toMatchObject({
+        plu: 'PLU-COFFEE-COLOMBIA',
+        name: 'Single Origin Colombia 250g',
+        approvedPrice: { amount: 700, currency: 'GBP' },
+      });
     });
   });
 

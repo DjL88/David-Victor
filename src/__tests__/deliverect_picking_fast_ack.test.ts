@@ -108,7 +108,9 @@ describe('Deliverect picker status fast acknowledgement', () => {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-deliverect-signature': signature,
+          // Exact header emitted by Deliverect Retail in the production
+          // Snappy Shopper trace.
+          'x-server-authorization-hmac-sha256': signature,
         },
         body: raw,
       }
