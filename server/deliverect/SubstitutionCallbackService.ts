@@ -47,6 +47,7 @@ export interface SubstitutionCallbackResponse {
   candidates?: Array<{
     plu: string;
     name?: string;
+    quantity?: number;
     approvedPrice?: Money;
   }>;
   instructions: string;
@@ -488,7 +489,7 @@ export class SubstitutionCallbackService {
     // 4. Build response according to platform rules
     switch (pref) {
       case 'BEST_MATCH': {
-        const bestMatchCandidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
+        const bestMatchCandidates: Array<{ plu: string; name?: string; quantity?: number; approvedPrice?: Money }> = [];
         const rawBestMatchCandidates = await this.rankSubstituteCandidates(
           (pickingItem as any).substituteCandidates || (pickingItem as any).candidates || [],
           plu,
@@ -500,6 +501,10 @@ export class SubstitutionCallbackService {
           bestMatchCandidates.push({
             plu: c.plu,
             name: c.name,
+            quantity:
+              Number.isInteger(c.quantity) && c.quantity > 0
+                ? c.quantity
+                : 1,
             approvedPrice:
               typeof c.price === 'number'
                 ? { amount: c.price, currency: 'GBP' }
@@ -510,6 +515,11 @@ export class SubstitutionCallbackService {
           bestMatchCandidates.push({
             plu: pickingItem.preferredSubstitutePlu,
             name: pickingItem.preferredSubstituteName,
+            quantity:
+              Number.isInteger(pickingItem.preferredSubstituteQuantity) &&
+              (pickingItem.preferredSubstituteQuantity as number) > 0
+                ? pickingItem.preferredSubstituteQuantity
+                : 1,
             approvedPrice: originalPrice,
           });
         }
@@ -529,7 +539,7 @@ export class SubstitutionCallbackService {
       }
 
       case 'CUSTOMER_SELECTED': {
-        const candidates: Array<{ plu: string; name?: string; approvedPrice?: Money }> = [];
+        const candidates: Array<{ plu: string; name?: string; quantity?: number; approvedPrice?: Money }> = [];
         const preferredPlu = String(pickingItem.preferredSubstitutePlu || '').trim();
         const rawCandidates = [
           ...((pickingItem as any).substituteCandidates || (pickingItem as any).candidates || []),
@@ -554,6 +564,13 @@ export class SubstitutionCallbackService {
           candidates.push({
             plu: preferredPlu,
             name: pickingItem.preferredSubstituteName || selected?.name,
+            quantity:
+              Number.isInteger(selected?.quantity) && selected.quantity > 0
+                ? selected.quantity
+                : Number.isInteger(pickingItem.preferredSubstituteQuantity) &&
+                    (pickingItem.preferredSubstituteQuantity as number) > 0
+                  ? pickingItem.preferredSubstituteQuantity
+                  : 1,
             approvedPrice:
               typeof selectedPrice === 'number'
                 ? { amount: selectedPrice, currency: 'GBP' }

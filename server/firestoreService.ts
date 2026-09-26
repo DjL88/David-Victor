@@ -2593,6 +2593,10 @@ export class FirestoreService {
               preferredSubstitutePlu: (item as any).substituteCandidates?.[0]?.plu || (item as any).preferredSubstitutePlu,
               preferredSubstituteName: (item as any).substituteCandidates?.[0]?.name || (item as any).preferredSubstituteName,
               preferredSubstitutePrice: (item as any).preferredSubstitutePrice,
+              preferredSubstituteQuantity:
+                (item as any).substituteCandidates?.[0]?.quantity ||
+                (item as any).preferredSubstituteQuantity,
+              substituteCandidates: (item as any).substituteCandidates,
             },
             item.quantity
           );
