@@ -69,7 +69,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const anchorRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
   const [dockMode, setDockMode] = useState<'normal' | 'top'>('normal');
-  const [navHeight, setNavHeight] = useState(0);
 
   useEffect(() => {
     let frame = 0;
@@ -83,7 +82,6 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
         const measuredHeight = Math.ceil(nav.getBoundingClientRect().height);
         if (measuredHeight > 0) {
-          setNavHeight((current) => current === measuredHeight ? current : measuredHeight);
           document.documentElement.style.setProperty('--category-nav-height', `${measuredHeight}px`);
         }
 
@@ -205,22 +203,23 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
     (filterState?.excludedAllergens?.length || 0) > 0 ||
     (filterState?.selectedDietaryTags?.length || 0) > 0;
 
+  // Native sticky positioning is smoother than toggling between normal flow
+  // and fixed positioning while the user scrolls. dockMode now only controls
+  // the visual shadow/data attribute used by the scroll-snap rules.
   const dockClass =
     dockMode === 'top'
-      ? 'fixed left-0 right-0 z-[35] shadow-md'
-      : 'relative md:sticky md:top-[54px] z-30 shadow-xs';
+      ? 'sticky z-[35] shadow-md'
+      : 'sticky z-30 shadow-xs';
 
-  const dockStyle: React.CSSProperties | undefined =
-    dockMode === 'top'
-      ? { top: 'var(--storefront-header-height, 104px)' }
-      : undefined;
+  const dockStyle: React.CSSProperties = {
+    top: 'var(--storefront-header-height, 104px)',
+  };
 
   return (
     <div
       ref={anchorRef}
       id="category-nav-anchor"
       className="relative w-full max-w-full"
-      style={dockMode !== 'normal' && navHeight > 0 ? { minHeight: navHeight } : undefined}
     >
       <div
         ref={navRef}

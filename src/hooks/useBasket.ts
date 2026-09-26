@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Basket, Store, Product, SubstitutionPreferenceType, Money, moneyFromMajor, toMoney } from '../commerce/models';
 import { BundleProduct, SelectedBundleModifier, calculateBundlePrice } from '../commerce/bundleModels';
 import { useTenant } from '../tenant/TenantContext';
@@ -9,6 +9,10 @@ import {
   BasketSnoozeAuditResult,
 } from '../services/snoozeCheckService';
 import { evaluateStoreOpenNow } from '../services/storeOpeningHoursService';
+import {
+  getDisplayedBasketItemCount,
+  getDisplayedBasketQuantity,
+} from './basketOptimisticState';
 
 export function useBasket(
   selectedStore: Store | null,
@@ -19,6 +23,11 @@ export function useBasket(
 
   // Authoritative single-store basket state
   const [basket, setBasket] = useState<Basket | null>(null);
+  const basketRef = useRef<Basket | null>(null);
+  const basketCreatePromiseRef = useRef<Promise<Basket> | null>(null);
+  const basketMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [optimisticQuantities, setOptimisticQuantities] = useState<Record<string, number>>({});
+  const optimisticQuantitiesRef = useRef<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [snoozeWarning, setSnoozeWarning] = useState<string | null>(null);
@@ -33,11 +42,24 @@ export function useBasket(
   const basketStorageKey = `bwydi:basket:${tenantId}`;
 
   const rememberBasket = useCallback((nextBasket: Basket | null) => {
+    basketRef.current = nextBasket;
     setBasket(nextBasket);
     if (!basketStorageKey) return;
     if (nextBasket?.id) localStorage.setItem(basketStorageKey, nextBasket.id);
     else localStorage.removeItem(basketStorageKey);
   }, [basketStorageKey]);
+
+  const setOptimisticQuantity = useCallback((plu: string, quantity: number | null) => {
+    const next = { ...optimisticQuantitiesRef.current };
+    if (quantity === null) delete next[plu];
+    else next[plu] = Math.max(0, quantity);
+    optimisticQuantitiesRef.current = next;
+    setOptimisticQuantities(next);
+  }, []);
+
+  useEffect(() => {
+    basketRef.current = basket;
+  }, [basket]);
 
   // Backwards-compatible single basket array (no multi-store split)
   const allBaskets = useMemo(() => {
@@ -128,7 +150,49 @@ export function useBasket(
           return { success: false, reason: 'INVALID_FULFILLMENT' };
         }
 
-        let currentBasket = basket;
+        let currentBasket = basketRef.current;
+        const previousVisibleQty =
+          optimisticQuantitiesRef.current[product.plu] ??
+          currentBasket?.items.find((i) => i.plu === product.plu)?.quantity ??
+          0;
+
+        if (!currentBasket && !activeStoreId) {
+          setSnoozeWarning('A store must be selected before creating a basket.');
+          return { success: false, reason: 'NO_STORE_SELECTED' };
+        }
+
+        if (!currentBasket) {
+          const openStatus = evaluateStoreOpenNow(selectedStore);
+          if (!openStatus.isOpen && selectedStore?.scheduling?.acceptsPreOrders === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
+            );
+            return { success: false, reason: 'STORE_CLOSED' };
+          }
+          if (selectedStore?.supportsPickup === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} doesn't offer collection right now.`
+            );
+            return { success: false, reason: 'FULFILLMENT_NOT_SUPPORTED' };
+          }
+        }
+
+        if (newQuantity > previousVisibleQty) {
+          const snoozeStatus = checkProductSnooze(activeStoreId, product.plu);
+          if (!snoozeStatus.isAvailable) {
+            const reasonMsg = snoozeStatus.isSnoozed
+              ? `"${product.name}" is temporarily unavailable at this store.`
+              : `"${product.name}" is not available at this store.`;
+            setSnoozeWarning(reasonMsg);
+            return { success: false, reason: 'PRODUCT_UNAVAILABLE' };
+          }
+        }
+
+        // Render the customer's intent immediately. The server remains authoritative:
+        // mutations are serialized below and the optimistic value is removed once the
+        // matching response (or failure) arrives.
+        setOptimisticQuantity(product.plu, newQuantity);
+
         if (!currentBasket) {
           if (!activeStoreId) {
             setSnoozeWarning('A store must be selected before creating a basket.');
@@ -160,7 +224,15 @@ export function useBasket(
             );
             return { success: false, reason: 'FULFILLMENT_NOT_SUPPORTED' };
           }
-          currentBasket = await client.createBasket(activeStoreId, fulfillmentType);
+          if (!basketCreatePromiseRef.current) {
+            basketCreatePromiseRef.current = client.createBasket(activeStoreId, fulfillmentType);
+          }
+          try {
+            currentBasket = await basketCreatePromiseRef.current;
+            rememberBasket(currentBasket);
+          } finally {
+            basketCreatePromiseRef.current = null;
+          }
         }
 
         if (currentBasket && currentBasket.fulfillmentType === 'delivery') {
@@ -173,26 +245,36 @@ export function useBasket(
         const previousQty =
           currentBasket.items.find((i) => i.plu === product.plu)?.quantity || 0;
 
-        // Lifecycle check on Add To Basket:
-        // Verify snooze/availability before increasing quantity
-        if (newQuantity > previousQty) {
-          const snoozeStatus = checkProductSnooze(activeStoreId, product.plu);
-          if (!snoozeStatus.isAvailable) {
-            const reasonMsg = snoozeStatus.isSnoozed
-              ? `"${product.name}" is temporarily snoozed and cannot be ordered right now.`
-              : `"${product.name}" is currently out of stock at this store.`;
-            setSnoozeWarning(reasonMsg);
-            return { success: false, reason: snoozeStatus.reason, isSnoozed: snoozeStatus.isSnoozed };
-          }
+
+        let resolveMutation!: (basket: Basket) => void;
+        let rejectMutation!: (reason?: unknown) => void;
+        const mutationResult = new Promise<Basket>((resolve, reject) => {
+          resolveMutation = resolve;
+          rejectMutation = reject;
+        });
+
+        basketMutationQueueRef.current = basketMutationQueueRef.current
+          .then(async () => {
+            try {
+              const updatedBasket = await client.updateBasketItem(
+                currentBasket!.id,
+                product.plu,
+                newQuantity
+              );
+              rememberBasket(updatedBasket);
+              resolveMutation(updatedBasket);
+            } catch (error) {
+              rejectMutation(error);
+            }
+          })
+          .catch(() => {
+            // Keep the queue alive; the individual mutationResult carries the error.
+          });
+
+        const updatedBasket = await mutationResult;
+        if (optimisticQuantitiesRef.current[product.plu] === newQuantity) {
+          setOptimisticQuantity(product.plu, null);
         }
-
-        const updatedBasket = await client.updateBasketItem(
-          currentBasket.id,
-          product.plu,
-          newQuantity
-        );
-
-        rememberBasket(updatedBasket);
 
         // Track privacy-sanitized analytics event
         if (newQuantity > previousQty) {
@@ -218,6 +300,9 @@ export function useBasket(
         }
         return { success: true };
       } catch (err: any) {
+        if (optimisticQuantitiesRef.current[product.plu] === newQuantity) {
+          setOptimisticQuantity(product.plu, null);
+        }
         const errorMsg = String(err?.message || err || '');
         const isFulfillmentError =
           errorMsg.includes('Delivery checkout is not enabled') ||
@@ -246,7 +331,7 @@ export function useBasket(
         return { success: false };
       }
     },
-    [basket, activeStoreId, client, fulfillmentType, rememberBasket, selectedStore]
+    [activeStoreId, client, fulfillmentType, rememberBasket, selectedStore, setOptimisticQuantity]
   );
 
   const addMultipleItems = useCallback(
@@ -596,25 +681,25 @@ export function useBasket(
   );
 
   const getItemQuantity = useCallback(
-    (plu: string): number => {
-      if (!basket) return 0;
-      const found = basket.items.find((i) => i.plu === plu);
-      return found ? found.quantity : 0;
-    },
-    [basket]
+    (plu: string): number =>
+      getDisplayedBasketQuantity(basket?.items, optimisticQuantities, plu),
+    [basket, optimisticQuantities]
   );
 
-  // Total items count in the active store basket
-  const totalItemsCount = useMemo(() => {
-    if (!basket || !basket.items) return 0;
-    return basket.items.reduce((sum, item) => sum + item.quantity, 0);
-  }, [basket]);
+  // Total items count mirrors optimistic quantity intent while each serialized
+  // server mutation is in flight, then settles to the authoritative basket.
+  const totalItemsCount = useMemo(
+    () => getDisplayedBasketItemCount(basket?.items, optimisticQuantities),
+    [basket, optimisticQuantities]
+  );
 
   const clearStoreSwitchDiff = () => {
     setStoreSwitchDiff(null);
   };
 
   const clearAllBaskets = () => {
+    optimisticQuantitiesRef.current = {};
+    setOptimisticQuantities({});
     rememberBasket(null);
   };
 

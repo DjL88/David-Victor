@@ -146,6 +146,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [filterState]
   );
 
+  const [resultsTransitioning, setResultsTransitioning] = useState(false);
+
+  // Give catalogue/filter changes a restrained visual handoff without animating
+  // users who prefer reduced motion. The product data itself updates immediately.
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setResultsTransitioning(false);
+      return;
+    }
+
+    setResultsTransitioning(true);
+    let settleFrame = 0;
+    const startFrame = window.requestAnimationFrame(() => {
+      settleFrame = window.requestAnimationFrame(() => {
+        setResultsTransitioning(false);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(startFrame);
+      if (settleFrame) window.cancelAnimationFrame(settleFrame);
+    };
+  }, [selectedCategoryId, searchQuery, activeDealFilter?.id, filterSignature, products]);
+
   const bringProductsIntoView = useCallback(() => {
     const run = () => {
       const productSection = document.getElementById('main-product-listing');
@@ -462,7 +489,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       )}
 
       {/* Main Product Listing / Popular Near You / Filtered Deal / Search Results */}
-      <section id="main-product-listing" className="px-4 sm:px-6">
+      <section
+        id="main-product-listing"
+        aria-live="polite"
+        aria-busy={productsLoading || searchLoading}
+        className={`px-4 sm:px-6 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+          resultsTransitioning ? 'opacity-75 translate-y-0.5' : 'opacity-100 translate-y-0'
+        }`}
+      >
         {/* ACTIVE DEAL FILTER HIGHLIGHT CARD */}
         {activeDealFilter && (
           <div

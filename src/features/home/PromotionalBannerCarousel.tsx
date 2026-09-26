@@ -424,7 +424,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
       </div>
 
       {/* STANDARDIZED CAROUSEL CONTAINER */}
-      <div className="relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl h-[420px] sm:h-[440px] md:h-[450px] bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950">
+      <div className="relative w-full overflow-hidden rounded-none sm:rounded-3xl shadow-none sm:shadow-xl h-[300px] sm:h-[310px] md:h-[320px] bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-950">
         {/* ========================================================= */}
         {/* VIEW 1: FEATURED PROMOTIONAL BANNER                       */}
         {/* ========================================================= */}
@@ -450,7 +450,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
             <div className={`absolute inset-0 ${isArtworkBanner ? 'bg-gradient-to-t from-gray-950/70 via-transparent to-black/20' : isSplitBanner ? 'bg-gradient-to-r from-gray-950 via-gray-950/95 to-gray-950/5 md:via-gray-950/80' : 'bg-gradient-to-r from-gray-950/90 via-gray-950/70 to-gray-950/20'}`} />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-transparent to-black/30" />
 
-            <div className="relative h-full flex flex-col justify-between p-6 sm:p-8 md:p-10 z-10">
+            <div className="relative h-full flex flex-col justify-between p-4 sm:p-5 md:p-6 z-10">
               {/* TOP BAR */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -491,13 +491,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
               </div>
 
               {/* MAIN PROMO HEADLINE & COPY */}
-              <div className={`${isSplitBanner ? 'max-w-[52%] min-w-[16rem]' : 'max-w-xl'} ${isArtworkBanner ? 'bg-gray-950/55 backdrop-blur-sm rounded-2xl p-4 -m-1' : ''} space-y-3 py-2`}>
+              <div className={`${isSplitBanner ? 'max-w-[52%] min-w-[16rem]' : 'max-w-xl'} ${isArtworkBanner ? 'bg-gray-950/55 backdrop-blur-sm rounded-2xl p-4 -m-1' : ''} space-y-2 py-1`}>
                 <motion.h2
                   key={`title-${activeBanner.id}`}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.35, delay: 0.1 }}
-                  className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight drop-shadow-sm"
+                  className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white tracking-tight leading-tight drop-shadow-sm"
                 >
                   {activeBanner.title}
                 </motion.h2>
@@ -507,7 +507,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.35, delay: 0.15 }}
-                  className="text-sm sm:text-base text-gray-200/90 leading-relaxed font-medium line-clamp-3 sm:line-clamp-none drop-shadow-xs"
+                  className="text-xs sm:text-sm text-gray-200/90 leading-snug font-medium line-clamp-2 drop-shadow-xs"
                 >
                   {bannerSubtitle}
                 </motion.p>
@@ -518,13 +518,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.35, delay: 0.2 }}
-                  className="pt-2 flex flex-wrap items-center gap-2.5 sm:gap-3"
+                  className="pt-1 flex flex-wrap items-center gap-2"
                 >
                   <button
                     type="button"
                     id="carousel-primary-action-btn"
                     onClick={handleActionClick}
-                    className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white text-gray-950 font-bold text-xs sm:text-sm hover:bg-gray-100 active:scale-98 transition-all shadow-lg hover:shadow-white/20 cursor-pointer"
+                    className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-2xl bg-white text-gray-950 font-bold text-xs sm:text-sm hover:bg-gray-100 active:scale-98 transition-all shadow-lg hover:shadow-white/20 cursor-pointer"
                   >
                     {activeDeal ? (
                       <BadgePercent className="w-4 h-4 text-emerald-600" />
@@ -558,7 +558,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                           onAddItemsToBasket(plus, activeBanner.title);
                         }
                       }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2.5 sm:py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black text-xs sm:text-sm active:scale-98 transition-all shadow-md cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black text-xs sm:text-sm active:scale-98 transition-all shadow-md cursor-pointer"
                     >
                       <ShoppingBag className="w-3.5 h-3.5" />
                       <span>
@@ -573,7 +573,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                       type="button"
                       id="carousel-filter-deal-btn"
                       onClick={() => onFilterByDeal(activeDeal)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2.5 sm:py-3 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/25 text-white font-bold text-xs sm:text-sm active:scale-98 transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/25 text-white font-bold text-xs sm:text-sm active:scale-98 transition-all cursor-pointer"
                     >
                       <Filter className="w-3.5 h-3.5 text-emerald-300" />
                       <span>Filter Catalogue</span>
@@ -583,7 +583,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
               </div>
 
               {/* BOTTOM CONTROLS: Dots on left */}
-              <div className="flex items-center justify-between pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between pt-1 border-t border-white/10">
                 <div className="flex items-center gap-1.5">
                   {banners.map((banner, idx) => (
                     <button
@@ -671,14 +671,14 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                 return (
                   <div
                     key={`bundle-${bundle.id}`}
-                    className={`w-72 sm:w-80 shrink-0 h-[300px] sm:h-[320px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3.5 ${
+                    className={`w-72 sm:w-80 shrink-0 h-[220px] sm:h-[230px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-2.5 ${
                       isOutOfStock
                         ? 'border-white/5 opacity-75'
                         : 'border-emerald-500/40 hover:border-emerald-400/70 hover:bg-white/15'
                     }`}
                   >
                     {/* Clean Image Container (tags removed) */}
-                    <div className="relative aspect-[16/9] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
+                    <div className="relative aspect-[5/2] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
                       <img
                         src={
                           bundle.imageUrl ||
@@ -692,7 +692,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                     </div>
 
                     {/* Content below image */}
-                    <div className="pt-2 flex-1 flex flex-col justify-between">
+                    <div className="pt-1.5 flex-1 flex flex-col justify-between">
                       <div className="space-y-1">
                         {/* Title below image - larger text */}
                         <h4 className="font-extrabold text-sm sm:text-base text-white leading-tight line-clamp-1">
@@ -700,7 +700,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                         </h4>
 
                         {/* Description / Sections */}
-                        <p className="text-[11px] text-gray-300 line-clamp-2 leading-tight">
+                        <p className="text-[10px] text-gray-300 line-clamp-1 leading-tight">
                           {bundle.description || sectionNames}
                         </p>
 
@@ -742,7 +742,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                               onOpenBundleDialog?.(bundle);
                             }
                           }}
-                          className={`w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
+                          className={`w-full py-1.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98 ${
                             isOutOfStock
                               ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700'
                               : 'bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-black'
@@ -763,13 +763,13 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                 return (
                   <div
                     key={deal.id}
-                    className={`w-72 sm:w-80 shrink-0 h-[320px] sm:h-[340px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-3 ${
+                    className={`w-72 sm:w-80 shrink-0 h-[225px] sm:h-[235px] rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border transition-all flex flex-col justify-between p-2.5 ${
                       isSelected
                         ? 'border-emerald-400 ring-2 ring-emerald-400/40 bg-white/15 shadow-lg'
                         : 'border-white/10 hover:border-white/25 hover:bg-white/12'
                     }`}
                   >
-                    <div className="relative aspect-[16/9] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
+                    <div className="relative aspect-[5/2] w-full rounded-xl overflow-hidden bg-gray-800 shrink-0">
                       <img
                         src={deal.imageUrl}
                         alt={deal.title}
@@ -785,7 +785,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                       </span>
                     </div>
 
-                    <div className="py-2 flex-1 flex flex-col justify-between">
+                    <div className="py-1.5 flex-1 flex flex-col justify-between">
                       <div className="space-y-1">
                         <div className="flex items-baseline justify-between text-xs">
                           <span className="text-emerald-400 font-black text-sm">
@@ -797,7 +797,7 @@ export const PromotionalBannerCarousel: React.FC<PromotionalBannerCarouselProps>
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-300 line-clamp-2 leading-tight">
+                        <p className="text-[10px] text-gray-300 line-clamp-1 leading-tight">
                           {deal.description}
                         </p>
                       </div>

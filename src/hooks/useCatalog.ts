@@ -92,6 +92,8 @@ export function useCatalog(selectedStoreId?: string) {
   // Store last-known-good snapshot scoped strictly to tenantId + storeId
   const snapshotRef = useRef<LastKnownCatalogSnapshot | null>(null);
   const prevScopeRef = useRef<string>(`${tenantId}:${selectedStoreId || 'root'}`);
+  const catalogRequestRef = useRef(0);
+  const productsRequestRef = useRef(0);
 
   // Compute the storefront category tree once from the current catalogue.
   // categoryHierarchy.ts also removes provably empty leaf categories, so the
@@ -142,6 +144,8 @@ export function useCatalog(selectedStoreId?: string) {
       setError(null);
       setIsStale(false);
       setSelectedCategoryId(null);
+      catalogRequestRef.current += 1;
+      productsRequestRef.current += 1;
 
       // Invalidate snapshot if scope changed
       if (
@@ -156,10 +160,13 @@ export function useCatalog(selectedStoreId?: string) {
 
   // Load catalog (Root if no storeId, Store Catalog if storeId is selected)
   const fetchCatalog = useCallback(
-    async (forceRefresh = false) => {
+    async (forceRefresh = false, background = false) => {
+      const requestId = ++catalogRequestRef.current;
+      const requestScope = `${tenantId}:${selectedStoreId || 'root'}`;
+
       try {
-        setLoading(true);
-        setError(null);
+        if (!background) setLoading(true);
+        if (!background) setError(null);
 
         let loadedCatalog: Catalog;
         if (selectedStoreId) {
@@ -170,10 +177,17 @@ export function useCatalog(selectedStoreId?: string) {
           loadedCatalog = await client.getRootCatalog({ refresh: forceRefresh });
         }
 
+        if (
+          requestId !== catalogRequestRef.current ||
+          requestScope !== `${tenantId}:${selectedStoreId || 'root'}`
+        ) {
+          return;
+        }
+
         setCatalog(loadedCatalog);
+        setError(null);
         setIsStale(false);
 
-        // Update snapshot
         snapshotRef.current = {
           tenantId,
           storeId: selectedStoreId,
@@ -182,15 +196,33 @@ export function useCatalog(selectedStoreId?: string) {
           summaries: snapshotRef.current?.summaries || {},
         };
       } catch (err: unknown) {
+        if (requestId !== catalogRequestRef.current) return;
         const errMessage = err instanceof Error ? err.message : 'Failed to load catalog';
         setError(errMessage);
 
-        // Fail closed on error: clear catalog, never retain stale or mismatched data
-        setCatalog(null);
-        setIsStale(false);
-        snapshotRef.current = null;
+        const snapshot = snapshotRef.current;
+        if (
+          snapshot &&
+          snapshot.tenantId === tenantId &&
+          snapshot.storeId === selectedStoreId
+        ) {
+          setCatalog(snapshot.catalog);
+          setProducts(snapshot.products);
+          setSummaries(snapshot.summaries);
+          setIsStale(true);
+        } else if (background) {
+          // A live refresh failure must not turn a previously usable menu into an
+          // empty menu. Keep the visible projection and make freshness explicit.
+          setIsStale(true);
+        } else {
+          setCatalog(null);
+          setProducts([]);
+          setSummaries({});
+          setBundleSummaries({});
+          setIsStale(false);
+        }
       } finally {
-        setLoading(false);
+        if (!background && requestId === catalogRequestRef.current) setLoading(false);
       }
     },
     [client, selectedStoreId, tenantId]
@@ -202,10 +234,13 @@ export function useCatalog(selectedStoreId?: string) {
   // reconstructed parent node, fetch the current store/root product result once
   // without a server category filter and then filter against that parent's full
   // descendant-ID set. Populated leaf categories still use server filtering.
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (background = false) => {
+    const requestId = ++productsRequestRef.current;
+    const requestScope = `${tenantId}:${selectedStoreId || 'root'}:${selectedCategoryId || 'all'}`;
+
     try {
-      setLoading(true);
-      setError(null);
+      if (!background) setLoading(true);
+      if (!background) setError(null);
 
       const selectedPath = selectedCategoryId
         ? findCategoryPath(rootCategoryTree, selectedCategoryId)
@@ -244,9 +279,17 @@ export function useCatalog(selectedStoreId?: string) {
         nextSummaries = filtered.summaries;
       }
 
+      if (
+        requestId !== productsRequestRef.current ||
+        requestScope !== `${tenantId}:${selectedStoreId || 'root'}:${selectedCategoryId || 'all'}`
+      ) {
+        return;
+      }
+
       setProducts(nextProducts);
       setSummaries(nextSummaries);
       setBundleSummaries(nextBundleSummaries);
+      setError(null);
       setIsStale(false);
 
       if (
@@ -258,19 +301,31 @@ export function useCatalog(selectedStoreId?: string) {
         snapshotRef.current.summaries = nextSummaries;
       }
     } catch (err: unknown) {
+      if (requestId !== productsRequestRef.current) return;
       const errMessage =
         err instanceof Error ? err.message : 'Failed to load products for category';
       console.warn('[useCatalog] Failed to load products for category:', err);
       setError(errMessage);
 
-      // In live modes and on error: strictly clear stale products, summaries, and snapshots
-      setProducts([]);
-      setSummaries({});
-      setBundleSummaries({});
-      setIsStale(false);
-      snapshotRef.current = null;
+      const snapshot = snapshotRef.current;
+      if (
+        snapshot &&
+        snapshot.tenantId === tenantId &&
+        snapshot.storeId === selectedStoreId
+      ) {
+        setProducts(snapshot.products);
+        setSummaries(snapshot.summaries);
+        setIsStale(true);
+      } else if (background) {
+        setIsStale(true);
+      } else {
+        setProducts([]);
+        setSummaries({});
+        setBundleSummaries({});
+        setIsStale(false);
+      }
     } finally {
-      setLoading(false);
+      if (!background && requestId === productsRequestRef.current) setLoading(false);
     }
   }, [
     client,
@@ -291,6 +346,48 @@ export function useCatalog(selectedStoreId?: string) {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // Keep live storefronts close to the canonical database without blanking the
+  // menu between refreshes. Focus/visibility refreshes are immediate; the
+  // bounded interval is deliberately modest to avoid turning every browser into
+  // a hot polling loop.
+  useEffect(() => {
+    if (appMode === 'demo' || typeof window === 'undefined') return;
+
+    let disposed = false;
+    let inFlight = false;
+    const refreshLiveProjection = async () => {
+      if (disposed || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        await Promise.allSettled([
+          fetchCatalog(true, true),
+          loadProducts(true),
+        ]);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshLiveProjection();
+    };
+    const onFocus = () => void refreshLiveProjection();
+
+    const intervalId = window.setInterval(() => {
+      void refreshLiveProjection();
+    }, 15_000);
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [appMode, fetchCatalog, loadProducts]);
 
   // Restrict catalogStore subscription strictly to demo mode only
   useEffect(() => {
@@ -339,10 +436,14 @@ export function useCatalog(selectedStoreId?: string) {
     error,
     isStale,
     navigateToCategory,
-    refreshCatalog: () => fetchCatalog(true),
+    refreshCatalog: async () => {
+      await fetchCatalog(true);
+      await loadProducts();
+    },
     resetCache: async () => {
       await client.resetCache();
       await fetchCatalog(true);
+      await loadProducts();
     },
     client,
   };

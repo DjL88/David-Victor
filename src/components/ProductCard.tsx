@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Product, ProductAvailabilitySummary, BasketItem, Money, moneyToMajor } from '../commerce/models';
 import { evaluateProductAvailability } from '../rules/availabilityRules';
 import { QuantitySelector } from './QuantitySelector';
@@ -51,6 +51,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     {},
     basketItems
   );
+
+  // Keep click intent synchronous between React renders. Without this, a fast
+  // sequence of + taps can all read the same rendered basketQuantity and send
+  // duplicate absolute quantities (for example 1, 1, 1 instead of 1, 2, 3).
+  const quantityIntentRef = useRef(Math.max(0, basketQuantity));
+  useEffect(() => {
+    quantityIntentRef.current = Math.max(0, basketQuantity);
+  }, [basketQuantity, product.plu]);
+
+  const requestQuantity = (requested: number) => {
+    const limit =
+      typeof decision.effectiveLimit === 'number' && Number.isFinite(decision.effectiveLimit)
+        ? Math.max(0, decision.effectiveLimit)
+        : Number.POSITIVE_INFINITY;
+    const next = Math.max(0, Math.min(limit, Math.trunc(requested)));
+    if (next === quantityIntentRef.current) return;
+    quantityIntentRef.current = next;
+    onUpdateQuantity(product, next);
+  };
 
   // Inactive or hidden product: do not render
   if (!decision.shouldRender) {
@@ -146,7 +165,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       return;
     }
     if (decision.canAddToCart) {
-      onUpdateQuantity(product, basketQuantity + 1);
+      requestQuantity(quantityIntentRef.current + 1);
     }
   };
 
@@ -331,8 +350,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <QuantitySelector
                 quantity={basketQuantity}
                 maxQuantity={decision.effectiveLimit}
-                onIncrement={() => onUpdateQuantity(product, basketQuantity + 1)}
-                onDecrement={() => onUpdateQuantity(product, basketQuantity - 1)}
+                onIncrement={() => requestQuantity(quantityIntentRef.current + 1)}
+                onDecrement={() => requestQuantity(quantityIntentRef.current - 1)}
                 size="sm"
               />
             ) : (
