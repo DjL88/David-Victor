@@ -273,7 +273,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       // 3. Execute final settlement
       const settlement = await PaymentService.settleOrderPayment(orderId, testTenant);
@@ -360,7 +360,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       // 3. Execute authoritative settlement
       const settlement = await PaymentService.settleOrderPayment(orderId, testTenant);
@@ -417,7 +417,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       const settlement = await PaymentService.settleOrderPayment(orderId, testTenant);
 
@@ -490,7 +490,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       // Settle without reauthorisation permission
       const settlement = await PaymentService.settleOrderPayment(orderId, testTenant, {
@@ -567,7 +567,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       await FirestorePlatformService.savePaymentProjection({
         paymentId,
@@ -642,7 +642,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         fulfillmentType: 'delivery',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, testTenant);
 
       await expect(
         PaymentService.handleOrderCancellation(orderId, testTenant, 'Cancellation requested')
@@ -690,7 +690,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         fulfillmentType: 'delivery',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, testTenant);
 
       const result = await PaymentService.handleOrderCancellation(orderId, testTenant, 'Customer requested cancellation');
 
@@ -737,7 +737,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         fulfillmentType: 'delivery',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, testTenant);
 
       const result = await PaymentService.handleOrderCancellation(orderId, testTenant, 'Store out of stock on all items');
 
@@ -810,7 +810,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
             },
           ],
         },
-      } as any);
+      } as any, testTenant);
 
       // Inbound Quest Webhook: PICKING_COMPLETE
       const webhookPayload = JSON.stringify({
@@ -881,7 +881,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         fulfillmentType: 'delivery',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, testTenant);
 
       const webhookPayload = JSON.stringify({
         event: 'order.status.updated',
