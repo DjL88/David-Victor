@@ -368,6 +368,11 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
               {!loading && !loadError && pagedProducts.map((p) => {
                 const isOutOfStock = p.stockStatus === 'OUT_OF_STOCK';
                 const isArchived = (p.metadata as any)?.lifecycleStatus === 'ARCHIVED';
+                const catalogConfidence = String((p.metadata as any)?.catalogConfidence || '');
+                const catalogSignals = Array.isArray((p.metadata as any)?.catalogSignals)
+                  ? ((p.metadata as any).catalogSignals as string[])
+                  : [];
+                const commerceUnavailableSignal = catalogSignals.includes('COMMERCE_UNAVAILABLE_OR_SNOOZED');
                 return (
                   <tr key={p.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="py-3 px-4">
@@ -407,6 +412,13 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
                       >
                         {isArchived ? 'Archived' : p.active === false ? 'Inactive' : isOutOfStock ? 'Out of Stock' : p.stockStatus === 'IN_STOCK' ? 'In Stock' : 'Stock unknown'}
                       </span>
+                      {(catalogConfidence || commerceUnavailableSignal) && (
+                        <div className="mt-1 text-[10px] text-gray-500">
+                          {commerceUnavailableSignal
+                            ? 'Live Commerce reports unavailable / snoozed'
+                            : `${catalogConfidence.toLowerCase()} catalogue confidence`}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
