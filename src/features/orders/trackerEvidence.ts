@@ -26,11 +26,21 @@ export function trackerSteps(order: Order): CustomerTrackerStage[] {
     : ['PLACED', 'PREPARING', 'READY', 'ON_THE_WAY', 'COMPLETE'];
 }
 
-/** Shorten only LTx's recognised PREFIX + YYWW + base36 counter format. Never slice arbitrary provider IDs. */
+/** Present only recognised LTx customer references. Never expose arbitrary provider/session/order IDs. */
 export function customerOrderReference(order: Pick<Order, 'displayId' | 'orderReference'>): string {
-  const reference = String(order.displayId || order.orderReference || '').trim();
-  const match = reference.toUpperCase().match(/^([A-Z][A-Z0-9]{1,3})(\d{2})(0[1-9]|[1-4]\d|5[0-3])([A-Z0-9]{4})$/);
-  return match ? `${match[1]}${match[3]}${match[4]}` : reference;
+  const candidates = [order.displayId, order.orderReference]
+    .map((value) => String(value || '').trim().toUpperCase())
+    .filter(Boolean);
+
+  for (const reference of candidates) {
+    const full = reference.match(/^([A-Z][A-Z0-9]{1,3})(\d{2})(0[1-9]|[1-4]\d|5[0-3])([A-Z0-9]{4})$/);
+    if (full) return `${full[1]}${full[3]}${full[4]}`;
+
+    const short = reference.match(/^([A-Z][A-Z0-9]{1,3})(0[1-9]|[1-4]\d|5[0-3])([A-Z0-9]{4})$/);
+    if (short) return reference;
+  }
+
+  return '';
 }
 
 export function observedMoney(value: unknown): Money | null {
