@@ -184,6 +184,33 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     });
   });
 
+  it('does not fabricate account or location identities when the verified menu lacks that provenance', async () => {
+    const tenantId = `tenant-channel-scope-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+    const first = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: first,
+      rawBody: JSON.stringify(first),
+    });
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted).toMatchObject({
+      identityScope: 'CHANNEL_LINK',
+      channelLinkId: 'channel-1',
+      menuId: 'menu-1',
+      source: 'DELIVERECT_CHANNEL_PUSH',
+    });
+    expect(hosted).not.toHaveProperty('accountId');
+    expect(hosted).not.toHaveProperty('locationId');
+    expect(JSON.stringify(hosted)).not.toContain('unknown-account');
+    expect(JSON.stringify(hosted)).not.toContain('unknown-location');
+  });
+
   it('keeps the last-known-good menu live when replacement handover fails', async () => {
     const tenantId = `tenant-lkg-handover-${Date.now()}`;
     ChannelMenuIngestionService.setQueueClient(null);
