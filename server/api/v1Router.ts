@@ -3511,6 +3511,27 @@ v1Router.get('/orders/:orderId/settlement', requireAdminAuth('operationsEditor')
  * Verifies optional signature and returns customer substitution preferences & candidates.
  */
 const handleSubstituteCallback = async (req: Request, res: Response) => {
+  const requestStartedAt = Date.now();
+  const signaturePresent = Boolean(
+    req.headers['x-server-authorization-hmac-sha256'] ||
+    req.headers['x-deliverect-signature'] ||
+    req.headers['x-signature'] ||
+    req.query.signature
+  );
+  let resolvedTenantId = '';
+  const logResult = (status: number, responseCount: number, detail?: string) => {
+    console.info('[SubstitutionCallback]', {
+      method: req.method,
+      path: req.originalUrl || req.url,
+      query: req.query,
+      signaturePresent,
+      tenantId: resolvedTenantId || undefined,
+      responseCount,
+      status,
+      durationMs: Date.now() - requestStartedAt,
+      detail,
+    });
+  };
   try {
     const orderId = String(
       req.params.orderId ||
@@ -3518,20 +3539,24 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
       req.query.orderId ||
       ''
     ).trim();
-    const plu = String(
+    const itemIdentifier = String(
       req.params.plu ||
       req.query.plu ||
+      req.query.orderItemId ||
+      req.query.itemId ||
       ''
     ).trim();
 
-    if (!orderId || !plu) {
+    if (!orderId || !itemIdentifier) {
+      logResult(400, 0, 'missing_identifiers');
       return res.status(400).json({
-        error: 'Substitution callback requires channelOrderId/orderId and plu.',
+        error: 'Substitution callback requires channelOrderId/orderId and plu/orderItemId.',
         code: 'SUBSTITUTION_IDENTIFIERS_REQUIRED',
       });
     }
 
     let tenantId: string | undefined;
+    let callbackChannelLinkId: string | undefined;
 
     // Prefer the stored order projection because it is the authoritative tenant
     // binding. Tenant-scoped Deliverect webhook URLs are also accepted so a
@@ -3540,15 +3565,58 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
     if (orderProj?.tenantId) {
       tenantId = orderProj.tenantId;
     } else if (req.params.identifier) {
-      tenantId = String(req.params.identifier).trim();
+      const identifier = String(req.params.identifier).trim();
+      const tenants = await FirestorePlatformService.listAllTenants();
+      const directTenant = tenants.find((tenant) => tenant.tenantId === identifier);
+      if (directTenant) {
+        tenantId = directTenant.tenantId;
+      } else {
+        const mappings = await Promise.all(tenants.map(async (tenant) => {
+          const [integration, stagingProfile, productionProfile, stores] = await Promise.all([
+            FirestorePlatformService.getIntegrationConfig(tenant.tenantId).catch(() => null),
+            FirestorePlatformService.getIntegrationProfile(tenant.tenantId, 'staging').catch(() => null),
+            FirestorePlatformService.getIntegrationProfile(tenant.tenantId, 'production').catch(() => null),
+            FirestorePlatformService.getTenantStores(tenant.tenantId).catch(() => []),
+          ]);
+          const channelIds = new Set([
+            integration?.channelLinkId,
+            ...(integration?.allowedChannelLinkIds || []),
+            ...(stagingProfile?.allowedChannelLinkIds || []),
+            ...(productionProfile?.allowedChannelLinkIds || []),
+            ...stores.flatMap((store: any) => [store?.channelLinkId, store?.id]),
+          ].map(String).filter(Boolean));
+          const accountIds = new Set([
+            integration?.deliverectAccountId,
+            stagingProfile?.deliverect?.accountId,
+            productionProfile?.deliverect?.accountId,
+          ].map(String).filter(Boolean));
+          return {
+            tenantId: tenant.tenantId,
+            channelMatch: channelIds.has(identifier),
+            accountMatch: accountIds.has(identifier),
+          };
+        }));
+        const mapping = mappings.find((candidate) => candidate.channelMatch || candidate.accountMatch);
+        tenantId = mapping?.tenantId;
+        if (mapping?.channelMatch) callbackChannelLinkId = identifier;
+      }
     } else if (isDemoMode() || process.env.NODE_ENV === 'test') {
       tenantId = (req.query.tenantId as string) || (req.headers['x-tenant-id'] as string) || 'brand-alpha';
     } else {
+      logResult(404, 0, 'order_and_tenant_mapping_not_found');
       return res.status(404).json({
         error: `Order '${orderId}' not found for substitute callback.`,
         code: 'ORDER_NOT_FOUND',
       });
     }
+    if (!tenantId) {
+      logResult(404, 0, 'tenant_mapping_not_found');
+      return res.status(404).json({
+        error: `No tenant mapping was found for substitution callback identifier '${req.params.identifier || ''}'.`,
+        code: 'TENANT_MAPPING_NOT_FOUND',
+      });
+    }
+    resolvedTenantId = tenantId;
 
     // WH-04: Verify GET signature. Deliverect staging uses channelLinkId as
     // the temporary HMAC secret until a dedicated partner HMAC secret is set.
@@ -3573,11 +3641,22 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
         tenantId,
         orderProj?.channelLinkId
       );
+    const mappedCallbackSignatureValid =
+      Boolean(isStaging && callbackChannelLinkId) &&
+      SubstitutionCallbackService.verifyGetSignature(
+        req.path,
+        req.query,
+        req.headers,
+        tenantId,
+        callbackChannelLinkId
+      );
     const isSignatureValid =
       configuredSignatureValid ||
-      stagingChannelLinkSignatureValid;
+      stagingChannelLinkSignatureValid ||
+      mappedCallbackSignatureValid;
 
     if (!isSignatureValid) {
+      logResult(401, 0, 'invalid_signature');
       return res.status(401).json({
         error:
           'Invalid webhook signature for substitute callback. In staging, Deliverect should sign this GET using the order channelLinkId when no dedicated HMAC secret is configured.',
@@ -3585,9 +3664,20 @@ const handleSubstituteCallback = async (req: Request, res: Response) => {
       });
     }
 
-    const candidates = await SubstitutionCallbackService.getQuestSubstituteCandidates(orderId, plu, tenantId);
+    const candidates = await SubstitutionCallbackService.getQuestSubstituteCandidates(
+      orderId,
+      itemIdentifier,
+      tenantId,
+      {
+        searchPhrase: typeof req.query.searchPhrase === 'string' ? req.query.searchPhrase : undefined,
+        isSubItem: String(req.query.isSubItem || '').toLowerCase() === 'true',
+        channelLinkId: orderProj?.channelLinkId || callbackChannelLinkId,
+      }
+    );
+    logResult(200, candidates.length);
     res.status(200).json(candidates);
   } catch (err: any) {
+    logResult(err?.statusCode || err?.status || 500, 0, String(err?.code || err?.message || 'error'));
     handleCommerceError(res, err, 'Failed to resolve substitution callback');
   }
 };

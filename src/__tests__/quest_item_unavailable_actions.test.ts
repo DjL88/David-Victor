@@ -10,12 +10,11 @@ describe('Quest item unavailable actions', () => {
     expect(buildQuestItemUnavailableActions('BEST_MATCH')).toEqual([
       'ITEM_AMENDMENT',
       'ITEM_REMOVE',
-      'ITEM_SUBSTITUTION',
       'ITEM_SUBSTITUTION_CATALOG',
     ]);
   });
 
-  it('sends the customer-selected substitute candidate and permissions', () => {
+  it('persists the customer-selected candidate while using catalogue permissions', () => {
     const basket = {
       id: 'basket-1',
       storeId: 'store-1',
@@ -61,7 +60,7 @@ describe('Quest item unavailable actions', () => {
     expect(item.itemUnavailableActions).toEqual([
       'ITEM_AMENDMENT',
       'ITEM_REMOVE',
-      'ITEM_SUBSTITUTION_CUSTOMER',
+      'ITEM_SUBSTITUTION_CATALOG',
     ]);
     expect(item.substituteCandidate).toEqual([
       {

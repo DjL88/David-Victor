@@ -3,6 +3,9 @@ import { FirestorePlatformService } from '../firestoreService';
 import { WebhookService } from './WebhookService';
 import { getDeliverectAdapter } from './index';
 import { Money } from '../../src/domain/models';
+import type { Catalog, Product } from '../../src/commerce/models';
+import { visualRulesToRetailRules } from '../../src/rules/visualRuleAdapter';
+import { evaluateProductRules } from '../../src/rules/ProductRuleEvaluator';
 import { isDemoMode } from '../runtimeMode';
 
 export interface QuestSubstituteItem {
@@ -10,6 +13,26 @@ export interface QuestSubstituteItem {
   quantity: number;
   name: string;
   price: number;
+}
+
+export interface QuestSubstituteSearchOptions {
+  searchPhrase?: string;
+  isSubItem?: boolean;
+  channelLinkId?: string;
+}
+
+interface CandidatePolicy {
+  maxPriceIncreaseMinor: number;
+  requireSharedCategory: boolean;
+  maxCandidates: number;
+  learnedPluAffinity: Record<string, string[]>;
+}
+
+interface ProductSubstitutionPolicy {
+  neverSubstitute: boolean;
+  maxPriceIncreaseMinor?: number;
+  requireSameCategory?: boolean;
+  preferredSubstitutePlus: string[];
 }
 
 export interface SubstitutionCallbackResponse {
@@ -30,6 +53,217 @@ export interface SubstitutionCallbackResponse {
 }
 
 export class SubstitutionCallbackService {
+  private static productPriceMinor(product?: Product): number | undefined {
+    if (!product) return undefined;
+    if (typeof product.price === 'number' && Number.isInteger(product.price)) return product.price;
+    if (product.price && typeof product.price === 'object' && Number.isInteger(product.price.amount)) {
+      return product.price.amount;
+    }
+    if (Number.isInteger(product.priceMinor)) return product.priceMinor;
+    if (typeof product.basePrice === 'number' && Number.isInteger(product.basePrice)) return product.basePrice;
+    if (product.basePrice && typeof product.basePrice === 'object' && Number.isInteger(product.basePrice.amount)) {
+      return product.basePrice.amount;
+    }
+    return undefined;
+  }
+
+  private static categoryNames(catalog: Catalog): Map<string, string> {
+    const names = new Map<string, string>();
+    const visit = (categories: any[]) => {
+      for (const category of categories || []) {
+        const id = String(category?.id || category?._id || '').trim();
+        if (id) names.set(id, String(category?.name || category?.title || '').trim());
+        visit(Array.isArray(category?.children) ? category.children : []);
+        visit(Array.isArray(category?.subcategories) ? category.subcategories : []);
+      }
+    };
+    visit((catalog.categories || []) as any[]);
+    return names;
+  }
+
+  /**
+   * Products may only cross between unrestricted products, or remain inside the
+   * same regulated class. This prevents an ordinary grocery item being replaced
+   * with alcohol/tobacco (or vice versa), even if category data is incomplete.
+   */
+  private static regulatedClass(product: Product, categoryNames: Map<string, string>): 'ALCOHOL' | 'TOBACCO' | null {
+    if (product.beverageInfo?.isAlcoholic === true || Number(product.beverageInfo?.alcoholByVolume || 0) > 0) {
+      return 'ALCOHOL';
+    }
+    const labels = [
+      ...(product.tags || []),
+      ...(product.productTags || []).map(String),
+      ...(product.displayLabels || []),
+      ...(product.productTagLabels || []),
+      ...(product.categoryIds || []).map((id) => categoryNames.get(id) || ''),
+    ].join(' ').toLowerCase();
+    if (/\b(alcohol|alcoholic|beer|wine|spirits?|cider|lager|vodka)\b/.test(labels)) return 'ALCOHOL';
+    if (/\b(tobacco|cigarettes?|cigars?|nicotine|vapes?|vaping)\b/.test(labels)) return 'TOBACCO';
+    return null;
+  }
+
+  private static tagTokens(product: Product): Set<string> {
+    return new Set([
+      ...(product.tags || []),
+      ...(product.productTags || []),
+      ...(product.productTagLabels || []),
+      ...(product.displayLabels || []),
+    ].map((value) => String(value).trim().toLowerCase()).filter(Boolean));
+  }
+
+  private static async productSubstitutionPolicy(
+    tenantId: string,
+    product: Product
+  ): Promise<ProductSubstitutionPolicy> {
+    const visualRules = await FirestorePlatformService.getTenantRules(tenantId).catch(() => []);
+    const retailRules = visualRulesToRetailRules(visualRules.filter((rule: any) => rule?.enabled !== false));
+    const decision = evaluateProductRules(product, retailRules);
+    const matchedRuleIds = new Set(decision.appliedRuleIds);
+    const matchingPolicies = retailRules
+      .filter((rule) => matchedRuleIds.has(rule.id) && rule.actions.substitutionPolicy)
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+      .map((rule) => rule.actions.substitutionPolicy!);
+    const firstWith = <K extends keyof ProductSubstitutionPolicy>(key: K) =>
+      matchingPolicies.find((policy) => policy[key] !== undefined)?.[key];
+    return {
+      neverSubstitute: matchingPolicies.some((policy) => policy.neverSubstitute === true),
+      maxPriceIncreaseMinor: firstWith('maxPriceIncreaseMinor') as number | undefined,
+      requireSameCategory: firstWith('requireSameCategory') as boolean | undefined,
+      preferredSubstitutePlus: Array.from(new Set(
+        matchingPolicies.flatMap((policy) => policy.preferredSubstitutePlus || []).map(String).filter(Boolean)
+      )),
+    };
+  }
+
+  private static async candidatePolicy(tenantId: string): Promise<CandidatePolicy> {
+    const tenant = await FirestorePlatformService.getTenantConfig(tenantId).catch(() => null);
+    const configured = tenant?.featureFlags?.substitutionCandidatePolicy;
+    return {
+      // Brands can set this to 0 for same/lower only, or another minor-unit
+      // ceiling. Same/lower price is the safe default; a brand can explicitly
+      // permit an uplift through Product Rules.
+      maxPriceIncreaseMinor: Number.isInteger(configured?.maxPriceIncreaseMinor)
+        ? Math.max(0, configured!.maxPriceIncreaseMinor!)
+        : 0,
+      requireSharedCategory: configured?.requireSharedCategory !== false,
+      maxCandidates: Number.isInteger(configured?.maxCandidates)
+        ? Math.min(50, Math.max(1, configured!.maxCandidates!))
+        : 10,
+      learnedPluAffinity:
+        configured?.learnedPluAffinity && typeof configured.learnedPluAffinity === 'object'
+          ? configured.learnedPluAffinity
+          : {},
+    };
+  }
+
+  private static async storeCatalogCandidates(params: {
+    tenantId: string;
+    channelLinkId?: string;
+    originalPlu: string;
+    originalPriceMinor?: number;
+    chosen: QuestSubstituteItem[];
+    searchPhrase?: string;
+  }): Promise<QuestSubstituteItem[]> {
+    if (!params.channelLinkId) return params.chosen;
+    try {
+      const adapter = getDeliverectAdapter(params.tenantId);
+      const catalog = await adapter.getStoreCatalog(params.channelLinkId);
+      const products = (catalog.products || []) as Product[];
+      const original = products.find((product) => product.plu === params.originalPlu || product.id === params.originalPlu);
+      if (!original) return params.chosen;
+
+      const policy = await this.candidatePolicy(params.tenantId);
+      const categoryNames = this.categoryNames(catalog);
+      const originalCategories = new Set(original.categoryIds || []);
+      const originalClass = this.regulatedClass(original, categoryNames);
+      const originalTags = this.tagTokens(original);
+      const originalPrice = params.originalPriceMinor ?? this.productPriceMinor(original);
+      const phrase = String(params.searchPhrase || '').trim().toLowerCase();
+      const productPolicy = await this.productSubstitutionPolicy(params.tenantId, original);
+      if (productPolicy.neverSubstitute) return [];
+      const maxPriceIncreaseMinor = productPolicy.maxPriceIncreaseMinor ?? policy.maxPriceIncreaseMinor;
+      const requireSharedCategory = productPolicy.requireSameCategory ?? policy.requireSharedCategory;
+      const learnedOrder = Array.from(new Set([
+        ...productPolicy.preferredSubstitutePlus,
+        ...(policy.learnedPluAffinity[original.plu] || []),
+      ]));
+      const learnedRank = new Map(learnedOrder.map((plu, index) => [String(plu), index]));
+
+      const isAvailable = (product: Product) =>
+        product.active !== false &&
+        product.snoozed !== true &&
+        product.isSnoozed !== true &&
+        product.inStock !== false &&
+        product.stockStatus !== 'OUT_OF_STOCK' &&
+        !(product.stockQuantity !== null && product.stockQuantity !== undefined && product.stockQuantity <= 0);
+      const isRegulatedMatch = (product: Product) =>
+        this.regulatedClass(product, categoryNames) === originalClass;
+      const isTagMatch = (product: Product) => {
+        if (originalTags.size === 0) return true;
+        const candidateTags = this.tagTokens(product);
+        return [...originalTags].every((tag) => candidateTags.has(tag));
+      };
+      const sharedCategory = (product: Product) =>
+        (product.categoryIds || []).some((id) => originalCategories.has(id));
+      const matchesSearch = (product: Product) =>
+        !phrase || [product.name, product.brand, product.plu]
+          .some((value) => String(value || '').toLowerCase().includes(phrase));
+
+      // A customer-selected item leads the list when it still exists at this
+      // store and passes the regulated-product boundary. The explicit choice is
+      // not discarded merely because it exceeds the automatic price/category
+      // ceiling. It still must be available and remain inside tag/regulatory
+      // safety boundaries. An explicit choice returns exactly one candidate.
+      const byPlu = new Map(products.map((product) => [product.plu, product]));
+      const chosen = params.chosen.filter((candidate) => {
+        const product = byPlu.get(candidate.plu);
+        return Boolean(product && isAvailable(product) && isRegulatedMatch(product) && isTagMatch(product));
+      });
+      if (chosen.length > 0) return chosen.slice(0, 1);
+      const chosenPlus = new Set(chosen.map((candidate) => candidate.plu));
+
+      const automatic = products
+        .filter((product) => product.plu !== original.plu && !chosenPlus.has(product.plu))
+        .filter(isAvailable)
+        .filter(isRegulatedMatch)
+        .filter(isTagMatch)
+        .filter(matchesSearch)
+        .filter((product) => !requireSharedCategory || sharedCategory(product))
+        .filter((product) => {
+          const price = this.productPriceMinor(product);
+          return Number.isInteger(price) &&
+            (!Number.isInteger(originalPrice) || price! <= originalPrice! + maxPriceIncreaseMinor);
+        })
+        .sort((a, b) => {
+          const learnedA = learnedRank.has(a.plu) ? learnedRank.get(a.plu)! : Number.MAX_SAFE_INTEGER;
+          const learnedB = learnedRank.has(b.plu) ? learnedRank.get(b.plu)! : Number.MAX_SAFE_INTEGER;
+          if (learnedA !== learnedB) return learnedA - learnedB;
+          const categoryA = sharedCategory(a) ? 0 : 1;
+          const categoryB = sharedCategory(b) ? 0 : 1;
+          if (categoryA !== categoryB) return categoryA - categoryB;
+          const priceA = this.productPriceMinor(a) || 0;
+          const priceB = this.productPriceMinor(b) || 0;
+          return Math.abs(priceA - (originalPrice || 0)) - Math.abs(priceB - (originalPrice || 0));
+        })
+        .map((product) => ({
+          plu: product.plu,
+          quantity: 1,
+          name: product.name || product.plu,
+          price: this.productPriceMinor(product)!,
+        }));
+
+      return [...chosen, ...automatic].slice(0, policy.maxCandidates);
+    } catch (error: any) {
+      console.warn('[SubstitutionCallback] Store catalogue recommendation failed', {
+        tenantId: params.tenantId,
+        channelLinkId: params.channelLinkId,
+        originalPlu: params.originalPlu,
+        error: String(error?.message || error),
+      });
+      return params.chosen;
+    }
+  }
+
   /**
    * WH-04: Verifies signature for GET substitute callbacks.
    * In staging and production, unsigned callbacks MUST be rejected.
@@ -193,7 +427,7 @@ export class SubstitutionCallbackService {
     let adapterOrder: any = null;
     if (!orderProj) {
       try {
-        const adapter = getDeliverectAdapter();
+        const adapter = getDeliverectAdapter(tenantId);
         adapterOrder = await adapter.getOrder(orderId);
       } catch {
         // adapter may not find order
@@ -239,6 +473,11 @@ export class SubstitutionCallbackService {
     if (!pickingItem) {
       return null;
     }
+
+    // Deliverect may identify the order line by its internal item id rather
+    // than by PLU. Once the line is resolved, all catalogue work uses the
+    // actual PLU.
+    plu = String(pickingItem.plu || plu).trim();
 
     const pref = pickingItem.substitutionPreference || 'BEST_MATCH';
     const channelLinkId = orderProj?.channelLinkId || adapterOrder?.storeId;
@@ -369,7 +608,8 @@ export class SubstitutionCallbackService {
   static async getQuestSubstituteCandidates(
     orderId: string,
     plu: string,
-    tenantId: string = 'brand-alpha'
+    tenantId: string = 'brand-alpha',
+    options: QuestSubstituteSearchOptions = {}
   ): Promise<QuestSubstituteItem[]> {
     const policy = await this.getSubstitutionForPlu(orderId, plu, tenantId);
     if (!policy) return [];
@@ -378,7 +618,7 @@ export class SubstitutionCallbackService {
       ? (policy as any).candidates
       : [];
 
-    return candidates
+    const chosen = candidates
       .map((candidate: any) => {
         const amount =
           candidate?.price?.amount ??
@@ -398,5 +638,17 @@ export class SubstitutionCallbackService {
         } satisfies QuestSubstituteItem;
       })
       .filter(Boolean) as QuestSubstituteItem[];
+
+    if (policy.action !== 'SUBSTITUTE') return [];
+
+    const orderProj = await FirestorePlatformService.getOrderProjectionByExternalIdentifier(orderId);
+    return this.storeCatalogCandidates({
+      tenantId,
+      channelLinkId: orderProj?.channelLinkId || options.channelLinkId,
+      originalPlu: policy.plu,
+      originalPriceMinor: policy.originalPrice?.amount,
+      chosen,
+      searchPhrase: options.searchPhrase,
+    });
   }
 }

@@ -86,6 +86,18 @@ function applyAction(actions: RuleActions, action: VisualRule['actions'][number]
     case 'REQUIRES_ALLERGEN_DISPLAY':
       actions.requiresAllergenDisplay = true;
       break;
+    case 'SUBSTITUTION_POLICY':
+      actions.substitutionPolicy = {
+        neverSubstitute: action.neverSubstitute === true,
+        maxPriceIncreaseMinor: Number.isInteger(action.maxPriceIncreaseMinor)
+          ? Math.max(0, action.maxPriceIncreaseMinor!)
+          : undefined,
+        requireSameCategory: action.requireSameCategory,
+        preferredSubstitutePlus: Array.isArray(action.preferredSubstitutePlus)
+          ? action.preferredSubstitutePlus.map(String).filter(Boolean)
+          : undefined,
+      };
+      break;
     case 'BADGE':
       actions.badge = action.label;
       break;

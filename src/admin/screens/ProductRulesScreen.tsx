@@ -4,7 +4,7 @@ import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
-import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload } from 'lucide-react';
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -37,6 +37,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [tenantStores, setTenantStores] = useState<Store[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [substitutionImporting, setSubstitutionImporting] = useState(false);
+  const [substitutionImportMessage, setSubstitutionImportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -216,6 +218,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     type === 'BADGE' ? { type, label: 'Featured' } :
     type === 'WARNING' ? { type, text: 'Important information' } :
     type === 'PREVENT_PURCHASE' ? { type, reason: 'Unavailable' } :
+    type === 'SUBSTITUTION_POLICY' ? { type, neverSubstitute: false, maxPriceIncreaseMinor: 0, requireSameCategory: true } :
     { type };
 
   const applyTemplate = (template: 'quantity' | 'recommendations' | 'discounts') => {
@@ -256,6 +259,74 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       await loadRules();
     } catch (err: any) {
       setRuleError(err?.message || 'This rule could not be deleted.');
+    }
+  };
+
+  const handleSubstitutionCsv = async (file?: File) => {
+    if (!file) return;
+    setSubstitutionImporting(true);
+    setSubstitutionImportMessage(null);
+    setRuleError(null);
+    try {
+      const text = await file.text();
+      const rows = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean);
+      if (rows.length < 2) throw new Error('CSV must include a header and at least one mapping row.');
+      const split = (row: string) => {
+        const values: string[] = [];
+        let value = '';
+        let quoted = false;
+        for (let index = 0; index < row.length; index += 1) {
+          const char = row[index];
+          if (char === '"' && row[index + 1] === '"' && quoted) { value += '"'; index += 1; }
+          else if (char === '"') quoted = !quoted;
+          else if (char === ',' && !quoted) { values.push(value.trim()); value = ''; }
+          else value += char;
+        }
+        values.push(value.trim());
+        return values;
+      };
+      const headers = split(rows[0]).map((value) => value.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const originalIndex = headers.findIndex((value) => ['originalplu', 'sourceplu', 'plu'].includes(value));
+      const substituteIndex = headers.findIndex((value) => ['substituteplu', 'replacementplu', 'preferredplu'].includes(value));
+      if (originalIndex < 0 || substituteIndex < 0) {
+        throw new Error('CSV headers must include originalPlu and substitutePlu.');
+      }
+      const grouped = new Map<string, string[]>();
+      rows.slice(1).forEach((row) => {
+        const columns = split(row);
+        const originalPlu = String(columns[originalIndex] || '').trim();
+        const substitutePlu = String(columns[substituteIndex] || '').trim();
+        if (!originalPlu || !substitutePlu || originalPlu === substitutePlu) return;
+        const mapped = grouped.get(originalPlu) || [];
+        if (!mapped.includes(substitutePlu)) mapped.push(substitutePlu);
+        grouped.set(originalPlu, mapped);
+      });
+      if (grouped.size === 0) throw new Error('CSV did not contain any valid PLU mappings.');
+      for (const [originalPlu, preferredSubstitutePlus] of grouped) {
+        const stableId = `substitution-map-${originalPlu.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+        const existing = rules.find((rule) => rule.id === stableId);
+        await defaultAdminClient.saveProductRule(tenantId, {
+          id: stableId,
+          name: existing?.name || `Substitution map · ${originalPlu}`,
+          enabled: existing?.enabled !== false,
+          countries: existing?.countries?.length ? existing.countries : ['GB'],
+          priority: existing?.priority ?? 80,
+          matchConditions: [{ field: 'plu', operator: 'equals', value: originalPlu }],
+          actions: [{
+            type: 'SUBSTITUTION_POLICY',
+            neverSubstitute: false,
+            maxPriceIncreaseMinor: 0,
+            requireSameCategory: true,
+            preferredSubstitutePlus,
+          }],
+        }, currentUser);
+      }
+      await loadRules();
+      setSubstitutionImportMessage(`Imported ${grouped.size} substitution PLU map${grouped.size === 1 ? '' : 's'}.`);
+    } catch (error: any) {
+      setRuleError(error?.message || 'Substitution CSV could not be imported.');
+    } finally {
+      setSubstitutionImporting(false);
     }
   };
 
@@ -774,6 +845,12 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </div>
           </div>
         </div>
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div><h3 className="text-sm font-bold text-gray-900">Preferred substitution PLU map</h3><p className="text-xs text-gray-600 mt-0.5">Upload CSV headers <code>originalPlu,substitutePlu</code>. Repeat an original PLU to set its preferred order. Availability, matching tags, category and price rules are still enforced.</p>{substitutionImportMessage&&<p className="mt-2 text-xs font-bold text-emerald-700">{substitutionImportMessage}</p>}</div>
+            <label className="px-3 py-2 rounded-xl bg-white border border-indigo-200 text-xs font-bold text-indigo-700 hover:bg-indigo-50 cursor-pointer flex items-center gap-2 shrink-0"><Upload className="w-4 h-4"/>{substitutionImporting?'Importing…':'Upload CSV'}<input type="file" accept=".csv,text/csv" disabled={substitutionImporting} className="sr-only" onChange={(event)=>{const file=event.target.files?.[0];void handleSubstitutionCsv(file);event.currentTarget.value='';}}/></label>
+          </div>
+        </div>
         {rules.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center"><ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-3"/><h3 className="text-sm font-bold text-gray-900">No product rules yet</h3><p className="text-xs text-gray-500 mt-1">Create a rule to control matching products by tag, category, brand, group, alcohol status or PLU.</p><button type="button" onClick={handleCreateNew} className="mt-4 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">Create first rule</button></div>}
         {rules.map((r) => (
           <div
@@ -957,13 +1034,14 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               <div data-admin-ai-target="product-rule-actions" className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold text-gray-700">Actions <span className="font-normal text-gray-400">apply all</span></span><button type="button" onClick={()=>setEditingRule({...editingRule,actions:[...editingRule.actions,{type:'HIDE_PRODUCT'}]})} className="text-[11px] font-bold text-indigo-700">+ Add action</button></div>
                 {editingRule.actions.map((action,index)=><div key={index} className="rounded-xl bg-white border border-indigo-100 p-2 space-y-2">
-                  <div className="flex gap-2"><select value={action.type} onChange={(e)=>{const a=[...editingRule.actions];a[index]=createAction(e.target.value);setEditingRule({...editingRule,actions:a})}} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white font-semibold"><option value="HIDE_PRODUCT">Hide product</option><option value="PREVENT_PURCHASE">Prevent purchase</option><option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option><option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option><option value="MINIMUM_AGE">Require minimum age</option><option value="PREVENT_UPSELL">Exclude from upsells</option><option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option><option value="EXCLUDE_FROM_DISCOUNTS">Exclude from discounts</option><option value="PREVENT_STORY_PLACEMENT">Exclude from stories</option><option value="PREVENT_CAROUSEL_PLACEMENT">Exclude from carousels</option><option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option><option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option><option value="BADGE">Show badge</option><option value="WARNING">Show warning</option></select><button type="button" disabled={editingRule.actions.length===1} onClick={()=>setEditingRule({...editingRule,actions:editingRule.actions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></div>
+                  <div className="flex gap-2"><select value={action.type} onChange={(e)=>{const a=[...editingRule.actions];a[index]=createAction(e.target.value);setEditingRule({...editingRule,actions:a})}} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white font-semibold"><option value="HIDE_PRODUCT">Hide product</option><option value="PREVENT_PURCHASE">Prevent purchase</option><option value="MAX_QUANTITY_PER_ORDER">Limit quantity per order</option><option value="COMBINED_GROUP_LIMIT">Limit combined group quantity</option><option value="MINIMUM_AGE">Require minimum age</option><option value="SUBSTITUTION_POLICY">Set substitution policy</option><option value="PREVENT_UPSELL">Exclude from upsells</option><option value="PREVENT_RECOMMENDATION">Exclude from recommendations</option><option value="EXCLUDE_FROM_DISCOUNTS">Exclude from discounts</option><option value="PREVENT_STORY_PLACEMENT">Exclude from stories</option><option value="PREVENT_CAROUSEL_PLACEMENT">Exclude from carousels</option><option value="REQUIRES_COURIER_VERIFICATION">Require courier verification</option><option value="REQUIRES_ALLERGEN_DISPLAY">Require allergen display</option><option value="BADGE">Show badge</option><option value="WARNING">Show warning</option></select><button type="button" disabled={editingRule.actions.length===1} onClick={()=>setEditingRule({...editingRule,actions:editingRule.actions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></div>
                   {action.type==='MAX_QUANTITY_PER_ORDER'&&<input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
                   {action.type==='MINIMUM_AGE'&&<input type="number" min="1" max="100" value={(action as any).minimumAge||18} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],minimumAge:Math.max(1,Number(e.target.value)||18)};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />}
                   {action.type==='COMBINED_GROUP_LIMIT'&&<div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input value={(action as any).groupId||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],groupId:e.target.value};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Group ID"/><input type="number" min="1" value={(action as any).maximum||1} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maximum:Math.max(1,Number(e.target.value)||1)};setEditingRule({...editingRule,actions:a})}} className="px-3 py-2 border border-gray-200 rounded-lg" placeholder="Limit"/></div>}
                   {action.type==='PREVENT_PURCHASE'&&<input value={(action as any).reason||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],reason:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Reason shown to customer"/>}
                   {action.type==='BADGE'&&<input value={(action as any).label||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],label:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Badge text"/>}
                   {action.type==='WARNING'&&<input value={(action as any).text||''} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],text:e.target.value};setEditingRule({...editingRule,actions:a})}} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="Warning message"/>}
+                  {action.type==='SUBSTITUTION_POLICY'&&<div className="space-y-2 text-xs text-gray-700"><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],neverSubstitute:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Never substitute matching products</label><label className="block">Maximum price increase (£)<input type="number" min="0" step="0.01" value={(((action as any).maxPriceIncreaseMinor||0)/100).toFixed(2)} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],maxPriceIncreaseMinor:Math.max(0,Math.round((Number(e.target.value)||0)*100))};setEditingRule({...editingRule,actions:a})}} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100"/></label><label className="flex items-center gap-2"><input type="checkbox" checked={(action as any).requireSameCategory!==false} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],requireSameCategory:e.target.checked};setEditingRule({...editingRule,actions:a})}}/>Confine automatic substitutes to the same category</label><label className="block">Preferred substitute PLUs (first choice first)<textarea value={((action as any).preferredSubstitutePlus||[]).join('\n')} disabled={(action as any).neverSubstitute===true} onChange={(e)=>{const a:any[]=[...editingRule.actions];a[index]={...a[index],preferredSubstitutePlus:e.target.value.split(/[\n,]/).map((value)=>value.trim()).filter(Boolean)};setEditingRule({...editingRule,actions:a})}} className="mt-1 min-h-20 w-full px-3 py-2 border border-gray-200 rounded-lg font-mono disabled:bg-gray-100" placeholder={'MILK-ALT-1\nMILK-ALT-2'}/></label><p className="text-[11px] text-gray-500">Customer-selected items remain a single explicit choice. Automatic recommendations also require matching product tags and live availability.</p></div>}
                 </div>)}
               </div>
 

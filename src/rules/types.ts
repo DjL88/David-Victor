@@ -104,6 +104,14 @@ export interface RuleActions {
 
   /** Explicit requirement to render allergens prominently */
   requiresAllergenDisplay?: boolean;
+
+  /** Picker substitution constraints for products matched by this rule. */
+  substitutionPolicy?: {
+    neverSubstitute?: boolean;
+    maxPriceIncreaseMinor?: number;
+    requireSameCategory?: boolean;
+    preferredSubstitutePlus?: string[];
+  };
 }
 
 /**
