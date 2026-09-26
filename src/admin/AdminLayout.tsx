@@ -25,6 +25,7 @@ import { ApiLogsScreen } from './screens/ApiLogsScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
 import { AdminWorkspaceProvider, type AdminGuideStep, type AdminNavigateOptions } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
+import { isSafeAdminAssistantNavigation } from './assistantNavigationSafety';
 import {
   Palette,
   Film,
@@ -145,6 +146,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [assistantGuide, setAssistantGuide] = useState<{ steps: AdminGuideStep[]; index: number } | null>(null);
   const adminMainRef = useRef<HTMLElement>(null);
+  const assistantTimersRef = useRef<Set<number>>(new Set());
+
+  const clearAssistantTimers = useCallback(() => {
+    for (const timerId of assistantTimersRef.current) window.clearTimeout(timerId);
+    assistantTimersRef.current.clear();
+  }, []);
+
+  const scheduleAssistantTimer = useCallback((callback: () => void, delayMs: number) => {
+    let timerId = 0;
+    timerId = window.setTimeout(() => {
+      assistantTimersRef.current.delete(timerId);
+      callback();
+    }, delayMs);
+    assistantTimersRef.current.add(timerId);
+    return timerId;
+  }, []);
+
+  useEffect(() => () => clearAssistantTimers(), [clearAssistantTimers]);
 
   useEffect(() => {
     defaultAdminClient.setActiveAdminUser?.(currentUser);
@@ -180,9 +199,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   // Altie guidance is identity-scoped. Tenant/user/role changes must discard any
   // pending walkthrough before the new identity can see or act on stale context.
   useEffect(() => {
+    clearAssistantTimers();
     setAssistantGuide(null);
     setIsAssistantOpen(false);
-  }, [currentTenantId, currentUser.id, currentUser.role, currentUser.tenantId]);
+  }, [clearAssistantTimers, currentTenantId, currentUser.id, currentUser.role, currentUser.tenantId]);
 
   const loadAllTenants = async () => {
     try {
@@ -324,6 +344,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
   );
 
   const handleSelectTab = (tab: AdminTab) => {
+    clearAssistantTimers();
     setActiveTab(tab);
     setIsMobileNavOpen(false);
     setAssistantGuide(null);
@@ -334,20 +355,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
     target?: string,
     prefill?: Record<string, unknown>
   ) => {
+    if (!isSafeAdminAssistantNavigation(tab, target)) return;
+    clearAssistantTimers();
     setActiveTab(tab);
     setIsMobileNavOpen(false);
     setIsAssistantOpen(false);
 
     // Wait for the screen to mount, then let that screen consume safe draft values.
     // Prefills only update React form state; they never call a save API.
-    window.setTimeout(() => {
+    scheduleAssistantTimer(() => {
       if (prefill && Object.keys(prefill).length > 0) {
         window.dispatchEvent(new CustomEvent('admin-ai-prefill', {
           detail: { section: tab, target, prefill },
         }));
       }
 
-      window.setTimeout(() => {
+      scheduleAssistantTimer(() => {
         const selector = target ? `[data-admin-ai-target="${target}"]` : null;
         const element = selector ? document.querySelector<HTMLElement>(selector) : null;
         const destination = element || adminMainRef.current;
@@ -366,18 +389,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
           );
           focusable?.focus({ preventScroll: true });
 
-          window.setTimeout(() => element.classList.remove('admin-ai-highlight'), 3600);
+          scheduleAssistantTimer(() => element.classList.remove('admin-ai-highlight'), 3600);
         }
       }, prefill ? 140 : 0);
     }, 180);
-  }, []);
+  }, [clearAssistantTimers, scheduleAssistantTimer]);
 
   const handleAssistantNavigate = useCallback((
     tab: AdminTab,
     target?: string,
     options?: AdminNavigateOptions
   ) => {
-    const steps = options?.steps?.filter((step) => step?.section) || [];
+    if (!isSafeAdminAssistantNavigation(tab, target)) return;
+    const requestedSteps = options?.steps || [];
+    if (requestedSteps.some((step) => !isSafeAdminAssistantNavigation(step?.section, step?.target))) return;
+    const steps = requestedSteps.filter((step) => step?.section);
     if (steps.length > 0) {
       setAssistantGuide({ steps, index: 0 });
       const first = steps[0];
