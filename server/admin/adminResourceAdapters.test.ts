@@ -109,6 +109,15 @@ describe('AdminResourceAdapterRegistry', () => {
     });
     expect((applied.result as any).primaryColour).toBe('#abcdef');
 
+    const verified = await AdminResourceAdapterRegistry.verifyRevision({
+      tenantId: 'tenant-a',
+      actionName: 'branding.proposeUpdate',
+      revisionId: preview.revisionIds[0],
+    });
+    expect(verified.verified).toBe(true);
+    expect(verified.resourceId).toBe('tenant-a');
+    expect(verified.resultHash).toMatch(/^[a-f0-9]{64}$/);
+
     const rolledBack = await AdminResourceAdapterRegistry.rollbackRevision({
       tenantId: 'tenant-a',
       actorId: 'admin-1',
@@ -215,6 +224,14 @@ describe('AdminResourceAdapterRegistry', () => {
     });
 
     live = { ...live, primaryColour: '#444444' };
+    await expect(
+      AdminResourceAdapterRegistry.verifyRevision({
+        tenantId: 'tenant-a',
+        actionName: 'branding.proposeUpdate',
+        revisionId: preview.revisionIds[0],
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_REVISION_VERIFICATION_FAILED' });
+
     await expect(
       AdminResourceAdapterRegistry.rollbackRevision({
         tenantId: 'tenant-a',
