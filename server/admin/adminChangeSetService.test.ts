@@ -92,6 +92,51 @@ describe('AdminChangeSetService', () => {
     expect(approved.approvedBy).toBe('marketing-1');
   });
 
+  it('binds approval to the exact scope and expiry window', async () => {
+    const proposed = await AdminChangeSetService.createProposedChangeSet({
+      tenantId: 'tenant-a',
+      actorId: 'marketing-1',
+      actorRole: 'marketingEditor',
+      actions: [{ actionName: 'branding.proposeUpdate', input: { primaryColour: '#123456' } }],
+      revisionIds: ['rev-1'],
+    });
+    const approved = await AdminChangeSetService.approveChangeSet({
+      tenantId: 'tenant-a',
+      changeSetId: proposed.id,
+      actorId: 'marketing-1',
+      actorRole: 'marketingEditor',
+    });
+
+    expect(approved.approvalScopeHash).toBeTruthy();
+    expect(approved.approvalExpiresAt).toBeTruthy();
+    expect(() => AdminChangeSetService.assertExecutableApproval(
+      approved,
+      new Date(Date.parse(approved.approvalExpiresAt!) - 1)
+    )).not.toThrow();
+
+    let expired: any;
+    try {
+      AdminChangeSetService.assertExecutableApproval(
+        approved,
+        new Date(Date.parse(approved.approvalExpiresAt!) + 1)
+      );
+    } catch (error) {
+      expired = error;
+    }
+    expect(expired).toMatchObject({ code: 'ADMIN_CHANGESET_APPROVAL_EXPIRED' });
+
+    let scopeMismatch: any;
+    try {
+      AdminChangeSetService.assertExecutableApproval({
+        ...approved,
+        revisionIds: ['rev-tampered'],
+      });
+    } catch (error) {
+      scopeMismatch = error;
+    }
+    expect(scopeMismatch).toMatchObject({ code: 'ADMIN_CHANGESET_APPROVAL_SCOPE_MISMATCH' });
+  });
+
   it('requires a high-risk approval capability for fee/rule proposals', async () => {
     const changeSet = await AdminChangeSetService.createProposedChangeSet({
       tenantId: 'tenant-a',
@@ -142,16 +187,44 @@ describe('AdminChangeSetService', () => {
       status: 'APPLYING',
     });
     expect(applying.status).toBe('APPLYING');
+    expect(applying.approvalConsumedAt).toBeTruthy();
 
+    await expect(
+      AdminChangeSetService.transitionChangeSet({
+        tenantId: 'tenant-a',
+        changeSetId: approved.id,
+        actorId: 'admin-2',
+        status: 'APPLIED',
+        afterSnapshot: { primaryColour: '#123456' },
+      })
+    ).rejects.toMatchObject({ code: 'ADMIN_CHANGESET_VERIFICATION_REQUIRED' });
+
+    const verification = {
+      verified: true as const,
+      verifiedAt: '2026-09-26T15:30:00.000Z',
+      revisionId: 'rev-1',
+      resourceType: 'tenantBranding',
+      resourceId: 'tenant-a',
+      resultHash: 'verified-result-hash',
+    };
     const applied = await AdminChangeSetService.transitionChangeSet({
       tenantId: 'tenant-a',
       changeSetId: approved.id,
       actorId: 'admin-2',
       status: 'APPLIED',
       afterSnapshot: { primaryColour: '#123456' },
+      verification,
     });
     expect(applied.status).toBe('APPLIED');
     expect(applied.appliedAt).toBeTruthy();
+    expect(applied.verification).toEqual(verification);
+    expect(applied.receipt).toMatchObject({
+      tenantId: 'tenant-a',
+      changeSetId: approved.id,
+      revisionId: 'rev-1',
+      resultHash: 'verified-result-hash',
+    });
+    expect(applied.receipt?.receiptId).toMatch(/^acr_/);
 
     const rolledBack = await AdminChangeSetService.transitionChangeSet({
       tenantId: 'tenant-a',
