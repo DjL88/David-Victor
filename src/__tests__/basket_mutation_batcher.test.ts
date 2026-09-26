@@ -82,4 +82,23 @@ describe('BasketMutationBatcher', () => {
       vi.useRealTimers();
     }
   });
+
+  it('cancels a pending burst before it is sent when the basket scope changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const apply = vi.fn(async () => ({ ok: true }));
+      const batcher = new BasketMutationBatcher(apply, 100);
+      const pending = batcher
+        .enqueue({ basketId: 'basket-old', plu: 'A', quantity: 2 })
+        .catch((error) => error);
+
+      batcher.dispose(new Error('scope changed'));
+      await vi.advanceTimersByTimeAsync(100);
+
+      await expect(pending).resolves.toMatchObject({ message: 'scope changed' });
+      expect(apply).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
