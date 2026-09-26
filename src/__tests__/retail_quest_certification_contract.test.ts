@@ -42,6 +42,31 @@ describe('WP-03 Retail/Quest deterministic certification contract', () => {
     expect(payload.orderIsAlreadyPaid).toBe(false);
   });
 
+  it('does not let stale echoed remove-only actions override substitution intent', () => {
+    const payload = projectRetailQuestOrder({
+      ...base,
+      items: [
+        {
+          ...base.items[0],
+          itemUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE'],
+          deliverectUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE'],
+        },
+        {
+          ...base.items[1],
+          itemUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE'],
+          deliverectUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE'],
+        },
+      ],
+    });
+
+    expect(payload.items[0].itemUnavailableActions).toEqual([
+      'ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG',
+    ]);
+    expect(payload.items[1].itemUnavailableActions).toEqual([
+      'ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG',
+    ]);
+  });
+
   it('freezes delivery address, scheduling and orderType semantics', () => {
     const payload = projectRetailQuestOrder({
       ...base,
