@@ -71,8 +71,9 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
     Promise.resolve(defaultAdminClient.getSearchConfig?.(tenantId))
       .then((remote: SearchOptimisationConfig | null | undefined) => {
         if (!isMounted) return;
-        if (!remote) throw new Error('Search configuration returned no data.');
-        const scopedConfig = { ...remote, tenantId };
+        const scopedConfig = remote
+          ? { ...remote, tenantId }
+          : createEmptySearchConfig(tenantId);
         setConfig(scopedConfig);
         setActiveSearchConfig(scopedConfig);
         setConfigLoadState('ready');
