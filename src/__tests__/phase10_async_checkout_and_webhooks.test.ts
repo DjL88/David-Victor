@@ -128,6 +128,7 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
   describe('Deliverect numeric status coverage', () => {
     it('normalizes duplicate, in-delivery and system failure codes', () => {
       expect(normalizeDeliverectOrderStatus(30)).toBe('DUPLICATE');
+      expect(normalizeDeliverectOrderStatus(100)).toBe('100');
       expect(normalizeDeliverectOrderStatus('80')).toBe('OUT_FOR_DELIVERY');
       expect(normalizeDeliverectOrderStatus(121)).toBe('ORDER_FAILED');
       expect(normalizeDeliverectOrderStatus('124')).toBe('ORDER_FAILED');
@@ -172,6 +173,43 @@ describe('Phase 10: Asynchronous Checkout, Webhooks, Idempotency & Monotonic Pro
     expect(preparing?.status).not.toBe('DELIVERED');
     expect(finalized?.status).not.toBe('DELIVERED');
   });
+  it('acknowledges cancellation request status 100 without marking the order cancelled', async () => {
+    const orderId = `order_cancel_requested_${Date.now()}`;
+    await FirestorePlatformService.saveOrderProjection(
+      {
+        id: orderId,
+        orderId,
+        orderReference: `REF-CANCEL-REQUEST-${Date.now()}`,
+        status: 'ACCEPTED',
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any,
+      testTenant
+    );
+
+    const payload = {
+      orderId,
+      channelOrderId: 'LT-CANCEL-REQUEST',
+      status: 100,
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = WebhookService.computeHmacSignature(rawBody, testSecret);
+
+    const result = await WebhookService.processWebhook(
+      payload,
+      rawBody,
+      { 'x-deliverect-signature': signature },
+      testTenant
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('IGNORED');
+    expect(result.newState).toBe('ACCEPTED');
+    const persisted = await FirestorePlatformService.getOrderProjection(orderId);
+    expect(persisted?.status).toBe('ACCEPTED');
+  });
+
   it('acknowledges an undocumented numeric order status without corrupting lifecycle state', async () => {
     const orderId = `order_unknown_numeric_${Date.now()}`;
     await FirestorePlatformService.saveOrderProjection(
