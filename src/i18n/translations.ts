@@ -187,6 +187,7 @@ export interface LocaleTranslations {
   'checkout.orderTracking': string;
   'checkout.hostedCheckout': string;
   'checkout.confirmingOrder': string;
+  'checkout.statusUnknown': string;
   'checkout.secureCheckout': string;
   'checkout.deliveryAddress': string;
   'checkout.noDeliveryAddress': string;
@@ -598,6 +599,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.orderTracking': 'Order Tracking',
     'checkout.hostedCheckout': 'Deliverect Pay Hosted Checkout',
     'checkout.confirmingOrder': 'Confirming Order',
+    'checkout.statusUnknown': 'Order status not confirmed',
     'checkout.secureCheckout': 'Secure Checkout',
     'checkout.deliveryAddress': 'Delivery Address',
     'checkout.noDeliveryAddress': 'No delivery address provided',
@@ -997,6 +999,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.orderTracking': 'Seguimiento del pedido',
     'checkout.hostedCheckout': 'Pago alojado de Deliverect Pay',
     'checkout.confirmingOrder': 'Confirmando pedido',
+    'checkout.statusUnknown': 'Estado del pedido no confirmado',
     'checkout.secureCheckout': 'Pago seguro',
     'checkout.deliveryAddress': 'Dirección de entrega',
     'checkout.noDeliveryAddress': 'No se ha indicado dirección de entrega',
@@ -1396,6 +1399,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.orderTracking': 'Suivi de commande',
     'checkout.hostedCheckout': 'Paiement hébergé Deliverect Pay',
     'checkout.confirmingOrder': 'Confirmation de la commande',
+    'checkout.statusUnknown': 'Statut de la commande non confirmé',
     'checkout.secureCheckout': 'Paiement sécurisé',
     'checkout.deliveryAddress': 'Adresse de livraison',
     'checkout.noDeliveryAddress': 'Aucune adresse de livraison fournie',
@@ -1795,6 +1799,7 @@ export const TRANSLATIONS: Record<string, LocaleTranslations> = {
     'checkout.orderTracking': 'Bestellverfolgung',
     'checkout.hostedCheckout': 'Deliverect Pay Bezahlseite',
     'checkout.confirmingOrder': 'Bestellung wird bestätigt',
+    'checkout.statusUnknown': 'Bestellstatus nicht bestätigt',
     'checkout.secureCheckout': 'Sicherer Checkout',
     'checkout.deliveryAddress': 'Lieferadresse',
     'checkout.noDeliveryAddress': 'Keine Lieferadresse angegeben',
