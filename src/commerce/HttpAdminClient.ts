@@ -893,6 +893,19 @@ export class HttpAdminClient implements AdminClient {
     return [];
   }
 
+  async getIntegrationApiLogs(tenantId: string, limit: number = 100): Promise<any> {
+    const headers = await this.getHeadersAsync();
+    const res = await fetch(
+      `${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/api-logs?limit=${Math.min(200, Math.max(1, limit))}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to load API logs (HTTP ${res.status})`);
+    }
+    return res.json();
+  }
+
   // ==========================================
   // DATA EXPORTS (CSV / JSON)
   // ==========================================
