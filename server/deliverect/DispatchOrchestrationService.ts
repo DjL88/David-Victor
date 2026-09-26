@@ -82,75 +82,63 @@ export class DispatchOrchestrationService {
       return null;
     }
 
+    // Dispatch availability/validation is not the same thing as a courier quote.
+    // Only initialise the quote lifecycle when concrete quote + provider evidence
+    // is present. Deliverect /fulfillment/validate intentionally returns no such
+    // identity, so a validation-only checkout remains validation-only.
+    const quoteId = String(options.quoteId || options.selectedQuote?.quoteId || '').trim();
+    const providerId = String(options.providerId || options.selectedQuote?.providerId || '').trim();
+    const providerDisplayName = String(
+      options.providerDisplayName || options.selectedQuote?.providerDisplayName || ''
+    ).trim();
+    if (!quoteId || !providerId || !providerDisplayName) {
+      return null;
+    }
+
     const tenantRules = await FirestorePlatformService.getTenantDispatchRules(tenantId);
     const now = new Date().toISOString();
-
-    const providerId = options.providerId || options.selectedQuote?.providerId || 'deliverect-dispatch';
-    const providerDisplayName =
-      options.providerDisplayName || options.selectedQuote?.providerDisplayName || 'Courier Partner';
-
     const timestamps: DispatchTimestamps = {
       quotedAt: now,
       updatedAt: now,
     };
 
-    // Calculate dynamic timing if enabled
     let scheduledFor: string | undefined = undefined;
     let targetPickupTime: string | undefined = undefined;
-
     if (tenantRules.dynamicTiming) {
       const timing = calculateDispatchTiming({
         totalItemQuantity: options.itemsCount,
         itemsPickedPerMinute: tenantRules.itemsPickedPerMinute,
         readyBufferMinutes: tenantRules.readyBufferMinutes,
         orderCreatedAt: options.orderCreatedAt,
-        providerSupportsScheduled: options.selectedQuote?.supportsScheduledAssignment,
+        providerSupportsScheduled: options.selectedQuote?.supportsScheduledAssignment === true,
       });
 
       targetPickupTime = timing.targetReadyTime;
-      if (timing.shouldSchedule) {
-        scheduledFor = timing.scheduleFor;
-      }
+      if (timing.shouldSchedule) scheduledFor = timing.scheduleFor;
     }
 
     const initialRecord: DispatchStateRecord = {
       state: 'QUOTED',
       providerId,
       providerDisplayName,
-      quoteId: options.quoteId || options.selectedQuote?.quoteId,
+      quoteId,
       attemptCount: 0,
       idempotencyKeys: [options.idempotencyKey],
       timestamps,
       scheduledFor,
       targetPickupTime,
       createdAt: now,
-      pinRequirement: options.requiresPin
-        ? {
-            required: true,
-            instruction: 'Provide the last 4 digits of your order ID or mobile number to the courier upon delivery',
-            status: 'PENDING',
-          }
-        : undefined,
-      ageVerificationRequirement: options.requiresAgeCheck
-        ? {
-            required: true,
-            minimumAge: options.minimumAge || 18,
-            status: 'PENDING_COURIER_CHECK', // Never fabricate verification!
-            instruction: 'Valid Challenge 25 photo ID verification required on delivery',
-          }
-        : {
-            required: false,
-            status: 'NOT_REQUIRED',
-          },
     };
 
-    // Save initial dispatch record
     await FirestorePlatformService.updateOrderDispatchState(orderId, initialRecord);
 
-    // If tenant rule triggers assignment immediately upon paid checkout:
     if (tenantRules.assignmentEvent === 'CHECKOUT_PAID') {
       return this.assignCourierForOrder(orderId, tenantId, adapter, {
         idempotencyKey: options.idempotencyKey,
+        deliveryAddress: options.deliveryAddress,
+        requiresAgeCheck: options.requiresAgeCheck,
+        minimumAge: options.minimumAge,
+        requiresPin: options.requiresPin,
       });
     }
 
@@ -277,12 +265,19 @@ export class DispatchOrchestrationService {
 
     const currentRecord = order.dispatch;
 
-    // If dispatch is already in terminal state or not requested, nothing to cancel with provider
-    if (['CANCELLED', 'DELIVERED', 'NOT_REQUESTED'].includes(currentRecord.state)) {
+    if (currentRecord.state === 'CANCELLED') {
       return {
         success: true,
         deliveryJobId: currentRecord.deliveryJobId || 'none',
         status: 'CANCELLED',
+      };
+    }
+    if (currentRecord.state === 'DELIVERED') {
+      return {
+        success: false,
+        deliveryJobId: currentRecord.deliveryJobId || 'none',
+        status: 'FAILED',
+        reason: 'Dispatch has already been delivered; cancellation was not applied.',
       };
     }
 
@@ -314,15 +309,15 @@ export class DispatchOrchestrationService {
         await FirestorePlatformService.updateOrderDispatchState(orderId, updated);
         return cancelRes;
       } catch (err: any) {
-        console.warn(`[Dispatch] Provider cancellation error for order ${orderId}:`, err);
+        console.warn(`[Dispatch] Provider cancellation failed for order ${orderId}.`);
+        // A provider rejection/unsupported operation is not evidence that the
+        // courier job was cancelled. Preserve the last verified lifecycle state.
         const updated: DispatchStateRecord = {
           ...currentRecord,
-          state: 'CANCELLED',
-          lastError: err.message || 'Upstream courier cancellation error',
+          lastError: String(err?.code || 'UPSTREAM_DISPATCH_CANCELLATION_FAILED'),
           idempotencyKeys: [...currentRecord.idempotencyKeys, idempotencyKey],
           timestamps: {
             ...currentRecord.timestamps,
-            cancelledAt: now,
             updatedAt: now,
           },
         };
@@ -330,8 +325,8 @@ export class DispatchOrchestrationService {
         return {
           success: false,
           deliveryJobId: currentRecord.deliveryJobId,
-          status: 'CANCELLED',
-          reason: err.message,
+          status: 'FAILED',
+          reason: String(err?.code || 'UPSTREAM_DISPATCH_CANCELLATION_FAILED'),
         };
       }
     } else {
@@ -366,6 +361,10 @@ export class DispatchOrchestrationService {
       force?: boolean;
       idempotencyKey: string;
       customTargetPickupTime?: string;
+      deliveryAddress?: any;
+      requiresAgeCheck?: boolean;
+      minimumAge?: number;
+      requiresPin?: boolean;
     }
   ): Promise<DispatchStateRecord> {
     const order = await FirestorePlatformService.getOrderProjection(orderId);
@@ -420,16 +419,29 @@ export class DispatchOrchestrationService {
       }
     }
 
-    const now = new Date().toISOString();
-    const currentAttempt = (existing?.attemptCount || 0) + 1;
+    if (!existing?.quoteId || !existing.providerId || !existing.providerDisplayName) {
+      throw new BFFError(
+        'DISPATCH_QUOTE_REQUIRED',
+        'Courier assignment requires a verified quote and provider identity.',
+        409,
+        false
+      );
+    }
+    if (!options.deliveryAddress) {
+      throw new BFFError(
+        'DISPATCH_DELIVERY_ADDRESS_REQUIRED',
+        'Courier assignment requires the verified delivery address; no address is inferred from the order projection.',
+        409,
+        false
+      );
+    }
 
-    // Transition to ASSIGNING
+    const now = new Date().toISOString();
+    const currentAttempt = (existing.attemptCount || 0) + 1;
+
+    // Transition to ASSIGNING only after all assignment evidence is present.
     const assigningRecord: DispatchStateRecord = {
-      ...(existing || {
-        providerId: 'deliverect-dispatch',
-        providerDisplayName: 'Deliverect Dispatch',
-        createdAt: now,
-      }),
+      ...existing,
       state: 'ASSIGNING',
       attemptCount: currentAttempt,
       idempotencyKeys: [...(existing?.idempotencyKeys || []), options.idempotencyKey],
@@ -440,8 +452,8 @@ export class DispatchOrchestrationService {
     };
     await FirestorePlatformService.updateOrderDispatchState(orderId, assigningRecord);
 
-    const quoteId = existing?.quoteId || `quote_${orderId}`;
-    const providerId = existing?.providerId || 'deliverect-dispatch';
+    const quoteId = existing.quoteId;
+    const providerId = existing.providerId;
 
     try {
       const assignParams: DispatchAssignParams = {
@@ -450,17 +462,13 @@ export class DispatchOrchestrationService {
         storeId: order.channelLinkId,
         quoteId,
         providerId,
-        deliveryAddress: {
-          postalCode: order.destinationArea || 'SW1A 1AA',
-          city: 'London',
-          country: 'GB',
-        },
+        deliveryAddress: options.deliveryAddress,
         itemsCount: order.itemsCount || 1,
-        orderValueMinorUnits: order.total || 0,
-        currency: order.currency || 'GBP',
-        requiresAgeCheck: existing?.ageVerificationRequirement?.required,
-        minimumAge: existing?.ageVerificationRequirement?.minimumAge || 18,
-        requiresPin: existing?.pinRequirement?.required,
+        orderValueMinorUnits: order.total,
+        currency: order.currency,
+        requiresAgeCheck: options.requiresAgeCheck,
+        minimumAge: options.minimumAge,
+        requiresPin: options.requiresPin,
         idempotencyKey: options.idempotencyKey,
         targetPickupTime: options.customTargetPickupTime || existing?.targetPickupTime,
       };
