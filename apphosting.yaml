@@ -52,16 +52,17 @@ env:
     availability:
       - RUNTIME
 
-  # One stable ingress host for every Deliverect tenant callback. Tenant
-  # isolation remains in the signed webhook path identifier, not the hostname.
+  # Keep staging on the verified App Hosting ingress until ltx.wtf routes these
+  # callback paths to this backend. Tenant isolation remains in the signed
+  # webhook path identifier, not the hostname.
   - variable: CHANNEL_PUBLIC_BASE_URL
-    value: https://ltx.wtf
+    value: https://leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app
     availability:
       - RUNTIME
       - BUILD
 
   - variable: VITE_CHANNEL_PUBLIC_BASE_URL
-    value: https://ltx.wtf
+    value: https://leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app
     availability:
       - BUILD
 
