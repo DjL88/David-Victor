@@ -23,6 +23,7 @@ describe('Commerce store last-known-good durability', () => {
       name: 'Working Store',
       stateProjection: 'open',
       lastSeenAt: '2026-09-24T10:00:00.000Z',
+      services: [{ id: 'uber-eats-link', name: 'Uber Eats', status: 'ACTIVE', marketplace: 'uber-eats' }],
     };
 
     (adapter as any).loadFromFirestore = vi.fn(async () => ({
@@ -61,6 +62,7 @@ describe('Commerce store last-known-good durability', () => {
     expect(result.persistenceStatus).toBe('SKIPPED');
     expect(result.orphanedChannelLinkIds).toEqual([]);
     expect(result.stores).toEqual([lastKnownStore]);
+    expect((result.stores[0] as any).services).toEqual(lastKnownStore.services);
     expect(result.count).toBe(1);
     expect(result.message).toMatch(/preserved as last-known-good/i);
   });
