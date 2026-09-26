@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   defaultAnalyticsClient,
   InsightsDashboardData,
@@ -10,6 +10,7 @@ import {
   RegionalMetric,
 } from '../../analytics';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { formatCurrency } from '../../utils/formatters';
 import {
   TrendingUp,
   Filter,
@@ -37,6 +38,18 @@ interface InsightsScreenProps {
   tenantId: string;
 }
 
+const formatPercent = (value: number | null | undefined): string =>
+  value === null || value === undefined ? 'Unknown' : `${value}%`;
+
+const formatKnownNumber = (value: number | null | undefined): string =>
+  value === null || value === undefined ? 'Unknown' : value.toLocaleString();
+
+const formatKnownMoney = (
+  value: number | null | undefined,
+  currency: string | null | undefined,
+): string =>
+  value === null || value === undefined || !currency ? 'Unknown' : formatCurrency(value, currency);
+
 export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | '90d'>('30d');
   const [activeTab, setActiveTab] = useState<
@@ -55,9 +68,12 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   const [data, setData] = useState<InsightsDashboardData | null>(null);
   const [recentEvents, setRecentEvents] = useState<AnalyticsEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventsError, setEventsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const dataRequestRef = useRef(0);
+  const eventsRequestRef = useRef(0);
 
   useEffect(() => {
     loadData();
@@ -70,32 +86,41 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   }, [activeTab, tenantId]);
 
   const loadData = async () => {
+    const requestId = ++dataRequestRef.current;
     setLoading(true);
     setError('');
     try {
       const res = await defaultAnalyticsClient.getInsights(tenantId, timeframe);
+      if (requestId !== dataRequestRef.current) return;
       setData(res);
       if (activeTab === 'telemetry') {
-        loadRecentEvents();
+        void loadRecentEvents();
       }
     } catch (err) {
+      if (requestId !== dataRequestRef.current) return;
       console.error('Failed to load insights:', err);
       setData(null);
       setError('Insights could not be loaded.');
     } finally {
-      setLoading(false);
+      if (requestId === dataRequestRef.current) setLoading(false);
     }
   };
 
   const loadRecentEvents = async () => {
+    const requestId = ++eventsRequestRef.current;
     setLoadingEvents(true);
+    setEventsError('');
     try {
       const events = await defaultAnalyticsClient.getRecentEvents(tenantId, 50);
+      if (requestId !== eventsRequestRef.current) return;
       setRecentEvents(events);
     } catch (err) {
+      if (requestId !== eventsRequestRef.current) return;
       console.error('Failed to load recent events:', err);
+      setRecentEvents([]);
+      setEventsError('Telemetry could not be loaded.');
     } finally {
-      setLoadingEvents(false);
+      if (requestId === eventsRequestRef.current) setLoadingEvents(false);
     }
   };
 
@@ -124,11 +149,11 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
   }
 
   return (
-    <div className="p-4 sm:p-4 sm:p-6 max-w-7xl mx-auto space-y-6 min-w-0 min-w-0">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 min-w-0">
       {/* HEADER & TIMEFRAME SELECTOR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-600" />
               <span>Insights</span>
@@ -141,7 +166,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-2xs">
+          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-2xs max-w-full overflow-x-auto">
             {(['7d', '30d', '90d'] as const).map((t) => (
               <button
                 key={t}
@@ -197,26 +222,31 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
-            Total GMV
+            Captured GMV
           </span>
           <p className="text-xl font-black text-gray-900 mt-1">
-            £{data.totalGrossMerchandiseValue.toLocaleString()}
+            {formatKnownMoney(data.totalGrossMerchandiseValue, data.evidence.financialCurrency)}
           </p>
-          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
-            <TrendingUp className="w-3 h-3" />
-            +14.2% vs prev
+          <span className="text-[10px] text-gray-500 mt-1 block">
+            {data.evidence.financialStatus === 'AVAILABLE'
+              ? `${data.evidence.financialCaptureEvents} verified payment capture${data.evidence.financialCaptureEvents === 1 ? '' : 's'}`
+              : data.evidence.financialStatus === 'NO_CAPTURE_EVIDENCE'
+                ? 'No verified payment-capture evidence'
+                : data.evidence.financialStatus === 'MIXED_CURRENCY'
+                  ? 'Mixed currencies — no combined GMV'
+                  : 'Incomplete payment amount/currency evidence'}
           </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
-            Completed Orders
+            Paid Orders
           </span>
           <p className="text-xl font-black text-gray-900 mt-1">
-            {data.totalOrders.toLocaleString()}
+            {formatKnownNumber(data.totalOrders)}
           </p>
           <span className="text-[10px] text-gray-500 mt-1 block">
-            Avg £{(data.averageOrderValue ?? 0).toFixed(2)}
+            Avg {formatKnownMoney(data.averageOrderValue, data.evidence.financialCurrency)}
           </span>
         </div>
 
@@ -225,7 +255,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             Overall Conversion
           </span>
           <p className="text-xl font-black text-indigo-600 mt-1">
-            {data.overallConversionRate}%
+            {formatPercent(data.overallConversionRate)}
           </p>
           <span className="text-[10px] text-gray-500 mt-1 block">
             Landing to Delivered
@@ -237,7 +267,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             Serviceability
           </span>
           <p className="text-xl font-black text-emerald-600 mt-1">
-            {data.serviceabilityRate}%
+            {formatPercent(data.serviceabilityRate)}
           </p>
           <span className="text-[10px] text-gray-500 mt-1 block">
             Coverage in address zones
@@ -249,7 +279,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             Pick Success Rate
           </span>
           <p className="text-xl font-black text-emerald-600 mt-1">
-            {data.pickingSuccessRate}%
+            {formatPercent(data.pickingSuccessRate)}
           </p>
           <span className="text-[10px] text-gray-500 mt-1 block">
             Quest fulfillment rate
@@ -279,11 +309,11 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm text-slate-100">Storefront analytics</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Privacy-aware
+                {data.evidence.status === 'EMPTY' ? 'No event data' : `${data.evidence.eventCount} events · latest ${data.evidence.observedAt ? new Date(data.evidence.observedAt).toLocaleString() : 'unknown'}`}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Shows the analytics events available for this brand. Metrics depend on the events currently being collected.
+              Event-backed metrics only. Missing evidence is shown as Unknown rather than estimated or treated as healthy. Financial totals use server-only payment-capture events and never browser-submitted order totals.
             </p>
           </div>
         </div>
@@ -331,10 +361,10 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             <p className="text-xs text-gray-500 mt-0.5">Strict attribution from recommendation presentation through acceptance to paid order.</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Presented</div><div className="text-xl font-black">{data.artieRecommendations?.presented ?? 0}</div></div>
-            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Accepted</div><div className="text-xl font-black">{data.artieRecommendations?.accepted ?? 0}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.presentedToAcceptedRate ?? 0}% of presented</div></div>
-            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Paid</div><div className="text-xl font-black">{data.artieRecommendations?.paid ?? 0}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.presentedToPaidRate ?? 0}% of presented</div></div>
-            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Attributed revenue</div><div className="text-xl font-black">£{(data.artieRecommendations?.attributedRevenue ?? 0).toLocaleString()}</div><div className="text-[10px] text-gray-500">{data.artieRecommendations?.acceptedToPaidRate ?? 0}% accepted → paid</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Presented</div><div className="text-xl font-black">{data.artieRecommendations.presented}</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Accepted</div><div className="text-xl font-black">{data.artieRecommendations.accepted}</div><div className="text-[10px] text-gray-500">{formatPercent(data.artieRecommendations.presentedToAcceptedRate)} of presented</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Paid</div><div className="text-xl font-black">{data.artieRecommendations.paid}</div><div className="text-[10px] text-gray-500">{formatPercent(data.artieRecommendations.presentedToPaidRate)} of presented</div></div>
+            <div className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] uppercase font-bold text-gray-500">Attributed revenue</div><div className="text-xl font-black">{formatKnownMoney(data.artieRecommendations.attributedRevenue, data.evidence.financialCurrency)}</div><div className="text-[10px] text-gray-500">{formatPercent(data.artieRecommendations.acceptedToPaidRate)} accepted → paid</div></div>
           </div>
         </div>
       )}
@@ -397,7 +427,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 <span>Story Drops Performance (Direct vs. Assisted Attribution)</span>
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Clearly distinguishes direct CTA purchases from assisted conversions occurring later in session.
+                Engagement is event-backed. Purchase attribution remains Unknown until a paid story-attribution event exists.
               </p>
             </div>
           </div>
@@ -421,7 +451,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 {data.stories.map((st) => (
                   <tr key={st.storyId} className="hover:bg-gray-50/50">
                     <td className="py-3 px-3 font-bold text-gray-900">
-                      {st.title}
+                      {st.title || 'Title unavailable'}
                       {st.tag && (
                         <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
                           {st.tag}
@@ -432,7 +462,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                       {st.impressions.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">
-                      {st.uniqueViewers?.toLocaleString() || '—'}
+                      {formatKnownNumber(st.uniqueViewers)}
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">
                       {st.opens.toLocaleString()}
@@ -441,16 +471,16 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                       {st.productClicks.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">
-                      {st.addToBaskets.toLocaleString()}
+                      {formatKnownNumber(st.addToBaskets)}
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-emerald-600">
-                      £{st.capturedSales.toLocaleString()}
+                      {formatKnownMoney(st.capturedSales, data.evidence.financialCurrency)}
                     </td>
                     <td className="py-3 px-3 font-bold text-indigo-700">
-                      {st.directConversionRate}%
+                      {formatPercent(st.directConversionRate)}
                     </td>
                     <td className="py-3 px-3 font-bold text-purple-700">
-                      {st.assistedConversionRate}%
+                      {formatPercent(st.assistedConversionRate)}
                     </td>
                   </tr>
                 ))}
@@ -469,7 +499,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
               <span>Product Performance & Quest Fulfillment Metrics</span>
             </h3>
             <span className="text-xs text-gray-500">
-              Correlates demand with Quest picking amendments and estimated lost revenue
+              Shows event-backed demand and picking evidence; unavailable attribution is marked Unknown
             </span>
           </div>
 
@@ -492,32 +522,32 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 {data.products.map((p) => (
                   <tr key={p.plu} className="hover:bg-gray-50/50">
                     <td className="py-3 px-3">
-                      <div className="font-bold text-gray-900">{p.name}</div>
+                      <div className="font-bold text-gray-900">{p.name || 'Name unavailable'}</div>
                       <div className="text-[10px] text-gray-400 font-mono">{p.plu}</div>
                     </td>
-                    <td className="py-3 px-3 text-gray-600">{p.category}</td>
+                    <td className="py-3 px-3 text-gray-600">{p.category || 'Unknown'}</td>
                     <td className="py-3 px-3 font-mono text-gray-600">
                       {p.productViews.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">
-                      {p.addToBasketCount.toLocaleString()}
+                      {formatKnownNumber(p.addToBasketCount)}
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-emerald-600">
-                      £{p.revenue.toLocaleString()}
+                      {formatKnownMoney(p.revenue, data.evidence.financialCurrency)}
                     </td>
                     <td className="py-3 px-3 font-mono text-amber-600 font-semibold">
-                      {p.outOfStockImpressions}
+                      {formatKnownNumber(p.outOfStockImpressions)}
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">
                       {p.questSubstitutions}
                     </td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                        {p.pickSuccessRate}%
+                        {formatPercent(p.pickSuccessRate)}
                       </span>
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-rose-600">
-                      £{p.estimatedLostRevenue}
+                      {formatKnownMoney(p.estimatedLostRevenue, data.evidence.financialCurrency)}
                     </td>
                   </tr>
                 ))}
@@ -549,7 +579,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                   <th className="py-2.5 px-3">Results Count</th>
                   <th className="py-2.5 px-3">Result Clicks</th>
                   <th className="py-2.5 px-3">Add to Baskets</th>
-                  <th className="py-2.5 px-3">Conversion %</th>
+                  <th className="py-2.5 px-3">Result Click %</th>
                   <th className="py-2.5 px-3">Status</th>
                 </tr>
               </thead>
@@ -560,18 +590,22 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                       "{s.query}"
                     </td>
                     <td className="py-3 px-3 font-mono text-gray-600">{s.frequency}</td>
-                    <td className="py-3 px-3 font-mono text-gray-600">{s.resultsCount}</td>
+                    <td className="py-3 px-3 font-mono text-gray-600">{formatKnownNumber(s.resultsCount)}</td>
                     <td className="py-3 px-3 font-mono text-gray-600">{s.resultClicks}</td>
-                    <td className="py-3 px-3 font-mono text-gray-600">{s.addToBasketCount}</td>
+                    <td className="py-3 px-3 font-mono text-gray-600">{formatKnownNumber(s.addToBasketCount)}</td>
                     <td className="py-3 px-3 font-bold text-indigo-600">{s.conversionRate}%</td>
                     <td className="py-3 px-3">
-                      {s.noResult ? (
+                      {s.resultsCount === 0 ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                           Zero Results
                         </span>
+                      ) : s.resultsCount === null ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                          Result count unavailable
+                        </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                          Active Results
+                          Results observed
                         </span>
                       )}
                     </td>
@@ -593,7 +627,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 <span>Coarse Regional Geography (GDPR Privacy-Compliant)</span>
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Aggregated by postcode districts and administrative cities. Never stores or processes exact coordinates.
+                Displays only the coarse region actually observed. City/country are never inferred from a region code.
               </p>
             </div>
           </div>
@@ -602,9 +636,8 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500 font-bold border-y border-gray-100">
                 <tr>
+                  <th className="py-2.5 px-3">Coarse Region</th>
                   <th className="py-2.5 px-3">Postcode District</th>
-                  <th className="py-2.5 px-3">City / Area</th>
-                  <th className="py-2.5 px-3">Region</th>
                   <th className="py-2.5 px-3">Sessions</th>
                   <th className="py-2.5 px-3">Serviceability %</th>
                   <th className="py-2.5 px-3">No-Store Rate</th>
@@ -615,23 +648,22 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
               <tbody className="divide-y divide-gray-100">
                 {data.regions.map((r, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/50">
+                    <td className="py-3 px-3 text-gray-700">{r.region}</td>
                     <td className="py-3 px-3 font-mono font-bold text-gray-900">
-                      {r.postcodeDistrict}
+                      {r.postcodeDistrict || 'Unknown'}
                     </td>
-                    <td className="py-3 px-3 font-semibold text-gray-800">{r.city}</td>
-                    <td className="py-3 px-3 text-gray-600">{r.region}</td>
                     <td className="py-3 px-3 font-mono text-gray-600">
                       {r.sessions.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 font-bold text-emerald-600">
-                      {r.serviceabilityRate}%
+                      {formatPercent(r.serviceabilityRate)}
                     </td>
                     <td className="py-3 px-3 font-bold text-amber-600">
-                      {r.noServiceableStoreRate}%
+                      {formatPercent(r.noServiceableStoreRate)}
                     </td>
-                    <td className="py-3 px-3 font-mono text-gray-800">{r.ordersCount}</td>
+                    <td className="py-3 px-3 font-mono text-gray-800">{formatKnownNumber(r.ordersCount)}</td>
                     <td className="py-3 px-3 font-mono font-bold text-gray-900">
-                      £{r.revenue.toLocaleString()}
+                      {formatKnownMoney(r.revenue, data.evidence.financialCurrency)}
                     </td>
                   </tr>
                 ))}
@@ -658,21 +690,21 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
             <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
               <span className="text-xs text-gray-500 font-bold block">Abandoned Baskets</span>
               <p className="text-xl font-black text-gray-900 mt-1">
-                {data.abandonedBasket[0]?.abandonedCount || 0}
+                {formatKnownNumber(data.abandonedBasket[0]?.abandonedCount)}
               </p>
             </div>
 
             <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
               <span className="text-xs text-gray-500 font-bold block">Recovered Sessions</span>
               <p className="text-xl font-black text-emerald-600 mt-1">
-                {data.abandonedBasket[0]?.recoveredCount || 0} ({data.abandonedBasket[0]?.recoveryRate}%)
+                {formatKnownNumber(data.abandonedBasket[0]?.recoveredCount)} ({formatPercent(data.abandonedBasket[0]?.recoveryRate)})
               </p>
             </div>
 
             <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
               <span className="text-xs text-gray-500 font-bold block">Average Abandoned Value</span>
               <p className="text-xl font-black text-indigo-600 mt-1">
-                £{(data.abandonedBasket[0]?.averageAbandonedValue ?? 0).toFixed(2)}
+                {formatKnownMoney(data.abandonedBasket[0]?.averageAbandonedValue, data.evidence.financialCurrency)}
               </p>
             </div>
           </div>
@@ -733,10 +765,16 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({ tenantId }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentEvents.length === 0 ? (
+                {eventsError ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-rose-700">
+                      {eventsError}
+                    </td>
+                  </tr>
+                ) : recentEvents.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-gray-400">
-                      No telemetry events recorded yet in this window. Click around the storefront to log live interactions.
+                      No telemetry events recorded yet in this window.
                     </td>
                   </tr>
                 ) : (

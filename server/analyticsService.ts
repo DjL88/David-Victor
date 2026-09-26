@@ -256,36 +256,56 @@ export class AnalyticsService {
         timeframe,
         totalSessions: 0,
         activeStoresCount: 0,
-        totalOrders: 0,
-        totalGrossMerchandiseValue: 0,
-        averageOrderValue: 0,
-        overallConversionRate: 0,
-        serviceabilityRate: 0,
-        pickingSuccessRate: 100,
+        totalOrders: null,
+        totalGrossMerchandiseValue: null,
+        averageOrderValue: null,
+        overallConversionRate: null,
+        serviceabilityRate: null,
+        pickingSuccessRate: null,
         funnel: [],
         products: [],
         stories: [],
         searches: [],
         regions: [],
         abandonedBasket: [],
-        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
+        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: null, presentedToPaidRate: null, acceptedToPaidRate: null, attributedRevenue: 0 },
+        evidence: {
+          source: 'analytics_events',
+          status: 'EMPTY',
+          observedAt: null,
+          eventCount: 0,
+          serviceabilityChecks: 0,
+          pickingOutcomeEvents: 0,
+          searchEvents: 0,
+          recommendationChains: 0,
+          financialSource: 'payment_captured_events',
+          financialCaptureEvents: 0,
+          financialAmountEvents: 0,
+          financialCurrency: null,
+          financialStatus: 'NO_CAPTURE_EVIDENCE',
+        },
       };
     }
 
     // 1. Session and store counts
     const sessions = new Set<string>();
     const stores = new Set<string>();
-    let totalOrders = 0;
     let totalGMV = 0;
+    let financialCaptureEvents = 0;
+    let financialAmountEvents = 0;
+    const financialCurrencies = new Set<string>();
+    const capturedOrderKeys = new Set<string>();
     let serviceableChecks = 0;
     let serviceableHits = 0;
     let pickingItems = 0;
     let pickingSubstitutions = 0;
     let pickingRemovals = 0;
-    let artiePresented = 0;
-    let artieAccepted = 0;
-    let artiePaid = 0;
-    let artieAttributedRevenue = 0;
+    const recommendationEvidence = new Map<string, {
+      presentedAt?: number;
+      acceptedAt?: number;
+      paidAt?: number;
+      attributedRevenue: number;
+    }>();
 
     const funnelCounts: Record<string, Set<string>> = {
       brand_store_landing: new Set(),
@@ -297,10 +317,10 @@ export class AnalyticsService {
       delivered: new Set(),
     };
 
-    const productMap = new Map<string, { views: number; adds: number; orders: number; revenue: number; substitutions: number; removals: number }>();
+    const productMap = new Map<string, { views: number; adds: number; orders: number; revenue: number; picked: number; substitutions: number; removals: number; quantityReductions: number }>();
     const storyMap = new Map<string, { impressions: number; opens: number; clicks: number; adds: number; orders: number; revenue: number }>();
     const searchMap = new Map<string, { count: number; clicks: number; adds: number; noResult: boolean }>();
-    const regionMap = new Map<string, { sessions: Set<string>; orders: number; revenue: number; serviceableHits: number; totalChecks: number }>();
+    const regionMap = new Map<string, { sessions: Set<string>; serviceableHits: number; totalChecks: number }>();
 
     for (const e of filteredEvents) {
       if (e.sessionId) sessions.add(e.sessionId);
@@ -317,7 +337,7 @@ export class AnalyticsService {
         case 'PRODUCT_VIEW':
           funnelCounts.product_view.add(e.sessionId);
           if (e.productPlu) {
-            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, substitutions: 0, removals: 0 };
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
             p.views++;
             productMap.set(e.productPlu, p);
           }
@@ -325,7 +345,7 @@ export class AnalyticsService {
         case 'ADD_TO_BASKET':
           funnelCounts.add_to_basket.add(e.sessionId);
           if (e.productPlu) {
-            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, substitutions: 0, removals: 0 };
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
             p.adds++;
             productMap.set(e.productPlu, p);
           }
@@ -335,13 +355,26 @@ export class AnalyticsService {
           break;
         case 'ORDER_SUBMITTED':
           funnelCounts.order_submitted.add(e.sessionId);
-          totalOrders++;
-          const orderTotal = typeof e.properties?.totalAmount === 'number' ? e.properties.totalAmount : 0;
-          totalGMV += orderTotal;
           break;
-        case 'PAYMENT_CAPTURED':
-        case 'ORDER_ACCEPTED':
+        case 'PAYMENT_CAPTURED': {
           funnelCounts.payment_captured.add(e.sessionId);
+          const captureKey = e.orderReferenceHash || e.id;
+          if (!capturedOrderKeys.has(captureKey)) {
+            capturedOrderKeys.add(captureKey);
+            financialCaptureEvents++;
+            const amount = e.properties?.totalAmount;
+            const currency = typeof e.properties?.currency === 'string'
+              ? e.properties.currency.trim().toUpperCase()
+              : '';
+            if (typeof amount === 'number' && Number.isFinite(amount) && amount >= 0) {
+              financialAmountEvents++;
+              totalGMV += amount;
+            }
+            if (currency) financialCurrencies.add(currency);
+          }
+          break;
+        }
+        case 'ORDER_ACCEPTED':
           break;
         case 'ORDER_DELIVERED':
           funnelCounts.delivered.add(e.sessionId);
@@ -356,12 +389,17 @@ export class AnalyticsService {
           break;
         case 'ITEM_PICKED':
           pickingItems++;
+          if (e.productPlu) {
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
+            p.picked++;
+            productMap.set(e.productPlu, p);
+          }
           break;
         case 'ITEM_SUBSTITUTED':
           pickingItems++;
           pickingSubstitutions++;
           if (e.productPlu) {
-            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, substitutions: 0, removals: 0 };
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
             p.substitutions++;
             productMap.set(e.productPlu, p);
           }
@@ -370,8 +408,15 @@ export class AnalyticsService {
           pickingItems++;
           pickingRemovals++;
           if (e.productPlu) {
-            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, substitutions: 0, removals: 0 };
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
             p.removals++;
+            productMap.set(e.productPlu, p);
+          }
+          break;
+        case 'ITEM_QUANTITY_AMENDED':
+          if (e.productPlu) {
+            const p = productMap.get(e.productPlu) || { views: 0, adds: 0, orders: 0, revenue: 0, picked: 0, substitutions: 0, removals: 0, quantityReductions: 0 };
+            p.quantityReductions++;
             productMap.set(e.productPlu, p);
           }
           break;
@@ -414,16 +459,41 @@ export class AnalyticsService {
             searchMap.set(query, sm);
           }
           break;
-        case 'ARTIE_RECOMMENDATION_PRESENTED':
-          artiePresented++;
+        case 'ARTIE_RECOMMENDATION_PRESENTED': {
+          const recommendationId = typeof e.properties?.recommendationId === 'string' ? e.properties.recommendationId.trim() : '';
+          const eventAt = Date.parse(e.timestamp);
+          if (recommendationId && Number.isFinite(eventAt)) {
+            const current = recommendationEvidence.get(recommendationId) || { attributedRevenue: 0 };
+            current.presentedAt = current.presentedAt === undefined ? eventAt : Math.min(current.presentedAt, eventAt);
+            recommendationEvidence.set(recommendationId, current);
+          }
           break;
-        case 'ARTIE_RECOMMENDATION_ACCEPTED':
-          artieAccepted++;
+        }
+        case 'ARTIE_RECOMMENDATION_ACCEPTED': {
+          const recommendationId = typeof e.properties?.recommendationId === 'string' ? e.properties.recommendationId.trim() : '';
+          const eventAt = Date.parse(e.timestamp);
+          if (recommendationId && Number.isFinite(eventAt)) {
+            const current = recommendationEvidence.get(recommendationId) || { attributedRevenue: 0 };
+            current.acceptedAt = current.acceptedAt === undefined ? eventAt : Math.min(current.acceptedAt, eventAt);
+            recommendationEvidence.set(recommendationId, current);
+          }
           break;
-        case 'ARTIE_RECOMMENDATION_PAID':
-          artiePaid++;
-          artieAttributedRevenue += typeof e.properties?.attributedRevenue === 'number' ? e.properties.attributedRevenue : 0;
+        }
+        case 'ARTIE_RECOMMENDATION_PAID': {
+          const recommendationId = typeof e.properties?.recommendationId === 'string' ? e.properties.recommendationId.trim() : '';
+          const eventAt = Date.parse(e.timestamp);
+          if (recommendationId && Number.isFinite(eventAt)) {
+            const current = recommendationEvidence.get(recommendationId) || { attributedRevenue: 0 };
+            if (current.paidAt === undefined || eventAt < current.paidAt) {
+              current.paidAt = eventAt;
+              current.attributedRevenue = typeof e.properties?.attributedRevenue === 'number'
+                ? Math.max(0, e.properties.attributedRevenue)
+                : 0;
+            }
+            recommendationEvidence.set(recommendationId, current);
+          }
           break;
+        }
         case 'SEARCH_RESULT_CLICK':
           if (e.searchTerm) {
             const query = e.searchTerm;
@@ -438,16 +508,10 @@ export class AnalyticsService {
       if (e.coarseRegion) {
         const reg = regionMap.get(e.coarseRegion) || {
           sessions: new Set(),
-          orders: 0,
-          revenue: 0,
           serviceableHits: 0,
           totalChecks: 0,
         };
         reg.sessions.add(e.sessionId);
-        if (e.type === 'ORDER_SUBMITTED') {
-          reg.orders++;
-          reg.revenue += typeof e.properties?.totalAmount === 'number' ? e.properties.totalAmount : 0;
-        }
         if (e.type === 'ELIGIBLE_STORES_RETURNED') {
           reg.serviceableHits++;
           reg.totalChecks++;
@@ -458,7 +522,23 @@ export class AnalyticsService {
       }
     }
 
-    const totalSessionCount = sessions.size || 1;
+    let artiePresented = 0;
+    let artieAccepted = 0;
+    let artiePaid = 0;
+    let artieAttributedRevenue = 0;
+    for (const evidence of recommendationEvidence.values()) {
+      if (evidence.presentedAt === undefined) continue;
+      artiePresented++;
+      const accepted = evidence.acceptedAt !== undefined && evidence.acceptedAt >= evidence.presentedAt;
+      if (!accepted) continue;
+      artieAccepted++;
+      const paid = evidence.paidAt !== undefined && evidence.paidAt >= evidence.acceptedAt!;
+      if (!paid) continue;
+      artiePaid++;
+      artieAttributedRevenue += evidence.attributedRevenue;
+    }
+
+    const totalSessionCount = sessions.size;
     const baseLanding = Math.max(funnelCounts.brand_store_landing.size, totalSessionCount);
 
     // Build funnel
@@ -489,92 +569,92 @@ export class AnalyticsService {
 
     // Build product performance metrics
     const products: ProductPerformanceMetric[] = Array.from(productMap.entries()).map(([plu, stats]) => {
-      const conversionRate = stats.views > 0 ? Math.round((stats.adds / stats.views) * 1000) / 10 : 0;
-      const pickSuccessRate = stats.substitutions + stats.removals > 0
-        ? Math.round(((stats.adds - (stats.substitutions + stats.removals)) / Math.max(1, stats.adds)) * 1000) / 10
-        : 100;
+      const conversionRate = stats.views > 0 ? Math.round((stats.adds / stats.views) * 1000) / 10 : null;
+      const pickingOutcomeCount = stats.picked + stats.substitutions + stats.removals;
+      const pickSuccessRate = pickingOutcomeCount > 0
+        ? Math.round((stats.picked / pickingOutcomeCount) * 1000) / 10
+        : null;
       return {
         plu,
-        name: `Product ${plu}`,
-        category: 'Grocery',
-        impressions: stats.views * 3,
+        name: null,
+        category: null,
+        impressions: null,
         productViews: stats.views,
         addToBasketCount: stats.adds,
-        ordersCount: stats.orders,
+        ordersCount: null,
         conversionRate,
-        revenue: stats.revenue,
-        outOfStockImpressions: 0,
+        revenue: null,
+        outOfStockImpressions: null,
         questRemovals: stats.removals,
         questSubstitutions: stats.substitutions,
-        quantityReductions: 0,
+        quantityReductions: stats.quantityReductions,
         pickSuccessRate,
-        estimatedLostRevenue: 0,
+        estimatedLostRevenue: null,
       };
     });
 
     // Build story metrics
     const stories: StoryPerformanceMetric[] = Array.from(storyMap.entries()).map(([storyId, stats]) => ({
       storyId,
-      title: `Story ${storyId}`,
+      title: null,
       impressions: stats.impressions,
+      uniqueViewers: null,
       opens: stats.opens,
       productClicks: stats.clicks,
-      addToBaskets: stats.adds,
-      orders: stats.orders,
-      capturedSales: stats.revenue,
-      directConversionRate: stats.opens > 0 ? Math.round((stats.clicks / stats.opens) * 1000) / 10 : 0,
-      assistedConversionRate: stats.impressions > 0 ? Math.round((stats.opens / stats.impressions) * 1000) / 10 : 0,
+      addToBaskets: null,
+      orders: null,
+      capturedSales: null,
+      directConversionRate: null,
+      assistedConversionRate: null,
     }));
 
     // Build searches
     const searches: SearchQueryMetric[] = Array.from(searchMap.entries()).map(([query, stats]) => ({
       query,
       frequency: stats.count,
-      resultsCount: stats.noResult ? 0 : 12,
+      resultsCount: stats.noResult ? 0 : null,
       resultClicks: stats.clicks,
-      addToBasketCount: stats.adds,
+      addToBasketCount: null,
       conversionRate: stats.count > 0 ? Math.round((stats.clicks / stats.count) * 1000) / 10 : 0,
       noResult: stats.noResult,
     }));
 
     // Build regional breakdown
     const regions: RegionalMetric[] = Array.from(regionMap.entries()).map(([regionCode, stats]) => {
-      const sRate = stats.totalChecks > 0 ? Math.round((stats.serviceableHits / stats.totalChecks) * 100) : 100;
-      const cRate = stats.sessions.size > 0 ? Math.round((stats.orders / stats.sessions.size) * 1000) / 10 : 0;
+      const sRate = stats.totalChecks > 0 ? Math.round((stats.serviceableHits / stats.totalChecks) * 100) : null;
+      const postcodeDistrict = /^[A-Z]{1,2}\d[A-Z\d]?$/i.test(regionCode) ? regionCode.toUpperCase() : null;
       return {
-        country: 'GB',
+        country: null,
         region: regionCode,
-        city: regionCode,
-        postcodeDistrict: regionCode,
+        city: null,
+        postcodeDistrict,
         sessions: stats.sessions.size,
         serviceabilityRate: sRate,
-        noServiceableStoreRate: 100 - sRate,
-        conversionRate: cRate,
-        ordersCount: stats.orders,
-        revenue: stats.revenue,
+        noServiceableStoreRate: sRate === null ? null : 100 - sRate,
+        conversionRate: null,
+        ordersCount: null,
+        revenue: null,
       };
     });
 
-    const overallConversionRate = baseLanding > 0 ? Math.round((totalOrders / baseLanding) * 1000) / 10 : 0;
-    const serviceabilityRate = serviceableChecks > 0 ? Math.round((serviceableHits / serviceableChecks) * 100) : 100;
+    const deliveredSessions = funnelCounts.delivered.size;
+    const overallConversionRate = baseLanding > 0 ? Math.round((deliveredSessions / baseLanding) * 1000) / 10 : null;
+    const serviceabilityRate = serviceableChecks > 0 ? Math.round((serviceableHits / serviceableChecks) * 100) : null;
     const pickingSuccessRate = pickingItems > 0
       ? Math.round(((pickingItems - (pickingSubstitutions + pickingRemovals)) / pickingItems) * 100)
-      : 100;
+      : null;
 
-    // Abandoned Basket Telemetry calculation
-    const basketSessions = Array.from(funnelCounts.add_to_basket);
-    const orderSessions = funnelCounts.order_submitted;
-    const abandonedSessions = basketSessions.filter((sId) => !orderSessions.has(sId));
-    const recoveredSessions = basketSessions.filter((sId) => orderSessions.has(sId));
+    // Basket abandonment is only counted from explicit abandonment events.
+    // A basket session without a later order is not sufficient evidence that the
+    // customer abandoned it, and recovery requires a dedicated attribution event.
+    const explicitAbandonmentEvents = filteredEvents.filter((event) => event.type === 'BASKET_ABANDONED');
+    const abandonedCount = new Set(explicitAbandonmentEvents.map((event) => event.sessionId)).size;
+    const recoveredCount = null;
+    const recoveryRate = null;
 
-    const abandonedCount = abandonedSessions.length;
-    const recoveredCount = recoveredSessions.length;
-    const recoveryRate = basketSessions.length > 0 ? Math.round((recoveredCount / basketSessions.length) * 100) : 0;
-
-    // Top abandoned products
     const abandonedPluCounts = new Map<string, number>();
-    for (const e of filteredEvents) {
-      if (e.type === 'ADD_TO_BASKET' && e.productPlu && abandonedSessions.includes(e.sessionId)) {
+    for (const e of explicitAbandonmentEvents) {
+      if (e.productPlu) {
         abandonedPluCounts.set(e.productPlu, (abandonedPluCounts.get(e.productPlu) || 0) + 1);
       }
     }
@@ -596,18 +676,40 @@ export class AnalyticsService {
         abandonedCount,
         recoveredCount,
         recoveryRate,
-        averageAbandonedValue: 24.5, // Est. £24.50 avg cart value
+        averageAbandonedValue: (() => {
+          const values = filteredEvents
+            .filter((event) => event.type === 'BASKET_ABANDONED')
+            .map((event) => event.properties?.totalAmount)
+            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+          return values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+        })(),
         topAbandonedPlus,
       },
     ];
+
+    const financialCurrency =
+      financialCurrencies.size === 1 ? Array.from(financialCurrencies)[0] : null;
+    const financialStatus =
+      financialCaptureEvents === 0
+        ? 'NO_CAPTURE_EVIDENCE' as const
+        : financialCurrencies.size > 1
+          ? 'MIXED_CURRENCY' as const
+          : financialAmountEvents !== financialCaptureEvents || !financialCurrency
+            ? 'PARTIAL' as const
+            : 'AVAILABLE' as const;
+    const financialValuesAvailable = financialStatus === 'AVAILABLE';
+    const totalOrders = financialCaptureEvents > 0 ? financialCaptureEvents : null;
+    const grossMerchandiseValue = financialValuesAvailable ? totalGMV : null;
 
     return {
       timeframe,
       totalSessions: totalSessionCount,
       activeStoresCount: stores.size,
       totalOrders,
-      totalGrossMerchandiseValue: totalGMV,
-      averageOrderValue: totalOrders > 0 ? Math.round(totalGMV / totalOrders) : 0,
+      totalGrossMerchandiseValue: grossMerchandiseValue,
+      averageOrderValue: financialValuesAvailable && totalOrders
+        ? Math.round(totalGMV / totalOrders)
+        : null,
       overallConversionRate,
       serviceabilityRate,
       pickingSuccessRate,
@@ -621,10 +723,25 @@ export class AnalyticsService {
         presented: artiePresented,
         accepted: artieAccepted,
         paid: artiePaid,
-        presentedToAcceptedRate: artiePresented > 0 ? Math.round((artieAccepted / artiePresented) * 1000) / 10 : 0,
-        presentedToPaidRate: artiePresented > 0 ? Math.round((artiePaid / artiePresented) * 1000) / 10 : 0,
-        acceptedToPaidRate: artieAccepted > 0 ? Math.round((artiePaid / artieAccepted) * 1000) / 10 : 0,
+        presentedToAcceptedRate: artiePresented > 0 ? Math.round((artieAccepted / artiePresented) * 1000) / 10 : null,
+        presentedToPaidRate: artiePresented > 0 ? Math.round((artiePaid / artiePresented) * 1000) / 10 : null,
+        acceptedToPaidRate: artieAccepted > 0 ? Math.round((artiePaid / artieAccepted) * 1000) / 10 : null,
         attributedRevenue: artieAttributedRevenue,
+      },
+      evidence: {
+        source: 'analytics_events',
+        status: 'AVAILABLE',
+        observedAt: filteredEvents.reduce<string | null>((latest, event) => !latest || event.timestamp > latest ? event.timestamp : latest, null),
+        eventCount: filteredEvents.length,
+        serviceabilityChecks: serviceableChecks,
+        pickingOutcomeEvents: pickingItems,
+        searchEvents: Array.from(searchMap.values()).reduce((sum, stats) => sum + stats.count, 0),
+        recommendationChains: artiePaid,
+        financialSource: 'payment_captured_events',
+        financialCaptureEvents,
+        financialAmountEvents,
+        financialCurrency,
+        financialStatus,
       },
     };
   }
