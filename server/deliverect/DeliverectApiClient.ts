@@ -4,7 +4,7 @@ import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
 import { IntegrationContext } from './IntegrationContext';
 import { CommerceDiscoveryService, asyncPool } from './CommerceDiscoveryService';
 import { resolveStoreGeography } from '../geographyService';
-import { circuitBreakers, getCircuitBreaker } from '../circuitBreaker';
+import { getCircuitBreaker } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { assertProductAddAllowed } from '../ruleEnforcementService';
