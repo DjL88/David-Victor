@@ -84,17 +84,17 @@ export interface CeilingCalculationOptions {
 export class PaymentService {
   private static async assertPaymentTenant(paymentId: string, tenantId: string): Promise<void> {
     const projection = await FirestorePlatformService.getPaymentProjection(paymentId);
-    if (projection && projection.tenantId !== tenantId) {
+    if (!projection?.tenantId || projection.tenantId !== tenantId) {
       throw new CommerceError(
         ErrorCode.PAYMENT_NOT_AUTHORISED,
-        'Payment does not belong to the resolved tenant.',
+        'Payment not found for the resolved tenant.',
         404
       );
     }
   }
 
   private static assertOrderTenant(order: OrderProjection, tenantId: string): void {
-    if (order.tenantId && order.tenantId !== tenantId) {
+    if (!order.tenantId || order.tenantId !== tenantId) {
       throw new CommerceError(
         ErrorCode.ORDER_NOT_FOUND,
         'Order not found for the resolved tenant.',

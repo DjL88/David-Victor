@@ -2492,11 +2492,20 @@ export class FirestoreService {
    */
   static async saveOrderProjection(
     rawOrderInput: Order | any,
-    tenantId: string = 'brand-alpha',
+    tenantId: string,
     checkoutId?: string,
     customerUid?: string,
     orderAccessTokenHash?: string
   ): Promise<OrderProjection> {
+    const resolvedTenantId = String(tenantId || '').trim();
+    if (!resolvedTenantId || resolvedTenantId === 'default') {
+      throw new BFFError(
+        'TENANT_SCOPE_REQUIRED',
+        'An explicit tenantId is required to persist an order projection.',
+        400
+      );
+    }
+    tenantId = resolvedTenantId;
     const order = DeliverectOrderMapper.normalizeOrder(rawOrderInput);
     const resolvedOrderId = (order as any).id || (order as any).orderId || (order as any).externalOrderId;
     const checkoutProjection = checkoutId ? await this.getCheckoutProjection(checkoutId) : null;

@@ -170,7 +170,7 @@ export class PilotValidationRunner {
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, this.tenantId);
 
       this.recordStep('6. Async Checkout Submission (Pending Confirmation)', true, {
         checkoutId,
@@ -342,7 +342,7 @@ export class PilotValidationRunner {
       items: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    } as any);
+    } as any, this.tenantId);
 
     const excessSettlement = await PaymentService.settleOrderPayment(
       excessOrderId,

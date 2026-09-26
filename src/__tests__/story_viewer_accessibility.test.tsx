@@ -33,6 +33,18 @@ const story = {
   createdAt: '2026-09-26T12:00:00Z',
 } as Story;
 
+const directVideoStory = {
+  ...story,
+  id: 'story-video',
+  items: [{
+    id: 'frame-video',
+    mediaUrl: 'https://images.example.test/story.mp4',
+    mediaType: 'video',
+    caption: 'Video story',
+    duration: 5,
+  }],
+} as Story;
+
 let host: HTMLDivElement;
 let root: Root;
 let opener: HTMLButtonElement;
@@ -136,5 +148,18 @@ describe('Story viewer accessibility', () => {
     await act(async () => vi.advanceTimersByTimeAsync(5000));
 
     expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('does not request native video autoplay on first render when reduced motion is already enabled', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+
+    await renderViewer({ stories: [directVideoStory] });
+
+    const video = host.querySelector<HTMLVideoElement>('video');
+    expect(video).toBeTruthy();
+    expect(video?.autoplay).toBe(false);
+    expect(video?.hasAttribute('autoplay')).toBe(false);
+    expect(play).not.toHaveBeenCalled();
   });
 });

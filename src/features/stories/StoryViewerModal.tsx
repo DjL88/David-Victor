@@ -59,7 +59,10 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true);
   const [directVideoFailed, setDirectVideoFailed] = useState<boolean>(false);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -322,7 +325,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               src={parsedMedia.rawUrl}
               poster={effectiveThumbnail}
               aria-label={currentStory.title}
-              autoPlay
+              autoPlay={!prefersReducedMotion}
               muted={isMuted}
               playsInline
               preload="auto"

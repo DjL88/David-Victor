@@ -139,8 +139,24 @@ function collectionKey(tenantId: string, changeSetId: string): string {
   return `${tenantId}:${changeSetId}`;
 }
 
+function canonicalizeForHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalizeForHash(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, nested]) => nested !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, canonicalizeForHash(nested)])
+    );
+  }
+  return value;
+}
+
 function stableHash(value: unknown): string {
-  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(canonicalizeForHash(value)))
+    .digest('hex');
 }
 
 function approvalScopeHashFor(value: Pick<AssistantChangeSet, 'tenantId' | 'requestHash' | 'actions' | 'revisionIds'>): string {
@@ -450,6 +466,7 @@ export class AdminChangeSetService {
         status: 'APPROVED',
         approvedAt: new Date().toISOString(),
         approvedBy: args.actorId,
+        approvalScopeHash: approvalScopeHashFor(current),
         approvalExpiresAt: new Date(Date.now() + ADMIN_CHANGESET_APPROVAL_TTL_MS).toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -489,6 +506,7 @@ export class AdminChangeSetService {
         status: 'APPROVED',
         approvedAt: now,
         approvedBy: args.actorId,
+        approvalScopeHash: approvalScopeHashFor(current),
         approvalExpiresAt: new Date(Date.now() + ADMIN_CHANGESET_APPROVAL_TTL_MS).toISOString(),
         updatedAt: now,
       };

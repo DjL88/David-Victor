@@ -365,7 +365,7 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
 
       await expect(
         PaymentService.getPayment(payment.paymentId, 'brand-beta')
-      ).rejects.toThrow(/does not belong to the resolved tenant/i);
+      ).rejects.toThrow(/not found for the resolved tenant/i);
     });
 
     it('rejects reauthorization above the ceiling persisted with the original payment request', async () => {
