@@ -72,6 +72,9 @@ describe('Deliverect Commerce opening-hours shape', () => {
       open: '09:00', close: '14:00',
     });
     expect(evaluateStoreOpenNow(store, new Date('2026-12-24T15:00:00.000Z')).isOpen).toBe(false);
+    // The dated exception must not leak into adjacent dates.
+    expect(resolveOpeningHoursForDate(store.openingHours, '2026-12-23')).toEqual({ open: '00:00', close: '23:59' });
+    expect(resolveOpeningHoursForDate(store.openingHours, '2026-12-26')).toEqual({ open: '00:00', close: '23:59' });
   });
 
   it('treats a holiday as closed and finds the next weekly opening', () => {
@@ -93,5 +96,15 @@ describe('Deliverect Commerce opening-hours shape', () => {
     expect(evaluateStoreOpenNow(store, new Date('2026-12-25T12:00:00.000Z')).isOpen).toBe(false);
     expect(computeNextOpeningTime(store, new Date('2026-12-25T12:00:00.000Z'))?.toISOString())
       .toBe('2026-12-26T00:00:00.000Z');
+  });
+});
+
+
+describe('customer-facing opening-hours text', () => {
+  it('uses the store timezone for evaluation without exposing timezone identifiers', () => {
+    const store = { id: 'tz-store', name: 'Timezone store', status: 'open', timezone: 'Europe/Amsterdam', openingHours } as unknown as Store;
+    const result = evaluateStoreOpenNow(store, new Date('2026-09-26T10:00:00.000Z'));
+    expect(JSON.stringify(result)).not.toContain('Europe/Amsterdam');
+    expect(JSON.stringify(result)).not.toMatch(/timezone/i);
   });
 });
