@@ -160,7 +160,7 @@ describe('Pre-Staging Security Closure & Hardening', () => {
         total: 100,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
+      } as any, testTenant);
 
       const payload = {
         eventId: eventKey,
