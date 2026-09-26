@@ -342,11 +342,19 @@ export class WebhookService {
     const candidateChannelLinkIds = new Set<string>();
     const candidateLocationIds = new Set<string>();
     for (const item of payloadItems) {
+      // Retail/Quest picking callbacks use a PICKING_STATUS_UPDATE envelope
+      // whose trusted store identifiers live under eventData. Keep accepting
+      // the root-level Channel webhook shape as well.
+      const eventData = item?.eventData || item?.data?.eventData || item?.data || {};
       const channelLinkId = String(
         item?.channelLinkId ||
         item?.channelLink?._id ||
         item?.channelLink?.id ||
         (typeof item?.channelLink === 'string' ? item.channelLink : '') ||
+        eventData?.channelLinkId ||
+        eventData?.channelLink?._id ||
+        eventData?.channelLink?.id ||
+        (typeof eventData?.channelLink === 'string' ? eventData.channelLink : '') ||
         ''
       ).trim();
       const locationId = String(
@@ -354,6 +362,10 @@ export class WebhookService {
         item?.location?._id ||
         item?.location?.id ||
         (typeof item?.location === 'string' ? item.location : '') ||
+        eventData?.locationId ||
+        eventData?.location?._id ||
+        eventData?.location?.id ||
+        (typeof eventData?.location === 'string' ? eventData.location : '') ||
         ''
       ).trim();
       if (channelLinkId) candidateChannelLinkIds.add(channelLinkId);
