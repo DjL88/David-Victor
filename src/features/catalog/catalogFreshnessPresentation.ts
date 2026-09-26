@@ -12,3 +12,12 @@ export function shouldBlockCatalog(state: CatalogFreshnessState): boolean {
 export function shouldShowStaleCatalogNotice(state: CatalogFreshnessState): boolean {
   return Boolean(state.isStale && state.visibleProductCount > 0);
 }
+
+export function shouldShowCatalogSkeleton(
+  loading: boolean,
+  visibleProductCount: number,
+  searchLoading: boolean = false
+): boolean {
+  if (searchLoading) return true;
+  return loading && visibleProductCount === 0;
+}

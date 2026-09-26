@@ -89,11 +89,16 @@ export function useCatalog(selectedStoreId?: string) {
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState<boolean>(false);
 
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
   // Store last-known-good snapshot scoped strictly to tenantId + storeId
   const snapshotRef = useRef<LastKnownCatalogSnapshot | null>(null);
   const prevScopeRef = useRef<string>(`${tenantId}:${selectedStoreId || 'root'}`);
   const catalogRequestRef = useRef(0);
   const productsRequestRef = useRef(0);
+  const productsRef = useRef<Product[]>([]);
 
   // Compute the storefront category tree once from the current catalogue.
   // categoryHierarchy.ts also removes provably empty leaf categories, so the
@@ -342,9 +347,10 @@ export function useCatalog(selectedStoreId?: string) {
 
   // Product loading is separate from catalog loading so that when the catalogue
   // is normalised into a hierarchy, selecting a parent has the final tree ready
-  // before descendant filtering runs.
+  // before descendant filtering runs. Once a usable grid is already visible,
+  // never switch back to blocking/skeleton loading for category or live refreshes.
   useEffect(() => {
-    loadProducts();
+    loadProducts(productsRef.current.length > 0);
   }, [loadProducts]);
 
   // Keep live storefronts close to the canonical database without blanking the
@@ -360,10 +366,11 @@ export function useCatalog(selectedStoreId?: string) {
       if (disposed || inFlight || document.visibilityState === 'hidden') return;
       inFlight = true;
       try {
-        await Promise.allSettled([
-          fetchCatalog(true, true),
-          loadProducts(true),
-        ]);
+        // Refresh the catalogue once. Updating its category/menu projection
+        // naturally triggers the background product reload effect above.
+        // Calling loadProducts here as well previously caused a duplicate request
+        // and a second foreground-loading pass that visibly blanked the grid.
+        await fetchCatalog(true, true);
       } finally {
         inFlight = false;
       }
@@ -399,6 +406,7 @@ export function useCatalog(selectedStoreId?: string) {
   }, [appMode, fetchCatalog, loadProducts]);
 
   const navigateToCategory = (categoryId: string | null) => {
+    setError(null);
     setSelectedCategoryId(categoryId);
     if (categoryId) {
       defaultAnalyticsClient.track({
