@@ -588,8 +588,12 @@ export class AdminChangeSetService {
         if (!args.verification) {
           throw error('ADMIN_CHANGESET_VERIFICATION_REQUIRED', 'Persisted verification is required before marking this ChangeSet applied.', 409);
         }
-        if (!current.revisionIds.includes(args.verification.revisionId)) {
-          throw error('ADMIN_CHANGESET_VERIFICATION_MISMATCH', 'Verification does not match an approved revision.', 409);
+        if (
+          !current.revisionIds.includes(args.verification.revisionId) ||
+          args.verification.resourceType !== 'tenantBranding' ||
+          args.verification.resourceId !== current.tenantId
+        ) {
+          throw error('ADMIN_CHANGESET_VERIFICATION_MISMATCH', 'Verification does not match the approved tenant Branding revision.', 409);
         }
       }
 
