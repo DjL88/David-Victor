@@ -35,6 +35,28 @@ export interface AdminAffectedResource {
   label?: string;
 }
 
+export interface AdminChangeSetVerification {
+  verified: true;
+  verifiedAt: string;
+  revisionId: string;
+  resourceType: string;
+  resourceId: string;
+  resultHash: string;
+}
+
+export interface AdminChangeSetReceipt {
+  receiptId: string;
+  tenantId: string;
+  changeSetId: string;
+  actionName: string;
+  revisionId: string;
+  approvedBy: string;
+  approvedAt: string;
+  appliedAt: string;
+  verifiedAt: string;
+  resultHash: string;
+}
+
 export interface AssistantChangeSet {
   id: string;
   tenantId: string;
@@ -57,6 +79,9 @@ export interface AssistantChangeSet {
   validatedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  approvalScopeHash?: string;
+  approvalExpiresAt?: string;
+  approvalConsumedAt?: string;
   applyingAt?: string;
   appliedAt?: string;
   failedAt?: string;
@@ -65,6 +90,8 @@ export interface AssistantChangeSet {
   reversible: boolean;
   applyAvailable: boolean;
   independentApprovalRequired: boolean;
+  verification?: AdminChangeSetVerification;
+  receipt?: AdminChangeSetReceipt;
   autonomousExecutionEnabled: false;
 }
 
@@ -122,6 +149,7 @@ interface ApproveChangeSetArgs {
 
 const inMemoryChangeSets = new Map<string, AssistantChangeSet>();
 const inMemoryAuditEvents = new Map<string, AuditEventV2[]>();
+const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
 function error(code: string, message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { code, statusCode });
@@ -140,6 +168,46 @@ function changeSetIdFor(tenantId: string, idempotencyKey?: string): string {
     return `cs_${stableHash({ tenantId, idempotencyKey }).slice(0, 24)}`;
   }
   return `cs_${crypto.randomUUID()}`;
+}
+
+function approvalScopeHash(changeSet: AssistantChangeSet): string {
+  return stableHash({
+    tenantId: changeSet.tenantId,
+    changeSetId: changeSet.id,
+    requestHash: changeSet.requestHash,
+    actions: changeSet.actions,
+    revisionIds: changeSet.revisionIds,
+  });
+}
+
+function receiptFor(
+  changeSet: AssistantChangeSet,
+  verification: AdminChangeSetVerification,
+  appliedAt: string
+): AdminChangeSetReceipt {
+  const actionName = changeSet.actions[0]?.actionName || 'unknown';
+  const approvedBy = changeSet.approvedBy || '';
+  const approvedAt = changeSet.approvedAt || '';
+  return {
+    receiptId: `acr_${stableHash({
+      tenantId: changeSet.tenantId,
+      changeSetId: changeSet.id,
+      revisionId: verification.revisionId,
+      resultHash: verification.resultHash,
+      approvedBy,
+      approvedAt,
+      appliedAt,
+    }).slice(0, 24)}`,
+    tenantId: changeSet.tenantId,
+    changeSetId: changeSet.id,
+    actionName,
+    revisionId: verification.revisionId,
+    approvedBy,
+    approvedAt,
+    appliedAt,
+    verifiedAt: verification.verifiedAt,
+    resultHash: verification.resultHash,
+  };
 }
 
 function requireDurableStore() {
@@ -395,12 +463,17 @@ export class AdminChangeSetService {
           409
         );
       }
+      const approvedAt = new Date();
+      const approvedIso = approvedAt.toISOString();
       const approved: AssistantChangeSet = {
         ...current,
         status: 'APPROVED',
-        approvedAt: new Date().toISOString(),
+        approvedAt: approvedIso,
         approvedBy: args.actorId,
-        updatedAt: new Date().toISOString(),
+        approvalScopeHash: approvalScopeHash(current),
+        approvalExpiresAt: new Date(approvedAt.getTime() + APPROVAL_TTL_MS).toISOString(),
+        approvalConsumedAt: undefined,
+        updatedAt: approvedIso,
       };
       inMemoryChangeSets.set(key, approved);
       const audit = inMemoryAuditEvents.get(args.tenantId) || [];
@@ -432,12 +505,16 @@ export class AdminChangeSetService {
         );
       }
 
-      const now = new Date().toISOString();
+      const approvedAt = new Date();
+      const now = approvedAt.toISOString();
       const approved: AssistantChangeSet = {
         ...current,
         status: 'APPROVED',
         approvedAt: now,
         approvedBy: args.actorId,
+        approvalScopeHash: approvalScopeHash(current),
+        approvalExpiresAt: new Date(approvedAt.getTime() + APPROVAL_TTL_MS).toISOString(),
+        approvalConsumedAt: undefined,
         updatedAt: now,
       };
       const event = auditEventForApproved(approved, args.actorId);
@@ -453,6 +530,26 @@ export class AdminChangeSetService {
     });
   }
 
+  static assertExecutableApproval(changeSet: AssistantChangeSet, now: Date = new Date()): void {
+    if (!changeSet.approvedBy || !changeSet.approvedAt || !changeSet.approvalScopeHash || !changeSet.approvalExpiresAt) {
+      throw error('ADMIN_CHANGESET_APPROVAL_INVALID', 'This approval is incomplete and cannot be executed.', 409);
+    }
+    if (changeSet.approvalScopeHash !== approvalScopeHash(changeSet)) {
+      throw error('ADMIN_CHANGESET_APPROVAL_SCOPE_MISMATCH', 'The approved change scope no longer matches this ChangeSet.', 409);
+    }
+    if (changeSet.status === 'APPROVED') {
+      if (changeSet.approvalConsumedAt) {
+        throw error('ADMIN_CHANGESET_APPROVAL_REPLAYED', 'This approval has already been consumed.', 409);
+      }
+      const expiresAt = Date.parse(changeSet.approvalExpiresAt);
+      if (!Number.isFinite(expiresAt) || now.getTime() >= expiresAt) {
+        throw error('ADMIN_CHANGESET_APPROVAL_EXPIRED', 'This approval has expired. Create and review a fresh proposal.', 409);
+      }
+    } else if (changeSet.status === 'APPLYING' && !changeSet.approvalConsumedAt) {
+      throw error('ADMIN_CHANGESET_APPROVAL_INVALID', 'Applying state is missing its consumed approval evidence.', 409);
+    }
+  }
+
   static async transitionChangeSet(args: {
     tenantId: string;
     changeSetId: string;
@@ -461,6 +558,7 @@ export class AdminChangeSetService {
     afterSnapshot?: unknown;
     warning?: string;
     rollbackRevisionIds?: string[];
+    verification?: AdminChangeSetVerification;
   }): Promise<AssistantChangeSet> {
     const allowed: Record<AdminChangeSetStatus, AdminChangeSetStatus[]> = {
       PROPOSED: [],
@@ -483,6 +581,18 @@ export class AdminChangeSetService {
           409
         );
       }
+      if (args.status === 'APPLYING') {
+        AdminChangeSetService.assertExecutableApproval(current);
+      }
+      if (args.status === 'APPLIED') {
+        if (!args.verification) {
+          throw error('ADMIN_CHANGESET_VERIFICATION_REQUIRED', 'Persisted verification is required before marking this ChangeSet applied.', 409);
+        }
+        if (!current.revisionIds.includes(args.verification.revisionId)) {
+          throw error('ADMIN_CHANGESET_VERIFICATION_MISMATCH', 'Verification does not match an approved revision.', 409);
+        }
+      }
+
       const now = new Date().toISOString();
       const next: AssistantChangeSet = {
         ...current,
@@ -493,9 +603,16 @@ export class AdminChangeSetService {
           ? [...current.warnings, args.warning]
           : current.warnings,
         rollbackRevisionIds: args.rollbackRevisionIds ?? current.rollbackRevisionIds,
+        verification: args.verification ?? current.verification,
       };
-      if (args.status === 'APPLYING') next.applyingAt = now;
-      if (args.status === 'APPLIED') next.appliedAt = now;
+      if (args.status === 'APPLYING') {
+        next.applyingAt = now;
+        next.approvalConsumedAt = now;
+      }
+      if (args.status === 'APPLIED') {
+        next.appliedAt = now;
+        next.receipt = receiptFor(next, args.verification!, now);
+      }
       if (args.status === 'FAILED' || args.status === 'PARTIALLY_FAILED') next.failedAt = now;
       if (args.status === 'ROLLED_BACK') next.rolledBackAt = now;
       return next;
