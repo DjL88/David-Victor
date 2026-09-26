@@ -3760,7 +3760,7 @@ v1Router.post('/orders/:orderId/simulate-picking', async (req: Request, res: Res
       ? await adapter.advancePickingDemo(req.params.orderId)
       : null;
     if (order) {
-      await FirestorePlatformService.saveOrderProjection(order);
+      await FirestorePlatformService.saveOrderProjection(order, tenantId);
     }
     res.json(order);
   } catch (err: any) {
