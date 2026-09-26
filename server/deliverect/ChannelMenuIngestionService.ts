@@ -884,73 +884,140 @@ export class ChannelMenuIngestionService {
           JSON.stringify(operationalMenu)
         );
 
-        memoryHostedIndex.set(
-          hasFullScope
-            ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
-            : `${job.tenantId}:${channelLinkId}:${menuId}`,
-          {
-            tenantId: job.tenantId,
-            accountId,
-            locationId,
-            channelLinkId,
-            menuId,
-            normalizedStoragePath: normalizedPath,
-            receivedAt: job.receivedAt,
-            lastEventId: job.eventId,
-            updatedAt: normalized.processedAt,
-          }
-        );
+        const pointer = {
+          tenantId: job.tenantId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
+          identityScope: normalized.identityScope,
+          channelLinkId,
+          menuId,
+          menuName: normalized.menu,
+          menuType: normalized.menuType,
+          source: normalized.source,
+          rawStoragePath: job.storagePath,
+          normalizedStoragePath: normalizedPath,
+          categoryCount: parsed.categories.length,
+          productCount: normalizedProducts.length,
+          activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
+          archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
+          bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
+          byteSize: normalizedBody.length,
+          lastEventId: job.eventId,
+          receivedAt: job.receivedAt,
+          updatedAt: normalized.processedAt,
+        };
 
+        let published = false;
         if (db) {
           const collection = db
             .collection('tenants')
             .doc(job.tenantId)
             .collection('channelHostedMenus');
-          const pointer = {
-            tenantId: job.tenantId,
-            ...(accountId ? { accountId } : {}),
-            ...(locationId ? { locationId } : {}),
-            identityScope: normalized.identityScope,
-            channelLinkId,
-            menuId,
-            menuName: normalized.menu,
-            menuType: normalized.menuType,
-            source: normalized.source,
-            rawStoragePath: job.storagePath,
-            normalizedStoragePath: normalizedPath,
-            categoryCount: parsed.categories.length,
-            productCount: normalizedProducts.length,
-            activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
-            archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
-            bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
-            byteSize: normalizedBody.length,
-            lastEventId: job.eventId,
-            receivedAt: job.receivedAt,
-            updatedAt: normalized.processedAt,
-          };
-          const batch = db.batch();
-          // Canonical aliases make the hot read path deterministic and bounded.
-          // The old channel+menu key is retained for backwards compatibility.
-          batch.set(
-            collection.doc(safeSegment(`${channelLinkId}_${menuId}`)),
-            { ...pointer, pointerType: 'MENU_ALIAS' },
-            { merge: true }
-          );
-          batch.set(
-            collection.doc(safeSegment(`${channelLinkId}__latest`)),
-            { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
-            { merge: true }
-          );
-          if (hasFullScope) {
-            batch.set(
-              collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`)),
-              { ...pointer, pointerType: 'SCOPED' },
+          const menuAliasRef = collection.doc(safeSegment(`${channelLinkId}_${menuId}`));
+          const channelLatestRef = collection.doc(safeSegment(`${channelLinkId}__latest`));
+          const scopedRef = hasFullScope
+            ? collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`))
+            : null;
+
+          published = await db.runTransaction(async (transaction: any) => {
+            const menuAlias = await transaction.get(menuAliasRef);
+            const currentMenu = menuAlias.exists ? menuAlias.data() || {} : null;
+            if (
+              currentMenu &&
+              this.comparePublishedVersion(
+                String(currentMenu.receivedAt || ''),
+                String(currentMenu.lastEventId || ''),
+                job.receivedAt,
+                job.eventId
+              ) >= 0
+            ) {
+              return false;
+            }
+
+            const channelLatest = await transaction.get(channelLatestRef);
+            const currentLatest = channelLatest.exists ? channelLatest.data() || {} : null;
+
+            transaction.set(
+              menuAliasRef,
+              { ...pointer, pointerType: 'MENU_ALIAS' },
               { merge: true }
             );
+            if (
+              !currentLatest ||
+              this.comparePublishedVersion(
+                job.receivedAt,
+                job.eventId,
+                String(currentLatest.receivedAt || ''),
+                String(currentLatest.lastEventId || '')
+              ) > 0
+            ) {
+              transaction.set(
+                channelLatestRef,
+                { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
+                { merge: true }
+              );
+            }
+            if (scopedRef) {
+              transaction.set(
+                scopedRef,
+                { ...pointer, pointerType: 'SCOPED' },
+                { merge: true }
+              );
+            }
+            return true;
+          });
+        } else {
+          // In-memory staging/test publication is synchronous here: compare and
+          // set without an await so two overlapping workers cannot both pass a
+          // preflight and then let the older one overwrite the newer pointer.
+          const current = Array.from(memoryHostedIndex.values())
+            .filter(
+              (entry) =>
+                entry.tenantId === job.tenantId &&
+                entry.channelLinkId === channelLinkId &&
+                entry.menuId === menuId
+            )
+            .sort((a, b) =>
+              this.comparePublishedVersion(
+                b.receivedAt,
+                b.lastEventId,
+                a.receivedAt,
+                a.lastEventId
+              )
+            )[0];
+
+          if (
+            !current ||
+            this.comparePublishedVersion(
+              current.receivedAt,
+              current.lastEventId,
+              job.receivedAt,
+              job.eventId
+            ) < 0
+          ) {
+            memoryHostedIndex.set(
+              hasFullScope
+                ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
+                : `${job.tenantId}:${channelLinkId}:${menuId}`,
+              {
+                tenantId: job.tenantId,
+                accountId,
+                locationId,
+                channelLinkId,
+                menuId,
+                normalizedStoragePath: normalizedPath,
+                receivedAt: job.receivedAt,
+                lastEventId: job.eventId,
+                updatedAt: normalized.processedAt,
+              }
+            );
+            published = true;
           }
-          await batch.commit();
         }
 
+        if (!published) {
+          continue;
+        }
         publishedMenuCount += 1;
       }
 
