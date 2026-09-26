@@ -100,6 +100,13 @@ export function normalizeDeliverectOrderStatus(value: unknown): string {
 }
 
 export class WebhookService {
+  private static isOlderPickingMutation(existingItem: any, incomingOccurredAt?: string): boolean {
+    if (!incomingOccurredAt || !existingItem?.lastPickingMutationAt) return false;
+    const incoming = Date.parse(incomingOccurredAt);
+    const current = Date.parse(existingItem.lastPickingMutationAt);
+    return Number.isFinite(incoming) && Number.isFinite(current) && incoming < current;
+  }
+
   private static ingressBuckets = new Map<string, { tokens: number; updatedAt: number }>();
 
   /**
@@ -720,13 +727,17 @@ export class WebhookService {
       payload?.createdAt ||
       payload?.updatedAt ||
       payload?.data?.timestamp;
+    let providerEventTimestamp: string | undefined;
     if (timestampValue) {
       const timestampMs = Date.parse(String(timestampValue));
-      if (Number.isFinite(timestampMs) && Date.now() - timestampMs > 5 * 60 * 1000) {
-        const err: any = new Error('Webhook timestamp is older than the permitted 5 minute window.');
-        err.statusCode = 400;
-        err.code = 'WEBHOOK_TIMESTAMP_STALE';
-        throw err;
+      if (Number.isFinite(timestampMs)) {
+        if (Date.now() - timestampMs > 5 * 60 * 1000) {
+          const err: any = new Error('Webhook timestamp is older than the permitted 5 minute window.');
+          err.statusCode = 400;
+          err.code = 'WEBHOOK_TIMESTAMP_STALE';
+          throw err;
+        }
+        providerEventTimestamp = new Date(timestampMs).toISOString();
       }
     }
 
@@ -1027,10 +1038,23 @@ export class WebhookService {
         const targetPlu = payload.plu || payload.item?.plu || payload.originalPlu || payload.product?.plu;
         if (targetPlu) {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
+          if (this.isOlderPickingMutation(existingItem, providerEventTimestamp)) {
+            await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+            return {
+              success: true,
+              eventId: webhookEventId,
+              status: 'IGNORED',
+              message: 'Older item-picking mutation ignored; newer provider-timestamped line state is retained.',
+              orderId: targetOrder.orderId,
+              newState: currentState,
+            };
+          }
           const pickedQty = payload.quantity ?? payload.pickedQuantity ?? existingItem?.originalQuantity ?? 1;
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'PICKED',
             pickedQuantity: pickedQty,
+            lastPickingMutationAt: providerEventTimestamp ?? existingItem?.lastPickingMutationAt,
+            lastPickingMutationEventId: providerEventTimestamp ? webhookEventId : existingItem?.lastPickingMutationEventId,
           });
         }
         const nextState = currentRank < 6 ? 'PICKING' : currentState;
@@ -1052,6 +1076,17 @@ export class WebhookService {
         const targetPlu = payload.plu || payload.item?.plu || payload.originalPlu || payload.product?.plu;
         if (targetPlu) {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
+          if (this.isOlderPickingMutation(existingItem, providerEventTimestamp)) {
+            await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+            return {
+              success: true,
+              eventId: webhookEventId,
+              status: 'IGNORED',
+              message: 'Older quantity amendment ignored; newer provider-timestamped line state is retained.',
+              orderId: targetOrder.orderId,
+              newState: currentState,
+            };
+          }
           const suppliedQuantity =
             payload.amendedQuantity ?? payload.suppliedQuantity ?? payload.quantity ?? payload.newQuantity ?? 0;
           const originalQuantity = existingItem?.originalQuantity || (existingItem as any)?.orderedQuantity || 1;
@@ -1088,6 +1123,8 @@ export class WebhookService {
               suppliedQuantity,
               reason: payload.reason || 'Store inventory limited',
             },
+            lastPickingMutationAt: providerEventTimestamp ?? existingItem?.lastPickingMutationAt,
+            lastPickingMutationEventId: providerEventTimestamp ? webhookEventId : existingItem?.lastPickingMutationEventId,
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
@@ -1120,6 +1157,17 @@ export class WebhookService {
         const targetPlu = payload.plu || payload.item?.plu || payload.originalPlu || payload.product?.plu;
         if (targetPlu) {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
+          if (this.isOlderPickingMutation(existingItem, providerEventTimestamp)) {
+            await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+            return {
+              success: true,
+              eventId: webhookEventId,
+              status: 'IGNORED',
+              message: 'Older substitution amendment ignored; newer provider-timestamped line state is retained.',
+              orderId: targetOrder.orderId,
+              newState: currentState,
+            };
+          }
           const subPlu = payload.substitutePlu || payload.substitute?.plu || payload.newPlu || 'SUB_PLU';
           const subName = payload.substituteName || payload.substitute?.name || 'Alternative Product';
           const matchedCandidate = existingItem?.substituteCandidates?.find(
@@ -1253,6 +1301,8 @@ export class WebhookService {
               },
               reason: payload.reason || existingItem?.substitution?.reason || 'Out of stock',
             },
+            lastPickingMutationAt: providerEventTimestamp ?? existingItem?.lastPickingMutationAt,
+            lastPickingMutationEventId: providerEventTimestamp ? webhookEventId : existingItem?.lastPickingMutationEventId,
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
@@ -1280,12 +1330,25 @@ export class WebhookService {
         const targetPlu = payload.plu || payload.item?.plu || payload.originalPlu || payload.product?.plu;
         if (targetPlu) {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
+          if (this.isOlderPickingMutation(existingItem, providerEventTimestamp)) {
+            await FirestorePlatformService.updateWebhookEventStatus(webhookEventId, 'PROCESSED');
+            return {
+              success: true,
+              eventId: webhookEventId,
+              status: 'IGNORED',
+              message: 'Older removal amendment ignored; newer provider-timestamped line state is retained.',
+              orderId: targetOrder.orderId,
+              newState: currentState,
+            };
+          }
           const finalPrice: Money = { amount: 0, currency: (existingItem?.originalPrice as any)?.currency || 'GBP' };
 
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'REMOVED',
             pickedQuantity: 0,
             finalPrice,
+            lastPickingMutationAt: providerEventTimestamp ?? existingItem?.lastPickingMutationAt,
+            lastPickingMutationEventId: providerEventTimestamp ? webhookEventId : existingItem?.lastPickingMutationEventId,
           });
         }
         const refreshed = await FirestorePlatformService.getOrderProjection(targetOrder.orderId);
