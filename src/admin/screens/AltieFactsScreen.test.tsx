@@ -59,7 +59,6 @@ const click = async (label: string) => { await act(async () => { btn(label).clic
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 afterEach(async () => {
   await act(async () => { root.unmount(); }); host.remove(); vi.restoreAllMocks();
@@ -91,7 +90,12 @@ describe('Altie Facts production component', () => {
     expect(host.textContent).toContain('Altie still uses the previously published version');
     expect(btn('Publish saved draft').disabled).toBe(false);
     await click('Publish saved draft');
-    expect(window.confirm).toHaveBeenCalled();
+    expect(client.mutate).toHaveBeenCalledTimes(1);
+    await click('Cancel');
+    expect(client.mutate).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    await click('Publish saved draft');
+    await click('Confirm publication');
     expect(client.mutate.mock.calls[1][0]).toEqual({ action: 'publish', expectedRevision: 1 });
     expect(host.textContent).toContain('Published reference revision 2');
   });
