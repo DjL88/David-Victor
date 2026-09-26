@@ -650,8 +650,9 @@ export class ChannelMenuIngestionService {
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
         const channelLinkId = channelLinkIdOf(menu) || fallbackChannelLinkId;
-        const accountId = accountIdOf(menu) || (existing?.accountIds?.length === 1 ? existing.accountIds[0] : 'unknown-account');
-        const locationId = locationIdOf(menu) || (existing?.locationIds?.length === 1 ? existing.locationIds[0] : 'unknown-location');
+        const accountId = accountIdOf(menu) || (existing?.accountIds?.length === 1 ? existing.accountIds[0] : '');
+        const locationId = locationIdOf(menu) || (existing?.locationIds?.length === 1 ? existing.locationIds[0] : '');
+        const hasFullScope = Boolean(accountId && locationId);
         if (!menuId || !channelLinkId) {
           throw new BFFError(
             'VALIDATION_ERROR',
@@ -711,8 +712,9 @@ export class ChannelMenuIngestionService {
 
         const normalized = {
           menuId,
-          accountId,
-          locationId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
+          identityScope: hasFullScope ? 'ACCOUNT_LOCATION' : 'CHANNEL_LINK',
           channelLinkId,
           menu: menu?.menu || menu?.name || '',
           translations: normaliseDeliverectTranslations(
@@ -756,13 +758,16 @@ export class ChannelMenuIngestionService {
         }
 
         const normalizedBody = Buffer.from(JSON.stringify(normalized), 'utf8');
+        const provenancePath = hasFullScope
+          ? `accounts/${safeSegment(accountId)}/locations/${safeSegment(locationId)}/`
+          : '';
         const normalizedPath =
-          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/accounts/${safeSegment(accountId)}/locations/${safeSegment(locationId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}/versions/${safeSegment(job.eventId)}.json`;
+          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/${provenancePath}stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}/versions/${safeSegment(job.eventId)}.json`;
 
         await this.saveNormalizedObject(normalizedPath, normalizedBody, {
           tenantId: job.tenantId,
-          accountId,
-          locationId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
           channelLinkId,
           menuId,
           eventId: job.eventId,
@@ -782,7 +787,9 @@ export class ChannelMenuIngestionService {
         );
 
         memoryHostedIndex.set(
-          `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`,
+          hasFullScope
+            ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
+            : `${job.tenantId}:${channelLinkId}:${menuId}`,
           {
             tenantId: job.tenantId,
             accountId,
@@ -795,35 +802,53 @@ export class ChannelMenuIngestionService {
         );
 
         if (db) {
-          await db
+          const collection = db
             .collection('tenants')
             .doc(job.tenantId)
-            .collection('channelHostedMenus')
-            .doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`))
-            .set(
-              {
-                tenantId: job.tenantId,
-                accountId,
-                locationId,
-                channelLinkId,
-                menuId,
-                menuName: normalized.menu,
-                menuType: normalized.menuType,
-                source: normalized.source,
-                rawStoragePath: job.storagePath,
-                normalizedStoragePath: normalizedPath,
-                categoryCount: parsed.categories.length,
-                productCount: normalizedProducts.length,
-                activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
-                archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
-                bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
-                byteSize: normalizedBody.length,
-                lastEventId: job.eventId,
-                receivedAt: job.receivedAt,
-                updatedAt: normalized.processedAt,
-              },
+            .collection('channelHostedMenus');
+          const pointer = {
+            tenantId: job.tenantId,
+            ...(accountId ? { accountId } : {}),
+            ...(locationId ? { locationId } : {}),
+            identityScope: normalized.identityScope,
+            channelLinkId,
+            menuId,
+            menuName: normalized.menu,
+            menuType: normalized.menuType,
+            source: normalized.source,
+            rawStoragePath: job.storagePath,
+            normalizedStoragePath: normalizedPath,
+            categoryCount: parsed.categories.length,
+            productCount: normalizedProducts.length,
+            activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
+            archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
+            bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
+            byteSize: normalizedBody.length,
+            lastEventId: job.eventId,
+            receivedAt: job.receivedAt,
+            updatedAt: normalized.processedAt,
+          };
+          const batch = db.batch();
+          // Canonical aliases make the hot read path deterministic and bounded.
+          // The old channel+menu key is retained for backwards compatibility.
+          batch.set(
+            collection.doc(safeSegment(`${channelLinkId}_${menuId}`)),
+            { ...pointer, pointerType: 'MENU_ALIAS' },
+            { merge: true }
+          );
+          batch.set(
+            collection.doc(safeSegment(`${channelLinkId}__latest`)),
+            { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
+            { merge: true }
+          );
+          if (hasFullScope) {
+            batch.set(
+              collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`)),
+              { ...pointer, pointerType: 'SCOPED' },
               { merge: true }
             );
+          }
+          await batch.commit();
         }
 
 
@@ -1094,22 +1119,29 @@ export class ChannelMenuIngestionService {
         .doc(cleanTenantId)
         .collection('channelHostedMenus');
 
-      const snap = await collection
-        .where('channelLinkId', '==', cleanChannelLinkId)
-        .limit(50)
-        .get();
-      const candidates = snap.docs
-        .map((doc) => doc.data())
-        .filter((entry) =>
-          entry?.normalizedStoragePath &&
-          (!cleanMenuId || String(entry?.menuId || '') === cleanMenuId)
-        )
-        .sort((a, b) =>
-          String(b?.updatedAt || '').localeCompare(
-            String(a?.updatedAt || '')
-          )
-        );
-      normalizedStoragePath = String(candidates[0]?.normalizedStoragePath || '');
+      const aliasId = cleanMenuId
+        ? safeSegment(`${cleanChannelLinkId}_${cleanMenuId}`)
+        : safeSegment(`${cleanChannelLinkId}__latest`);
+      const alias = await collection.doc(aliasId).get();
+      if (alias.exists) {
+        normalizedStoragePath = String(alias.data()?.normalizedStoragePath || '');
+      } else {
+        // Migration fallback for pointers written before canonical aliases.
+        // Apply an exact menu predicate before the bound so a requested menu
+        // cannot be hidden by unrelated channel documents.
+        let query: any = collection.where('channelLinkId', '==', cleanChannelLinkId);
+        if (cleanMenuId) query = query.where('menuId', '==', cleanMenuId);
+        const snap = await query.limit(50).get();
+        const candidates = snap.docs
+          .map((doc: any) => doc.data())
+          .filter((entry: any) => entry?.normalizedStoragePath)
+          .sort((a: any, b: any) =>
+            String(b?.updatedAt || '').localeCompare(
+              String(a?.updatedAt || '')
+            )
+          );
+        normalizedStoragePath = String(candidates[0]?.normalizedStoragePath || '');
+      }
     }
 
     if (!normalizedStoragePath) return null;
