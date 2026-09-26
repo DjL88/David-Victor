@@ -1,5 +1,15 @@
 export type ScopeEvidence = 'REPORTED' | 'NOT_REPORTED' | 'UNKNOWN';
 export type ObservedCircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+export type ApiActivitySourceStatus = 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | 'UNKNOWN';
+
+export interface ApiActivitySourceEvidence {
+  status: ApiActivitySourceStatus;
+  observedAt?: string;
+  source?: 'FIRESTORE' | 'MEMORY';
+  nextCursor?: string;
+  errorCode?: string;
+  mode?: 'PASSIVE' | 'ACTIVE';
+}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -43,6 +53,12 @@ export interface ApiLogSnapshot {
     grantedScopes: string[];
   } | null;
   commerceCircuit: { state: ObservedCircuitState; failures: number | null } | null;
+  sources: {
+    menuPushes: ApiActivitySourceEvidence;
+    webhooks: ApiActivitySourceEvidence;
+    integration: ApiActivitySourceEvidence;
+    oauth: ApiActivitySourceEvidence;
+  };
   menuPushes: ApiLogMenuEntry[];
   webhooks: ApiLogWebhookEntry[];
 }
@@ -58,6 +74,22 @@ const strings = (value: unknown): string[] => Array.isArray(value)
   : [];
 const errorCode = (value: unknown): string | undefined =>
   typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : undefined;
+const sourceStatus = (value: unknown): ApiActivitySourceStatus =>
+  value === 'AVAILABLE' || value === 'PARTIAL' || value === 'UNAVAILABLE' || value === 'UNKNOWN'
+    ? value : 'UNKNOWN';
+const sourceEvidence = (value: unknown): ApiActivitySourceEvidence => {
+  const input = record(value);
+  const source = input?.source === 'FIRESTORE' || input?.source === 'MEMORY' ? input.source : undefined;
+  const mode = input?.mode === 'PASSIVE' || input?.mode === 'ACTIVE' ? input.mode : undefined;
+  return {
+    status: sourceStatus(input?.status),
+    observedAt: text(input?.observedAt),
+    source,
+    nextCursor: text(input?.nextCursor),
+    errorCode: errorCode(input?.errorCode),
+    mode,
+  };
+};
 
 /** Reject mismatched or incomplete payloads rather than displaying another tenant or fake emptiness. */
 export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnapshot {
@@ -67,6 +99,7 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
     throw new Error('API log response is unavailable or does not match the selected tenant.');
   }
   const integration = record(input.integration);
+  const sources = record(input.sources);
   const rawCircuit = record(record(input.circuits)?.[`${tenantId}:commerce`]);
   const circuitState = rawCircuit?.state;
   const circuitObserved = circuitState === 'CLOSED' || circuitState === 'OPEN' || circuitState === 'HALF_OPEN';
@@ -90,6 +123,12 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
       failures: typeof rawCircuit?.failures === 'number' && Number.isFinite(rawCircuit.failures) && rawCircuit.failures >= 0
         ? rawCircuit.failures : null,
     } : null,
+    sources: {
+      menuPushes: sourceEvidence(sources?.menuPushes),
+      webhooks: sourceEvidence(sources?.webhooks),
+      integration: sourceEvidence(sources?.integration),
+      oauth: sourceEvidence(sources?.oauth),
+    },
     menuPushes: input.menuPushes.map((entry): ApiLogMenuEntry => {
       const item = record(entry);
       if (!item || !text(item.eventId)) throw new Error('Malformed menu activity entry.');
@@ -125,10 +164,12 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
   };
 }
 
-/** The legacy endpoint returns [] after OAuth failure: an empty array is not proof of missing permission. */
+/** Only a successful active scope observation can prove a scope absent. */
 export function getScopeEvidence(snapshot: ApiLogSnapshot | null): ScopeEvidence {
-  const scopes = snapshot?.integration?.grantedScopes || [];
-  if (scopes.length === 0) return 'UNKNOWN';
+  if (!snapshot || snapshot.sources.oauth.status !== 'AVAILABLE' || snapshot.sources.oauth.mode !== 'ACTIVE') {
+    return 'UNKNOWN';
+  }
+  const scopes = snapshot.integration?.grantedScopes || [];
   return scopes.some((scope) => scope.toLowerCase() === 'genericcommerce') ? 'REPORTED' : 'NOT_REPORTED';
 }
 
