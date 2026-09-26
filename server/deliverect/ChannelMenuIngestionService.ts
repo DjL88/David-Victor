@@ -71,6 +71,8 @@ const memoryNormalized = new Map<string, Buffer>();
 const memoryIngress = new Map<string, ChannelMenuIngressRecord>();
 const memoryHostedIndex = new Map<string, {
   tenantId: string;
+  accountId: string;
+  locationId: string;
   channelLinkId: string;
   menuId: string;
   normalizedStoragePath: string;
@@ -113,6 +115,9 @@ const menuArray = (payload: any): any[] => {
 
 const menuIdOf = (menu: any): string =>
   String(menu?.menuId || menu?._id || menu?.id || '').trim();
+
+const accountIdOf = (menu: any): string => metadataText(menu?.accountId, menu?.account?._id, menu?.account?.id);
+const locationIdOf = (menu: any): string => metadataText(menu?.locationId, menu?.location?._id, menu?.location?.id);
 
 const channelLinkIdOf = (menu: any): string =>
   String(
@@ -645,6 +650,9 @@ export class ChannelMenuIngestionService {
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
         const channelLinkId = channelLinkIdOf(menu) || fallbackChannelLinkId;
+        const accountId = accountIdOf(menu) || (existing?.accountIds?.length === 1 ? existing.accountIds[0] : '');
+        const locationId = locationIdOf(menu) || (existing?.locationIds?.length === 1 ? existing.locationIds[0] : '');
+        const hasFullScope = Boolean(accountId && locationId);
         if (!menuId || !channelLinkId) {
           throw new BFFError(
             'VALIDATION_ERROR',
@@ -704,6 +712,9 @@ export class ChannelMenuIngestionService {
 
         const normalized = {
           menuId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
+          identityScope: hasFullScope ? 'ACCOUNT_LOCATION' : 'CHANNEL_LINK',
           channelLinkId,
           menu: menu?.menu || menu?.name || '',
           translations: normaliseDeliverectTranslations(
@@ -747,59 +758,24 @@ export class ChannelMenuIngestionService {
         }
 
         const normalizedBody = Buffer.from(JSON.stringify(normalized), 'utf8');
+        const provenancePath = hasFullScope
+          ? `accounts/${safeSegment(accountId)}/locations/${safeSegment(locationId)}/`
+          : '';
         const normalizedPath =
-          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
+          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/${provenancePath}stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}/versions/${safeSegment(job.eventId)}.json`;
 
         await this.saveNormalizedObject(normalizedPath, normalizedBody, {
           tenantId: job.tenantId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
           channelLinkId,
           menuId,
           eventId: job.eventId,
         });
 
-        memoryHostedIndex.set(
-          `${job.tenantId}:${channelLinkId}:${menuId}`,
-          {
-            tenantId: job.tenantId,
-            channelLinkId,
-            menuId,
-            normalizedStoragePath: normalizedPath,
-            updatedAt: normalized.processedAt,
-          }
-        );
-
-        if (db) {
-          await db
-            .collection('tenants')
-            .doc(job.tenantId)
-            .collection('channelHostedMenus')
-            .doc(safeSegment(`${channelLinkId}_${menuId}`))
-            .set(
-              {
-                tenantId: job.tenantId,
-                channelLinkId,
-                menuId,
-                menuName: normalized.menu,
-                menuType: normalized.menuType,
-                source: normalized.source,
-                rawStoragePath: job.storagePath,
-                normalizedStoragePath: normalizedPath,
-                categoryCount: parsed.categories.length,
-                productCount: normalizedProducts.length,
-                activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
-                archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
-                bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
-                byteSize: normalizedBody.length,
-                lastEventId: job.eventId,
-                receivedAt: job.receivedAt,
-                updatedAt: normalized.processedAt,
-              },
-              { merge: true }
-            );
-        }
-
-        // Preserve existing operational menu metadata + snooze semantics after
-        // durable storage, not on the request thread.
+        // Validate/update operational metadata before publishing the new pointer.
+        // If this step fails, the versioned candidate remains stored but the
+        // storefront continues to resolve the previous last-known-good menu.
         const operationalMenu = channelLinkIdOf(menu)
           ? menu
           : { ...menu, channelLinkId };
@@ -809,6 +785,73 @@ export class ChannelMenuIngestionService {
           operationalMenu,
           JSON.stringify(operationalMenu)
         );
+
+        memoryHostedIndex.set(
+          hasFullScope
+            ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
+            : `${job.tenantId}:${channelLinkId}:${menuId}`,
+          {
+            tenantId: job.tenantId,
+            accountId,
+            locationId,
+            channelLinkId,
+            menuId,
+            normalizedStoragePath: normalizedPath,
+            updatedAt: normalized.processedAt,
+          }
+        );
+
+        if (db) {
+          const collection = db
+            .collection('tenants')
+            .doc(job.tenantId)
+            .collection('channelHostedMenus');
+          const pointer = {
+            tenantId: job.tenantId,
+            ...(accountId ? { accountId } : {}),
+            ...(locationId ? { locationId } : {}),
+            identityScope: normalized.identityScope,
+            channelLinkId,
+            menuId,
+            menuName: normalized.menu,
+            menuType: normalized.menuType,
+            source: normalized.source,
+            rawStoragePath: job.storagePath,
+            normalizedStoragePath: normalizedPath,
+            categoryCount: parsed.categories.length,
+            productCount: normalizedProducts.length,
+            activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
+            archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
+            bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
+            byteSize: normalizedBody.length,
+            lastEventId: job.eventId,
+            receivedAt: job.receivedAt,
+            updatedAt: normalized.processedAt,
+          };
+          const batch = db.batch();
+          // Canonical aliases make the hot read path deterministic and bounded.
+          // The old channel+menu key is retained for backwards compatibility.
+          batch.set(
+            collection.doc(safeSegment(`${channelLinkId}_${menuId}`)),
+            { ...pointer, pointerType: 'MENU_ALIAS' },
+            { merge: true }
+          );
+          batch.set(
+            collection.doc(safeSegment(`${channelLinkId}__latest`)),
+            { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
+            { merge: true }
+          );
+          if (hasFullScope) {
+            batch.set(
+              collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`)),
+              { ...pointer, pointerType: 'SCOPED' },
+              { merge: true }
+            );
+          }
+          await batch.commit();
+        }
+
+
       }
 
       // A successful Menu Push becomes the new catalogue truth. Invalidate the
@@ -1076,31 +1119,28 @@ export class ChannelMenuIngestionService {
         .doc(cleanTenantId)
         .collection('channelHostedMenus');
 
-      if (cleanMenuId) {
-        const snap = await collection
-          .doc(safeSegment(`${cleanChannelLinkId}_${cleanMenuId}`))
-          .get();
-        if (snap.exists) {
-          normalizedStoragePath = String(
-            snap.data()?.normalizedStoragePath || ''
-          );
-        }
+      const aliasId = cleanMenuId
+        ? safeSegment(`${cleanChannelLinkId}_${cleanMenuId}`)
+        : safeSegment(`${cleanChannelLinkId}__latest`);
+      const alias = await collection.doc(aliasId).get();
+      if (alias.exists) {
+        normalizedStoragePath = String(alias.data()?.normalizedStoragePath || '');
       } else {
-        const snap = await collection
-          .where('channelLinkId', '==', cleanChannelLinkId)
-          .limit(25)
-          .get();
+        // Migration fallback for pointers written before canonical aliases.
+        // Apply an exact menu predicate before the bound so a requested menu
+        // cannot be hidden by unrelated channel documents.
+        let query: any = collection.where('channelLinkId', '==', cleanChannelLinkId);
+        if (cleanMenuId) query = query.where('menuId', '==', cleanMenuId);
+        const snap = await query.limit(50).get();
         const candidates = snap.docs
-          .map((doc) => doc.data())
-          .filter((entry) => entry?.normalizedStoragePath)
-          .sort((a, b) =>
+          .map((doc: any) => doc.data())
+          .filter((entry: any) => entry?.normalizedStoragePath)
+          .sort((a: any, b: any) =>
             String(b?.updatedAt || '').localeCompare(
               String(a?.updatedAt || '')
             )
           );
-        normalizedStoragePath = String(
-          candidates[0]?.normalizedStoragePath || ''
-        );
+        normalizedStoragePath = String(candidates[0]?.normalizedStoragePath || '');
       }
     }
 
@@ -1119,13 +1159,6 @@ export class ChannelMenuIngestionService {
     channelLinkId: string,
     menuId: string
   ): Promise<any | null> {
-    const path =
-      `hosted-catalog/tenants/${safeSegment(tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
-    try {
-      const raw = await this.loadPrivateObject(path);
-      return JSON.parse(raw.toString('utf8'));
-    } catch {
-      return null;
-    }
+    return this.getLatestNormalizedMenu(tenantId, channelLinkId, menuId);
   }
 }
