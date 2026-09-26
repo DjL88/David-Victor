@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { VisualRule, AdminUser, TenantSchedulingPolicy, DEFAULT_TENANT_SCHEDULING_POLICY, Product, Store } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { onAdminAiPrefill } from '../adminAiGuide';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { TenantDispatchRules, DEFAULT_DISPATCH_RULES } from '../../rules/types';
+import { buildSearchMerchEntityOptions, type SearchMerchEntityOptions } from '../searchMerchEntityOptions';
+import { buildProductRuleTagOptions } from '../productRuleEntityOptions';
 import { ShieldCheck, Plus, Trash2, Edit3, Check, RefreshCw, AlertCircle, Truck, Clock, RefreshCw as RotateCw, CalendarClock, Upload } from 'lucide-react';
+
+type LoadState = 'loading' | 'ready' | 'empty' | 'error';
+
+const EMPTY_ENTITY_OPTIONS: SearchMerchEntityOptions = { products: [], categories: [], brands: [] };
 
 interface ProductRulesScreenProps {
   tenantId: string;
@@ -34,66 +40,113 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const [schedulingSuccessMsg, setSchedulingSuccessMsg] = useState<string | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
+  const [ruleLoadError, setRuleLoadError] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [entityOptions, setEntityOptions] = useState<SearchMerchEntityOptions>(EMPTY_ENTITY_OPTIONS);
+  const [catalogLoadState, setCatalogLoadState] = useState<LoadState>('loading');
+  const [catalogLoadError, setCatalogLoadError] = useState<string | null>(null);
   const [tenantStores, setTenantStores] = useState<Store[]>([]);
-  const [catalogCategories, setCatalogCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [storeLoadState, setStoreLoadState] = useState<LoadState>('loading');
+  const [storeLoadError, setStoreLoadError] = useState<string | null>(null);
+  const rulesLoadRequestRef = useRef(0);
   const [substitutionImporting, setSubstitutionImporting] = useState(false);
   const [substitutionImportMessage, setSubstitutionImportMessage] = useState<string | null>(null);
 
+  const loadRules = async () => {
+    const requestId = ++rulesLoadRequestRef.current;
+    setLoading(true);
+    setRuleLoadError(null);
+    try {
+      const [pRules, dRules, sPolicy] = await Promise.all([
+        defaultAdminClient.getProductRules(tenantId),
+        defaultAdminClient.getDispatchRules(tenantId),
+        defaultAdminClient.getSchedulingPolicy?.(tenantId) ?? Promise.resolve(DEFAULT_TENANT_SCHEDULING_POLICY),
+      ]);
+      if (requestId !== rulesLoadRequestRef.current) return;
+      setRules(pRules);
+      setDispatchRules(dRules);
+      setSchedulingPolicy(sPolicy);
+    } catch (err: any) {
+      if (requestId !== rulesLoadRequestRef.current) return;
+      setRuleLoadError(err?.message || 'Product rules and operational settings could not be loaded.');
+    } finally {
+      if (requestId === rulesLoadRequestRef.current) setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadRules();
+    return () => {
+      rulesLoadRequestRef.current += 1;
+    };
   }, [tenantId]);
 
-  // Live catalog data for the condition editor's PLU/tag pickers, so staff
-  // select real values instead of guessing/typing them from memory.
   useEffect(() => {
-    const commerceClient = getCommerceClient(tenantId) as any;
-    Promise.all([
-      commerceClient.getProducts?.() || Promise.resolve([]),
-      commerceClient.getCatalog?.() || Promise.resolve(null),
-    ])
-      .then(([products, catalog]: [Product[], any]) => {
-        setCatalogProducts(products || []);
-        const flatten = (categories: any[], depth = 0): Array<{ id: string; name: string }> =>
-          (categories || []).flatMap((category) => [
-            { id: String(category.id), name: `${'— '.repeat(depth)}${category.name || category.id}` },
-            ...flatten(category.subcategories || [], depth + 1),
-          ]);
-        setCatalogCategories(flatten(catalog?.categories || []));
+    let active = true;
+    setCatalogProducts([]);
+    setEntityOptions(EMPTY_ENTITY_OPTIONS);
+    setCatalogLoadError(null);
+    setCatalogLoadState('loading');
+
+    getCommerceClient(tenantId)
+      .getRootCatalog()
+      .then((catalog) => {
+        if (!active) return;
+        const products = catalog.products || [];
+        const options = buildSearchMerchEntityOptions(products, catalog.categories || []);
+        setCatalogProducts(products);
+        setEntityOptions(options);
+        setCatalogLoadState(
+          products.length || options.categories.length || options.brands.length ? 'ready' : 'empty',
+        );
       })
-      .catch((err: unknown) => console.warn('[ProductRulesScreen] Could not load catalog for condition pickers:', err));
+      .catch((err: any) => {
+        if (!active) return;
+        setCatalogProducts([]);
+        setEntityOptions(EMPTY_ENTITY_OPTIONS);
+        setCatalogLoadError(err?.message || 'Live catalogue suggestions could not be loaded.');
+        setCatalogLoadState('error');
+      });
+
+    return () => {
+      active = false;
+    };
   }, [tenantId]);
 
-  const availableTags = useMemo(() => {
-    const labels = new Map<string, string>();
-    catalogProducts.forEach((p) => {
-      (p.productTags || []).forEach((tag, index) => {
-        const value = String(tag);
-        const label = p.productTagLabels?.[index] || (!/^\d+$/.test(value) ? value : undefined);
-        if (label) labels.set(value, label);
-      });
-      (p.tags || []).forEach((tag) => {
-        const value = String(tag);
-        if (!/^\d+$/.test(value)) labels.set(value, value);
-      });
-    });
-    return Array.from(labels, ([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [catalogProducts]);
+  const availableTags = useMemo(
+    () => buildProductRuleTagOptions(catalogProducts),
+    [catalogProducts],
+  );
 
   const tagLabel = (value: unknown) =>
     availableTags.find((tag) => tag.value === String(value))?.label || String(value);
   const categoryLabel = (value: unknown) =>
-    catalogCategories.find((category) => category.id === String(value))?.name || String(value);
+    entityOptions.categories.find((category) => category.value === String(value))?.label || String(value);
 
-  // Live store geography for the "Applies in" picker, so staff choose real
-  // Country/Nation/Region/County values derived from actual store addresses
-  // instead of typing country codes from memory.
   useEffect(() => {
+    let active = true;
+    setTenantStores([]);
+    setStoreLoadError(null);
+    setStoreLoadState('loading');
+
     defaultAdminClient
       .getStores(tenantId)
-      .then((stores) => setTenantStores(stores || []))
-      .catch((err) => console.warn('[ProductRulesScreen] Could not load stores for geography picker:', err));
+      .then((stores) => {
+        if (!active) return;
+        const nextStores = stores || [];
+        setTenantStores(nextStores);
+        setStoreLoadState(nextStores.length ? 'ready' : 'empty');
+      })
+      .catch((err: any) => {
+        if (!active) return;
+        setTenantStores([]);
+        setStoreLoadError(err?.message || 'Store geography suggestions could not be loaded.');
+        setStoreLoadState('error');
+      });
+
+    return () => {
+      active = false;
+    };
   }, [tenantId]);
 
   const availableGeographyTokens = useMemo(() => {
@@ -108,24 +161,6 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
     });
     return Array.from(tokenSet).sort();
   }, [tenantStores]);
-
-  const loadRules = async () => {
-    setLoading(true);
-    try {
-      const [pRules, dRules, sPolicy] = await Promise.all([
-        defaultAdminClient.getProductRules(tenantId),
-        defaultAdminClient.getDispatchRules(tenantId),
-        defaultAdminClient.getSchedulingPolicy?.(tenantId) ?? Promise.resolve(DEFAULT_TENANT_SCHEDULING_POLICY),
-      ]);
-      setRules(pRules);
-      setDispatchRules(dRules);
-      setSchedulingPolicy(sPolicy);
-    } catch (err) {
-      console.warn('[ProductRulesScreen] Error loading rules:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() =>
     onAdminAiPrefill('product_rules', ({ prefill }) => {
@@ -199,6 +234,10 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   };
 
   const handleCreateNew = () => {
+    if (ruleLoadError) {
+      setRuleError('Product rules are unavailable for this tenant. Reload successfully before creating a rule.');
+      return;
+    }
     const newRule: VisualRule = {
       id: `rule-${Date.now()}`,
       name: 'New rule',
@@ -234,6 +273,10 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRule) return;
+    if (ruleLoadError) {
+      setRuleError('Product rules are unavailable for this tenant. Reload successfully before saving changes.');
+      return;
+    }
     const invalidCondition = editingRule.matchConditions.some((condition) => !String(condition.value ?? '').trim());
     if (invalidCondition) { setRuleError('Every Where condition needs a value before this rule can be saved.'); return; }
     if (editingRule.actions.length === 0) { setRuleError('Add at least one action before saving this rule.'); return; }
@@ -351,7 +394,7 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
   }
 
   return (
-    <div className="p-4 sm:p-4 sm:p-6 max-w-6xl mx-auto space-y-6 min-w-0 min-w-0">
+    <div className="mx-auto max-w-6xl min-w-0 space-y-6 p-4 sm:p-6">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -385,7 +428,8 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             data-admin-ai-target="product-rules-new"
             type="button"
             onClick={handleCreateNew}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs"
+            disabled={Boolean(ruleLoadError)}
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             <span>New rule</span>
@@ -449,6 +493,32 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
       {operationsError && (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">
           {operationsError}
+        </div>
+      )}
+
+      {ruleLoadError && (
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">
+          Product rules for this tenant are unavailable: {ruleLoadError} Existing rules have not been replaced; editing stays disabled until a successful reload.
+        </div>
+      )}
+      {activeTab === 'product' && catalogLoadState === 'loading' && (
+        <div aria-live="polite" className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs font-semibold text-gray-600">
+          Loading live PLU, category, tag and brand suggestions…
+        </div>
+      )}
+      {activeTab === 'product' && catalogLoadState === 'error' && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900">
+          Live catalogue suggestions are unavailable: {catalogLoadError || 'Unknown error'}. Existing rule values remain visible and exact manual values are still accepted.
+        </div>
+      )}
+      {activeTab === 'product' && catalogLoadState === 'empty' && (
+        <div role="status" className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-600">
+          This tenant currently has no catalogue-backed rule suggestions. Exact manual values are still accepted.
+        </div>
+      )}
+      {activeTab === 'product' && storeLoadState === 'error' && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900">
+          Store geography suggestions are unavailable: {storeLoadError || 'Unknown error'}. Existing geography values remain unchanged and manual values are still accepted.
         </div>
       )}
 
@@ -1000,34 +1070,60 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
               {/* Where Editor */}
               <div data-admin-ai-target="product-rule-conditions" className="p-3 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
                 <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold text-gray-700">Where <span className="font-normal text-gray-400">all conditions match</span></span><button type="button" onClick={() => setEditingRule({...editingRule, matchConditions:[...editingRule.matchConditions,{field:'productTag',operator:'equals',value:''}]})} className="text-[11px] font-bold text-indigo-700">+ Add condition</button></div>
-                {editingRule.matchConditions.map((condition, index) => <div key={index} className="grid grid-cols-[1fr_0.8fr_1.2fr_auto] gap-2 items-center">
-                  <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
-                  <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
-                  {condition.field === 'productTag' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
-                      <option value="">Select product tag…</option>
-                      {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
-                    </select>
-                  ) : condition.field === 'category' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
-                      <option value="">Select category…</option>
-                      {catalogCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                    </select>
-                  ) : condition.field === 'isAlcohol' ? (
-                    <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white">
-                      <option value="">Choose…</option><option value="true">Yes — alcoholic</option><option value="false">No — non-alcoholic</option>
-                    </select>
-                  ) : (
-                    <input type="text" value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="px-2 py-2 border border-gray-200 rounded-lg bg-white" placeholder={condition.field==='plu'?'Search PLU or product name…':'Value'} list={condition.field==='plu'?'rule-plu-options':undefined}/>
-                  )}
-                  <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
-                </div>)}
-                {/* Live catalog data backing the PLU/tag condition pickers above, instead of staff guessing exact values */}
+                {editingRule.matchConditions.map((condition, index) => {
+                  const listId =
+                    condition.field === 'plu' ? 'rule-plu-options' :
+                    condition.field === 'category' ? 'rule-category-options' :
+                    condition.field === 'productTag' ? 'rule-tag-options' :
+                    condition.field === 'brand' ? 'rule-brand-options' :
+                    undefined;
+                  const placeholder =
+                    condition.operator === 'in'
+                      ? 'Enter comma-separated values…'
+                      : condition.field === 'plu'
+                        ? 'Search PLU or product name…'
+                        : condition.field === 'category'
+                          ? 'Search category or enter exact ID…'
+                          : condition.field === 'productTag'
+                            ? 'Search tag or enter exact value…'
+                            : condition.field === 'brand'
+                              ? 'Search brand or enter exact value…'
+                              : 'Value';
+                  return <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_0.8fr_1.2fr_auto] sm:items-center">
+                    <select value={condition.field} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],field:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="productTag">Product tag</option><option value="category">Category</option><option value="brand">Brand</option><option value="ruleGroup">Rule group</option><option value="isAlcohol">Alcohol product</option><option value="plu">PLU</option></select>
+                    <select value={condition.operator} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],operator:e.target.value as any};setEditingRule({...editingRule,matchConditions:a})}} className="min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"><option value="equals">is</option><option value="contains">contains</option><option value="in">is one of</option></select>
+                    {condition.field === 'isAlcohol' ? (
+                      <select value={String(condition.value||'')} onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}} className="min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white">
+                        <option value="">Choose…</option><option value="true">Yes — alcoholic</option><option value="false">No — non-alcoholic</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={String(condition.value||'')}
+                        onChange={(e)=>{const a=[...editingRule.matchConditions];a[index]={...a[index],value:e.target.value};setEditingRule({...editingRule,matchConditions:a})}}
+                        className="min-w-0 px-2 py-2 border border-gray-200 rounded-lg bg-white"
+                        placeholder={placeholder}
+                        list={listId}
+                        aria-describedby="product-rule-value-help"
+                      />
+                    )}
+                    <button type="button" disabled={editingRule.matchConditions.length===1} onClick={()=>setEditingRule({...editingRule,matchConditions:editingRule.matchConditions.filter((_,i)=>i!==index)})} className="justify-self-end p-2 text-gray-400 hover:text-red-600 disabled:opacity-30 sm:justify-self-auto" aria-label="Remove condition"><Trash2 className="w-4 h-4"/></button>
+                  </div>;
+                })}
+                <p id="product-rule-value-help" className="text-[10px] text-gray-500">
+                  Suggestions come from this tenant's live root catalogue. Exact manual values remain valid; use comma-separated values with “is one of”.
+                </p>
                 <datalist id="rule-plu-options">
-                  {catalogProducts.map((p) => <option key={p.plu} value={p.plu}>{p.name}</option>)}
+                  {entityOptions.products.map((option) => <option key={option.value} value={option.value}>{option.label}{option.description ? ` · ${option.description}` : ''}</option>)}
+                </datalist>
+                <datalist id="rule-category-options">
+                  {entityOptions.categories.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </datalist>
                 <datalist id="rule-tag-options">
                   {availableTags.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
+                </datalist>
+                <datalist id="rule-brand-options">
+                  {entityOptions.brands.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </datalist>
               </div>
 
