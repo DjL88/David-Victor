@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Story, AdminUser, Store, Product, StoryStockMatchMode } from '../../commerce/models';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
@@ -49,29 +49,43 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
   const [uploadingFrameIdx, setUploadingFrameIdx] = useState<number | null>(null);
   const [purging, setPurging] = useState<boolean>(false);
   const [notice, setNotice] = useState<{ tone: 'error' | 'success'; message: string } | null>(null);
+  const activeTenantRef = useRef(tenantId);
+  const editingStoryRef = useRef<Story | null>(editingStory);
+  activeTenantRef.current = tenantId;
+  editingStoryRef.current = editingStory;
 
-  useEffect(() => {
-    loadData();
-  }, [tenantId]);
-
-  const loadData = async () => {
+  const loadData = async (requestTenantId = tenantId) => {
     setLoading(true);
     setNotice(null);
     try {
       const [storyData, storeList, productList] = await Promise.all([
-        defaultAdminClient.getStories(tenantId),
+        defaultAdminClient.getStories(requestTenantId),
         defaultAdminClient.getStores(),
         commerceClient.getProducts(),
       ]);
+      if (activeTenantRef.current !== requestTenantId) return;
       setStories(storyData);
       setStores(storeList);
       setProducts(productList);
-    } catch (err: any) {
-      setNotice({ tone: 'error', message: err?.message || 'Stories could not be loaded.' });
+    } catch (err) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error('Stories could not be loaded:', err);
+      setNotice({ tone: 'error', message: 'Stories or their live selectors are currently unavailable. Existing stories have not been replaced.' });
     } finally {
-      setLoading(false);
+      if (activeTenantRef.current === requestTenantId) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const requestTenantId = tenantId;
+    setStories([]);
+    setStores([]);
+    setProducts([]);
+    setEditingStory(null);
+    setSelectedLocationId('all');
+    setOnlyLocationSpecific(false);
+    void loadData(requestTenantId);
+  }, [tenantId, commerceClient]);
 
   const handlePurge = async () => {
     if (!confirm('Delete all stories for this brand? This cannot be undone.')) return;
@@ -249,13 +263,26 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
         linkedProductPlus: editingStory.linkedProductPlus || [],
         stockMatchMode: editingStory.stockMatchMode || 'OR',
       };
-      await defaultAdminClient.saveStory(tenantId, normalizedStory, currentUser);
-      await loadData();
-      setEditingStory(null);
-    } catch (err: any) {
-      setNotice({ tone: 'error', message: `Could not save story: ${err.message || err}` });
+      const requestTenantId = tenantId;
+      const submittedSignature = JSON.stringify(editingStory);
+      await defaultAdminClient.saveStory(requestTenantId, normalizedStory, currentUser);
+      if (activeTenantRef.current !== requestTenantId) return;
+      await loadData(requestTenantId);
+      if (
+        activeTenantRef.current === requestTenantId &&
+        editingStoryRef.current &&
+        JSON.stringify(editingStoryRef.current) === submittedSignature
+      ) {
+        setEditingStory(null);
+      } else if (activeTenantRef.current === requestTenantId) {
+        setNotice({ tone: 'success', message: 'Story saved. Newer unsaved editor changes are still on screen.' });
+      }
+    } catch (err) {
+      if (activeTenantRef.current !== tenantId) return;
+      console.error('Could not save story:', err);
+      setNotice({ tone: 'error', message: 'Story could not be saved. Your editor remains open and no successful publish has been reported.' });
     } finally {
-      setSaving(false);
+      if (activeTenantRef.current === tenantId) setSaving(false);
     }
   };
 
@@ -410,7 +437,7 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
               </span>
             </div>
             <span className="px-2.5 py-1 rounded-full bg-indigo-200/60 text-indigo-900 font-bold text-xs shrink-0">
-              {filteredStories.length} Story Campaign(s) Active
+              {filteredStories.length} Story Campaign(s) configured
             </span>
           </div>
         )}
@@ -1049,20 +1076,30 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
                               if (!file) return;
                               setUploadingFrameIdx(idx);
                               try {
+                                const requestTenantId = tenantId;
                                 const assetType = file.type.startsWith('video/') ? 'STORY_VIDEO' : 'STORY_IMAGE';
-                                const uploaded = await defaultAdminClient.uploadAssetFile(file, assetType, tenantId);
-                                const newItems = [...(editingStory.items || [])];
+                                const uploaded = await defaultAdminClient.uploadAssetFile(file, assetType, requestTenantId);
+                                if (activeTenantRef.current !== requestTenantId) return;
+                                if (!uploaded?.publicUrl) {
+                                  setNotice({ tone: 'error', message: 'Story media upload did not return a usable URL. The previous frame is unchanged.' });
+                                  return;
+                                }
+                                const currentStory = editingStoryRef.current;
+                                if (!currentStory) return;
+                                const newItems = [...(currentStory.items || [])];
                                 newItems[idx] = {
                                   ...newItems[idx],
                                   mediaUrl: uploaded.publicUrl,
                                   mediaType: file.type.startsWith('video/') ? 'video' : 'image',
                                   duration: file.type.startsWith('video/') ? 12 : 5,
                                 };
-                                setEditingStory({ ...editingStory, items: newItems });
-                              } catch (err: any) {
-                                setNotice({ tone: 'error', message: `Upload failed: ${err.message || err}` });
+                                setEditingStory({ ...currentStory, items: newItems });
+                              } catch (err) {
+                                if (activeTenantRef.current !== tenantId) return;
+                                console.error('Story media upload failed:', err);
+                                setNotice({ tone: 'error', message: 'Story media upload failed. The previous frame is unchanged.' });
                               } finally {
-                                setUploadingFrameIdx(null);
+                                if (activeTenantRef.current === tenantId) setUploadingFrameIdx(null);
                               }
                             }}
                           />
