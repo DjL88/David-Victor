@@ -1,132 +1,203 @@
-# System Architecture (docs/ARCHITECTURE.md)
+# LTx architecture
 
-**Project:** Multi-Tenant White-Label Retail Commerce Platform  
-**Target Platform:** Google Cloud Run + Firebase (Auth, Firestore, Cloud Storage) + Deliverect Commerce Backbone
+This document describes the current production architecture and the boundaries that must stay true during future changes.
 
----
+## 1. Runtime shape
 
-## 1. System Topology
+LTx is a React storefront/Admin application served with an Express BFF on Firebase App Hosting.
+
+- Browser entry: `src/`
+- Server entry: `server.ts`
+- API surface: `server/api/v1Router.ts`
+- Persistent platform state: Firestore through `server/firestoreService.ts`
+- Sensitive runtime configuration: Secret Manager through `server/secrets.ts`
+- Environment/runtime policy: `server/runtimeMode.ts`, `server/firebaseTarget.ts`, App Hosting configs
+
+The browser never receives provider client secrets or raw Secret Manager values.
+
+## 2. Tenant and authentication boundary
+
+Tenant identity is resolved before tenant-owned data is read or mutated.
+
+- Storefront tenant: hostname/domain resolution or an explicit non-production preview override.
+- Admin tenant: verified Admin identity/membership plus an explicitly resolved tenant scope.
+- Platform Super Admin: may select tenant scope explicitly; a missing tenant must not silently become a retailer tenant.
+- Order/payment reads: ownership/tenant checks happen before provider or financial state is returned.
+
+Demo/test fallbacks are allowed only behind explicit demo/test runtime checks.
+
+## 3. Commerce/catalogue flow
 
 ```
-                  +--------------------------------+
-                  | Customer / Admin React 19 SPA  |
-                  +--------------------------------+
-                                  |
-                                  | HTTPS (Vite PWA)
-                                  | Firebase Auth ID Token (Admin / Customer)
-                                  v
-                  +--------------------------------+
-                  |         Cloud Run BFF          |
-                  |     (Node / Express on 3000)   |
-                  +--------------------------------+
-                                  |
-            +---------------------+---------------------+
-            |                                           |
-            v                                           v
-+-----------------------+                   +-----------------------+
-|   Platform Services   |                   | Deliverect Integration|
-|  - Tenant Resolution  |                   |  - OAuth Token Manager|
-|  - Domain Provider    |                   |  - Commerce Adapter   |
-|  - Asset Service      |                   |  - Dispatch Adapter   |
-|  - Search Merch / CMS |                   |  - DPay Adapter       |
-|  - Policy Engine      |                   |  - Quest Normalizer   |
-+-----------------------+                   +-----------------------+
-            |                                           |
-    +-------+-------+                                   |
-    |       |       |                                   v
-    v       v       v                           Deliverect APIs
-Firestore Storage Firebase Auth          (Staging: api.staging.deliverect.com)
-(Config/  (Assets)(ID Token Verify)      (Prod: api.deliverect.com)
- Projections)
+Deliverect Channel Menu Push
+        |
+        v
+ChannelMenuIngestionService
+        |
+        +--> durable raw/normalised evidence
+        +--> scoped hosted-menu pointer
+        +--> last-known-good protection
+        |
+        v
+DeliverectApiClient / CommerceDiscoveryService
+        |
+        +--> optional fresh Commerce verification
+        +--> operational snooze/product state
+        |
+        v
+BFF catalogue/search routes
+        |
+        v
+HttpCommerceClient
+        |
+        v
+storefront hooks/screens
 ```
 
-### Inbound Webhook Pipeline
+Key invariants:
+
+- Channel Menu Push is durable range truth.
+- Partial/empty/late/error snapshots cannot destructively replace valid last-known-good catalogue state.
+- Commerce/provider failure does not erase durable catalogue truth.
+- Reads/writes are bounded for large catalogues.
+- Money remains integer minor units plus explicit currency.
+
+## 4. Basket, checkout and order flow
+
 ```
-Deliverect Inbound Webhooks (Checkout / Picking / Payments)
-            |
-            | HTTPS POST (with x-server-authorization-hmac-sha256)
-            v
-Cloud Run BFF (/integrations/deliverect/webhooks/*)
-  1. Capture raw request bytes
-  2. Constant-time HMAC SHA-256 verification against environment secret
-  3. Deduplicate against webhookEvents journal
-  4. Normalize to domain events:
-     - ORDER_ACCEPTED
-     - PICKING_STARTED
-     - ITEM_PICKED
-     - ITEM_QUANTITY_AMENDED
-     - ITEM_SUBSTITUTED
-     - ITEM_REMOVED
-     - PICKING_COMPLETE
-     - ORDER_CANCELLED
-  5. Apply idempotent mutation to orderProjections in Firestore
+Storefront basket
+   -> BFF basket/rules validation
+   -> Deliverect Commerce basket
+   -> Dispatch availability validation (delivery only)
+   -> payment authorisation boundary
+   -> checkout/order submission
+   -> durable OrderProjection
+   -> provider/Quest/webhook updates
+   -> customer tracker/My Orders
 ```
 
----
+Key invariants:
 
-## 2. Core Architectural Invariants
+- Product Rules are enforced server-side as well as presented client-side.
+- Customer-facing status is evidence-based; timers/POS/payment events do not invent delivery/handover state.
+- Customer-visible references never expose opaque provider/session identifiers.
+- Cancellation state, payment refund/release state and Dispatch state are separate truths.
+- Unknown financial/provider outcome remains unknown.
 
-### 2.1 Deliverect is Authoritative for Commerce
-- Deliverect owns:
-  - Stores and store availability (open/closed/busy/paused)
-  - Store Menus, store-specific prices, and stock/range
-  - Basket state and recalculation/reconciliation
-  - Checkout execution and payment state
-  - Picking operations (Quest) and courier dispatch serviceability (Dispatch)
-- Our Platform owns:
-  - Tenants, domains, and branding
-  - Stories and merchandising overlays
-  - Search synonyms and boosted rules
-  - Compliance and country fee policies
-  - Admin users and tenant RBAC
-  - Immutable webhook event journal and customer order projections
+## 5. Quest substitutions and pricing
 
-### 2.2 The Browser Must Never Call Deliverect Directly
-- No client-side exposure of `DELIVERECT_CLIENT_SECRET`, bearer tokens, or webhook secrets.
-- Browser interacts strictly through our Cloud Run BFF (`/api/v1/*`).
-- Client-side payment tokenization routes raw PAN/CVC directly to the approved token proxy (e.g. Basis Theory proxy), never through our BFF or application logs.
+Quest picking amendments resolve against the durable order projection.
 
-### 2.3 Single-Store Basket & Revalidation
-- Each basket is bound to a single store context (`tenantId`, `channelLinkId`, `menuId`, `fulfillmentType`).
-- No multi-store basket splitting.
-- When switching stores:
-  - Explicit customer prompt.
-  - Line items revalidated against target store menu.
-  - Any dropped or repriced items clearly communicated.
-  - Fresh authoritative basket reconciliation performed.
+For substitutions:
 
-### 2.4 Store Discovery & Dispatch Policy
-- Customer location (lat/lng) resolves nearest Deliverect Commerce stores.
-- Candidate stores queried with `sort=distance`.
-- For delivery candidates, Dispatch availability (`POST /fulfillment/validate`) is evaluated with controlled concurrency (default: 4).
-- Up to 10 stores displayed: delivery-serviceable stores ranked by Commerce distance, supplemented by collection-capable stores within 20,000m.
-- Revalidation before checkout: Dispatch validation refreshed to prevent stale dispatch tokens.
+- original requested quantity and accepted replacement quantity are independent;
+- the protected ceiling is the original effective **line total**, not original unit price multiplied by replacement quantity;
+- replacement effective retail/promo total is calculated separately;
+- customer charge is the lower of protected original effective total and replacement effective total;
+- retail delta, customer delta and price-protection value remain separately persisted/reportable;
+- duplicate/out-of-order amendments are idempotent/fail-closed.
 
-### 2.5 Payment Authorization Ceiling (No Arbitrary Buffers)
-- Arbitrary percentage buffers (`basket * 1.10` or `1.15`) are strictly forbidden.
-- Authorised maximum is calculated as:
-  ```
-  authorizationMaximum = reconciledBasketTotal
-                       + explicitly_approved_substitute_uplifts
-                       + explicitly_configured_catch_weight_allowance
-                       + approved_charges
-  ```
-- All monetary components are tracked as integer minor units (`Money { amount, currency }`).
+## 6. Payment boundary
 
----
+Payment code is provider-neutral at the platform boundary while current supported behavior remains evidence-driven.
 
-## 3. Runtime Modes
+- provider selection/config is tenant-bound;
+- capability declarations describe implemented/tested LTx operations only;
+- currency/minor units cannot silently change;
+- provider IDs do not prove authorisation/capture/refund;
+- webhook/event handling is tenant-scoped and deduplicated;
+- unsupported provider operations fail closed.
 
-1. **UNKNOWN** (Initial bootstrap state):
-   - Mocks forbidden. Requests wait for authoritative environment resolution.
-2. **DEMO**:
-   - Explicitly configured for local sandbox / visual showcase.
-   - Mock adapters and deterministic mock data permitted, clearly identified.
-3. **STAGING**:
-   - Zero mock fallback.
-   - Uses `api.staging.deliverect.com`.
-   - If credentials missing or unconfigured, returns typed `503 INTEGRATION_NOT_CONFIGURED`.
-   - Genuine zero-store or unserviceable results are rendered honestly.
-4. **PRODUCTION**:
-   - Zero mock fallback. Mock code is unreachable.
-   - Uses `api.deliverect.com`.
+No provider endpoint should be added from assumption or documentation analogy.
+
+## 7. Dispatch boundary
+
+Verified Dispatch availability/validation is distinct from courier assignment.
+
+- availability/validation may return provider validation evidence;
+- assignment, customer-side cancellation cutoff, handover and age/PIN semantics stay unsupported/UNKNOWN until a current contract or trusted fixture proves them;
+- courier events cannot independently rewrite unrelated order/payment truth.
+
+## 8. Admin, CMS and domains
+
+Admin screens use tenant-scoped platform clients and fence asynchronous results across tenant switches.
+
+CMS/domain invariants:
+
+- unavailable is not the same as empty;
+- failed saves must not mutate local UI as if persistence succeeded;
+- in-flight older-tenant results cannot overwrite the active tenant;
+- domain presentation distinguishes Requested → Claimed → Verified → HTTPS → Live;
+- repository UI may represent/configure lifecycle state but does not claim external DNS/cloud mutation unless that action actually occurred.
+
+## 9. Altie trusted operator
+
+Altie has three layers:
+
+1. curated versioned knowledge with provenance/freshness;
+2. registered read actions through existing tenant-scoped services;
+3. reviewed write actions through durable ChangeSets and typed resource adapters.
+
+Current executable write scope is deliberately narrow: low-risk Branding.
+
+A trusted write follows:
+
+```
+intent
+ -> inspect
+ -> server-derived proposal
+ -> durable ChangeSet/revision
+ -> scoped expiring approval
+ -> capability-checked adapter
+ -> persisted reread verification
+ -> audit receipt
+ -> optional versioned rollback
+```
+
+Prompt/model content cannot override tenant, actor, role or registered capabilities.
+
+## 10. Tests and release evidence
+
+The repository distinguishes:
+
+- authored tests;
+- exact-head CI success;
+- merged SHA;
+- Firebase App Hosting rollout success;
+- runtime/browser/provider verification.
+
+Do not collapse those into a single “deployed/verified” claim.
+
+Primary gates:
+
+- `bun run lint`
+- `bun run test`
+- `bun run test:certification`
+- `bun run build`
+
+## 11. Compatibility seams intentionally retained
+
+Some legacy names remain because changing them would be a migration, not cleanup.
+
+Examples include:
+
+- persisted collection/API/provider identifiers;
+- legacy `artie` analytics identifiers where historical continuity requires them;
+- `BwydiLogo` compatibility export while callers migrate to `LTLogo`;
+- explicit demo/mock adapters used only behind demo/test runtime boundaries.
+
+Do not remove a compatibility seam merely because the name is old. Prove that no persisted/API/test/runtime caller depends on it first.
+
+## 12. Cleanup rule
+
+For dead-code or config removal, trace:
+
+```
+entry point -> caller/import -> service -> persistence/provider/UI effect -> tests/deployment
+```
+
+Classify candidates as:
+
+- **SAFE_TO_REMOVE** — no production/test/build/deploy caller and replacement/ownership is clear.
+- **KEEP_COMPATIBILITY** — still required by persisted/API/history/demo compatibility.
+- **NEEDS_CONFIRMATION** — evidence is incomplete; document it and leave code in place.
