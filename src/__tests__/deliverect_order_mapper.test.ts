@@ -20,6 +20,7 @@ describe('DeliverectOrderMapper order/POS status normalization', () => {
   });
 
   it('keeps explicit courier-independent terminal order states conservative', () => {
+    expect(normalizeDeliverectOrderProjectionStatus(100)).toBe('100');
     expect(normalizeDeliverectOrderProjectionStatus(110)).toBe('CANCELLED');
     expect(normalizeDeliverectOrderProjectionStatus(121)).toBe('ORDER_FAILED');
     expect(normalizeDeliverectOrderProjectionStatus('FINALIZED')).toBe('READY');
