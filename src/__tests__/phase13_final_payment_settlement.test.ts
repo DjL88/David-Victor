@@ -91,8 +91,9 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
       };
 
       const finalAmount = PaymentService.calculateAuthoritativeFinalAmount(order);
-      // Expected: 400 (milk) + 1200 (ribeye) + 0 (removed apples) = 1600 minor units
-      expect(finalAmount).toBe(1600);
+      // Substitution may never uplift above the protected original line total:
+      // 400 (milk) + 1000 (protected steak line) + 0 (removed apples).
+      expect(finalAmount).toBe(1400);
     });
 
     it('multiplies unit price by pickedQuantity and handles reduced quantities correctly', () => {
@@ -268,7 +269,12 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
               pickedQuantity: 1,
               originalPrice: { amount: 1200, currency: 'GBP' },
               finalPrice: { amount: 800, currency: 'GBP' },
-              state: 'SUBSTITUTED',
+              state: 'QUANTITY_AMENDED',
+              amendment: {
+                originalQuantity: 1,
+                suppliedQuantity: 1,
+                reason: 'Verified catch-weight / quantity price amendment',
+              },
             },
           ],
         },
@@ -480,7 +486,12 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
               pickedQuantity: 1,
               originalPrice: { amount: 2000, currency: 'GBP' },
               finalPrice: { amount: 2400, currency: 'GBP' },
-              state: 'SUBSTITUTED',
+              state: 'QUANTITY_AMENDED',
+              amendment: {
+                originalQuantity: 1,
+                suppliedQuantity: 1,
+                reason: 'Verified catch-weight / quantity price amendment',
+              },
             },
           ],
         },
@@ -533,7 +544,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         paymentState: 'AUTHORIZED',
         paymentId,
         total: 2000,
-        authorizedMaximum: 2000,
+        authorizedMaximum: 2400,
         itemsCount: 1,
         fulfillmentType: 'delivery',
         createdAt: new Date().toISOString(),
@@ -552,11 +563,31 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
               pickedQuantity: 1,
               originalPrice: { amount: 2000, currency: 'GBP' },
               finalPrice: { amount: 2350, currency: 'GBP' },
-              state: 'SUBSTITUTED',
+              state: 'QUANTITY_AMENDED',
+              amendment: {
+                originalQuantity: 1,
+                suppliedQuantity: 1,
+                reason: 'Verified catch-weight / quantity price amendment',
+              },
             },
           ],
         },
       } as any);
+
+      await FirestorePlatformService.savePaymentProjection({
+        paymentId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'authorized',
+        amount: { amount: 2000, currency: 'GBP' },
+        authorizedAmount: { amount: 2000, currency: 'GBP' },
+        customerApprovedMaxAmount: { amount: 2400, currency: 'GBP' },
+        capturedAmount: { amount: 0, currency: 'GBP' },
+        captureMode: 'manual',
+        currency: 'GBP',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
 
       // Settle with reauthorizeIfNeeded = true
       const settlement = await PaymentService.settleOrderPayment(orderId, testTenant, {
