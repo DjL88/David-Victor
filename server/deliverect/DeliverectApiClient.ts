@@ -1866,8 +1866,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
         if (response.status !== 404) break;
       }
       const error: any = new Error(`Deliverect raw menu request failed: HTTP ${lastStatus} for assigned store ${storeId}`);
-      error.statusCode = 502;
-      error.code = 'DELIVERECT_RAW_MENU_UNAVAILABLE';
+      error.statusCode = lastStatus;
+      error.code =
+        lastStatus === 401 || lastStatus === 403
+          ? 'DELIVERECT_COMMERCE_ACCESS_DENIED'
+          : 'DELIVERECT_RAW_MENU_UNAVAILABLE';
       throw error;
     });
   }
