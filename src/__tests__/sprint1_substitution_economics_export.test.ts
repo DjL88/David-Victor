@@ -4,7 +4,9 @@ import { SubstitutionEconomicsExportService } from '../../server/substitutionEco
 describe('Sprint 1 substitution economics export', () => {
   const order = {
     orderId: 'ord-export-1',
+    orderReference: 'REF-EXPORT-1',
     tenantId: 'tenant-a',
+    channelLinkId: 'location-a',
     status: 'PICKING_WITH_CHANGES',
     total: 300,
     itemsCount: 1,
@@ -58,6 +60,12 @@ describe('Sprint 1 substitution economics export', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       tenantId: 'tenant-a',
+      locationId: 'location-a',
+      orderReference: 'REF-EXPORT-1',
+      originalName: 'Original',
+      originalUnitPrice: 300,
+      substituteName: 'Replacement',
+      replacementUnitPrice: 130,
       originalQuantity: 1,
       replacementQuantity: 2,
       retailValueDelta: -40,
@@ -68,6 +76,10 @@ describe('Sprint 1 substitution economics export', () => {
     });
 
     const csv = SubstitutionEconomicsExportService.toCsv(rows);
+    expect(csv).toContain('orderReference');
+    expect(csv).toContain('locationId');
+    expect(csv).toContain('originalUnitPrice');
+    expect(csv).toContain('replacementUnitPrice');
     expect(csv).toContain('retailValueDelta');
     expect(csv).toContain('customerPriceDelta');
     expect(csv).toContain(',-40,-100,');
