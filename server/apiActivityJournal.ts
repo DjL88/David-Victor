@@ -14,17 +14,51 @@ export interface ApiActivityPage<T> {
   errorCode?: string;
 }
 
-const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,79}$/;
+// Error codes can contain arbitrary provider/customer data too. A valid-looking
+// identifier is not evidence of a safe diagnostic; publish only known values.
+// Keep this list internal, not tenant-configurable.
+const SAFE_API_ACTIVITY_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ABORTED',
+  'ALREADY_EXISTS',
+  'CANCELLED',
+  'DATA_LOSS',
+  'DEADLINE_EXCEEDED',
+  'FAILED_PRECONDITION',
+  'INTERNAL',
+  'INVALID_ARGUMENT',
+  'NOT_FOUND',
+  'OUT_OF_RANGE',
+  'PERMISSION_DENIED',
+  'RESOURCE_EXHAUSTED',
+  'UNAUTHENTICATED',
+  'UNAVAILABLE',
+  'UNIMPLEMENTED',
+  'UNKNOWN',
+  'DATABASE_UNAVAILABLE',
+  'FIRESTORE_READ_FAILED',
+  'FIRESTORE_UNAVAILABLE',
+  'INVALID_CURSOR',
+  'TENANT_MISMATCH_FILTERED',
+  'TENANT_SCOPE_REQUIRED',
+]);
 
+/**
+ * Return a known diagnostic or the caller's fixed, internal fallback code.
+ * `fallback` must be an application literal, never upstream/user-controlled text.
+ * This helper does not authorize retries or infer provider permission scopes.
+ */
 export function safeApiActivityErrorCode(value: unknown, fallback: string): string {
-  const raw = value && typeof value === 'object' && 'code' in value
-    ? (value as { code?: unknown }).code
-    : '';
-  const candidate = String(raw || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9_]/g, '_');
-  return ERROR_CODE_PATTERN.test(candidate) ? candidate : fallback;
+  try {
+    if (!value || typeof value !== 'object') return fallback;
+    const raw = (value as { code?: unknown }).code;
+    // Do not stringify error objects, numeric codes, arrays or custom toString.
+    if (typeof raw !== 'string' || raw.length > 80) return fallback;
+    const candidate = raw.trim().toUpperCase().replace(/-/g, '_');
+    return SAFE_API_ACTIVITY_ERROR_CODES.has(candidate) ? candidate : fallback;
+  } catch {
+    // Malformed error getters/proxies must not break the degraded read path.
+    return fallback;
+  }
 }
 
 export function encodeApiActivityCursor(cursor: ApiActivityCursor): string {
