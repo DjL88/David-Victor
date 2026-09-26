@@ -82,6 +82,10 @@ export const StoriesAdminScreen: React.FC<StoriesAdminScreenProps> = ({
     setStores([]);
     setProducts([]);
     setEditingStory(null);
+    setSaving(false);
+    setUploadingFrameIdx(null);
+    setPurging(false);
+    setProductSearchQuery('');
     setSelectedLocationId('all');
     setOnlyLocationSpecific(false);
     void loadData(requestTenantId);
