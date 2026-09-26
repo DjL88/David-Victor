@@ -9,6 +9,10 @@ import {
   BasketSnoozeAuditResult,
 } from '../services/snoozeCheckService';
 import { evaluateStoreOpenNow } from '../services/storeOpeningHoursService';
+import {
+  getDisplayedBasketItemCount,
+  getDisplayedBasketQuantity,
+} from './basketOptimisticState';
 
 export function useBasket(
   selectedStore: Store | null,
@@ -661,25 +665,17 @@ export function useBasket(
   );
 
   const getItemQuantity = useCallback(
-    (plu: string): number => {
-      const optimistic = optimisticQuantities[plu];
-      if (optimistic !== undefined) return optimistic;
-      const found = basket?.items.find((i) => i.plu === plu);
-      return found ? found.quantity : 0;
-    },
+    (plu: string): number =>
+      getDisplayedBasketQuantity(basket?.items, optimisticQuantities, plu),
     [basket, optimisticQuantities]
   );
 
   // Total items count mirrors optimistic quantity intent while each serialized
   // server mutation is in flight, then settles to the authoritative basket.
-  const totalItemsCount = useMemo(() => {
-    const quantities = new Map<string, number>();
-    (basket?.items || []).forEach((item) => quantities.set(item.plu, item.quantity));
-    Object.entries(optimisticQuantities).forEach(([plu, quantity]) => {
-      quantities.set(plu, quantity);
-    });
-    return Array.from(quantities.values()).reduce((sum, quantity) => sum + quantity, 0);
-  }, [basket, optimisticQuantities]);
+  const totalItemsCount = useMemo(
+    () => getDisplayedBasketItemCount(basket?.items, optimisticQuantities),
+    [basket, optimisticQuantities]
+  );
 
   const clearStoreSwitchDiff = () => {
     setStoreSwitchDiff(null);
