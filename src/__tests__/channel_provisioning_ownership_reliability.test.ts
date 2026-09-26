@@ -11,6 +11,8 @@ describe('durable Deliverect channel ownership', () => {
   let server: http.Server;
   let baseUrl = '';
   let integration: any;
+  const originalChannelBase = process.env.CHANNEL_PUBLIC_BASE_URL;
+  const originalStagingHmac = process.env.ALLOW_STAGING_CHANNEL_HMAC;
 
   beforeEach(async () => {
     setServerRuntimeMode('staging');
@@ -61,8 +63,10 @@ describe('durable Deliverect channel ownership', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    delete process.env.CHANNEL_PUBLIC_BASE_URL;
-    delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
+    if (originalChannelBase === undefined) delete process.env.CHANNEL_PUBLIC_BASE_URL;
+    else process.env.CHANNEL_PUBLIC_BASE_URL = originalChannelBase;
+    if (originalStagingHmac === undefined) delete process.env.ALLOW_STAGING_CHANNEL_HMAC;
+    else process.env.ALLOW_STAGING_CHANNEL_HMAC = originalStagingHmac;
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
@@ -112,6 +116,29 @@ describe('durable Deliverect channel ownership', () => {
     expect(FirestorePlatformService.saveTenantStore).toHaveBeenCalledWith(
       'brand-alpha',
       expect.objectContaining({ channelLinkId: 'channel-link-789', assigned: true })
+    );
+  });
+
+  it('does not overwrite an environment profile assignment when the legacy integration has no array', async () => {
+    delete integration.allowedChannelLinkIds;
+    vi.mocked(FirestorePlatformService.getIntegrationProfile).mockResolvedValue({
+      id: 'brand-alpha__staging',
+      tenantId: 'brand-alpha',
+      environment: 'staging',
+      status: 'ACTIVE',
+      version: 1,
+      credentialMode: 'platform',
+      allowedChannelLinkIds: [],
+      deliverect: {},
+      secretRefs: {},
+    } as any);
+
+    const response = await register();
+    expect(response.status).toBe(200);
+    expect(FirestorePlatformService.updateIntegrationConfig).not.toHaveBeenCalled();
+    expect(FirestorePlatformService.saveTenantStore).toHaveBeenCalledWith(
+      'brand-alpha',
+      expect.objectContaining({ channelLinkId: 'channel-link-789', assigned: false })
     );
   });
 });
