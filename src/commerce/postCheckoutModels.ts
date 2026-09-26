@@ -168,7 +168,24 @@ export interface PickingSubstitution {
   substitutePlu: string;
   substituteName: string;
   substitutePrice: Money;
-  chargedPrice: Money; // calculated via tenant substitution pricing policy
+  /** Replacement quantity is independent from the original ordered quantity. */
+  replacementQuantity?: number;
+  chargedPrice: Money; // legacy/unit display value; authoritative charge is economics.customerChargeLineTotal when present
+  economics?: {
+    originalQuantity: number;
+    replacementQuantity: number;
+    originalEffectiveLineTotal: Money;
+    replacementRetailLineTotal: Money;
+    replacementEffectiveLineTotal: Money;
+    customerChargeLineTotal: Money;
+    /** Signed reporting delta: replacement retail value - protected original effective value. */
+    retailValueDelta: Money;
+    /** Signed reporting delta: customer charge - protected original effective value. */
+    customerPriceDelta: Money;
+    priceProtectionAmount: Money;
+    originalPromotionProvenance?: string[];
+    replacementPromotionProvenance?: string[];
+  };
   reason?: string;
 }
 
@@ -218,6 +235,14 @@ export interface PickingItem {
   preferredSubstitutePlu?: string;
   preferredSubstituteName?: string;
   preferredSubstitutePrice?: Money;
+  preferredSubstituteQuantity?: number;
+  substituteCandidates?: Array<{
+    plu: string;
+    name?: string;
+    quantity?: number;
+    price?: Money;
+    priority?: number;
+  }>;
   bundlePricing?: PickingBundlePricing;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
