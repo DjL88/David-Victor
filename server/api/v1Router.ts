@@ -365,7 +365,10 @@ function resolveAuthenticatedAdminTenantScope(
   const requested = explicit || resolveAdminRequestedTenant(req) || '';
 
   if (admin?.isSuperAdmin || admin?.role === 'platformSuperAdmin') {
-    const tenantId = String(requested || admin.tenantId || '').trim();
+    const adminTenant = String(admin.tenantId || '').trim();
+    const tenantId = String(
+      requested || (adminTenant && adminTenant !== 'platform' ? adminTenant : '')
+    ).trim();
     if (tenantId) return tenantId;
   } else {
     const tenantId = String(admin?.tenantId || '').trim();
@@ -3758,21 +3761,13 @@ v1Router.post('/orders/:orderId/simulate-picking', async (req: Request, res: Res
 // 9.0 Current Admin Identity Check
 v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
-  let tenantId = String(
+  const requestedTenantId = String(
     (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || ''
   ).trim();
-  if (!tenantId) {
-    // Only explicit Demo mode may use the seeded demo tenant. Test execution
-    // must still exercise live/staging fail-closed tenant semantics.
-    if (isDemoMode()) {
-      tenantId = 'brand-alpha';
-    } else {
-      return res.status(400).json({
-        error: 'An explicit tenant scope is required for this admin request.',
-        code: 'TENANT_SCOPE_REQUIRED',
-      });
-    }
-  }
+  const tenantId = requestedTenantId || (isDemoMode() ? 'brand-alpha' : undefined);
+  // Platform Super Admin identity can be verified in neutral "platform" scope
+  // when no retailer is selected. Tenant admins still require a real tenant
+  // membership; the auth resolver never invents one.
   const result = await verifyAdminSessionWithStatus(authHeader, tenantId);
 
   if (!result.authenticated) {
