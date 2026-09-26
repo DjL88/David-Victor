@@ -9,6 +9,7 @@ import { CommerceDiscoveryService } from '../../server/deliverect/CommerceDiscov
 import { DeliverectApiClient } from '../../server/deliverect/DeliverectApiClient';
 import { OAuthTokenManager } from '../../server/deliverect/OAuthTokenManager';
 import { FirestorePlatformService } from '../../server/firestoreService';
+import { DeliverectOperationalWebhookService } from '../../server/deliverect/DeliverectOperationalWebhookService';
 
 class CapturingMenuQueue implements ChannelMenuQueueClient {
   jobs: ChannelMenuIngressJob[] = [];
@@ -164,6 +165,49 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     failStorage(new Error('late storage failure'));
     await expect(first).rejects.toThrow('late storage failure');
     storageSpy.mockRestore();
+  });
+
+
+  it('scopes hosted menu identity by tenant, account, location, channel link and menu', async () => {
+    const tenantId = `tenant-full-scope-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+    const first = sampleMenu({ accountId: 'account-a', locationId: 'location-a' });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({ tenantId, payload: first, rawBody: JSON.stringify(first) });
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(tenantId, 'channel-1', 'menu-1');
+    expect(hosted).toMatchObject({
+      accountId: 'account-a',
+      locationId: 'location-a',
+      channelLinkId: 'channel-1',
+      menuId: 'menu-1',
+      source: 'DELIVERECT_CHANNEL_PUSH',
+    });
+  });
+
+  it('keeps the last-known-good menu live when replacement handover fails', async () => {
+    const tenantId = `tenant-lkg-handover-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+    const first = sampleMenu({ accountId: 'account-a', locationId: 'location-a' });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({ tenantId, payload: first, rawBody: JSON.stringify(first) });
+
+    const failure = vi.spyOn(DeliverectOperationalWebhookService, 'process').mockRejectedValueOnce(new Error('operational handover failed'));
+    const replacement = sampleMenu({
+      accountId: 'account-a',
+      locationId: 'location-a',
+      products: {
+        'prod-2': { _id: 'prod-2', plu: 'DRINK-2', gtin: [], name: 'Replacement', price: 200, productType: 1 },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-2'] }],
+    });
+
+    await expect(ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId, payload: replacement, rawBody: JSON.stringify(replacement),
+    })).rejects.toThrow(/operational handover failed/i);
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(tenantId, 'channel-1', 'menu-1');
+    expect(hosted?.products).toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })]));
+    expect(hosted?.products).not.toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-2' })]));
+    failure.mockRestore();
   });
 
   it('materializes the existing Commerce-compatible catalogue shape in the worker', async () => {
