@@ -200,6 +200,11 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       }
 
       const first = focusable[0];
+      if (focusable.length === 1) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
       const last = focusable[focusable.length - 1];
       const active = document.activeElement;
       if (!dialogRef.current?.contains(active)) {
