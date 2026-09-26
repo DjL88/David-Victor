@@ -1352,7 +1352,43 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (allowedStores.length === 0) {
         return { id: `scoped_catalog_${accountId}`, type: 'ROOT', menus: [], categories: [], products: [], totalProducts: 0, updatedAt: new Date().toISOString() };
       }
-      const storeCatalogs = await Promise.all(allowedStores.map((store) => this.getStoreCatalog(store.id)));
+      // A scoped root catalogue is the union of the Channel Menu snapshots that
+      // we have actually received and stored. One assigned location may not have
+      // published yet; that must not let its optional Commerce probe take the
+      // other locations' durable catalogues offline.
+      const catalogResults = await Promise.allSettled(
+        allowedStores.map((store) => this.getStoreCatalog(store.id))
+      );
+      const storeCatalogs = catalogResults
+        .filter((result): result is PromiseFulfilledResult<Catalog> => result.status === 'fulfilled')
+        .map((result) => result.value);
+      const failedStores = catalogResults
+        .map((result, index) => ({ result, store: allowedStores[index] }))
+        .filter(({ result }) => result.status === 'rejected');
+
+      if (failedStores.length > 0) {
+        console.warn(
+          '[DeliverectApiClient] Scoped root catalogue skipped locations without a readable published Channel menu:',
+          failedStores.map(({ result, store }) => ({
+            channelLinkId: store.channelLinkId,
+            error:
+              result.status === 'rejected'
+                ? String(result.reason?.message || result.reason)
+                : 'Unknown catalogue error',
+          }))
+        );
+      }
+
+      if (storeCatalogs.length === 0) {
+        const firstFailure = failedStores[0]?.result;
+        if (firstFailure?.status === 'rejected') throw firstFailure.reason;
+        throw new CommerceError(
+          'MENU_NOT_AVAILABLE',
+          'No published Channel catalogue is available for the assigned locations.',
+          503,
+          true
+        );
+      }
       const categories = new Map<string, Category>();
       const products = new Map<string, Product>();
       const bundles = new Map<string, BundleProduct>();
@@ -1677,7 +1713,30 @@ export class DeliverectApiClient implements DeliverectAdapter {
       }
     } catch (err: any) {
       console.warn(
-        `[DeliverectApiClient] Hosted Channel catalogue read unavailable for ${channelLinkId}; falling back to Commerce: ${err?.message || err}`
+        `[DeliverectApiClient] Hosted Channel catalogue read unavailable for ${channelLinkId}: ${err?.message || err}`
+      );
+
+      // Channel integrations treat their verified Menu Push as the catalogue
+      // authority. Commerce remains useful for store discovery and live
+      // comparison, but it must never silently replace the published snapshot.
+      if (this.allowedChannelLinkIds) {
+        throw new CommerceError(
+          'MENU_NOT_AVAILABLE',
+          'The published Channel catalogue could not be read for this store.',
+          503,
+          true,
+          { channelLinkId }
+        );
+      }
+    }
+
+    if (this.allowedChannelLinkIds) {
+      throw new CommerceError(
+        'MENU_NOT_AVAILABLE',
+        'No published Channel catalogue is available for this store.',
+        503,
+        true,
+        { channelLinkId }
       );
     }
 
