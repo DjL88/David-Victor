@@ -1,4 +1,4 @@
-import { Category, Product } from '../commerce/models';
+import type { Category, Product } from '../commerce/models';
 
 export interface SearchMerchSuggestion {
   value: string;
