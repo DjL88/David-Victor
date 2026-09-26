@@ -31,6 +31,28 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
     };
   };
 
+  const persistDemoPaymentProjection = async (paymentId: string) => {
+    const payment = await demoAdapter.getPayment(paymentId);
+    await FirestorePlatformService.savePaymentProjection({
+      paymentId,
+      tenantId: testTenant,
+      channelLinkId: payment.channelLinkId,
+      status: payment.status,
+      amount: { amount: payment.amount, currency: payment.currency },
+      authorizedAmount: { amount: payment.authorizedAmount, currency: payment.currency },
+      customerApprovedMaxAmount: { amount: payment.authorizedAmount, currency: payment.currency },
+      capturedAmount: { amount: payment.capturedAmount, currency: payment.currency },
+      residualHoldAmount: {
+        amount: payment.residualHoldAmount ?? 0,
+        currency: payment.currency,
+      },
+      captureMode: payment.captureMode,
+      currency: payment.currency,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt || payment.createdAt,
+    });
+  };
+
   // ========================================================
   // 1. Authoritative Final Amount Calculation
   // ========================================================
@@ -230,6 +252,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
+      await persistDemoPaymentProjection(paymentId);
 
       // 2. Setup order in Firestore: authorized ceiling 2500, but final picked amount is 1800
       await FirestorePlatformService.saveOrderProjection({
@@ -317,6 +340,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
+      await persistDemoPaymentProjection(paymentId);
 
       // 2. Setup order in Firestore: original order £20.00, but all items removed during picking
       await FirestorePlatformService.saveOrderProjection({
@@ -452,6 +476,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       // Order final total is 2400 (exceeds 2000 ceiling by 400 minor units)
       await FirestorePlatformService.saveOrderProjection({
@@ -530,6 +555,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
@@ -627,6 +653,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
@@ -676,6 +703,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
@@ -722,6 +750,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
@@ -777,6 +806,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
@@ -866,6 +896,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
         updatedAt: new Date().toISOString(),
         history: [],
       });
+      await persistDemoPaymentProjection(paymentId);
 
       await FirestorePlatformService.saveOrderProjection({
         orderId,
