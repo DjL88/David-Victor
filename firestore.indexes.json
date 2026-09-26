@@ -1,0 +1,22 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "webhookEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tenantId", "order": "ASCENDING" },
+        { "fieldPath": "receivedAt", "order": "DESCENDING" },
+        { "fieldPath": "webhookEventId", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "channelMenuIngress",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "receivedAt", "order": "DESCENDING" },
+        { "fieldPath": "eventId", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
