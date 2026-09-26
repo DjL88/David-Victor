@@ -2500,7 +2500,7 @@ export class FirestoreService {
     const resolvedTenantId = String(tenantId || '').trim();
     if (!resolvedTenantId || resolvedTenantId === 'default') {
       throw new BFFError(
-        'TENANT_REQUIRED',
+        'TENANT_SCOPE_REQUIRED',
         'An explicit tenantId is required to persist an order projection.',
         400
       );
