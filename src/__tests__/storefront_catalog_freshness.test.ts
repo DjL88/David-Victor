@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   shouldBlockCatalog,
+  shouldShowCatalogSkeleton,
   shouldShowStaleCatalogNotice,
 } from '../features/catalog/catalogFreshnessPresentation';
 
@@ -40,5 +41,14 @@ describe('storefront catalogue freshness presentation', () => {
         visibleProductCount: 8,
       })
     ).toBe(false);
+  });
+
+  it('never swaps a populated product grid for loading skeletons', () => {
+    expect(shouldShowCatalogSkeleton(true, 18, false)).toBe(false);
+    expect(shouldShowCatalogSkeleton(true, 0, false)).toBe(true);
+  });
+
+  it('can still show search loading independently of the menu grid', () => {
+    expect(shouldShowCatalogSkeleton(false, 18, true)).toBe(true);
   });
 });
