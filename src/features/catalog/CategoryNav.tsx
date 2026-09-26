@@ -159,13 +159,13 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   return (
     <div
       id="category-nav-anchor"
-      className="relative w-full max-w-full"
+      style={dockStyle}
+      data-dock-mode="sticky"
+      className="sticky z-[35] w-full max-w-full bg-white/95 backdrop-blur-md shadow-sm"
     >
       <div
         id="category-nav-section"
-        style={dockStyle}
-        data-dock-mode="sticky"
-        className="sticky z-[35] bg-white/95 backdrop-blur-md border-y border-gray-200/80 px-3 sm:px-6 py-2 shadow-sm transition-[box-shadow,background-color] w-full max-w-full space-y-1.5"
+        className="w-full max-w-full space-y-1.5 border-y border-gray-200/80 px-3 py-2 transition-[box-shadow,background-color] sm:px-6"
       >
       {/* ROW 1: AISLE CATEGORIES & NAVIGATION */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 w-full max-w-full">
