@@ -768,6 +768,19 @@ export class ChannelMenuIngestionService {
           eventId: job.eventId,
         });
 
+        // Validate/update operational metadata before publishing the new pointer.
+        // If this step fails, the versioned candidate remains stored but the
+        // storefront continues to resolve the previous last-known-good menu.
+        const operationalMenu = channelLinkIdOf(menu)
+          ? menu
+          : { ...menu, channelLinkId };
+        await DeliverectOperationalWebhookService.process(
+          job.tenantId,
+          'menu_update',
+          operationalMenu,
+          JSON.stringify(operationalMenu)
+        );
+
         memoryHostedIndex.set(
           `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`,
           {
@@ -790,6 +803,8 @@ export class ChannelMenuIngestionService {
             .set(
               {
                 tenantId: job.tenantId,
+                accountId,
+                locationId,
                 channelLinkId,
                 menuId,
                 menuName: normalized.menu,
@@ -811,17 +826,7 @@ export class ChannelMenuIngestionService {
             );
         }
 
-        // Preserve existing operational menu metadata + snooze semantics after
-        // durable storage, not on the request thread.
-        const operationalMenu = channelLinkIdOf(menu)
-          ? menu
-          : { ...menu, channelLinkId };
-        await DeliverectOperationalWebhookService.process(
-          job.tenantId,
-          'menu_update',
-          operationalMenu,
-          JSON.stringify(operationalMenu)
-        );
+
       }
 
       // A successful Menu Push becomes the new catalogue truth. Invalidate the
