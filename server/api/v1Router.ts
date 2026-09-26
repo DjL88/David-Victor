@@ -2284,14 +2284,16 @@ v1Router.post(
         {
           fulfillmentType: checkoutResult.fulfillmentType,
           selectedQuote: (options as any)?.selectedQuote,
-          quoteId: options?.selectedQuoteId || options?.dispatchValidationId,
+          // A Deliverect dispatch validationId is availability evidence, not a
+          // courier quote id. Only pass an actual selectedQuoteId here.
+          quoteId: options?.selectedQuoteId,
           providerId: options?.selectedProviderId,
           providerDisplayName: options?.selectedProviderDisplayName,
           deliveryAddress: options?.deliveryAddress || checkoutResult.order.fulfillment?.address,
           itemsCount: checkoutResult.order.originalBasket?.items?.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) || 1,
           orderCreatedAt: checkoutResult.order.createdAt || new Date().toISOString(),
           requiresAgeCheck: Boolean(options?.requiresAgeCheck || (checkoutResult.order as any).requiresAgeCheck),
-          minimumAge: options?.minimumAge || (checkoutResult.order as any).minimumAge || 18,
+          minimumAge: options?.minimumAge ?? (checkoutResult.order as any).minimumAge,
           requiresPin: Boolean(options?.requiresPin),
           idempotencyKey: options?.idempotencyKey || checkoutResult.checkoutId,
         }
