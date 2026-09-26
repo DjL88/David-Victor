@@ -13,6 +13,13 @@ import { MOCK_TENANTS, MOCK_STORIES, MOCK_FEE_POLICIES, MOCK_AUDIT_LOGS } from '
 import { DEFAULT_PROMO_BANNERS } from '../src/commerce/promoBannerData';
 import { isDemoMode, getServerRuntimeMode, assertNoMockPermitted, isTestMode } from './runtimeMode';
 import { BFFError } from './errors';
+import {
+  decodeApiActivityCursor,
+  encodeApiActivityCursor,
+  pageMemoryActivity,
+  safeApiActivityErrorCode,
+  type ApiActivityPage,
+} from './apiActivityJournal';
 import { DeliverectOrderMapper } from './deliverect/DeliverectOrderMapper';
 import type { ProtectedBundleAllocation } from '../src/commerce/bundleAllocation';
 import { FirebaseAuthDomainService } from './firebaseAuthDomainService';
@@ -52,6 +59,9 @@ const inMemoryStoreSnoozes: Record<string, Record<string, Record<string, StorePr
 const inMemoryStoreProductOperationalStates: Record<string, Record<string, Record<string, StoreProductOperationalState>>> = {};
 const inMemoryTenantStores: Record<string, Record<string, any>> = {};
 const inMemoryChannelBaskets: Record<string, Basket> = {};
+
+export const MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE = 15_000;
+const FIRESTORE_OPERATIONAL_BATCH_SIZE = 450;
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
@@ -3378,37 +3388,108 @@ export class FirestoreService {
     }
   }
 
+  static async listRecentWebhookEventsPage(
+    tenantId: string,
+    options: { limit?: number; cursor?: string | null } = {}
+  ): Promise<ApiActivityPage<WebhookEvent>> {
+    const observedAt = new Date().toISOString();
+    const cleanTenantId = String(tenantId || '').trim();
+    const boundedLimit = Math.min(200, Math.max(1, Number(options.limit) || 100));
+    const cursor = options.cursor ? decodeApiActivityCursor(options.cursor) : null;
+    if (!cleanTenantId) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'TENANT_SCOPE_REQUIRED',
+      };
+    }
+    if (options.cursor && !cursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_CURSOR',
+      };
+    }
+
+    const memoryPage = () => {
+      const page = pageMemoryActivity(
+        Object.values(inMemoryWebhookEvents).filter((event) => event.tenantId === cleanTenantId),
+        {
+          limit: boundedLimit,
+          cursor: options.cursor,
+          receivedAt: (event) => String(event.receivedAt || ''),
+          id: (event) => String(event.webhookEventId || ''),
+        }
+      );
+      return { items: page.items, nextCursor: page.nextCursor };
+    };
+
+    const db = getFirestoreDb();
+    if (!db) {
+      const page = memoryPage();
+      const durableExpected = !isDemoMode() && !isTestMode() && process.env.NODE_ENV !== 'test';
+      return {
+        ...page,
+        status: durableExpected ? (page.items.length ? 'PARTIAL' : 'UNAVAILABLE') : 'AVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        ...(durableExpected ? { errorCode: 'FIRESTORE_UNAVAILABLE' } : {}),
+      };
+    }
+
+    try {
+      let query: any = db
+        .collection('webhookEvents')
+        .where('tenantId', '==', cleanTenantId)
+        .orderBy('receivedAt', 'desc')
+        .orderBy('webhookEventId', 'desc');
+      if (cursor) query = query.startAfter(cursor.receivedAt, cursor.id);
+      const snap = await query.limit(boundedLimit + 1).get();
+      const rows = snap.docs.map((doc: any) => doc.data() as WebhookEvent);
+      const tenantRows = rows.filter((event) => event.tenantId === cleanTenantId);
+      const hasForeignRows = tenantRows.length !== rows.length;
+      const pageRows = tenantRows.slice(0, boundedLimit);
+      const hasMore = tenantRows.length > boundedLimit;
+      const last = pageRows[pageRows.length - 1];
+
+      return {
+        items: pageRows,
+        status: hasForeignRows ? 'PARTIAL' : 'AVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: hasMore && last
+          ? encodeApiActivityCursor({
+              receivedAt: String(last.receivedAt || ''),
+              id: String(last.webhookEventId || ''),
+            })
+          : null,
+        ...(hasForeignRows ? { errorCode: 'TENANT_MISMATCH_FILTERED' } : {}),
+      };
+    } catch (err: any) {
+      console.warn('[Firestore Admin] Failed to list tenant webhook events from durable store.');
+      const page = memoryPage();
+      return {
+        ...page,
+        status: page.items.length ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        errorCode: safeApiActivityErrorCode(err, 'FIRESTORE_READ_FAILED'),
+      };
+    }
+  }
+
   static async listRecentWebhookEvents(
     tenantId: string,
     limit: number = 100
   ): Promise<WebhookEvent[]> {
-    const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return [];
-    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
-    const memory = Object.values(inMemoryWebhookEvents)
-      .filter((event) => event.tenantId === cleanTenantId)
-      .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
-      .slice(0, boundedLimit);
-
-    const db = getFirestoreDb();
-    if (!db) return memory;
-
-    try {
-      // Keep this query index-light; tenant filtering happens in Firestore and
-      // the bounded result set is sorted server-side afterwards.
-      const snap = await db
-        .collection('webhookEvents')
-        .where('tenantId', '==', cleanTenantId)
-        .limit(boundedLimit)
-        .get();
-      return snap.docs
-        .map((doc) => doc.data() as WebhookEvent)
-        .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
-        .slice(0, boundedLimit);
-    } catch (err) {
-      console.warn('[Firestore Admin] Failed to list tenant webhook events:', err);
-      return memory;
-    }
+    const page = await this.listRecentWebhookEventsPage(tenantId, { limit });
+    return page.items;
   }
 
   /**
@@ -3767,7 +3848,15 @@ export class FirestoreService {
         .collection('operationalStores')
         .doc(cleanChannelLinkId)
         .collection('productState')
+        .limit(MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE + 1)
         .get();
+      if (snap.docs.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+        throw new BFFError(
+          'OPERATIONAL_STATE_LIMIT_EXCEEDED',
+          `Store ${cleanChannelLinkId} has more than ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} operational product states; refusing a partial overlay.`,
+          503
+        );
+      }
       const result: Record<string, StoreProductOperationalState> = { ...fallback };
       snap.forEach((doc: any) => {
         const data = doc.data() as StoreProductOperationalState;
@@ -3775,6 +3864,7 @@ export class FirestoreService {
       });
       return result;
     } catch (err: any) {
+      if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
       return fallback;
     }
@@ -3806,52 +3896,118 @@ export class FirestoreService {
         source: 'DELIVERECT_WEBHOOK',
       };
     }
+
+    const nextStates = Object.values(next);
+    if (nextStates.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+      throw new BFFError(
+        'OPERATIONAL_STATE_LIMIT_EXCEEDED',
+        `A store snooze snapshot may contain at most ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} products.`,
+        413
+      );
+    }
     inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
 
-    // Maintain an independent PLU x status ledger even when the PLU is not
-    // present in the current catalogue. This lets out-of-order snooze events
-    // survive until a later menu push introduces the product.
+    // Read operational truth once, then compute the delta in memory. The old
+    // implementation called upsertStoreProductOperationalState once per PLU,
+    // producing thousands of serial Firestore round trips for large retailers.
     const previousOperational = await this.getStoreProductOperationalStates(
       cleanTenantId,
       cleanChannelLinkId
     );
-    for (const state of Object.values(next)) {
-      await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId] = {};
+    }
+    if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
+    }
+
+    const operationalWrites: StoreProductOperationalState[] = [];
+    for (const state of nextStates) {
+      const previous = previousOperational[state.plu];
+      const nextOperational: StoreProductOperationalState = {
+        tenantId: cleanTenantId,
+        channelLinkId: cleanChannelLinkId,
         plu: state.plu,
         availability: 'SNOOZED',
+        snoozed: true,
         snoozeStart: state.snoozeStart,
         snoozeEnd: state.snoozeEnd,
         updatedAt: state.updatedAt,
-      });
-    }
-    for (const [plu, state] of Object.entries(previousOperational)) {
-      if (state.availability === 'SNOOZED' && !next[plu]) {
-        await this.upsertStoreProductOperationalState(cleanTenantId, cleanChannelLinkId, {
-          plu,
-          availability: 'ACTIVE',
-        });
+        source: 'DELIVERECT_WEBHOOK',
+      };
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][state.plu] = nextOperational;
+      if (
+        previous?.availability !== 'SNOOZED' ||
+        previous?.snoozeStart !== state.snoozeStart ||
+        previous?.snoozeEnd !== state.snoozeEnd
+      ) {
+        operationalWrites.push(nextOperational);
       }
+    }
+
+    const clearedAt = new Date().toISOString();
+    for (const [plu, state] of Object.entries(previousOperational)) {
+      if (state.availability !== 'SNOOZED' || next[plu]) continue;
+      const active: StoreProductOperationalState = {
+        tenantId: cleanTenantId,
+        channelLinkId: cleanChannelLinkId,
+        plu,
+        availability: 'ACTIVE',
+        snoozed: false,
+        updatedAt: clearedAt,
+        source: 'DELIVERECT_WEBHOOK',
+      };
+      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][plu] = active;
+      operationalWrites.push(active);
     }
 
     const db = getFirestoreDb();
     if (!db) return;
 
-    const collection = db
+    const storeRef = db
       .collection('tenants')
       .doc(cleanTenantId)
       .collection('operationalStores')
-      .doc(cleanChannelLinkId)
-      .collection('snoozes');
+      .doc(cleanChannelLinkId);
+    const snoozeCollection = storeRef.collection('snoozes');
+    const productStateCollection = storeRef.collection('productState');
 
     try {
-      const existing = await collection.get();
-      const batch = db.batch();
-      existing.docs.forEach((doc: any) => batch.delete(doc.ref));
-      Object.values(next).forEach((state) => {
-        batch.set(collection.doc(state.plu.replace(/\//g, '_')), cleanUndefined(state));
+      // Bounded single read for the replace set. Fetch one sentinel row so a
+      // >15k dataset is rejected rather than silently truncating availability.
+      const existing = await snoozeCollection
+        .limit(MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE + 1)
+        .get();
+      if (existing.docs.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+        throw new BFFError(
+          'OPERATIONAL_STATE_LIMIT_EXCEEDED',
+          `Store ${cleanChannelLinkId} has more than ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} snooze records; refusing a partial replacement.`,
+          503
+        );
+      }
+
+      const nextIds = new Set(nextStates.map((state) => state.plu.replace(/\//g, '_')));
+      const mutations: Array<(batch: any) => void> = [];
+
+      existing.docs.forEach((doc: any) => {
+        if (!nextIds.has(String(doc.id))) mutations.push((batch) => batch.delete(doc.ref));
       });
-      await batch.commit();
+      nextStates.forEach((state) => {
+        const id = state.plu.replace(/\//g, '_');
+        mutations.push((batch) => batch.set(snoozeCollection.doc(id), cleanUndefined(state), { merge: true }));
+      });
+      operationalWrites.forEach((state) => {
+        const id = state.plu.replace(/\//g, '_');
+        mutations.push((batch) => batch.set(productStateCollection.doc(id), cleanUndefined(state), { merge: true }));
+      });
+
+      for (let index = 0; index < mutations.length; index += FIRESTORE_OPERATIONAL_BATCH_SIZE) {
+        const batch = db.batch();
+        for (const apply of mutations.slice(index, index + FIRESTORE_OPERATIONAL_BATCH_SIZE)) apply(batch);
+        await batch.commit();
+      }
     } catch (err: any) {
+      if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
       throw err;
     }
