@@ -124,8 +124,13 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   const [newSynonym, setNewSynonym] = useState({ term: '', synonyms: '' });
   const [newRewrite, setNewRewrite] = useState({ incomingQuery: '', rewrittenQuery: '' });
   const [newPin, setNewPin] = useState({ query: '', productPlu: '', position: 1 });
-  const [newBoost, setNewBoost] = useState({
-    type: 'product' as const,
+  const [newBoost, setNewBoost] = useState<{
+    type: 'product' | 'category' | 'brand';
+    targetId: string;
+    targetName: string;
+    boostMultiplier: number;
+  }>({
+    type: 'product',
     targetId: '',
     targetName: '',
     boostMultiplier: 1.5,
