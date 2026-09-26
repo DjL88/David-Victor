@@ -102,7 +102,7 @@ describe('Deliverect Commerce opening-hours shape', () => {
 
 describe('customer-facing opening-hours text', () => {
   it('uses the store timezone for evaluation without exposing timezone identifiers', () => {
-    const store = { id: 'tz-store', name: 'Timezone store', status: 'open', timezone: 'Europe/Amsterdam', openingHours } as unknown as Store;
+    const store = { id: 'tz-store', name: 'Timezone store', status: 'open', timezone: 'Europe/Amsterdam', openingHours: { timezone: 'Europe/Amsterdam', dayTimeRanges: [{ dayOfWeek: 6, startTime: '00:00:00', endTime: '23:59:00' }] } } as unknown as Store;
     const result = evaluateStoreOpenNow(store, new Date('2026-09-26T10:00:00.000Z'));
     expect(JSON.stringify(result)).not.toContain('Europe/Amsterdam');
     expect(JSON.stringify(result)).not.toMatch(/timezone/i);
