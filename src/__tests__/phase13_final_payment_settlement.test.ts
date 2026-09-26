@@ -269,12 +269,7 @@ describe('Phase 13: Final Payment Settlement, Capture, Residual Hold & Reauthori
               pickedQuantity: 1,
               originalPrice: { amount: 1200, currency: 'GBP' },
               finalPrice: { amount: 800, currency: 'GBP' },
-              state: 'QUANTITY_AMENDED',
-              amendment: {
-                originalQuantity: 1,
-                suppliedQuantity: 1,
-                reason: 'Verified catch-weight / quantity price amendment',
-              },
+              state: 'SUBSTITUTED',
             },
           ],
         },
