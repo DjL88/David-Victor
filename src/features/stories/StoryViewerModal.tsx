@@ -106,9 +106,8 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     if (!isOpen) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     previousFocusRef.current = previous;
-    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    closeButtonRef.current?.focus();
     return () => {
-      window.cancelAnimationFrame(frame);
       const target = previousFocusRef.current;
       if (target?.isConnected) target.focus();
       previousFocusRef.current = null;
