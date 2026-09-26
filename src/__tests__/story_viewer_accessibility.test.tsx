@@ -137,4 +137,24 @@ describe('Story viewer accessibility', () => {
 
     expect(onNext).not.toHaveBeenCalled();
   });
+
+  it('does not request native video autoplay on the first reduced-motion render', async () => {
+    const videoStory = {
+      ...story,
+      id: 'story-video',
+      items: [{
+        id: 'frame-video',
+        mediaUrl: 'https://images.example.test/story.mp4',
+        mediaType: 'video',
+        caption: 'Video story',
+        duration: 10,
+      }],
+    } as Story;
+
+    await renderViewer({ stories: [videoStory] });
+    const video = host.querySelector<HTMLVideoElement>('video');
+
+    expect(video).toBeTruthy();
+    expect(video?.autoplay).toBe(false);
+  });
 });
