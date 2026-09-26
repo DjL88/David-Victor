@@ -3986,7 +3986,6 @@ export class FirestoreService {
         );
       }
 
-      const existingIds = new Set(existing.docs.map((doc: any) => String(doc.id)));
       const nextIds = new Set(nextStates.map((state) => state.plu.replace(/\//g, '_')));
       const mutations: Array<(batch: any) => void> = [];
 
