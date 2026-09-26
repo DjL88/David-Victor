@@ -3378,6 +3378,39 @@ export class FirestoreService {
     }
   }
 
+  static async listRecentWebhookEvents(
+    tenantId: string,
+    limit: number = 100
+  ): Promise<WebhookEvent[]> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return [];
+    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
+    const memory = Object.values(inMemoryWebhookEvents)
+      .filter((event) => event.tenantId === cleanTenantId)
+      .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
+      .slice(0, boundedLimit);
+
+    const db = getFirestoreDb();
+    if (!db) return memory;
+
+    try {
+      // Keep this query index-light; tenant filtering happens in Firestore and
+      // the bounded result set is sorted server-side afterwards.
+      const snap = await db
+        .collection('webhookEvents')
+        .where('tenantId', '==', cleanTenantId)
+        .limit(boundedLimit)
+        .get();
+      return snap.docs
+        .map((doc) => doc.data() as WebhookEvent)
+        .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
+        .slice(0, boundedLimit);
+    } catch (err) {
+      console.warn('[Firestore Admin] Failed to list tenant webhook events:', err);
+      return memory;
+    }
+  }
+
   /**
    * Webhook deduplication lookup by external event key.
    */

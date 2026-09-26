@@ -190,6 +190,9 @@ export interface AdminClient {
    */
   getAuditLogs(tenantId?: string): Promise<AuditLogEntry[]>;
 
+  /** Sanitized Deliverect/API processing history and connection diagnostics. */
+  getIntegrationApiLogs?(tenantId: string, limit?: number): Promise<any>;
+
   /**
    * List all registered tenants.
    */

@@ -4,7 +4,7 @@ import { LinkedAccountsAdapter } from './LinkedAccountsAdapter';
 import { IntegrationContext } from './IntegrationContext';
 import { CommerceDiscoveryService, asyncPool } from './CommerceDiscoveryService';
 import { resolveStoreGeography } from '../geographyService';
-import { circuitBreakers } from '../circuitBreaker';
+import { getCircuitBreaker } from '../circuitBreaker';
 import { MetricsService } from '../metricsService';
 import { CommerceError } from '../errors';
 import { assertProductAddAllowed } from '../ruleEnforcementService';
@@ -542,7 +542,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
   async testConnection(accountId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
     const start = Date.now();
     try {
-      return await circuitBreakers.commerce.execute(async () => {
+      return await getCircuitBreaker(this.tenantId || 'unknown', 'commerce').execute(async () => {
         const token = await this.tokenManager.getAccessToken();
         const targetAccId = accountId || (await this.resolveAccountId().catch(() => ''));
 
@@ -750,7 +750,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
   async getProductTagDefinitions(forceRefresh = false): Promise<ProductTagDefinition[]> {
     if (!forceRefresh && this.tagDefinitionsCache && Date.now() - this.tagDefinitionsCache.loadedAt < DeliverectApiClient.TAG_CACHE_TTL_MS) return this.tagDefinitionsCache.definitions;
-    const raw = await circuitBreakers.commerce.execute(async () => {
+    const raw = await getCircuitBreaker(this.tenantId || 'unknown', 'commerce').execute(async () => {
       const token = await this.tokenManager.getAccessToken();
       const response = await fetch(`${this.baseUrl}/allAllergens`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
       if (!response.ok) { const error: any = new Error(`Deliverect Allergens & Tags request failed: HTTP ${response.status}`); error.statusCode = 502; error.code = 'DELIVERECT_TAGS_UNAVAILABLE'; throw error; }
@@ -1391,7 +1391,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
     }
     const token = await this.tokenManager.getAccessToken();
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId || 'unknown', 'commerce').execute(async () => {
       const start = Date.now();
       const url = `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/menus`;
       const res = await fetch(url, {
@@ -1485,7 +1485,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
           .getStoreProductSnoozes(this.tenantId || 'brand-alpha', channelLinkId)
           .catch(() => ({}));
 
-        const hostedProducts = (Array.isArray(hosted.products)
+        let hostedProducts = (Array.isArray(hosted.products)
           ? hosted.products
           : []
         ).map((product: Product) => {
@@ -1500,6 +1500,116 @@ export class DeliverectApiClient implements DeliverectAdapter {
             stockStatus: 'OUT_OF_STOCK' as const,
           };
         });
+
+        let commerceOverlayStatus: 'VERIFIED' | 'UNAVAILABLE' = 'UNAVAILABLE';
+        let commerceOnlyCount = 0;
+        try {
+          const rawCommerce = await this.getRawStoreMenus(storeId);
+          const rawMenus: any[] = Array.isArray(rawCommerce.payload)
+            ? rawCommerce.payload
+            : Array.isArray((rawCommerce.payload as any)?._items)
+              ? (rawCommerce.payload as any)._items
+              : rawCommerce.payload
+                ? [rawCommerce.payload]
+                : [];
+          if (rawMenus.length > 0) {
+            const { selectedMenu } = selectStoreMenu(rawMenus, menuId, fulfillmentType);
+            const tagDefinitions = await this.getProductTagDefinitions();
+            const liveParsed = this.parseDeliverectMenu(selectedMenu, true, tagDefinitions);
+            const liveByPlu = new Map(
+              liveParsed.products.map((product: Product) => [String(product.plu || '').trim(), product])
+            );
+            const hostedPlus = new Set(
+              hostedProducts.map((product: Product) => String(product.plu || '').trim()).filter(Boolean)
+            );
+            commerceOnlyCount = liveParsed.products.filter(
+              (product: Product) => !hostedPlus.has(String(product.plu || '').trim())
+            ).length;
+
+            hostedProducts = hostedProducts.map((product: Product) => {
+              if (product?.metadata?.lifecycleStatus === 'ARCHIVED') return product;
+              const live = liveByPlu.get(String(product.plu || '').trim());
+              if (!live) {
+                return {
+                  ...product,
+                  metadata: {
+                    ...(product.metadata || {}),
+                    catalogConfidence: 'LOW',
+                    catalogConfidenceScore: 55,
+                    catalogSignals: ['CHANNEL_PUSH_ONLY', 'NOT_FOUND_IN_COMMERCE'],
+                    commerceVerified: false,
+                  },
+                };
+              }
+
+              const productGtins = new Set((product.gtin || []).map(String).filter(Boolean));
+              const liveGtins = new Set((live.gtin || []).map(String).filter(Boolean));
+              const gtinComparable = productGtins.size > 0 && liveGtins.size > 0;
+              const gtinMatch = gtinComparable && [...productGtins].some((gtin) => liveGtins.has(gtin));
+              const nameMatch =
+                String(product.name || '').trim().toLowerCase() ===
+                String(live.name || '').trim().toLowerCase();
+              const score = nameMatch && (!gtinComparable || gtinMatch) ? 100 : gtinMatch ? 90 : 80;
+              const confidence = score >= 95 ? 'HIGH' : score >= 80 ? 'MEDIUM' : 'LOW';
+              const liveUnavailable =
+                live.active === false ||
+                live.stockStatus === 'OUT_OF_STOCK' ||
+                live.snoozed === true ||
+                live.isSnoozed === true;
+
+              return {
+                ...product,
+                ...(live.price !== undefined ? { price: live.price } : {}),
+                ...(live.priceMinor !== undefined ? { priceMinor: live.priceMinor } : {}),
+                ...(live.stockQuantity !== undefined ? { stockQuantity: live.stockQuantity } : {}),
+                ...(liveUnavailable
+                  ? {
+                      stockStatus: 'OUT_OF_STOCK' as const,
+                      snoozed: live.snoozed || live.isSnoozed || product.snoozed,
+                      isSnoozed: live.snoozed || live.isSnoozed || product.isSnoozed,
+                    }
+                  : {}),
+                metadata: {
+                  ...(product.metadata || {}),
+                  catalogConfidence: confidence,
+                  catalogConfidenceScore: score,
+                  catalogSignals: [
+                    'CHANNEL_PUSH',
+                    'COMMERCE_MATCH',
+                    ...(liveUnavailable ? ['COMMERCE_UNAVAILABLE_OR_SNOOZED'] : []),
+                  ],
+                  commerceVerified: true,
+                },
+              };
+            });
+            commerceOverlayStatus = 'VERIFIED';
+          }
+        } catch (commerceError: any) {
+          // Commerce is a live verification/operational overlay. A valid pushed
+          // Channel catalogue remains customer-safe truth when Commerce auth or
+          // availability is degraded; expose the degradation through diagnostics
+          // and Admin logs instead of failing the storefront.
+          hostedProducts = hostedProducts.map((product: Product) => ({
+            ...product,
+            metadata: {
+              ...(product.metadata || {}),
+              catalogConfidence:
+                product?.metadata?.lifecycleStatus === 'ARCHIVED' ? 'LOW' : 'MEDIUM',
+              catalogConfidenceScore:
+                product?.metadata?.lifecycleStatus === 'ARCHIVED' ? 0 : 70,
+              catalogSignals: [
+                ...(Array.isArray(product?.metadata?.catalogSignals)
+                  ? (product.metadata!.catalogSignals as string[])
+                  : []),
+                'COMMERCE_OVERLAY_UNAVAILABLE',
+              ],
+              commerceVerified: false,
+            },
+          }));
+          console.warn(
+            `[DeliverectApiClient] Commerce overlay unavailable for ${channelLinkId}; serving durable Channel catalogue: ${commerceError?.message || commerceError}`
+          );
+        }
 
         const activeCount = hostedProducts.filter(
           (product: Product) => product.active !== false
@@ -1531,6 +1641,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
             )
           ),
           hiddenByRuleCount: 0,
+          commerceOverlayStatus,
+          commerceOnlyCount,
+          confidenceHighCount: hostedProducts.filter((product: Product) => product?.metadata?.catalogConfidence === 'HIGH').length,
+          confidenceLowCount: hostedProducts.filter((product: Product) => product?.metadata?.catalogConfidence === 'LOW').length,
           timestamp: new Date().toISOString(),
         };
 
@@ -1569,7 +1683,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
 
     const token = await this.tokenManager.getAccessToken();
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId || 'unknown', 'commerce').execute(async () => {
       const start = Date.now();
       const primaryUrl = `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/stores/${encodeURIComponent(channelLinkId)}/menus`;
       let res = await fetch(primaryUrl, {
@@ -1741,7 +1855,7 @@ export class DeliverectApiClient implements DeliverectAdapter {
       store?.physicalLocationId ? `${this.baseUrl}/commerce/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(store.physicalLocationId)}/menus` : null,
     ].filter(Boolean) as string[];
 
-    return await circuitBreakers.commerce.execute(async () => {
+    return await getCircuitBreaker(this.tenantId || 'unknown', 'commerce').execute(async () => {
       let lastStatus = 502;
       for (const url of urls) {
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
@@ -1752,8 +1866,11 @@ export class DeliverectApiClient implements DeliverectAdapter {
         if (response.status !== 404) break;
       }
       const error: any = new Error(`Deliverect raw menu request failed: HTTP ${lastStatus} for assigned store ${storeId}`);
-      error.statusCode = 502;
-      error.code = 'DELIVERECT_RAW_MENU_UNAVAILABLE';
+      error.statusCode = lastStatus;
+      error.code =
+        lastStatus === 401 || lastStatus === 403
+          ? 'DELIVERECT_COMMERCE_ACCESS_DENIED'
+          : 'DELIVERECT_RAW_MENU_UNAVAILABLE';
       throw error;
     });
   }
@@ -1964,6 +2081,25 @@ export class DeliverectApiClient implements DeliverectAdapter {
       if (allowedCategoryIds.size === 0) allowedCategoryIds.add(options.categoryId);
       filtered = filtered.filter((p) => (p.categoryIds || []).some((categoryId) => allowedCategoryIds.has(categoryId)));
     }
+
+    // Archived/inactive products remain visible to Admin for history, never to
+    // customer search. Among live items, promote products independently
+    // verified by both Channel Push + Commerce and demote ambiguous/snoozed
+    // evidence without pretending it is certain stock quantity.
+    filtered = filtered
+      .filter((product) => product.active !== false && (product.metadata as any)?.lifecycleStatus !== 'ARCHIVED')
+      .map((product, index) => ({ product, index }))
+      .sort((a, b) => {
+        const confidenceA = Number((a.product.metadata as any)?.catalogConfidenceScore ?? 75);
+        const confidenceB = Number((b.product.metadata as any)?.catalogConfidenceScore ?? 75);
+        const availabilityA = this.isAvailableProduct(a.product) ? 0 : -100;
+        const availabilityB = this.isAvailableProduct(b.product) ? 0 : -100;
+        const scoreA = confidenceA + availabilityA;
+        const scoreB = confidenceB + availabilityB;
+        return scoreB - scoreA || a.index - b.index;
+      })
+      .map(({ product }) => product);
+
     if (options?.limit && options.limit > 0) filtered = filtered.slice(0, options.limit);
 
     if (storeId) {

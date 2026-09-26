@@ -46,7 +46,7 @@ import { OrderReferenceService } from '../orderReferenceService';
 import { CheckoutLockService } from '../checkoutLockService';
 import { AsyncWorkerService, verifyCloudTasksOidcToken } from '../asyncWorkerService';
 import { MetricsService } from '../metricsService';
-import { circuitBreakers } from '../circuitBreaker';
+import { circuitBreakers, getCircuitBreakerStats } from '../circuitBreaker';
 import { checkoutAndPaymentRateLimiter } from '../rateLimiter';
 import { CheckoutResult } from '../../src/domain/models';
 import { TenantConfig, Product } from '../../src/commerce/models';
@@ -170,6 +170,40 @@ function handleCommerceError(res: Response, err: any, defaultMessage: string = '
   res.status(statusCode).json({
     error: err.message || defaultMessage,
     code,
+  });
+}
+
+function handleStorefrontCatalogError(res: Response, err: any): void {
+  const statusCode = Number(err?.status || err?.statusCode || 500);
+  const message = String(err?.message || '');
+  const providerDiagnostic =
+    statusCode === 401 ||
+    statusCode === 403 ||
+    statusCode === 429 ||
+    statusCode >= 500 ||
+    /deliverect|circuit\s+is\s+open|upstream|HTTP\s+[45]\d\d/i.test(message);
+
+  if (!providerDiagnostic) {
+    handleCommerceError(res, err, 'Catalogue operation failed');
+    return;
+  }
+
+  console.error('[Storefront Catalogue] Provider diagnostic hidden from customer:', {
+    statusCode,
+    code: err?.code || 'UPSTREAM_CATALOGUE_ERROR',
+    message: message.slice(0, 500),
+  });
+  const safeCode =
+    err?.code === 'INTEGRATION_NOT_CONFIGURED' ||
+    err?.code === 'INTEGRATION_CAPABILITY_NOT_IMPLEMENTED'
+      ? err.code
+      : 'CATALOG_TEMPORARILY_UNAVAILABLE';
+  res.status(503).json({
+    error:
+      safeCode === 'INTEGRATION_NOT_CONFIGURED'
+        ? 'This store is not available for ordering yet.'
+        : 'We are refreshing this store\'s catalogue. Please try again shortly.',
+    code: safeCode,
   });
 }
 
@@ -676,7 +710,7 @@ v1Router.get('/catalog', async (req: Request, res: Response) => {
 
     sendConditionalJson(req, res, catalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to fetch catalog');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -703,7 +737,7 @@ v1Router.get('/stores/:storeId/catalog', async (req: Request, res: Response) => 
 
     sendConditionalJson(req, res, catalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, `Failed to fetch store catalog for store ${req.params.storeId}`);
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -732,7 +766,7 @@ v1Router.get('/bundles', async (req: Request, res: Response) => {
     };
     sendConditionalJson(req, res, bundleCatalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to fetch bundle catalog');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -764,7 +798,7 @@ v1Router.get('/stores/:storeId/bundles', async (req: Request, res: Response) => 
     };
     sendConditionalJson(req, res, bundleCatalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, `Failed to fetch bundles for store ${req.params.storeId}`);
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -778,7 +812,7 @@ v1Router.post('/search', validateBody(SearchCatalogSchema), async (req: Request,
     const results = await adapter.searchProducts(query || '', storeId, { categoryId, limit });
     res.json(results);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to execute search');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -813,7 +847,7 @@ v1Router.get('/products/:plu', async (req: Request, res: Response) => {
     }
     sendConditionalJson(req, res, result, 'public, max-age=60, stale-while-revalidate=300');
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to retrieve product');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -6996,6 +7030,64 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
     });
   } catch (err: any) {
     handleCommerceError(res, err, 'Failed to discover commerce stores');
+  }
+});
+
+/**
+ * Sanitized integration/API activity for tenant operators. This intentionally
+ * exposes processing state, non-secret OAuth scopes and circuit health, but
+ * never bearer tokens, HMAC values, credentials, raw request bodies or PII.
+ */
+v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    const admin = (req as AuthenticatedRequest).adminUser;
+    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Tenant access denied', code: 'TENANT_ACCESS_DENIED' });
+    }
+
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const [menuPushes, webhooks, context] = await Promise.all([
+      ChannelMenuIngestionService.listRecentIngress(tenantId, limit),
+      FirestorePlatformService.listRecentWebhookEvents(tenantId, limit),
+      IntegrationContext.getContext(tenantId),
+    ]);
+    const grantedScopes = await context.tokenManager.getGrantedScopes().catch(() => []);
+    const circuitStats = Object.fromEntries(
+      Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
+    );
+
+    res.json({
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      integration: {
+        environment: context.environment,
+        credentialMode: context.credentialMode,
+        configured: context.isConfigured,
+        accountId: context.deliverectAccountId || null,
+        allowedChannelLinkIds: context.allowedChannelLinkIds || [],
+        grantedScopes,
+        commerceScopeGranted: grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce'),
+      },
+      circuits: circuitStats,
+      menuPushes: menuPushes.map((entry) => ({
+        ...entry,
+        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
+      })),
+      webhooks: webhooks.map((event) => ({
+        webhookEventId: event.webhookEventId,
+        provider: event.provider,
+        environment: event.environment,
+        receivedAt: event.receivedAt,
+        processedAt: event.processedAt,
+        verified: event.verified,
+        eventType: event.eventType,
+        processingStatus: event.processingStatus,
+        errorCode: event.errorCode,
+      })),
+    });
+  } catch (err: any) {
+    handleCommerceError(res, err, 'Failed to load integration API logs');
   }
 });
 

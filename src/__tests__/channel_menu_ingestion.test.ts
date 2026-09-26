@@ -194,6 +194,45 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     });
   });
 
+  it('soft-deletes products removed from a later Channel Menu as archived tombstones', async () => {
+    const tenantId = `tenant-archive-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+
+    const first = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: first,
+      rawBody: JSON.stringify(first),
+    });
+
+    const removed = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: [] }],
+      products: {},
+    });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: removed,
+      rawBody: JSON.stringify(removed),
+    });
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    const archived = hosted?.products?.find((product: any) => product.plu === 'DRINK-1');
+
+    expect(archived).toMatchObject({
+      plu: 'DRINK-1',
+      active: false,
+      metadata: {
+        lifecycleStatus: 'ARCHIVED',
+        archiveReason: 'REMOVED_FROM_CHANNEL_MENU',
+      },
+    });
+    expect(archived?.metadata?.archivedAt).toBeTruthy();
+  });
+
   it('invalidates storefront catalogue caches only after worker processing', async () => {
     const tenantId = `tenant-cache-refresh-${Date.now()}`;
     const payload = sampleMenu();
@@ -248,7 +287,7 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     );
   });
 
-  it('serves pushed menu truth through the real storefront adapter before calling Commerce', async () => {
+  it('serves pushed menu truth when the Commerce verification overlay is unavailable', async () => {
     const tenantId = `tenant-adapter-push-truth-${Date.now()}`;
     const payload = sampleMenu();
     const rawBody = JSON.stringify(payload);
@@ -267,7 +306,7 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     });
     const getAccessToken = vi
       .spyOn(tokenManager, 'getAccessToken')
-      .mockRejectedValue(new Error('Commerce fallback must not be called'));
+      .mockRejectedValue(new Error('Deliverect Store Menu request failed: HTTP 403'));
 
     const client = new DeliverectApiClient(
       tokenManager,
@@ -287,7 +326,7 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
 
     const catalog = await client.getStoreCatalog('channel-1');
 
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(getAccessToken).toHaveBeenCalled();
     expect(catalog.activeMenuId).toBe('menu-1');
     expect(catalog.products).toEqual(
       expect.arrayContaining([
@@ -302,6 +341,79 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       channelLinkId: 'channel-1',
       rawProductCount: 1,
       parsedProductCount: 1,
+      commerceOverlayStatus: 'UNAVAILABLE',
+    });
+    expect(catalog.products[0].metadata).toMatchObject({
+      catalogConfidence: 'MEDIUM',
+      catalogConfidenceScore: 70,
+      commerceVerified: false,
+    });
+
+    vi.restoreAllMocks();
+  });
+
+  it('strengthens pushed catalogue products with matching live Commerce evidence', async () => {
+    const tenantId = `tenant-overlay-match-${Date.now()}`;
+    const payload = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody: JSON.stringify(payload),
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const tokenManager = new OAuthTokenManager({
+      environment: 'staging',
+      clientId: 'stub-client',
+      clientSecret: 'stub-secret',
+    });
+    const client = new DeliverectApiClient(
+      tokenManager,
+      tenantId,
+      'account-1',
+      ['channel-1']
+    );
+    vi.spyOn(client as any, 'resolveAccountId').mockResolvedValue('account-1');
+    vi.spyOn(client as any, 'resolveStoreChannelLinkId').mockResolvedValue({
+      channelLinkId: 'channel-1',
+      store: { id: 'channel-1', channelLinkId: 'channel-1', name: 'Store' },
+    });
+    vi.spyOn(client, 'getRawStoreMenus').mockResolvedValue({
+      accountId: 'account-1',
+      channelLinkId: 'channel-1',
+      storeId: 'channel-1',
+      receivedAt: new Date().toISOString(),
+      payload: sampleMenu({
+        products: {
+          'prod-1': {
+            _id: 'prod-1',
+            plu: 'DRINK-1',
+            gtin: ['500000000001'],
+            name: 'Water',
+            price: 140,
+            productType: 1,
+          },
+        },
+      }),
+    });
+    vi.spyOn(client, 'getProductTagDefinitions').mockResolvedValue([]);
+    vi.spyOn(FirestorePlatformService, 'getStoreProductSnoozes').mockResolvedValue({});
+
+    const catalog = await client.getStoreCatalog('channel-1');
+
+    expect(catalog.products[0]).toMatchObject({
+      plu: 'DRINK-1',
+      priceMinor: 140,
+      metadata: {
+        catalogConfidence: 'HIGH',
+        catalogConfidenceScore: 100,
+        commerceVerified: true,
+      },
+    });
+    expect(catalog.diagnostics).toMatchObject({
+      commerceOverlayStatus: 'VERIFIED',
+      confidenceHighCount: 1,
+      confidenceLowCount: 0,
     });
 
     vi.restoreAllMocks();

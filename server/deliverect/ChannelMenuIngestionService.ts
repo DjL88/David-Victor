@@ -606,6 +606,52 @@ export class ChannelMenuIngestionService {
         // Reuse the exact parser used by the Commerce API path so hosted Channel
         // menus preserve the existing storefront category/product/bundle shape.
         const parsed = DeliverectApiClient.parseDeliverectMenu(menu, true, []);
+        const processedAt = new Date().toISOString();
+
+        // Product removals are soft deletes in our hosted catalogue. Deliverect
+        // omits disabled/unpublished items from a new menu payload, but Admin
+        // still needs historical visibility. Carry forward removed products as
+        // inactive ARCHIVED tombstones; storefront filtering already excludes
+        // active === false. If a PLU returns in a later push, the live product
+        // naturally replaces its archived tombstone.
+        const previousNormalized = await this.getLatestNormalizedMenu(
+          job.tenantId,
+          channelLinkId,
+          menuId
+        ).catch(() => null);
+        const nextKeys = new Set(
+          parsed.products.map((product: any) => this.productKey(product)).filter(Boolean)
+        );
+        const archivedProducts = (Array.isArray(previousNormalized?.products)
+          ? previousNormalized.products
+          : []
+        )
+          .filter((product: any) => {
+            const key = this.productKey(product);
+            return Boolean(key) && !nextKeys.has(key);
+          })
+          .map((product: any) => ({
+            ...product,
+            active: false,
+            metadata: {
+              ...(product?.metadata || {}),
+              lifecycleStatus: 'ARCHIVED',
+              archivedAt: product?.metadata?.archivedAt || processedAt,
+              archiveReason: product?.metadata?.archiveReason || 'REMOVED_FROM_CHANNEL_MENU',
+            },
+          }));
+
+        const normalizedProducts = [
+          ...parsed.products.map((product: any) => ({
+            ...product,
+            metadata: {
+              ...(product?.metadata || {}),
+              lifecycleStatus: product?.active === false ? 'INACTIVE' : 'ACTIVE',
+            },
+          })),
+          ...archivedProducts,
+        ];
+
         const normalized = {
           menuId,
           channelLinkId,
@@ -617,11 +663,11 @@ export class ChannelMenuIngestionService {
           menuType: menu?.menuType,
           currency: menu?.currency,
           categories: parsed.categories,
-          products: parsed.products,
+          products: normalizedProducts,
           bundleCatalog: parsed.bundleCatalog,
           source: 'DELIVERECT_CHANNEL_PUSH',
           receivedAt: job.receivedAt,
-          processedAt: new Date().toISOString(),
+          processedAt,
         };
         const review = options.approvedReviewEventId === job.eventId
           ? undefined
@@ -689,7 +735,9 @@ export class ChannelMenuIngestionService {
                 rawStoragePath: job.storagePath,
                 normalizedStoragePath: normalizedPath,
                 categoryCount: parsed.categories.length,
-                productCount: parsed.products.length,
+                productCount: normalizedProducts.length,
+                activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
+                archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
                 bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
                 byteSize: normalizedBody.length,
                 lastEventId: job.eventId,
@@ -749,6 +797,52 @@ export class ChannelMenuIngestionService {
       });
       throw err;
     }
+  }
+
+  static async listRecentIngress(tenantId: string, limit: number = 100): Promise<Array<{
+    eventId: string;
+    status: ChannelMenuIngressRecord['status'];
+    receivedAt: string;
+    updatedAt: string;
+    processedAt?: string;
+    menuIds: string[];
+    channelLinkIds: string[];
+    byteSize: number;
+    error?: string;
+    review?: ChannelMenuIngressRecord['review'];
+  }>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return [];
+    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    let records: ChannelMenuIngressRecord[] = [];
+    if (db) {
+      const snap = await db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .orderBy('receivedAt', 'desc')
+        .limit(boundedLimit)
+        .get();
+      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
+    } else {
+      records = Array.from(memoryIngress.values())
+        .filter((record) => record.tenantId === cleanTenantId)
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+        .slice(0, boundedLimit);
+    }
+    return records.map((record) => ({
+      eventId: record.eventId,
+      status: record.status,
+      receivedAt: record.receivedAt,
+      updatedAt: record.updatedAt,
+      processedAt: record.processedAt,
+      menuIds: record.menuIds,
+      channelLinkIds: record.channelLinkIds,
+      byteSize: record.byteSize,
+      error: record.error,
+      review: record.review,
+    }));
   }
 
   static async listHeldReviews(tenantId: string): Promise<Array<{
