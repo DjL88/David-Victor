@@ -203,7 +203,7 @@ describe('bundle protected pricing through Quest settlement', () => {
       .toBe(500);
   });
 
-  it('allows an explicitly customer-approved higher substitute to exceed the protected component value', async () => {
+  it('never lets a customer-selected higher substitute exceed the protected original component line value', async () => {
     const { orderId } = await createProtectedBundleOrder(`approved-${Date.now()}`);
 
     await FirestorePlatformService.updateOrderPickingItem(orderId, 'B', {
@@ -225,9 +225,10 @@ describe('bundle protected pricing through Quest settlement', () => {
 
     const updated = await FirestorePlatformService.getOrderProjection(orderId);
 
-    // A 250 + customer-approved B 300 + C 83 = 633.
+    // Legacy/imported fields may still contain a higher per-unit value, but
+    // authoritative settlement remains A 250 + protected B 167 + C 83 = 500.
     expect(PaymentService.calculateAuthoritativeFinalAmount(updated as OrderProjection))
-      .toBe(633);
+      .toBe(500);
   });
 
   it('uses the cheapest protected units first when the same PLU has bundle and standalone quantity', () => {
