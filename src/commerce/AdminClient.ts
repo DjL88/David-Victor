@@ -484,6 +484,12 @@ export interface AdminClient {
         prefill?: Record<string, unknown>;
       }>;
     } | null;
+    proposalIntent?: {
+      actionName: 'branding.proposeUpdate';
+      input: Record<string, unknown>;
+      mode: 'PROPOSE_ONLY';
+      requiresReview: true;
+    } | null;
     mode?: string;
     safety?: Record<string, unknown>;
   }>;
