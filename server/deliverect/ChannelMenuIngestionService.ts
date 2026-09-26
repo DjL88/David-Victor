@@ -71,6 +71,8 @@ const memoryNormalized = new Map<string, Buffer>();
 const memoryIngress = new Map<string, ChannelMenuIngressRecord>();
 const memoryHostedIndex = new Map<string, {
   tenantId: string;
+  accountId: string;
+  locationId: string;
   channelLinkId: string;
   menuId: string;
   normalizedStoragePath: string;
@@ -113,6 +115,9 @@ const menuArray = (payload: any): any[] => {
 
 const menuIdOf = (menu: any): string =>
   String(menu?.menuId || menu?._id || menu?.id || '').trim();
+
+const accountIdOf = (menu: any): string => metadataText(menu?.accountId, menu?.account?._id, menu?.account?.id);
+const locationIdOf = (menu: any): string => metadataText(menu?.locationId, menu?.location?._id, menu?.location?.id);
 
 const channelLinkIdOf = (menu: any): string =>
   String(
@@ -645,6 +650,8 @@ export class ChannelMenuIngestionService {
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
         const channelLinkId = channelLinkIdOf(menu) || fallbackChannelLinkId;
+        const accountId = accountIdOf(menu) || (existing?.accountIds?.length === 1 ? existing.accountIds[0] : 'unknown-account');
+        const locationId = locationIdOf(menu) || (existing?.locationIds?.length === 1 ? existing.locationIds[0] : 'unknown-location');
         if (!menuId || !channelLinkId) {
           throw new BFFError(
             'VALIDATION_ERROR',
@@ -704,6 +711,8 @@ export class ChannelMenuIngestionService {
 
         const normalized = {
           menuId,
+          accountId,
+          locationId,
           channelLinkId,
           menu: menu?.menu || menu?.name || '',
           translations: normaliseDeliverectTranslations(
@@ -748,19 +757,23 @@ export class ChannelMenuIngestionService {
 
         const normalizedBody = Buffer.from(JSON.stringify(normalized), 'utf8');
         const normalizedPath =
-          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}.json`;
+          `hosted-catalog/tenants/${safeSegment(job.tenantId)}/accounts/${safeSegment(accountId)}/locations/${safeSegment(locationId)}/stores/${safeSegment(channelLinkId)}/menus/${safeSegment(menuId)}/versions/${safeSegment(job.eventId)}.json`;
 
         await this.saveNormalizedObject(normalizedPath, normalizedBody, {
           tenantId: job.tenantId,
+          accountId,
+          locationId,
           channelLinkId,
           menuId,
           eventId: job.eventId,
         });
 
         memoryHostedIndex.set(
-          `${job.tenantId}:${channelLinkId}:${menuId}`,
+          `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`,
           {
             tenantId: job.tenantId,
+            accountId,
+            locationId,
             channelLinkId,
             menuId,
             normalizedStoragePath: normalizedPath,
@@ -773,7 +786,7 @@ export class ChannelMenuIngestionService {
             .collection('tenants')
             .doc(job.tenantId)
             .collection('channelHostedMenus')
-            .doc(safeSegment(`${channelLinkId}_${menuId}`))
+            .doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`))
             .set(
               {
                 tenantId: job.tenantId,
