@@ -1,74 +1,80 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PilotValidationRunner } from '../../server/pilot/PilotValidationRunner';
-import { MetricsService } from '../../server/metricsService';
-import { circuitBreakers } from '../../server/circuitBreaker';
 import { setServerRuntimeMode } from '../../server/runtimeMode';
 
-describe('Phase 16: Pilot Execution & Live Staging Dry Run', () => {
+describe('Phase 16: deterministic pilot certification', () => {
   beforeEach(() => {
     process.env.APP_MODE = 'demo';
     setServerRuntimeMode('demo');
-    MetricsService.reset();
   });
 
-  it('successfully executes the end-to-end happy path pilot flow across all 10 milestones', async () => {
+  it('certifies current quantity-changing substitution and persisted order truth without claiming runtime proof', async () => {
     const runner = new PilotValidationRunner('brand-alpha', 'demo');
     const report = await runner.executeHappyPathPilot();
 
-    const failedStep = report.steps.find((s) => !s.success);
-    expect(failedStep).toBeUndefined();
     expect(report.allStepsPassed).toBe(true);
-    expect(report.steps.length).toBe(10);
+    expect(report.steps).toHaveLength(10);
     expect(report.tenantId).toBe('brand-alpha');
+    expect(report.evidenceScope).toBe('DETERMINISTIC_DEMO');
+    expect(report.runtimeVerified).toBe(false);
 
-    // Step 1: Tenant Resolution
     expect(report.steps[0].step).toContain('Tenant Resolution');
-    expect(report.steps[0].success).toBe(true);
+    expect(report.steps[1].step).toContain('Demo Store Fixture');
+    expect(report.steps[1].data?.evidenceSource).toBe('DEMO_FIXTURE');
 
-    // Step 2: Store Discovery
-    expect(report.steps[1].step).toContain('Store Discovery');
-    expect(report.steps[1].data?.channelLinkId).toBe('chl-covent-garden');
-
-    // Step 3: Basket Ingestion
-    expect(report.steps[2].step).toContain('Authoritative Basket');
-    expect(report.steps[2].data?.unitPrice).toEqual({ amount: 220, currency: 'GBP' });
-
-    // Step 4: Dispatch Serviceability
-    expect(report.steps[3].step).toContain('Dispatch Serviceability');
-    expect(report.steps[3].data?.deliveryServiceable).toBe(true);
-
-    // Step 5: Payment Authorization with Customer-Approved Ceiling
-    expect(report.steps[4].step).toContain('Payment Authorization');
+    expect(report.steps[2].step).toContain('Authorization Ceiling');
     expect(report.authorizedAmount).toEqual({ amount: 240, currency: 'GBP' });
+    expect(report.steps[2].data?.candidateReplacementQuantity).toBe(2);
 
-    // Step 6: Async Checkout Submission
-    expect(report.steps[5].step).toContain('Async Checkout');
-    expect(report.steps[5].data?.initialStatus).toBe('CHECKOUT_PENDING_CONFIRMATION');
+    expect(report.steps[3].step).toContain('Dispatch Boundary');
+    expect(report.steps[3].data).toMatchObject({
+      dispatchMode: 'NOT_APPLICABLE_COLLECTION',
+      liveAvailabilityValidation: 'SUPPORTED_CONTRACT_ONLY',
+      liveAssignment: 'UNSUPPORTED',
+      liveCancellation: 'UNSUPPORTED',
+      runtimeVerified: false,
+    });
 
-    // Step 7: Upstream Acceptance Webhook
-    expect(report.steps[6].step).toContain('Store Acceptance');
+    expect(report.steps[4].data?.status).toBe('CHECKOUT_PENDING_CONFIRMATION');
 
-    // Step 8: Quest Picking Amendment & Best Match Substitution
-    expect(report.steps[7].step).toContain('Quest Picking Amendment');
-    expect(report.steps[7].data?.substitutionType).toBe('BEST_MATCH');
-    expect(report.steps[7].data?.billedPrice).toContain('guaranteed lower');
+    expect(report.steps[5].step).toContain('Store Acceptance');
+    expect(report.steps[5].data?.preparing).toBe(false);
 
-    // Step 9: Final Payment Settlement & Residual Hold Release
-    expect(report.steps[8].step).toContain('Final Payment Settlement');
+    expect(report.steps[6].step).toContain('Quantity-Changing Protected Substitution');
+    expect(report.steps[6].data?.replacementQuantity).toBe(2);
+    expect(report.steps[6].data?.originalEffectiveLineTotal).toEqual({ amount: 220, currency: 'GBP' });
+    expect(report.steps[6].data?.replacementRetailLineTotal).toEqual({ amount: 260, currency: 'GBP' });
+    expect(report.steps[6].data?.customerChargeLineTotal).toEqual({ amount: 220, currency: 'GBP' });
+
+    expect(report.steps[7].data?.authoritativeFinalAmount).toBe(220);
     expect(report.capturedAmount).toEqual({ amount: 220, currency: 'GBP' });
     expect(report.residualHoldReleased).toEqual({ amount: 20, currency: 'GBP' });
 
-    // Step 10: Observability Audit
-    expect(report.steps[9].step).toContain('Observability & Telemetry');
-    expect(report.steps[9].data?.circuitBreakersHealthy).toBe(true);
+    expect(report.steps[9].step).toContain('Persisted Projection Truth');
+    expect(report.steps[9].data).toMatchObject({
+      orderStatus: 'PICKED',
+      paymentState: 'CAPTURED',
+      capturedAmount: 220,
+      runtimeVerified: false,
+    });
   });
 
-  it('proves defense against failure scenarios (tampered webhooks, excess amounts, duplicates)', async () => {
+  it('fails closed when asked to represent staging runtime evidence', async () => {
+    const runner = new PilotValidationRunner('brand-alpha', 'staging');
+    const report = await runner.executeHappyPathPilot();
+
+    expect(report.allStepsPassed).toBe(false);
+    expect(report.runtimeVerified).toBe(false);
+    expect(report.steps).toHaveLength(1);
+    expect(report.steps[0].step).toContain('Scope Guard');
+    expect(report.steps[0].error).toContain('separate runtime proof');
+  });
+
+  it('retains deterministic safety checks only when authoritative suites replace the old synthetic expectations', async () => {
     const runner = new PilotValidationRunner('brand-alpha', 'demo');
     const scenarios = await runner.executeFailureScenarios();
 
-    expect(scenarios).toContain('WH-01: Reject Tampered Webhook HMAC');
-    expect(scenarios).toContain('PAY-08: Block Final Amount Exceeding Customer-Approved Ceiling');
-    expect(scenarios).toContain('WH-02: Idempotent Webhook Deduplication');
+    expect(scenarios).toContain('PAY-CEILING: Reject Arbitrary Percentage Buffer');
+    expect(scenarios).toContain('SUB-PRICE: Protect Original Line Total Across Quantity Change');
   });
 });

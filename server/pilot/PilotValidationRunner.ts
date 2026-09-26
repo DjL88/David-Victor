@@ -1,19 +1,15 @@
 /**
- * Phase 16: Controlled Pilot Validation Runner
- * 
- * Orchestrates and collects structured evidence for the end-to-end commerce lifecycle
- * on a single controlled pilot tenant ('brand-alpha' / 'marketlane') with a bounded
- * location footprint ('loc-covent-garden', 'loc-soho') per Section 16 & Section 57.
+ * Phase 16: deterministic pilot certification runner.
+ *
+ * This runner exercises current demo/test commerce semantics only. It deliberately
+ * does not claim staging/production availability or partner runtime behaviour;
+ * those require separate read-only/runtime evidence.
  */
 
 import { Money, MoneyUtil } from '../../src/domain/money';
+import { calculateSubstitutionLineEconomics } from '../../src/commerce/substitutionPricing';
 import { FirestorePlatformService } from '../firestoreService';
 import { PaymentService } from '../deliverect/PaymentService';
-import { WebhookService } from '../deliverect/WebhookService';
-import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
-import { MetricsService } from '../metricsService';
-import { circuitBreakers } from '../circuitBreaker';
-import crypto from 'crypto';
 
 export interface PilotEvidenceStep {
   step: string;
@@ -36,6 +32,8 @@ export interface PilotExecutionReport {
   capturedAmount?: Money;
   residualHoldReleased?: Money;
   failureScenariosTested: string[];
+  evidenceScope: 'DETERMINISTIC_DEMO';
+  runtimeVerified: false;
 }
 
 export class PilotValidationRunner {
@@ -57,12 +55,34 @@ export class PilotValidationRunner {
     });
   }
 
-  /**
-   * Runs the complete end-to-end happy path pilot flow.
-   */
   public async executeHappyPathPilot(): Promise<PilotExecutionReport> {
+    this.steps = [];
+    this.failureScenariosTested = [];
     const startedAt = new Date().toISOString();
-    const correlationId = `pilot-${Date.now()}`;
+
+    if (this.environment !== 'demo') {
+      this.recordStep(
+        '0. Deterministic Certification Scope Guard',
+        false,
+        {
+          requestedEnvironment: this.environment,
+          evidenceScope: 'DETERMINISTIC_DEMO',
+          runtimeVerified: false,
+        },
+        'PilotValidationRunner is deterministic demo evidence only; staging/production requires separate runtime proof.'
+      );
+      return {
+        tenantId: this.tenantId,
+        environment: this.environment,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        allStepsPassed: false,
+        steps: this.steps,
+        failureScenariosTested: this.failureScenariosTested,
+        evidenceScope: 'DETERMINISTIC_DEMO',
+        runtimeVerified: false,
+      };
+    }
 
     let orderId: string | undefined;
     let checkoutId: string | undefined;
@@ -71,204 +91,197 @@ export class PilotValidationRunner {
     let residualHoldReleased: Money | undefined;
 
     try {
-      // Step 1: Tenant Resolution & Health
       const tenant = await FirestorePlatformService.getTenantConfig(this.tenantId);
       if (!tenant) throw new Error(`Tenant ${this.tenantId} not found`);
-      this.recordStep('1. Tenant Resolution', true, { tenantId: tenant.tenantId, brandName: tenant.brandName });
+      this.recordStep('1. Tenant Resolution', true, {
+        tenantId: tenant.tenantId,
+        brandName: tenant.brandName,
+        evidenceSource: 'DEMO_FIXTURE',
+      });
 
-      // Step 2: Store Discovery with Bounded Location Footprint
       const storeId = 'store-covent-garden-01';
       const channelLinkId = 'chl-covent-garden';
-      this.recordStep('2. Store Discovery & Selection', true, { storeId, channelLinkId, radiusMetres: 20000 });
-
-      // Step 3: Single-Store Basket Creation & Item Ingestion
-      const originalItemPlu = 'PLU_ORGANIC_MILK_1L';
-      const originalItemPrice = MoneyUtil.fromMinorUnits(220, 'GBP'); // £2.20
-      const approvedSubstitutePrice = MoneyUtil.fromMinorUnits(240, 'GBP'); // £2.40 (substitute ceiling)
-
-      const basketId = `bsk_${Date.now()}`;
-      const basketTotal = MoneyUtil.fromMinorUnits(220, 'GBP');
-      this.recordStep('3. Authoritative Basket Ingestion', true, {
-        basketId,
-        plu: originalItemPlu,
-        unitPrice: originalItemPrice,
-        currency: 'GBP',
-      });
-
-      // Step 4: Pre-Checkout Dispatch Validation
-      const dispatchValidationId = `dsp_val_${Date.now()}`;
-      const dispatchExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      this.recordStep('4. Dispatch Serviceability Validation', true, {
-        dispatchValidationId,
-        dispatchExpiresAt,
-        deliveryServiceable: true,
-      });
-
-      // Step 5: Payment Authorization with Customer-Approved Ceiling (Section 20)
-      // Zero arbitrary buffer: Ceiling = Basket Total (£2.20) + Explicit approved substitute uplift (£0.20) = £2.40
-      const ceilingAmount = MoneyUtil.fromMinorUnits(240, 'GBP');
-      const payment = await PaymentService.requestPayment(
-        {
-          channelLinkId,
-          amount: ceilingAmount.amount, // minor units integer: reconciledBasketTotal + customer approved uplift (£2.40)
-          currency: 'GBP',
-          mode: { type: 'token', tokenId: 'bt_tok_customer_card_approved_4242' },
-          captureMode: 'manual',
-          customerApprovedMaxAmount: ceilingAmount,
-          basketId,
-        },
-        this.tenantId
-      );
-
-      authorizedAmount = MoneyUtil.fromMinorUnits(payment.authorizedAmount, payment.currency);
-      this.recordStep('5. Payment Authorization (Customer-Approved Ceiling)', true, {
-        paymentId: payment.paymentId,
-        authorizedAmount,
-        captureMode: payment.captureMode,
-        status: payment.status,
-      });
-
-      // Step 6: Asynchronous Checkout Submission
-      checkoutId = `chk_pilot_${Date.now()}`;
-      orderId = `del_ord_pilot_${Date.now()}`;
-      const channelOrderReference = `ORD-${Date.now()}`;
-
-      await FirestorePlatformService.saveOrderProjection({
-        id: orderId,
-        displayId: `#${orderId}`,
-        projectionId: `proj_${orderId}`,
-        tenantId: this.tenantId,
+      this.recordStep('2. Demo Store Fixture Selection', true, {
         storeId,
-        storeName: 'Covent Garden Flagship',
-        externalOrderId: orderId,
+        channelLinkId,
+        evidenceSource: 'DEMO_FIXTURE',
+      });
+
+      const originalItemPlu = 'WATER-1L';
+      const substitutePlu = 'WATER-500';
+      const originalItemPrice = MoneyUtil.fromMinorUnits(220, 'GBP');
+      const basketTotal = MoneyUtil.fromMinorUnits(220, 'GBP');
+      const approvedSubstituteUplift = MoneyUtil.fromMinorUnits(20, 'GBP');
+      authorizedAmount = PaymentService.calculateApprovedAuthorizationCeiling(
+        basketTotal,
+        { approvedSubstituteUplift }
+      );
+      this.recordStep('3. Basket & Explicit Authorization Ceiling', true, {
+        plu: originalItemPlu,
+        orderedQuantity: 1,
+        unitPrice: originalItemPrice,
+        candidateReplacementQuantity: 2,
+        candidateReplacementUnitPrice: MoneyUtil.fromMinorUnits(130, 'GBP'),
+        authorizedAmount,
+      });
+
+      this.recordStep('4. Dispatch Boundary (Collection Flow)', true, {
+        dispatchMode: 'NOT_APPLICABLE_COLLECTION',
+        liveAvailabilityValidation: 'SUPPORTED_CONTRACT_ONLY',
+        liveAssignment: 'UNSUPPORTED',
+        liveCancellation: 'UNSUPPORTED',
+        runtimeVerified: false,
+      });
+
+      checkoutId = `chk_pilot_${Date.now()}`;
+      orderId = `ord_pilot_${Date.now()}`;
+      const pendingOrder = {
+        orderId,
+        tenantId: this.tenantId,
         checkoutId,
         channelLinkId,
-        channelOrderReference,
+        orderReference: 'LT-DEMO-PILOT',
         status: 'CHECKOUT_PENDING_CONFIRMATION',
-        paymentStatus: 'AUTHORIZED',
-        paymentId: payment.paymentId,
-        fulfillmentType: 'PICKUP',
-        total: 220,
-        authorizedMaximum: 240,
-        finalAmount: 220,
-        items: [
-          {
-            id: 'item_1',
+        paymentState: 'AUTHORIZED',
+        fulfillmentType: 'collection',
+        total: basketTotal.amount,
+        currency: basketTotal.currency,
+        authorizedMaximum: authorizedAmount.amount,
+        finalAmount: basketTotal.amount,
+        itemsCount: 1,
+        picking: {
+          status: 'NOT_STARTED',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-water-1l',
             plu: originalItemPlu,
-            name: 'Organic Whole Milk 1L',
-            quantity: 1,
-            price: 220,
-            unitPrice: originalItemPrice,
-            totalPrice: originalItemPrice,
-          },
-        ],
-        pricing: {
-          subtotal: basketTotal,
-          deliveryFee: MoneyUtil.fromMinorUnits(0, 'GBP'),
-          serviceFee: MoneyUtil.fromMinorUnits(0, 'GBP'),
-          total: basketTotal,
+            name: 'Water 1L',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: originalItemPrice,
+            finalPrice: originalItemPrice,
+            state: 'PENDING',
+            substitutionPreference: 'BEST_MATCH',
+            substituteCandidates: [{
+              plu: substitutePlu,
+              name: 'Water 500ml',
+              quantity: 2,
+              price: MoneyUtil.fromMinorUnits(130, 'GBP'),
+              priority: 1,
+            }],
+          }],
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as any);
-
-      this.recordStep('6. Async Checkout Submission (Pending Confirmation)', true, {
+      };
+      await FirestorePlatformService.saveOrderProjection(pendingOrder as any, this.tenantId);
+      this.recordStep('5. Pending Checkout Projection', true, {
         checkoutId,
         orderId,
-        initialStatus: 'CHECKOUT_PENDING_CONFIRMATION',
+        status: pendingOrder.status,
       });
 
-      // Step 7: Webhook Progression - Store Accepted & Picking Started
-      const webhookSecret = WebhookService.getWebhookSecret(this.tenantId) || 'staging_secret_key_123';
-      const eventKeyAccepted = `evt_accept_${Date.now()}`;
-      const acceptPayload = {
-        type: 'ORDER_ACCEPTED',
-        orderId,
-        status: 'STORE_ACCEPTED',
-        timestamp: new Date().toISOString(),
-      };
-      const rawAccept = Buffer.from(JSON.stringify(acceptPayload));
-      const sigAccept = WebhookService.computeHmacSignature(rawAccept, webhookSecret);
-
-      await WebhookService.processWebhook(
-        acceptPayload,
-        rawAccept,
-        {
-          'x-deliverect-signature': sigAccept,
-          'x-deliverect-event-id': eventKeyAccepted,
-        },
-        this.tenantId
-      );
-      this.recordStep('7. Upstream Store Acceptance Webhook', true, { status: 'STORE_ACCEPTED' });
-
-      // Step 8: Quest Substitution - Best Match with Lower-of-Original Guarantee (Section 19)
-      const substitutePlu = 'PLU_ORGANIC_HOMOGENIZED_MILK_1L';
-      const questAmendmentPayload = {
-        type: 'ITEM_SUBSTITUTED',
-        orderId,
-        originalPlu: originalItemPlu,
-        substitutePlu,
-        substituteName: 'Organic Homogenized Milk 1L',
-        originalPrice: 220,
-        substituteCatalogPrice: 235, // Catalogue is £2.35, but guaranteed price is original £2.20
-        chargedPrice: 220,
-        substitutionType: 'BEST_MATCH',
-        pricePolicy: 'LOWER_OF_ORIGINAL_OR_SUBSTITUTE',
-      };
-      const rawQuest = Buffer.from(JSON.stringify(questAmendmentPayload));
-      const sigQuest = WebhookService.computeHmacSignature(rawQuest, webhookSecret);
-      const questEventKey = `evt_quest_${Date.now()}`;
-
-      await WebhookService.processWebhook(
-        questAmendmentPayload,
-        rawQuest,
-        {
-          'x-deliverect-signature': sigQuest,
-          'x-deliverect-event-id': questEventKey,
-        },
-        this.tenantId
-      );
-      this.recordStep('8. Quest Picking Amendment (Best Match Substitution)', true, {
-        substitutionType: 'BEST_MATCH',
-        originalPrice: '£2.20',
-        cataloguePrice: '£2.35',
-        billedPrice: '£2.20 (guaranteed lower)',
+      await FirestorePlatformService.updateOrderProjectionState(orderId, 'STORE_ACCEPTED');
+      const acceptedOrder = await FirestorePlatformService.getOrderProjection(orderId);
+      this.recordStep('6. Store Acceptance (Customer Still Placed)', true, {
+        status: acceptedOrder?.status,
+        pickingStatus: acceptedOrder?.picking?.status,
+        preparing: acceptedOrder?.picking?.status === 'IN_PROGRESS',
       });
 
-      // Step 9: Picking Complete & Final Settlement (Section 13, 20)
-      const settlement = await PaymentService.settleOrderPayment(orderId!, this.tenantId);
+      const economics = calculateSubstitutionLineEconomics({
+        originalQuantity: 1,
+        originalUnitPrice: originalItemPrice,
+        replacementQuantity: 2,
+        replacementUnitPrice: MoneyUtil.fromMinorUnits(130, 'GBP'),
+      });
+      this.recordStep('7. Quantity-Changing Protected Substitution Economics', true, {
+        originalQuantity: economics.originalQuantity,
+        replacementQuantity: economics.replacementQuantity,
+        originalEffectiveLineTotal: economics.originalEffectiveLineTotal,
+        replacementRetailLineTotal: economics.replacementRetailLineTotal,
+        customerChargeLineTotal: economics.customerChargeLineTotal,
+      });
 
-      capturedAmount = MoneyUtil.fromMinorUnits(settlement.capturedAmount, 'GBP');
-      residualHoldReleased = MoneyUtil.fromMinorUnits(settlement.residualHoldReleased, 'GBP');
+      const pickedOrder = {
+        ...acceptedOrder!,
+        status: 'PICKING',
+        finalAmount: economics.customerChargeLineTotal.amount,
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 1,
+          hasChanges: true,
+          items: [{
+            id: 'line-water-1l',
+            plu: originalItemPlu,
+            name: 'Water 1L',
+            originalQuantity: 1,
+            pickedQuantity: 2,
+            originalPrice: originalItemPrice,
+            finalPrice: economics.customerChargeLineTotal,
+            state: 'SUBSTITUTED',
+            substitutionPreference: 'BEST_MATCH',
+            substitution: {
+              substitutePlu,
+              substituteName: 'Water 500ml',
+              substitutePrice: MoneyUtil.fromMinorUnits(130, 'GBP'),
+              replacementQuantity: 2,
+              economics,
+            },
+          }],
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      await FirestorePlatformService.saveOrderProjection(pickedOrder as any, this.tenantId);
+      const authoritativeFinalAmount = PaymentService.calculateAuthoritativeFinalAmount(pickedOrder as any);
+      this.recordStep('8. Authoritative Picked Amount', authoritativeFinalAmount === 220, {
+        authoritativeFinalAmount,
+        protectedOriginalLineTotal: economics.originalEffectiveLineTotal,
+        replacementRetailLineTotal: economics.replacementRetailLineTotal,
+      });
 
-      this.recordStep('9. Final Payment Settlement & Residual Hold Release', true, {
-        paymentId: payment.paymentId,
-        authorizedCeiling: authorizedAmount,
-        finalCapturedAmount: capturedAmount,
+      capturedAmount = MoneyUtil.fromMinorUnits(authoritativeFinalAmount, 'GBP');
+      residualHoldReleased = MoneyUtil.fromMinorUnits(
+        authorizedAmount.amount - authoritativeFinalAmount,
+        'GBP'
+      );
+      this.recordStep('9. Settlement Arithmetic Contract', true, {
+        authorizedAmount,
+        capturedAmount,
         residualHoldReleased,
-        paymentStatus: settlement.status,
+        providerRuntimeVerified: false,
       });
 
-      // Step 10: Order Completion & Telemetry Observability Check
-      const metricsSnapshot = MetricsService.getMetricsSnapshot();
-      this.recordStep('10. Observability & Telemetry Audit', true, {
-        totalRequests: metricsSnapshot.api.totalRequests,
-        hitRatePct: metricsSnapshot.cache.hitRatePct,
-        circuitBreakersHealthy: metricsSnapshot.circuitBreakers['commerce']?.state === 'CLOSED' || true,
+      const finalOrder = {
+        ...pickedOrder,
+        status: 'PICKED',
+        paymentState: 'CAPTURED',
+        capturedAmount: capturedAmount.amount,
+        residualHoldReleased: residualHoldReleased.amount,
+        updatedAt: new Date().toISOString(),
+      };
+      await FirestorePlatformService.saveOrderProjection(finalOrder as any, this.tenantId);
+      const persisted = await FirestorePlatformService.getOrderProjection(orderId);
+      this.recordStep('10. Persisted Projection Truth & Evidence Boundary', true, {
+        orderStatus: persisted?.status,
+        paymentState: persisted?.paymentState,
+        capturedAmount: persisted?.capturedAmount,
+        evidenceScope: 'DETERMINISTIC_DEMO',
+        runtimeVerified: false,
       });
     } catch (err: any) {
-      this.recordStep('Pilot Execution Aborted', false, undefined, err.message);
+      this.recordStep('Pilot Execution Aborted', false, undefined, err?.message || String(err));
     }
-
-    const completedAt = new Date().toISOString();
-    const allStepsPassed = this.steps.every((s) => s.success);
 
     return {
       tenantId: this.tenantId,
       environment: this.environment,
       startedAt,
-      completedAt,
-      allStepsPassed,
+      completedAt: new Date().toISOString(),
+      allStepsPassed: this.steps.every((step) => step.success),
       steps: this.steps,
       orderId,
       checkoutId,
@@ -276,112 +289,35 @@ export class PilotValidationRunner {
       capturedAmount,
       residualHoldReleased,
       failureScenariosTested: this.failureScenariosTested,
+      evidenceScope: 'DETERMINISTIC_DEMO',
+      runtimeVerified: false,
     };
   }
 
-  /**
-   * Executes and records validation of failure and resilience scenarios.
-   */
   public async executeFailureScenarios(): Promise<string[]> {
-    // 1. Webhook HMAC Tampering Rejection
-    const tamperedPayload = { orderId: 'ord-tamper-fail', status: 'CANCELLED' };
-    const rawTampered = Buffer.from(JSON.stringify(tamperedPayload));
-    const bogusSignature = 'sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-    let tamperCaught = false;
+    this.failureScenariosTested = [];
+    if (this.environment !== 'demo') return this.failureScenariosTested;
 
     try {
-      await WebhookService.ingestEvent(
-        this.tenantId,
-        this.environment,
-        `evt_tamper_${Date.now()}`,
-        'ORDER_STATUS_UPDATE',
-        tamperedPayload,
-        rawTampered,
-        bogusSignature,
-        'staging_secret_key_123'
+      PaymentService.calculateApprovedAuthorizationCeiling(
+        MoneyUtil.fromMinorUnits(200, 'GBP'),
+        { arbitraryBufferPercentage: 0.1 }
       );
-    } catch (err: any) {
-      if (err.message.includes('HMAC verification failed')) {
-        tamperCaught = true;
-      }
-    }
-    if (tamperCaught) {
-      this.failureScenariosTested.push('WH-01: Reject Tampered Webhook HMAC');
+    } catch {
+      this.failureScenariosTested.push('PAY-CEILING: Reject Arbitrary Percentage Buffer');
     }
 
-    // 2. Excess Final Amount Over Ceiling Protection (PAY-08)
-    const excessOrderId = `ord_excess_${Date.now()}`;
-    const mockPayment = await PaymentService.requestPayment(
-      {
-        channelLinkId: 'chl-test',
-        amount: 200,
-        currency: 'GBP',
-        mode: { type: 'token', tokenId: 'bt_tok_test_excess' },
-        captureMode: 'manual',
-        customerApprovedMaxAmount: MoneyUtil.fromMinorUnits(240, 'GBP'),
-      },
-      this.tenantId
-    );
-
-    await FirestorePlatformService.saveOrderProjection({
-      id: excessOrderId,
-      displayId: `#${excessOrderId}`,
-      projectionId: `proj_${excessOrderId}`,
-      tenantId: this.tenantId,
-      externalOrderId: excessOrderId,
-      checkoutId: `chk_${excessOrderId}`,
-      channelLinkId: 'chl-test',
-      channelOrderReference: `REF-${excessOrderId}`,
-      status: 'PICKING_COMPLETE',
-      paymentStatus: 'AUTHORIZED',
-      paymentId: mockPayment.paymentId,
-      fulfillmentType: 'PICKUP',
-      total: 500, // £5.00 > £2.40 ceiling
-      finalAmount: 500,
-      authorizedMaximum: 240,
-      items: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any);
-
-    const excessSettlement = await PaymentService.settleOrderPayment(
-      excessOrderId,
-      this.tenantId
-    );
-    if (excessSettlement.status === 'PAYMENT_ACTION_REQUIRED') {
-      this.failureScenariosTested.push('PAY-08: Block Final Amount Exceeding Customer-Approved Ceiling');
-    }
-
-    // 3. Duplicate Webhook Deduplication (WH-02)
-    const dedupPayload = { type: 'ORDER_ACCEPTED', orderId: 'ord-dedup' };
-    const rawDedup = Buffer.from(JSON.stringify(dedupPayload));
-    const secret = 'staging_secret_key_123';
-    const dedupSig = WebhookService.computeHmacSignature(rawDedup, secret);
-    const dedupEventKey = `evt_dedup_${Date.now()}`;
-
-    const firstIngest = await WebhookService.ingestEvent(
-      this.tenantId,
-      this.environment,
-      dedupEventKey,
-      'ORDER_ACCEPTED',
-      dedupPayload,
-      rawDedup,
-      dedupSig,
-      secret
-    );
-    const secondIngest = await WebhookService.ingestEvent(
-      this.tenantId,
-      this.environment,
-      dedupEventKey,
-      'ORDER_ACCEPTED',
-      dedupPayload,
-      rawDedup,
-      dedupSig,
-      secret
-    );
-
-    if (firstIngest.status === 'PROCESSED' && secondIngest.status === 'DUPLICATE_ACKNOWLEDGED') {
-      this.failureScenariosTested.push('WH-02: Idempotent Webhook Deduplication');
+    const economics = calculateSubstitutionLineEconomics({
+      originalQuantity: 1,
+      originalUnitPrice: MoneyUtil.fromMinorUnits(200, 'GBP'),
+      replacementQuantity: 2,
+      replacementUnitPrice: MoneyUtil.fromMinorUnits(130, 'GBP'),
+    });
+    if (
+      economics.replacementRetailLineTotal.amount === 260 &&
+      economics.customerChargeLineTotal.amount === 200
+    ) {
+      this.failureScenariosTested.push('SUB-PRICE: Protect Original Line Total Across Quantity Change');
     }
 
     return this.failureScenariosTested;
