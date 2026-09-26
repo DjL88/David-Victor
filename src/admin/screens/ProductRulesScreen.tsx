@@ -915,6 +915,38 @@ export const ProductRulesScreen: React.FC<ProductRulesScreenProps> = ({
             </div>
           </div>
         </div>
+        <section aria-labelledby="substitution-pricing-policy-heading" className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 id="substitution-pricing-policy-heading" className="text-sm font-bold text-gray-900">Substitution pricing policy</h3>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Default for every tenant</span>
+            </div>
+            <p className="text-xs text-gray-700">
+              Customer price protection is applied to the original effective line total, even when the accepted replacement quantity changes. This policy is automatic and cannot be weakened from this screen.
+            </p>
+            <div className="grid grid-cols-1 gap-2 text-xs text-gray-700 md:grid-cols-2">
+              <div className="rounded-xl border border-emerald-100 bg-white p-3">
+                <p className="font-bold text-gray-900">Price protection</p>
+                <p className="mt-1">Customer charge is the lower of the original effective line total and the replacement effective line total.</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-white p-3">
+                <p className="font-bold text-gray-900">Quantity changes</p>
+                <p className="mt-1">If 1 original item is replaced by 2 items, the protected original total is not multiplied by 2.</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-white p-3">
+                <p className="font-bold text-gray-900">Original promotions</p>
+                <p className="mt-1">If the original line already earned a promotion, its effective promotional line value stays the protection basis and basket promotions are not recalculated.</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-white p-3">
+                <p className="font-bold text-gray-900">Replacement promotions</p>
+                <p className="mt-1">If the original line had no promotion, an eligible replacement promotion is applied before the lower-price comparison.</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs text-gray-700">
+              <span className="font-bold text-gray-900">Example:</span> original line total £2.00 → 2 replacement items worth £4.00 retail → customer still pays £2.00 total; the £2.00 protection remains reportable separately from the retail substitution delta.
+            </div>
+          </div>
+        </section>
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div><h3 className="text-sm font-bold text-gray-900">Preferred substitution PLU map</h3><p className="text-xs text-gray-600 mt-0.5">Upload CSV headers <code>originalPlu,substitutePlu</code>. Repeat an original PLU to set its preferred order. Availability, matching tags, category and price rules are still enforced.</p>{substitutionImportMessage&&<p className="mt-2 text-xs font-bold text-emerald-700">{substitutionImportMessage}</p>}</div>
