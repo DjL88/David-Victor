@@ -1,43 +1,14 @@
-import React, { useState } from 'react';
-import {
-  Order,
-  PickingItem,
-  DemoScenario,
-  PickingEventType,
-  moneyToMajor,
-} from '../../commerce/models';
-import { useTenantStyles } from '../../tenant/useTenant';
+import React, { useEffect, useRef, useState } from 'react';
+import type { DemoScenario, Order } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
+import { useTenantStyles } from '../../tenant/useTenant';
 import { useI18n } from '../../i18n/I18nContext';
-import { formatCurrency } from '../../utils/formatters';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import { RefreshCw } from 'lucide-react';
 import { OrderProgressHero } from './OrderProgressHero';
-
-const defaultCommerceClient = getCommerceClient() as any;
-import {
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Package,
-  ShoppingBag,
-  Truck,
-  CreditCard,
-  ArrowRight,
-  ShieldCheck,
-  ChevronRight,
-  ChevronDown,
-  Info,
-  Sliders,
-  Check,
-  X,
-  Repeat,
-  Phone,
-  Store as StoreIcon,
-  Calendar,
-  Layers,
-  ReceiptText,
-} from 'lucide-react';
+import { OrderPickingItems, OrderProductImage } from './OrderPickingItems';
+import { capturedPayment, currentOrderTotal, customerOrderReference, customerTrackerStage, observedMoney } from './trackerEvidence';
+import { useTrackerCopy } from './trackerCopy';
 
 interface OrderTrackingViewProps {
   order: Order;
@@ -45,791 +16,221 @@ interface OrderTrackingViewProps {
   onBackToList?: () => void;
 }
 
-export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
-  order: initialOrder,
-  onOrderUpdated,
-  onBackToList,
-}) => {
-  const { primaryBtnStyle, currencySymbol, brandName } = useTenantStyles();
-  const { appMode } = useTenant();
-  const { t, formatDateTime } = useI18n();
-  const isDemo = appMode === 'demo';
-  const [order, setOrder] = useState<Order>(initialOrder);
-  const [isAdvancing, setIsAdvancing] = useState<boolean>(false);
-  const [isReauthorizing, setIsReauthorizing] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'timeline' | 'items' | 'payment' | 'receipt'>('items');
-  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+// Switching tenant, store or order must discard in-flight responses and local presentation state.
+export const OrderTrackingView: React.FC<OrderTrackingViewProps> = (props) => (
+  <ScopedOrderTrackingView key={`${props.order.tenantId}:${props.order.storeId}:${props.order.id}`} {...props} />
+);
 
-  // Synchronize with prop changes
-  React.useEffect(() => {
+type TrackerClient = {
+  getOrder(id: string): Promise<Order | null>;
+  advancePickingDemo?(id: string): Promise<Order>;
+  finalizeOrderPicking?(id: string): Promise<Order>;
+  advanceOrderStatus?(id: string): Promise<Order>;
+  createDemoScenarioOrder?(scenario: DemoScenario): Promise<Order>;
+  reauthorizeOrderPayment?(id: string, amount: NonNullable<Order['finalOrder']>['total']): Promise<Order>;
+};
+
+const ScopedOrderTrackingView: React.FC<OrderTrackingViewProps> = ({ order: initialOrder, onOrderUpdated, onBackToList }) => {
+  const { appMode } = useTenant();
+  const { brandName } = useTenantStyles();
+  const { t, formatCurrency, formatDateTime } = useI18n();
+  const copy = useTrackerCopy();
+  const isDemo = appMode === 'demo';
+  const [order, setOrder] = useState(initialOrder);
+  const [activeTab, setActiveTab] = useState<'items' | 'timeline' | 'payment' | 'receipt'>('items');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [pollFailed, setPollFailed] = useState(false);
+  const mounted = useRef(true);
+  const generation = useRef(0);
+  const latestOrder = useRef(order);
+  const onUpdated = useRef(onOrderUpdated);
+  onUpdated.current = onOrderUpdated;
+  latestOrder.current = order;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; };
+  }, []);
+  useEffect(() => {
+    generation.current += 1;
     setOrder(initialOrder);
   }, [initialOrder]);
 
-  // Periodic polling for active picking / fulfillment updates from BFF
-  React.useEffect(() => {
-    const isTerminal = ['CANCELLED', 'ORDER_CANCELLED', 'ORDER_CANCELLED_UNAVAILABLE_ITEM', 'DELIVERED', 'FAILED'].includes(order.status);
-    if (isTerminal || !order.id) return;
-
+  const matchesOrder = (candidate: Order) => candidate.id === initialOrder.id && candidate.tenantId === initialOrder.tenantId && candidate.storeId === initialOrder.storeId;
+  const stage = customerTrackerStage(order);
+  const terminal = ['COMPLETE', 'CANCELLED', 'FAILED'].includes(stage);
+  useEffect(() => {
+    if (terminal || !order.id) return;
+    let disposed = false;
+    let running = false;
     const interval = setInterval(async () => {
+      if (running) return;
+      running = true;
+      const requestGeneration = generation.current;
       try {
-        const fresh = await defaultCommerceClient.getOrder(order.id);
-        if (fresh) {
-          setOrder(fresh);
-          onOrderUpdated?.(fresh);
-        }
+        const fresh = await (getCommerceClient() as unknown as TrackerClient).getOrder(order.id);
+        if (disposed || requestGeneration !== generation.current) return;
+        if (!fresh || !matchesOrder(fresh)) throw new Error('Order identity mismatch');
+        const oldTime = Date.parse(latestOrder.current.updatedAt);
+        const newTime = Date.parse(fresh.updatedAt);
+        if (Number.isFinite(oldTime) && Number.isFinite(newTime) && newTime < oldTime) return;
+        setOrder(fresh);
+        setPollFailed(false);
+        onUpdated.current?.(fresh);
       } catch {
-        // silent polling error
-      }
+        if (!disposed && requestGeneration === generation.current) setPollFailed(true);
+      } finally { running = false; }
     }, 4000);
+    return () => { disposed = true; clearInterval(interval); };
+  }, [order.id, order.tenantId, order.storeId, terminal]);
 
-    return () => clearInterval(interval);
-  }, [order.id, order.status, onOrderUpdated]);
-
-  const notifyUpdate = (updated: Order, msg?: string) => {
-    setOrder(updated);
-    onOrderUpdated?.(updated);
-    if (msg) {
-      setFeedbackMessage(msg);
-      setTimeout(() => setFeedbackMessage(null), 4000);
-    }
-  };
-
-  // Helper to advance simulation picking step
-  const handleSimulateNextStep = async () => {
-    setIsAdvancing(true);
+  const runAction = async (action: (client: TrackerClient) => Promise<Order>, allowDemoIdentityChange = false) => {
+    if (busy) return;
+    const actionGeneration = ++generation.current;
+    setBusy(true);
+    setFeedback(null);
     try {
-      // Find first pending item to pick
-      const pendingItems = (order.picking?.items || []).filter((i) => i.state === 'PENDING');
-      if (pendingItems.length > 0) {
-        const updated = await defaultCommerceClient.advancePickingDemo(order.id);
-        const lastEvt = updated.events?.[updated.events.length - 1];
-        notifyUpdate(updated, lastEvt?.note || lastEvt?.title || 'Picking advanced');
-      } else if (order.picking?.status !== 'COMPLETED') {
-        const updated = await defaultCommerceClient.finalizeOrderPicking(order.id);
-        notifyUpdate(
-          updated,
-          updated.status === 'PAYMENT_FINALISING'
-            ? 'Picking completed! Reauthorization required due to price increase.'
-            : 'Picking completed & payment captured automatically!'
-        );
-      } else {
-        // Advance tracking status
-        const updated = await defaultCommerceClient.advanceOrderStatus(order.id);
-        notifyUpdate(updated, `Status advanced to ${updated.status}`);
-      }
-    } catch (err: any) {
-      setFeedbackMessage(`Error: ${err.message}`);
+      const updated = await action(getCommerceClient() as unknown as TrackerClient);
+      if (!mounted.current || actionGeneration !== generation.current) return;
+      if (!updated || (!allowDemoIdentityChange && !matchesOrder(updated))) throw new Error('Order identity mismatch');
+      setOrder(updated);
+      onUpdated.current?.(updated);
+      setFeedback(copy('tracker.paymentUpdate'));
+    } catch {
+      if (mounted.current && actionGeneration === generation.current) setFeedback(copy('tracker.actionFailed'));
     } finally {
-      setIsAdvancing(false);
+      if (mounted.current) setBusy(false);
     }
   };
-
-  // Switch demo scenario
-  const handleLoadScenario = async (scenario: DemoScenario) => {
-    setIsAdvancing(true);
-    try {
-      const demoOrder = await defaultCommerceClient.createDemoScenarioOrder(scenario);
-      notifyUpdate(demoOrder, `Loaded Demo Scenario ${scenario}`);
-    } catch (err: any) {
-      setFeedbackMessage(`Error: ${err.message}`);
-    } finally {
-      setIsAdvancing(false);
-    }
+  const advanceDemo = () => {
+    if (!isDemo) return;
+    void runAction(async (client) => {
+      const pending = order.picking?.items?.some((item) => item.state === 'PENDING');
+      const action = pending ? client.advancePickingDemo : order.picking?.status !== 'COMPLETED' ? client.finalizeOrderPicking : client.advanceOrderStatus;
+      if (!action) throw new Error('Simulation unavailable');
+      return action.call(client, order.id);
+    });
+  };
+  const loadScenario = (scenario: DemoScenario) => {
+    if (!isDemo) return;
+    void runAction(async (client) => {
+      if (!client.createDemoScenarioOrder) throw new Error('Simulation unavailable');
+      return client.createDemoScenarioOrder(scenario);
+    }, true);
   };
 
-  // Customer reauthorizes payment when ceiling exceeded
-  const handleApproveReauthorization = async () => {
-    setIsReauthorizing(true);
-    try {
-      const approvedTotal = order.finalOrder?.total || order.currentOrder.total;
-      const updated = await defaultCommerceClient.reauthorizeOrderPayment(
-        order.id,
-        approvedTotal
-      );
-      notifyUpdate(
-        updated,
-        `Payment reauthorized and captured: ${formatCurrency(approvedTotal, currencySymbol)}!`
-      );
-    } catch (err: any) {
-      setFeedbackMessage(`Reauthorization error: ${err.message}`);
-    } finally {
-      setIsReauthorizing(false);
-    }
+  const money = (value: unknown) => {
+    const amount = observedMoney(value);
+    return amount ? formatCurrency(amount.amount, amount.currency) : t('product.priceUnavailable');
   };
+  const captured = capturedPayment(order);
+  const total = currentOrderTotal(order);
+  const authorised = observedMoney(order.payment?.authorizationMaximum) || observedMoney(order.payment?.authorizedAmount);
+  const pickup = order.fulfillment?.type === 'pickup';
+  const reference = customerOrderReference(order);
+  const paymentNotice = captured ? copy('tracker.captureRecorded')
+    : order.payment?.state === 'AUTHORIZED' ? copy('tracker.authorised')
+    : order.payment?.state === 'RELEASED' ? copy('tracker.releaseRecorded')
+    : order.payment?.state === 'NO_CAPTURE_REQUIRED' ? copy('tracker.noOnlineCapture')
+    : copy('tracker.paymentPending');
+  const paymentLabel = captured ? t('tracking.finalTotalCaptured')
+    : order.payment?.state === 'AUTHORIZED' ? t('tracking.preAuthorizedEstimated')
+    : order.payment?.state === 'PAYMENT_ACTION_REQUIRED' ? t('tracking.actionReauthorize') : t('tracking.pending');
+  const reauthNeeded = order.payment?.state === 'PAYMENT_ACTION_REQUIRED';
+  const reauthAmount = observedMoney(order.finalOrder?.total) || observedMoney(order.currentOrder?.total);
+  const pickingLabel = order.picking?.status === 'IN_PROGRESS' ? copy('tracker.inProgress')
+    : order.picking?.status === 'COMPLETED' ? copy('tracker.preparationComplete')
+    : order.picking?.status === 'CANCELLED' ? t('order.statusCancelled') : copy('tracker.pendingItems');
+  const tabs = [
+    { id: 'items' as const, label: `${t('tracking.pickingItems')} (${order.picking?.items?.length || 0})` },
+    { id: 'timeline' as const, label: `${t('tracking.timeline')} (${order.events?.length || 0})` },
+    { id: 'payment' as const, label: t('tracking.paymentAuthorization') },
+    ...(order.receipt?.available ? [{ id: 'receipt' as const, label: order.receipt.isVatReceipt ? 'VAT receipt' : 'Receipt' }] : []),
+  ];
 
-  // Status mapping for visual badge
-  const getStatusBadge = () => {
-    switch (order.status) {
-      case 'SUBMITTED':
-        return { label: t('order.statusSubmitted'), bg: 'bg-blue-100 text-blue-800 border-blue-200' };
-      case 'ACCEPTED':
-      case 'orderAccepted':
-      case 'STORE_ACCEPTED':
-      case 'CONFIRMED':
-      case 'ORDER_CONFIRMED':
-        return { label: t('order.statusAccepted'), bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-      case 'PICKING':
-      case 'preparing':
-      case 'PICKING_STARTED':
-        return { label: t('order.statusPicking'), bg: 'bg-amber-100 text-amber-800 border-amber-200' };
-      case 'PICKING_WITH_CHANGES':
-        return { label: t('order.statusPickingWithChanges'), bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
-      case 'PICKED':
-      case 'PICKING_COMPLETE':
-      case 'readyForPickup':
-        return { label: t('order.statusPickedPacked'), bg: 'bg-teal-100 text-teal-800 border-teal-200' };
-      case 'READY':
-      case 'READY_FOR_PICKUP':
-        return { label: t('order.statusReadyCollection'), bg: 'bg-teal-100 text-teal-800 border-teal-200' };
-      case 'PAYMENT_FINALISING':
-        return { label: t('order.statusPaymentFinalising'), bg: 'bg-rose-100 text-rose-800 border-rose-200' };
-      case 'READY_FOR_COURIER':
-        return { label: t('order.statusReadyCourier'), bg: 'bg-purple-100 text-purple-800 border-purple-200' };
-      case 'COURIER_ASSIGNED':
-      case 'courierAssigned':
-      case 'courierAtStore':
-        return { label: t('order.statusCourierAssigned'), bg: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
-      case 'OUT_FOR_DELIVERY':
-      case 'outForDelivery':
-      case 'DISPATCHING':
-        return { label: t('order.statusOutForDelivery'), bg: 'bg-sky-100 text-sky-800 border-sky-200' };
-      case 'DELIVERED':
-      case 'delivered':
-        return { label: t('order.statusDelivered'), bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-      case 'CANCELLED':
-      case 'ORDER_CANCELLED':
-      case 'ORDER_CANCELLED_UNAVAILABLE_ITEM':
-        return { label: t('order.statusCancelled'), bg: 'bg-red-100 text-red-800 border-red-200' };
-      default:
-        return { label: String(order.status), bg: 'bg-gray-100 text-gray-800 border-gray-200' };
-    }
-  };
+  return <div id="order-tracking-container" className="min-w-0 space-y-4">
+    {onBackToList && <button type="button" onClick={onBackToList} className="rounded-lg px-2 py-2 text-sm font-semibold text-gray-600 hover:text-gray-950">← {t('tracking.allOrders')}</button>}
+    {feedback && <div role="status" className="flex items-center justify-between gap-3 rounded-xl bg-gray-900 p-3 text-sm text-white"><span>{feedback}</span><button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss message">×</button></div>}
+    {pollFailed && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{copy('tracker.updateFailed')}</p>}
+    <OrderProgressHero order={order} />
 
-  // Payment status badge
-  const getPaymentBadge = () => {
-    switch (order.payment?.state) {
-      case 'TOKENIZED':
-        return { label: t('tracking.cardTokenized'), bg: 'bg-gray-100 text-gray-700' };
-      case 'AUTHORIZED':
-        return { label: t('tracking.preAuthorizedEstimated'), bg: 'bg-blue-100 text-blue-800' };
-      case 'REAUTHORIZING':
-      case 'PAYMENT_ACTION_REQUIRED':
-        return { label: t('tracking.actionReauthorize'), bg: 'bg-rose-100 text-rose-800' };
-      case 'CAPTURED':
-        return { label: t('tracking.finalTotalCaptured'), bg: 'bg-emerald-100 text-emerald-800' };
-      default:
-        return { label: order.payment?.state || t('tracking.pending'), bg: 'bg-gray-100 text-gray-700' };
-    }
-  };
-
-  const statusBadge = getStatusBadge();
-  const paymentBadge = getPaymentBadge();
-  const isReauthNeeded =
-    order.status === 'PAYMENT_FINALISING' ||
-    order.payment?.state === 'PAYMENT_ACTION_REQUIRED';
-
-  const finalTotal = order.finalOrder?.total !== undefined ? order.finalOrder.total : order.currentOrder.total;
-  const authorizedMax = order.payment?.authorizationMaximum !== undefined ? order.payment.authorizationMaximum : (order.payment?.authorizedAmount ?? 0);
-
-  return (
-    <div id="order-tracking-container" className="space-y-4">
-      {/* Toast Feedback */}
-      {feedbackMessage && (
-        <div className="p-3 rounded-xl bg-gray-900 text-white text-xs flex items-center justify-between shadow-lg animate-in fade-in">
-          <span>{feedbackMessage}</span>
-          <button
-            type="button"
-            onClick={() => setFeedbackMessage(null)}
-            className="text-gray-400 hover:text-white font-bold ml-2"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Customer-first tracker summary. Detailed grocery picking/payment truth remains below. */}
-      <OrderProgressHero order={order} />
-
-      {/* Top Header Card */}
-      <div className="p-5 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              {onBackToList && (
-                <button
-                  type="button"
-                  onClick={onBackToList}
-                  className="text-xs font-semibold text-gray-500 hover:text-gray-800"
-                >
-                  ← {t('tracking.allOrders')}
-                </button>
-              )}
-              <span className="text-xs font-bold text-gray-400">{order.displayId}</span>
-            </div>
-            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 mt-0.5">
-              <StoreIcon className="w-4 h-4 text-gray-500" />
-              <span>{order.storeName}</span>
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-xs font-bold px-3 py-1 rounded-full border ${statusBadge.bg}`}
-            >
-              {statusBadge.label}
-            </span>
-          </div>
-        </div>
-
-        {/* Fulfillment & Scheduling Summary */}
-        <div className="flex flex-wrap items-center justify-between p-3 rounded-2xl bg-gray-50 border border-gray-100 text-xs gap-3">
-          <div className="flex items-center gap-2">
-            {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? (
-              <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
-            )}
-            <div>
-              <span className="font-bold text-gray-900">
-                {(order.fulfillment?.type || (order as any)?.fulfillmentType) === 'delivery' ? t('tracking.courierDelivery') : t('tracking.storeCollection')}
-              </span>
-              <p className="text-gray-500 text-[11px]">
-                {order.scheduledTime?.type === 'SCHEDULED' && order.scheduledTime.slot
-                  ? `${t('tracking.scheduled')}: ${order.scheduledTime.slot.dayLabel} • ${order.scheduledTime.slot.formatted}`
-                  : `${t('tracking.asapDelivery')}${order.delivery?.courier?.eta ? ` (${t('tracking.eta')}: ${order.delivery.courier.eta})` : ''}`}
-              </p>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <span className="text-[11px] text-gray-400 block">{t('tracking.finalChargedTotal')}</span>
-            <span className="text-sm font-extrabold text-gray-900">
-              {formatCurrency(finalTotal, currencySymbol)}
-            </span>
-          </div>
-        </div>
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white p-4 text-sm">
+      <div><strong>{pickup ? t('tracking.storeCollection') : t('tracking.courierDelivery')}</strong>
+        <p className="mt-1 text-xs text-gray-600">{order.scheduledTime?.type === 'SCHEDULED' && order.scheduledTime.slot
+          ? `${t('tracking.scheduled')}: ${order.scheduledTime.slot.dayLabel || ''} ${order.scheduledTime.slot.formatted || order.scheduledTime.slot.startTime || ''}`
+          : pickup ? copy('tracker.asapCollection') : t('tracking.asapDelivery')}</p>
       </div>
-
-      {/* ORDER CANCELLED BANNER */}
-      {(order.status === 'CANCELLED' || order.status === 'ORDER_CANCELLED' || order.status === 'ORDER_CANCELLED_UNAVAILABLE_ITEM') && (
-        <div
-          id="order-cancelled-alert"
-          className="p-4 rounded-3xl bg-red-50 border-2 border-red-200 text-red-950 space-y-2 shadow-xs"
-        >
-          <div className="flex items-center gap-2">
-            <X className="w-5 h-5 text-red-600 shrink-0" />
-            <span className="font-bold text-sm text-red-900">{t('tracking.orderCancelled')}</span>
-          </div>
-          <p className="text-xs text-red-800">
-            {order.events?.find((e) => e.status === 'CANCELLED')?.note ||
-              t('tracking.cancelledFallback')}
-          </p>
-          <div className="text-[11px] text-red-700 font-medium">
-            {t('tracking.paymentHoldReleased')}
-          </div>
-        </div>
-      )}
-
-      {/* REAUTHORIZATION REQUIRED ALERT (If final basket exceeded ceiling) */}
-      {isReauthNeeded && (
-        <div
-          id="reauthorization-prompt-card"
-          className="p-4 rounded-3xl bg-rose-50 border-2 border-rose-300 text-rose-950 space-y-3 shadow-md animate-in slide-in-from-top-2"
-        >
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-sm font-bold text-rose-900">
-                {t('tracking.reauthRequired')}
-              </h3>
-              <p className="text-xs text-rose-800 mt-1 leading-relaxed">
-                {t('tracking.reauthPrefix')}{' '}
-                <strong className="font-bold">{formatCurrency(finalTotal, currencySymbol)}</strong>, {t('tracking.reauthExceeds')}{' '}
-                <strong className="font-bold">{formatCurrency(authorizedMax, currencySymbol)}</strong> {t('tracking.by')}{' '}
-                <span className="underline font-bold">
-                  {formatCurrency(Math.max(0, moneyToMajor(finalTotal) - moneyToMajor(authorizedMax)), currencySymbol)}
-                </span>
-                . {t('tracking.reauthSuffix')}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-200">
-            <button
-              type="button"
-              onClick={handleApproveReauthorization}
-              disabled={isReauthorizing}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              {isReauthorizing ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>{t('tracking.authorizing')}</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{t('tracking.approvePay')} {formatCurrency(finalTotal, currencySymbol)}</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* GROCERY LIFECYCLE INFO BANNER */}
-      <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-emerald-950 flex items-center justify-between text-xs gap-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
-          <p className="text-[11px] leading-tight">
-            <strong>{t('tracking.lifecycleTitle')}:</strong> {t('tracking.lifecycleNotice')}
-          </p>
-        </div>
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${paymentBadge.bg}`}>
-          {paymentBadge.label}
-        </span>
-      </div>
-
-      {/* NAVIGATION TABS */}
-      <div className="flex items-center border-b border-gray-200 text-xs font-bold text-gray-500">
-        <button
-          type="button"
-          onClick={() => setActiveTab('items')}
-          className={`pb-2 px-4 flex items-center gap-1.5 border-b-2 transition-colors ${
-            activeTab === 'items'
-              ? 'border-emerald-600 text-emerald-700 font-extrabold'
-              : 'border-transparent hover:text-gray-700'
-          }`}
-        >
-          <Package className="w-3.5 h-3.5" />
-          <span>{t('tracking.pickingItems')} ({order.picking.items.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('timeline')}
-          className={`pb-2 px-4 flex items-center gap-1.5 border-b-2 transition-colors ${
-            activeTab === 'timeline'
-              ? 'border-emerald-600 text-emerald-700 font-extrabold'
-              : 'border-transparent hover:text-gray-700'
-          }`}
-        >
-          <Clock className="w-3.5 h-3.5" />
-          <span>{t('tracking.timeline')} ({order.events?.length || 0})</span>
-        </button>
-
-        {order.receipt?.available && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('receipt')}
-            className={`pb-2 px-4 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'receipt'
-                ? 'border-emerald-600 text-emerald-700 font-extrabold'
-                : 'border-transparent hover:text-gray-700'
-            }`}
-          >
-            <ReceiptText className="w-3.5 h-3.5" />
-            <span>{order.receipt.isVatReceipt ? 'VAT receipt' : 'Receipt'}</span>
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('payment')}
-          className={`pb-2 px-4 flex items-center gap-1.5 border-b-2 transition-colors ${
-            activeTab === 'payment'
-              ? 'border-emerald-600 text-emerald-700 font-extrabold'
-              : 'border-transparent hover:text-gray-700'
-          }`}
-        >
-          <CreditCard className="w-3.5 h-3.5" />
-          <span>{t('tracking.paymentAuthorization')}</span>
-        </button>
-      </div>
-
-      {/* TAB 1: ITEM-BY-ITEM PICKING STATUS */}
-      {activeTab === 'items' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs px-1">
-            <span className="font-bold text-gray-600">{t('tracking.storePickingState')}</span>
-            <span className="text-gray-400 text-[11px]">
-              {t('tracking.status')}: <strong className="text-gray-700">{order.picking.status}</strong>
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {order.picking.items.map((item) => {
-              const isSubstituted = item.state === 'SUBSTITUTED';
-              const isAmended = item.state === 'QUANTITY_AMENDED';
-              const isRemoved = item.state === 'REMOVED';
-              const isPicked = item.state === 'PICKED';
-              const isPending = item.state === 'PENDING';
-
-              return (
-                <div
-                  key={item.id}
-                  className={`p-3.5 rounded-2xl border transition-all text-xs ${
-                    isSubstituted
-                      ? 'bg-indigo-50/50 border-indigo-200'
-                      : isAmended
-                      ? 'bg-amber-50/50 border-amber-200'
-                      : isRemoved
-                      ? 'bg-gray-50 border-gray-200 opacity-75'
-                      : isPicked
-                      ? 'bg-white border-gray-100 shadow-2xs'
-                      : 'bg-white border-dashed border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5 flex-1">
-                      <div className="w-12 h-12 rounded-xl bg-gray-50 overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center">
-                        {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name || item.plu} className="w-full h-full object-cover" />
-                        ) : (
-                          <Package className="w-5 h-5 text-gray-300" />
-                        )}
-                      </div>
-                      {/* State Icon Indicator */}
-                      <div className="mt-0.5">
-                        {isPicked && (
-                          <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                            <Check className="w-3 h-3" />
-                          </div>
-                        )}
-                        {isSubstituted && (
-                          <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center">
-                            <Repeat className="w-3 h-3" />
-                          </div>
-                        )}
-                        {isAmended && (
-                          <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
-                            <AlertTriangle className="w-3 h-3" />
-                          </div>
-                        )}
-                        {isRemoved && (
-                          <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
-                            <X className="w-3 h-3" />
-                          </div>
-                        )}
-                        {isPending && (
-                          <div className="w-5 h-5 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
-                            <Clock className="w-3 h-3" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Item details */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-gray-900">{item?.name || item?.plu || t('orders.item')}</span>
-                          {isSubstituted && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                              {t('tracking.substituted')}
-                            </span>
-                          )}
-                          {isAmended && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                              {t('tracking.quantityAdjusted')}
-                            </span>
-                          )}
-                          {isRemoved && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
-                              {t('tracking.outOfStockRefunded')}
-                            </span>
-                          )}
-                          {isPicked && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                              {t('tracking.picked')}
-                            </span>
-                          )}
-                          {isPending && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                              {t('tracking.awaitingPicker')}
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-gray-500 text-[11px] mt-0.5">
-                          {t('tracking.requested')}: {item.originalQuantity} × {formatCurrency(moneyToMajor(item.originalPrice) / (item.originalQuantity || 1), currencySymbol)}
-                          {item.pickedQuantity > 0 && ` • ${t('tracking.supplied')}: ${item.pickedQuantity}`}
-                        </p>
-
-                        {/* Substitution Details Box */}
-                        {isSubstituted && item.substitution && (
-                          <div className="mt-2 p-2.5 rounded-xl bg-white border border-indigo-100 space-y-1">
-                            <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-950">
-                              <Repeat className="w-3 h-3 text-indigo-600" />
-                              <span>{t('tracking.substitute')}: {item.substitution.substituteName}</span>
-                            </div>
-                            <p className="text-[11px] text-gray-600">
-                              {item.substitution.reason}
-                            </p>
-                            <div className="flex items-center gap-2 pt-1 text-[11px]">
-                              <span className="text-gray-400 line-through">
-                                {t('tracking.shelf')}: {formatCurrency(item.substitution.substitutePrice, currencySymbol)}
-                              </span>
-                              <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                                {t('tracking.youPay')}: {formatCurrency(item.finalPrice, currencySymbol)} ({t('checkout.bestMatchGuarantee')})
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Quantity Amendment Box */}
-                        {isAmended && item.amendment && (
-                          <div className="mt-2 p-2 rounded-xl bg-white border border-amber-100 text-[11px] text-amber-900">
-                            <strong>{t('tracking.note')}:</strong> {item.amendment.reason}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Price column */}
-                    <div className="text-right shrink-0">
-                      <span className={`font-extrabold text-xs block ${isRemoved ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                        {formatCurrency(item.finalPrice, currencySymbol)}
-                      </span>
-                      {item.finalPrice !== item.originalPrice && (
-                        <span className="text-[10px] text-gray-400 line-through block">
-                          {t('tracking.was')} {formatCurrency(item.originalPrice, currencySymbol)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-            {activeTab === 'receipt' && order.receipt?.available && (
-        <div className="p-5 rounded-3xl bg-white border border-gray-100 space-y-4 text-xs">
-          <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-3">
-            <div>
-              <h2 className="text-base font-extrabold text-gray-900">
-                {order.receipt.isVatReceipt ? 'VAT receipt' : 'Paid receipt'}
-              </h2>
-              <p className="text-gray-500 mt-1">{order.receipt.legalName || brandName} • {order.displayId}</p>
-              {order.receipt.legalAddress && <p className="text-gray-500">{order.receipt.legalAddress}</p>}
-              {order.receipt.isVatReceipt && order.receipt.vatRegistrationNumber && (
-                <p className="font-semibold text-gray-700 mt-1">VAT registration: {order.receipt.vatRegistrationNumber}</p>
-              )}
-            </div>
-            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold">Paid</span>
-          </div>
-
-          <div className="space-y-2">
-            {(order.receipt.items || []).map((item) => (
-              <div key={item.id || item.plu} className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gray-50 overflow-hidden border border-gray-100 flex items-center justify-center shrink-0">
-                  {item.imageUrl ? <img src={item.imageUrl} alt={item.name || item.plu} className="w-full h-full object-cover" /> : <Package className="w-4 h-4 text-gray-300" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-gray-900 truncate">{item.name || item.plu}</div>
-                  <div className="text-gray-500">{item.quantity} × {formatCurrency(item.unitPrice || item.price, currencySymbol)}</div>
-                </div>
-                <div className="font-bold text-gray-900">
-                  {formatCurrency(item.totalPrice || { amount: (item.unitPrice || item.price).amount * item.quantity, currency: (item.unitPrice || item.price).currency }, currencySymbol)}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {(order.receipt.discounts || []).map((discount) => (
-            <div key={discount.id || discount.code} className="flex justify-between text-emerald-700">
-              <span>{discount.title}</span><span>-{formatCurrency(discount.amount, currencySymbol)}</span>
-            </div>
-          ))}
-          {(order.receipt.charges || []).map((charge) => (
-            <div key={charge.id} className="flex justify-between text-gray-600">
-              <span>{charge.title}</span><span>{formatCurrency(charge.amount, currencySymbol)}</span>
-            </div>
-          ))}
-          {order.receipt.tax && (
-            <div className="flex justify-between text-gray-700">
-              <span>{order.receipt.isVatReceipt ? 'VAT' : 'Tax'}</span>
-              <span>{formatCurrency(order.receipt.tax, currencySymbol)}</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-gray-200 pt-3 text-sm font-extrabold text-gray-900">
-            <span>Total paid</span><span>{formatCurrency(finalTotal, currencySymbol)}</span>
-          </div>
-          {!order.receipt.isVatReceipt && (
-            <p className="text-[10px] text-gray-400">
-              This is a paid receipt. It is only labelled as a VAT receipt when the merchant VAT registration and authoritative VAT amount are configured.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: ORDER TIMELINE */}
-      {activeTab === 'timeline' && (
-        <div className="p-4 rounded-3xl bg-white border border-gray-100 space-y-4 text-xs">
-          <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200">
-            {order.events?.map((evt, idx) => (
-              <div key={evt.id || idx} className="relative">
-                <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center ring-4 ring-white">
-                  <Check className="w-2.5 h-2.5" />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-900">{evt.title}</span>
-                    <span className="text-[11px] text-gray-400">
-                      {formatDateTime(evt.timestamp, { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  {evt.description && (
-                    <p className="text-gray-500 text-[11px] mt-0.5">{evt.description}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: PAYMENT & AUTHORIZATION */}
-      {activeTab === 'payment' && (
-        <div className="p-5 rounded-3xl bg-white border border-gray-100 space-y-4 text-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <span className="font-bold text-gray-900">{t('tracking.paymentBreakdown')}</span>
-            <span className="text-gray-500 text-[11px]">{order.payment.method}</span>
-          </div>
-
-          <div className="space-y-2 text-gray-600">
-            <div className="flex justify-between">
-              <span>{t('tracking.originalEstimate')}</span>
-              <span>{formatCurrency(order.originalBasket?.subtotal || order.currentOrder.subtotal, currencySymbol)}</span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>{t('tracking.approvedCeiling')}</span>
-              <span className="font-bold text-gray-900">
-                {formatCurrency(authorizedMax, currencySymbol)}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>{t('tracking.deliveryCharge')}</span>
-              <span>{formatCurrency(order.currentOrder.deliveryCharge, currencySymbol)}</span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>{t('tracking.bagServiceFees')}</span>
-              <span>{formatCurrency(moneyToMajor(order.currentOrder.bagFee) + moneyToMajor(order.currentOrder.serviceCharge), currencySymbol)}</span>
-            </div>
-
-            <div className="pt-2 border-t border-gray-200 flex justify-between font-extrabold text-sm text-gray-900">
-              <span>{t('tracking.finalCaptured')}</span>
-              <span className="text-emerald-700">{formatCurrency(finalTotal, currencySymbol)}</span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
-            <p className="font-bold text-gray-700">{t('tracking.auditHistory')}:</p>
-            {order.payment.history.map((h, i) => (
-              <div key={i} className="flex items-center justify-between text-[10px]">
-                <span>
-                  • {h.state} {h.note ? `— ${h.note}` : ''}
-                </span>
-                <span className="text-gray-400">
-                  {formatDateTime(h.timestamp, { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* INTERACTIVE DEMO SCENARIOS & STEP SIMULATOR CONTROLS */}
-      {isDemo && (
-      <div className="p-4 rounded-3xl bg-gray-900 text-white space-y-3 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-gray-200">
-            <Sliders className="w-4 h-4 text-emerald-400" />
-            <span>Interactive Lifecycle Simulator</span>
-          </div>
-          <span className="text-[10px] text-gray-400 font-mono">BFF Post-Checkout</span>
-        </div>
-
-        {/* Advance step button */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSimulateNextStep}
-            disabled={isAdvancing}
-            className="flex-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isAdvancing ? 'animate-spin' : ''}`} />
-            <span>Advance Next Picking / Courier Step</span>
-          </button>
-        </div>
-
-        {/* Demo Scenario Selector */}
-        <div className="pt-2 border-t border-gray-800">
-          <span className="text-[11px] font-bold text-gray-400 block mb-2">
-            Load Pre-configured Scenarios:
-          </span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[11px]">
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('A')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-emerald-400 font-bold">Scenario A</strong>
-              <span className="text-gray-300 text-[10px]">Perfect Pick (Auto-Capture)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('B')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-indigo-400 font-bold">Scenario B</strong>
-              <span className="text-gray-300 text-[10px]">Best Match & Amendments</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('C')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-sky-400 font-bold">Scenario C</strong>
-              <span className="text-gray-300 text-[10px]">Customer Chosen Substitute</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('D')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-rose-400 font-bold">Scenario D</strong>
-              <span className="text-gray-300 text-[10px]">Reauthorization Exceeded</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('E')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-amber-400 font-bold">Scenario E</strong>
-              <span className="text-gray-300 text-[10px]">Closed Store Pre-Order</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleLoadScenario('F')}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-left border border-gray-700 transition-colors"
-            >
-              <strong className="block text-teal-400 font-bold">Scenario F</strong>
-              <span className="text-gray-300 text-[10px]">Weight-Adjusted Produce</span>
-            </button>
-          </div>
-        </div>
-      </div>
-      )}
+      <div className="text-right"><span className="block text-xs text-gray-500">{captured ? copy('tracker.captured') : copy('tracker.total')}</span><strong className="text-base">{money(total)}</strong></div>
     </div>
-  );
+
+    {stage === 'CANCELLED' && <div id="order-cancelled-alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+      <strong>{t('tracking.orderCancelled')}</strong><p className="mt-1">{order.payment?.state === 'RELEASED' ? copy('tracker.releaseRecorded') : copy('tracker.paymentPending')}</p>
+    </div>}
+    {reauthNeeded && <div id="reauthorization-prompt-card" className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+      <h2 className="font-bold">{t('tracking.reauthRequired')}</h2>
+      <p>{copy('tracker.total')}: {money(reauthAmount)}</p>
+      <p>{t('tracking.approvedCeiling')}: {money(authorised)}</p>
+      <button type="button" disabled={busy || !reauthAmount} onClick={() => {
+        if (!reauthAmount) return;
+        void runAction(async (client) => {
+          if (!client.reauthorizeOrderPayment) throw new Error('Reauthorisation unavailable');
+          return client.reauthorizeOrderPayment(order.id, reauthAmount);
+        });
+      }} className="rounded-xl bg-rose-700 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? t('tracking.authorizing') : `${t('tracking.approvePay')} ${money(reauthAmount)}`}</button>
+    </div>}
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-700"><p>{paymentNotice}</p><span className="rounded-full bg-white px-2 py-1 font-semibold">{paymentLabel}</span></div>
+
+    <div role="tablist" aria-label="Order details" className="flex max-w-full gap-1 overflow-x-auto border-b border-gray-200">
+      {tabs.map((tab) => <button key={tab.id} id={`tracker-tab-${tab.id}`} role="tab" type="button" aria-selected={activeTab === tab.id} aria-controls={`tracker-panel-${tab.id}`}
+        onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
+          if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const i = tabs.findIndex((candidate) => candidate.id === tab.id);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (i + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          setActiveTab(tabs[next].id);
+          document.getElementById(`tracker-tab-${tabs[next].id}`)?.focus();
+        }} tabIndex={activeTab === tab.id ? 0 : -1}
+        className={`shrink-0 border-b-2 px-3 py-3 text-xs font-bold ${activeTab === tab.id ? 'border-gray-900 text-gray-950' : 'border-transparent text-gray-500'}`}>{tab.label}</button>)}
+    </div>
+    <section role="tabpanel" id={`tracker-panel-${activeTab}`} aria-labelledby={`tracker-tab-${activeTab}`} tabIndex={0} className="min-w-0">
+      {activeTab === 'items' && <div className="space-y-3"><p className="text-xs font-semibold text-gray-600">{pickingLabel}</p><OrderPickingItems order={order} /></div>}
+      {activeTab === 'timeline' && <div className="rounded-2xl border border-gray-100 bg-white p-4">
+        {!order.events?.length && <p className="text-sm text-gray-600">{copy('tracker.noTimeline')}</p>}
+        <ol className="space-y-4">{order.events?.map((event, index) => <li key={event.id || index} className="border-l-2 border-gray-200 pl-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{event.title}</strong><time className="text-xs text-gray-500">{formatDateTime(event.timestamp, { hour: '2-digit', minute: '2-digit' })}</time></div>{event.description && <p className="mt-1 text-gray-600">{event.description}</p>}</li>)}</ol>
+      </div>}
+      {activeTab === 'payment' && <div className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 text-sm">
+        <h2 className="font-bold">{t('tracking.paymentBreakdown')}</h2>{order.payment?.method && <p className="text-xs text-gray-600">{order.payment.method}</p>}
+        <dl className="space-y-3">
+          <div className="flex justify-between gap-3"><dt>{t('tracking.originalEstimate')}</dt><dd>{money(order.originalBasket?.total)}</dd></div>
+          <div className="flex justify-between gap-3"><dt>{t('tracking.approvedCeiling')}</dt><dd>{money(authorised)}</dd></div>
+          {(order.currentOrder?.charges || []).map((charge) => <div key={charge.id} className="flex justify-between gap-3"><dt>{charge.title}</dt><dd>{money(charge.amount)}</dd></div>)}
+          <div className="flex justify-between gap-3 border-t border-gray-100 pt-3 font-bold"><dt>{captured ? copy('tracker.captured') : copy('tracker.total')}</dt><dd>{money(total)}</dd></div>
+        </dl>
+        {!captured && <p className="text-xs text-gray-500">{copy('tracker.paymentUnknown')}</p>}
+        {!!order.payment?.history?.length && <div className="space-y-2 border-t border-gray-100 pt-3"><h3 className="text-xs font-semibold">{t('tracking.auditHistory')}</h3>{order.payment.history.map((entry, index) => <div key={`${entry.timestamp}:${index}`} className="flex flex-wrap justify-between gap-2 text-xs text-gray-600"><span>{entry.state}{entry.amount ? ` · ${money(entry.amount)}` : ''}</span><time>{formatDateTime(entry.timestamp, { hour: '2-digit', minute: '2-digit' })}</time></div>)}</div>}
+      </div>}
+      {activeTab === 'receipt' && order.receipt?.available && <div className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 text-sm">
+        <h2 className="font-bold">{order.receipt.isVatReceipt ? 'VAT receipt' : 'Receipt'}</h2>
+        <p>{order.receipt.legalName || brandName}{reference ? ` · ${reference}` : ''}</p>
+        {order.receipt.legalAddress && <p>{order.receipt.legalAddress}</p>}
+        {order.receipt.isVatReceipt && order.receipt.vatRegistrationNumber && <p>VAT: {order.receipt.vatRegistrationNumber}</p>}
+        {(order.receipt.items || []).map((item) => <div key={item.id || item.plu} className="flex items-center gap-3">
+          <OrderProductImage order={order} plu={item.plu} name={item.name || item.plu} snapshot={item.imageUrl} />
+          <div className="min-w-0 flex-1"><strong>{item.name || item.plu}</strong><p className="text-xs text-gray-600">× {item.quantity} · {money(item.unitPrice || item.price)}</p></div>
+          <span>{money(item.totalPrice || (observedMoney(item.unitPrice || item.price) ? { amount: (item.unitPrice || item.price).amount * item.quantity, currency: (item.unitPrice || item.price).currency } : null))}</span>
+        </div>)}
+        {(order.receipt.discounts || []).map((discount) => <div key={discount.id || discount.code} className="flex justify-between gap-3"><span>{discount.title}</span><span>−{money(discount.amount)}</span></div>)}
+        {(order.receipt.charges || []).map((charge) => <div key={charge.id} className="flex justify-between gap-3"><span>{charge.title}</span><span>{money(charge.amount)}</span></div>)}
+        {order.receipt.tax && <div className="flex justify-between"><span>{order.receipt.isVatReceipt ? 'VAT' : 'Tax'}</span><span>{money(order.receipt.tax)}</span></div>}
+        <div className="flex justify-between border-t border-gray-100 pt-3 font-bold"><span>{captured ? copy('tracker.captured') : copy('tracker.total')}</span><span>{money(total)}</span></div>
+      </div>}
+    </section>
+
+    {isDemo && <div className="space-y-3 rounded-2xl bg-gray-900 p-4 text-white">
+      <h2 className="text-sm font-bold">Interactive Lifecycle Simulator</h2>
+      <button type="button" onClick={advanceDemo} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-semibold disabled:opacity-50"><RefreshCw className={busy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden="true" />Advance Next Picking / Courier Step</button>
+      <div className="flex flex-wrap gap-2">{(['A', 'B', 'C', 'D', 'E', 'F'] as DemoScenario[]).map((scenario) => <button type="button" key={scenario} onClick={() => loadScenario(scenario)} disabled={busy} className="rounded-lg bg-gray-800 px-3 py-2 text-xs disabled:opacity-50">Scenario {scenario}</button>)}</div>
+    </div>}
+  </div>;
 };
