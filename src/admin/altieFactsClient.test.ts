@@ -42,6 +42,20 @@ describe('Altie facts authenticated HTTP client', () => {
     await expect(client.mutate({ action: 'publish', expectedRevision: 0 })).rejects.toMatchObject({ code: 'FACTS_RESPONSE_INVALID' });
   });
 
+  it('rejects inconsistent publication receipts and accepts a matching published revision', async () => {
+    const state = { ...emptyAltieFactsState(), revision: 1, publishedRevision: 1, publishedAt: '2026-09-26T18:00:00Z' };
+    const receipt = { revision: 1, publishedRevision: 1, action: 'publish', actorId: 'super-a', at: state.publishedAt };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({ state, receipt: { ...receipt, publishedRevision: 0 } }))
+      .mockResolvedValueOnce(response({ state: { ...state, publishedRevision: 0 }, receipt: { ...receipt, publishedRevision: 0 } }))
+      .mockResolvedValueOnce(response({ state, receipt }));
+    const client = new HttpAltieFactsClient(fetcher);
+    const input = { action: 'publish' as const, expectedRevision: 0 };
+    await expect(client.mutate(input)).rejects.toMatchObject({ code: 'FACTS_RESPONSE_INVALID' });
+    await expect(client.mutate(input)).rejects.toMatchObject({ code: 'FACTS_RESPONSE_INVALID' });
+    await expect(client.mutate(input)).resolves.toMatchObject({ state, receipt });
+  });
+
   it('sends the reviewed revision and never automatically retries a conflict', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({ code: 'FACTS_REVISION_CONFLICT', error: 'not rendered' }, 409));
     await expect(new HttpAltieFactsClient(fetcher).mutate({ action: 'publish', expectedRevision: 7 })).rejects.toMatchObject({ code: 'FACTS_REVISION_CONFLICT', status: 409 });

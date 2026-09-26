@@ -79,6 +79,8 @@ export class HttpAltieFactsClient implements AltieFactsClient {
     const state = AltieFactsStateSchema.safeParse(body?.state);
     if (!state.success || state.data.revision !== input.expectedRevision + 1 ||
         body?.receipt?.revision !== state.data.revision || body?.receipt?.action !== input.action ||
+        body?.receipt?.publishedRevision !== state.data.publishedRevision ||
+        (input.action === 'publish' && state.data.publishedRevision !== state.data.revision) ||
         typeof body?.receipt?.actorId !== 'string' || typeof body?.receipt?.at !== 'string') {
       throw new AltieFactsClientError('FACTS_RESPONSE_INVALID');
     }
