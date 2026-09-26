@@ -34,6 +34,10 @@ import { useFavourites } from '../../hooks/useFavourites';
 import { DietaryPreferencesModal, CatalogFilterState } from '../catalog/DietaryPreferencesModal';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { isProductMatchingFilters } from '../../domain/allergens';
+import {
+  shouldBlockCatalog,
+  shouldShowStaleCatalogNotice,
+} from '../catalog/catalogFreshnessPresentation';
 
 interface HomeScreenProps {
   stories: Story[];
@@ -43,6 +47,7 @@ interface HomeScreenProps {
   summaries: Record<string, ProductAvailabilitySummary>;
   productsLoading: boolean;
   catalogError?: string | null;
+  catalogStale?: boolean;
   onRetryCatalog?: () => void;
   selectedStore: Store | null;
   onOpenStorePicker: (product?: Product) => void;
@@ -82,6 +87,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   summaries,
   productsLoading,
   catalogError,
+  catalogStale = false,
   onRetryCatalog,
   selectedStore,
   onOpenStorePicker,
@@ -147,9 +153,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 
   const [resultsTransitioning, setResultsTransitioning] = useState(false);
+  const productTransitionSignature = useMemo(
+    () =>
+      products
+        .map((product) => {
+          const rawPrice = product.price;
+          const price =
+            typeof rawPrice === 'number'
+              ? rawPrice
+              : rawPrice && typeof rawPrice === 'object' && 'amount' in rawPrice
+                ? rawPrice.amount
+                : product.priceMinor ?? '';
+          return [
+            product.plu,
+            price,
+            product.stockStatus || '',
+            product.active === false ? '0' : '1',
+          ].join(':');
+        })
+        .join('|'),
+    [products]
+  );
 
-  // Give catalogue/filter changes a restrained visual handoff without animating
-  // users who prefer reduced motion. The product data itself updates immediately.
+  // Give genuine catalogue/filter changes a restrained visual handoff without
+  // animating a no-op background refresh that only returned a new array instance.
   useEffect(() => {
     if (
       typeof window === 'undefined' ||
@@ -171,7 +198,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       window.cancelAnimationFrame(startFrame);
       if (settleFrame) window.cancelAnimationFrame(settleFrame);
     };
-  }, [selectedCategoryId, searchQuery, activeDealFilter?.id, filterSignature, products]);
+  }, [
+    selectedCategoryId,
+    searchQuery,
+    activeDealFilter?.id,
+    filterSignature,
+    productTransitionSignature,
+  ]);
 
   const bringProductsIntoView = useCallback(() => {
     const run = () => {
@@ -266,6 +299,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 
   // Canonical renderable products adhering strictly to identical availability & rule evaluations as ProductCard
+  const catalogFreshness = useMemo(
+    () => ({
+      error: catalogError,
+      isStale: catalogStale,
+      visibleProductCount: products.length,
+    }),
+    [catalogError, catalogStale, products.length]
+  );
+  const catalogBlocksProducts = shouldBlockCatalog(catalogFreshness);
+  const showStaleCatalogNotice = shouldShowStaleCatalogNotice(catalogFreshness);
+
   const renderableBaseProducts = useMemo(() => {
     return getRenderableProducts(products).filter(matchesFilters);
   }, [products, matchesFilters]);
@@ -739,7 +783,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </span>
             </div>
 
-            {catalogError ? (
+            {showStaleCatalogNotice && (
+              <div
+                role="status"
+                className="mb-3 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs font-semibold text-amber-900 shadow-xs"
+              >
+                Menu refresh is temporarily delayed. Showing the latest confirmed menu while we reconnect.
+              </div>
+            )}
+
+            {catalogBlocksProducts ? (
               <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center max-w-md mx-auto my-8">
                 <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
                   <AlertCircle className="w-6 h-6" />

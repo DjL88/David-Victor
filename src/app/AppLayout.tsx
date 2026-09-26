@@ -339,6 +339,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
     breadcrumbs,
     loading: catalogLoading,
     error: catalogError,
+    isStale: catalogStale,
     navigateToCategory,
     refreshCatalog,
     resetCache,
@@ -803,6 +804,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onOpenAdmin }) => {
               summaries={summaries}
               productsLoading={catalogLoading}
               catalogError={catalogError}
+              catalogStale={catalogStale}
               onRetryCatalog={refreshCatalog}
               selectedStore={selectedStore}
               onOpenStorePicker={(product?: Product) => {
