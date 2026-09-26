@@ -143,33 +143,6 @@ export const OrdersScreen: React.FC<{
   };
 
   if (selectedOrder) {
-        const found = history.find((o) => o.id === selectedOrder.id);
-        if (found) setSelectedOrder(found);
-      }
-    } catch (e) {
-      console.error('Failed to load orders', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!initialOrderId) setSelectedOrder(null);
-    void loadOrders();
-  }, [initialOrderId]);
-
-  const handleCreateDemo = async (scenario: DemoScenario) => {
-    setLoading(true);
-    try {
-      const newOrder = await defaultCommerceClient.createDemoScenarioOrder(scenario);
-      await loadOrders();
-      setSelectedOrder(newOrder);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (selectedOrder) {
     return (
       <div id="orders-screen" className="max-w-3xl mx-auto px-4 py-6">
         <OrderTrackingView
