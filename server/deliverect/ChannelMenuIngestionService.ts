@@ -10,6 +10,13 @@ import {
   getCloudTasksSecurityConfig,
 } from '../cloudTasksSecurity';
 import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
+import {
+  decodeApiActivityCursor,
+  encodeApiActivityCursor,
+  pageMemoryActivity,
+  safeApiActivityErrorCode,
+  type ApiActivityPage,
+} from '../apiActivityJournal';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -582,8 +589,6 @@ export class ChannelMenuIngestionService {
       params.menuId
     );
     const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
-    if (previousProducts.length < 20) return undefined;
-
     const previousKeys = new Set<string>(
       previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
     );
@@ -677,6 +682,29 @@ export class ChannelMenuIngestionService {
           channelLinkId,
           menuId
         ).catch(() => null);
+        const previousReceivedAt = Date.parse(String(previousNormalized?.receivedAt || ''));
+        const candidateReceivedAt = Date.parse(String(job.receivedAt || ''));
+        if (
+          Number.isFinite(previousReceivedAt) &&
+          Number.isFinite(candidateReceivedAt) &&
+          candidateReceivedAt < previousReceivedAt
+        ) {
+          throw new BFFError(
+            'STALE_MENU_SNAPSHOT',
+            'Buffered Menu Push predates the currently published catalogue and was not applied.',
+            409
+          );
+        }
+        const previousProducts = Array.isArray(previousNormalized?.products)
+          ? previousNormalized.products
+          : [];
+        if (previousProducts.length > 0 && parsed.products.length === 0) {
+          throw new BFFError(
+            'EMPTY_MENU_SNAPSHOT_REJECTED',
+            'An empty Menu Push cannot replace a non-empty last-known-good catalogue.',
+            422
+          );
+        }
         const nextKeys = new Set(
           parsed.products.map((product: any) => this.productKey(product)).filter(Boolean)
         );
@@ -892,7 +920,10 @@ export class ChannelMenuIngestionService {
     }
   }
 
-  static async listRecentIngress(tenantId: string, limit: number = 100): Promise<Array<{
+  static async listRecentIngressPage(
+    tenantId: string,
+    options: { limit?: number; cursor?: string | null } = {}
+  ): Promise<ApiActivityPage<{
     eventId: string;
     status: ChannelMenuIngressRecord['status'];
     receivedAt: string;
@@ -907,30 +938,35 @@ export class ChannelMenuIngestionService {
     locationIds?: string[];
     locationNames?: string[];
     byteSize: number;
-    error?: string;
+    hasError: boolean;
     review?: ChannelMenuIngressRecord['review'];
   }>> {
+    const observedAt = new Date().toISOString();
     const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return [];
-    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
-    const db = liveEnvironment() ? getFirestoreDb() : null;
-    let records: ChannelMenuIngressRecord[] = [];
-    if (db) {
-      const snap = await db
-        .collection('tenants')
-        .doc(cleanTenantId)
-        .collection('channelMenuIngress')
-        .orderBy('receivedAt', 'desc')
-        .limit(boundedLimit)
-        .get();
-      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
-    } else {
-      records = Array.from(memoryIngress.values())
-        .filter((record) => record.tenantId === cleanTenantId)
-        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
-        .slice(0, boundedLimit);
+    const boundedLimit = Math.min(200, Math.max(1, Number(options.limit) || 100));
+    const cursor = options.cursor ? decodeApiActivityCursor(options.cursor) : null;
+    if (!cleanTenantId) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'TENANT_SCOPE_REQUIRED',
+      };
     }
-    return records.map((record) => ({
+    if (options.cursor && !cursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_CURSOR',
+      };
+    }
+
+    const toPublicRecord = (record: ChannelMenuIngressRecord) => ({
       eventId: record.eventId,
       status: record.status,
       receivedAt: record.receivedAt,
@@ -945,9 +981,100 @@ export class ChannelMenuIngestionService {
       locationIds: record.locationIds,
       locationNames: record.locationNames,
       byteSize: record.byteSize,
-      error: record.error,
+      hasError: Boolean(record.error),
       review: record.review,
-    }));
+    });
+
+    const memoryPage = () => {
+      const page = pageMemoryActivity(
+        Array.from(memoryIngress.values()).filter((record) => record.tenantId === cleanTenantId),
+        {
+          limit: boundedLimit,
+          cursor: options.cursor,
+          receivedAt: (record) => record.receivedAt,
+          id: (record) => record.eventId,
+        }
+      );
+      return {
+        items: page.items.map(toPublicRecord),
+        nextCursor: page.nextCursor,
+      };
+    };
+
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) {
+      const page = memoryPage();
+      const durableExpected = liveEnvironment();
+      return {
+        ...page,
+        status: durableExpected ? (page.items.length ? 'PARTIAL' : 'UNAVAILABLE') : 'AVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        ...(durableExpected ? { errorCode: 'FIRESTORE_UNAVAILABLE' } : {}),
+      };
+    }
+
+    try {
+      let query: any = db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .orderBy('receivedAt', 'desc')
+        .orderBy('eventId', 'desc');
+      if (cursor) query = query.startAfter(cursor.receivedAt, cursor.id);
+      const snap = await query.limit(boundedLimit + 1).get();
+      const rows = snap.docs.map((doc: any) => doc.data() as ChannelMenuIngressRecord);
+      const tenantRows = rows.filter((record) => record.tenantId === cleanTenantId);
+      const hasForeignRows = tenantRows.length !== rows.length;
+      const pageRows = tenantRows.slice(0, boundedLimit);
+      const hasMore = tenantRows.length > boundedLimit;
+      const last = pageRows[pageRows.length - 1];
+
+      return {
+        items: pageRows.map(toPublicRecord),
+        status: hasForeignRows ? 'PARTIAL' : 'AVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: hasMore && last
+          ? encodeApiActivityCursor({ receivedAt: last.receivedAt, id: last.eventId })
+          : null,
+        ...(hasForeignRows ? { errorCode: 'TENANT_MISMATCH_FILTERED' } : {}),
+      };
+    } catch (err: any) {
+      const page = memoryPage();
+      return {
+        ...page,
+        status: page.items.length ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        errorCode: safeApiActivityErrorCode(err, 'FIRESTORE_READ_FAILED'),
+      };
+    }
+  }
+
+  static async listRecentIngress(
+    tenantId: string,
+    limit: number = 100
+  ): Promise<Array<{
+    eventId: string;
+    status: ChannelMenuIngressRecord['status'];
+    receivedAt: string;
+    updatedAt: string;
+    processedAt?: string;
+    menuIds: string[];
+    menuNames?: string[];
+    channelLinkIds: string[];
+    channelNames?: string[];
+    accountIds?: string[];
+    accountNames?: string[];
+    locationIds?: string[];
+    locationNames?: string[];
+    byteSize: number;
+    hasError: boolean;
+    review?: ChannelMenuIngressRecord['review'];
+  }>> {
+    const page = await this.listRecentIngressPage(tenantId, { limit });
+    return page.items;
   }
 
   static async listHeldReviews(tenantId: string): Promise<Array<{
