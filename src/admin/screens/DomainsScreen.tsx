@@ -93,6 +93,10 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
   useEffect(() => {
     const requestTenantId = tenantId;
     setDomains([]);
+    setIsSaving(false);
+    setDeletingId(null);
+    setVerifyingId(null);
+    setCopiedValue(null);
     setErrorMessage(null);
     setSuccessMessage(null);
     void loadDomains(requestTenantId);
