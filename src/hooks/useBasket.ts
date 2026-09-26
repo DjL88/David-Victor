@@ -358,6 +358,28 @@ export function useBasket(
         ) {
           return { success: false, reason: 'BASKET_SCOPE_CHANGED' };
         }
+
+        // A failed/unknown mutation response can leave the browser uncertain
+        // about what the server accepted. Re-read the same active basket once
+        // before showing the error so optimistic rollback converges on
+        // authoritative state instead of leaving a stale local quantity.
+        const failedBasketId = basketRef.current?.id;
+        const failedScope = mutationScopeRef.current;
+        if (failedBasketId) {
+          try {
+            const authoritative = await client.getBasket(failedBasketId);
+            if (
+              mutationScopeRef.current === failedScope &&
+              basketRef.current?.id === failedBasketId
+            ) {
+              rememberBasket(authoritative);
+            }
+          } catch {
+            // Keep the last-known basket if reconciliation is unavailable; the
+            // next drawer/open or user action will retry the authoritative read.
+          }
+        }
+
         const isFulfillmentError =
           errorMsg.includes('Delivery checkout is not enabled') ||
           err?.code === 'INVALID_FULFILLMENT' ||
