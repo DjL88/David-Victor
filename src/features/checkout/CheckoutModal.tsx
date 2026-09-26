@@ -26,6 +26,10 @@ import { calculateReverseDeals } from '../../commerce/reverseDealEngine';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
 import { OrderTrackingView } from '../orders/OrderTrackingView';
+import {
+  checkoutFailureGuidance,
+  safeCheckoutFailureMessage,
+} from './checkoutFailureTruth';
 import { ItemUnavailablePreferenceModal } from '../cart/ItemUnavailablePreferenceModal';
 import { evaluateBasketSnoozeStatus } from '../../services/snoozeCheckService';
 import { defaultAnalyticsClient, AnalyticsEventType } from '../../analytics';
@@ -295,16 +299,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onBasketUpdated?.(updated);
         setRevalidationError(null);
       } else {
-        setRevalidationError(
-          result.reason || 'Delivery quote expired or unavailable. No couriers available.'
-        );
+        setRevalidationError(safeCheckoutFailureMessage('dispatch_unavailable'));
         if (result.alternativeStores) {
           setAlternativeStores(result.alternativeStores);
         }
         setCollectionEligible(result.collectionEligible ?? false);
       }
-    } catch (err: any) {
-      setRevalidationError(err.message || 'Failed to revalidate delivery');
+    } catch (_err: any) {
+      setRevalidationError(safeCheckoutFailureMessage('dispatch_check_failed'));
     } finally {
       setIsRevalidating(false);
     }
@@ -377,10 +379,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           deliveryAddress
         );
         if (!quoteCheck.available) {
-          setRevalidationError(
-            quoteCheck.reason ||
-              'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
-          );
+          setRevalidationError(safeCheckoutFailureMessage('dispatch_unavailable'));
           if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
           setCollectionEligible(quoteCheck.collectionEligible ?? true);
           return;
@@ -554,21 +553,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               setPhase('tracking');
             } else if (statusRes.status === 'order_failed') {
               clearInterval(pollInterval);
-              setFailureReason(statusRes.failureReason || 'Order placement failed');
+              setFailureReason(safeCheckoutFailureMessage('order_status_failed', isCollection));
               setPhase('order_failed');
             }
-          } catch (err: any) {
+          } catch (_err: any) {
             clearInterval(pollInterval);
-            setFailureReason(err.message || 'Error checking order status');
+            setFailureReason(safeCheckoutFailureMessage('order_status_failed', isCollection));
             setPhase('order_failed');
           }
         }, 1500);
       }
-    } catch (err: any) {
-      setRevalidationError(
-        err.message ||
-          (isCollection ? 'Could not place collection order' : 'Payment authorization failed')
-      );
+    } catch (_err: any) {
+      setRevalidationError(safeCheckoutFailureMessage('direct_checkout_failed', isCollection));
     } finally {
       setIsAuthorizingDirect(false);
     }
@@ -704,10 +700,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         deliveryAddress
       );
       if (!quoteCheck.available) {
-        setRevalidationError(
-          quoteCheck.reason ||
-            'Courier dispatch is currently unavailable for this delivery location. Progression blocked. Please retry or choose collection.'
-        );
+        setRevalidationError(safeCheckoutFailureMessage('dispatch_unavailable'));
         if (quoteCheck.alternativeStores) setAlternativeStores(quoteCheck.alternativeStores);
         setCollectionEligible(quoteCheck.collectionEligible ?? true);
         setIsRevalidating(false);
@@ -717,10 +710,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         basket.dispatchValidationId = quoteCheck.dispatchValidationId;
         basket.dispatchValidationExpiresAt = quoteCheck.dispatchValidationExpiresAt;
       }
-    } catch (err: any) {
-      setRevalidationError(
-        `Unable to verify courier dispatch availability: ${err.message || 'Service unavailable'}. Please retry.`
-      );
+    } catch (_err: any) {
+      setRevalidationError(safeCheckoutFailureMessage('dispatch_check_failed'));
       setIsRevalidating(false);
       return;
     } finally {
@@ -732,8 +723,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setSessionId(session.sessionId);
       setHostedRedirectUrl(session.redirectUrl);
       setPhase('hosted_payment');
-    } catch (err: any) {
-      setRevalidationError(err.message || 'Could not initiate checkout session');
+    } catch (_err: any) {
+      setRevalidationError(safeCheckoutFailureMessage('checkout_start_failed'));
     }
   };
 
@@ -773,12 +764,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setPhase('tracking');
         } else if (res.status === 'order_failed') {
           clearInterval(pollInterval);
-          setFailureReason(res.failureReason || 'Payment failed');
+          setFailureReason(safeCheckoutFailureMessage('payment_status_failed'));
           setPhase('order_failed');
         }
-      } catch (err: any) {
+      } catch (_err: any) {
         clearInterval(pollInterval);
-        setFailureReason(err.message || 'Payment status error');
+        setFailureReason(safeCheckoutFailureMessage('payment_status_failed'));
         setPhase('order_failed');
       }
     }, 1200);
@@ -1833,9 +1824,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </h3>
               <p className="text-xs text-red-700 font-semibold mt-1">{failureReason}</p>
               <p className="text-xs text-gray-500 mt-2 max-w-xs mx-auto">
-                {isCollectionBasket
-                  ? 'No payment was taken. Your basket items have been preserved.'
-                  : 'No charges were captured on your account. Your basket items have been preserved.'}
+                {checkoutFailureGuidance(isCollectionBasket)}
               </p>
             </div>
 
