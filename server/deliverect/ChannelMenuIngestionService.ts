@@ -83,6 +83,8 @@ const memoryHostedIndex = new Map<string, {
   channelLinkId: string;
   menuId: string;
   normalizedStoragePath: string;
+  receivedAt: string;
+  lastEventId: string;
   updatedAt: string;
 }>();
 const pending = new Set<Promise<void>>();
@@ -577,6 +579,79 @@ export class ChannelMenuIngestionService {
     return String(product?.plu || product?.id || product?._id || product?.productId || '').trim();
   }
 
+  private static comparePublishedVersion(
+    leftReceivedAt: string,
+    leftEventId: string,
+    rightReceivedAt: string,
+    rightEventId: string
+  ): number {
+    const leftMs = Date.parse(leftReceivedAt);
+    const rightMs = Date.parse(rightReceivedAt);
+    if (Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs !== rightMs) {
+      return leftMs > rightMs ? 1 : -1;
+    }
+
+    const receivedAtCompare = String(leftReceivedAt || '').localeCompare(
+      String(rightReceivedAt || '')
+    );
+    if (receivedAtCompare !== 0) return receivedAtCompare;
+
+    return String(leftEventId || '').localeCompare(String(rightEventId || ''));
+  }
+
+  private static async hasNewerOrEqualPublishedMenu(params: {
+    tenantId: string;
+    channelLinkId: string;
+    menuId: string;
+    receivedAt: string;
+    eventId: string;
+  }): Promise<boolean> {
+    let publishedReceivedAt = '';
+    let publishedEventId = '';
+
+    if (!liveEnvironment()) {
+      const current = Array.from(memoryHostedIndex.values())
+        .filter(
+          (entry) =>
+            entry.tenantId === params.tenantId &&
+            entry.channelLinkId === params.channelLinkId &&
+            entry.menuId === params.menuId
+        )
+        .sort((a, b) =>
+          this.comparePublishedVersion(
+            b.receivedAt,
+            b.lastEventId,
+            a.receivedAt,
+            a.lastEventId
+          )
+        )[0];
+      publishedReceivedAt = current?.receivedAt || '';
+      publishedEventId = current?.lastEventId || '';
+    } else {
+      const db = getFirestoreDb();
+      if (!db) return false;
+      const alias = await db
+        .collection('tenants')
+        .doc(params.tenantId)
+        .collection('channelHostedMenus')
+        .doc(safeSegment(`${params.channelLinkId}_${params.menuId}`))
+        .get();
+      if (alias.exists) {
+        const data = alias.data() || {};
+        publishedReceivedAt = String(data.receivedAt || '');
+        publishedEventId = String(data.lastEventId || '');
+      }
+    }
+
+    if (!publishedReceivedAt && !publishedEventId) return false;
+    return this.comparePublishedVersion(
+      publishedReceivedAt,
+      publishedEventId,
+      params.receivedAt,
+      params.eventId
+    ) >= 0;
+  }
+
   static async destructiveDeltaReview(params: {
     tenantId: string;
     channelLinkId: string;
@@ -589,7 +664,7 @@ export class ChannelMenuIngestionService {
       params.menuId
     );
     const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
-    if (previousProducts.length < 20) return undefined;
+    if (previousProducts.length === 0) return undefined;
 
     const previousKeys = new Set<string>(
       previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
@@ -653,6 +728,7 @@ export class ChannelMenuIngestionService {
 
       const fallbackChannelLinkId =
         existing?.channelLinkIds?.length === 1 ? existing.channelLinkIds[0] : '';
+      let publishedMenuCount = 0;
 
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
@@ -666,6 +742,21 @@ export class ChannelMenuIngestionService {
             'Buffered Menu Push is missing menuId or channelLinkId after verified routing.',
             422
           );
+        }
+
+        // Jobs can complete out of acceptance order. Once a newer accepted
+        // Menu Push owns this menu pointer, an older worker must become a no-op
+        // before archive/review calculation so stale truth cannot be republished.
+        if (
+          await this.hasNewerOrEqualPublishedMenu({
+            tenantId: job.tenantId,
+            channelLinkId,
+            menuId,
+            receivedAt: job.receivedAt,
+            eventId: job.eventId,
+          })
+        ) {
+          continue;
         }
 
         // Reuse the exact parser used by the Commerce API path so hosted Channel
@@ -804,6 +895,8 @@ export class ChannelMenuIngestionService {
             channelLinkId,
             menuId,
             normalizedStoragePath: normalizedPath,
+            receivedAt: job.receivedAt,
+            lastEventId: job.eventId,
             updatedAt: normalized.processedAt,
           }
         );
@@ -858,14 +951,16 @@ export class ChannelMenuIngestionService {
           await batch.commit();
         }
 
-
+        publishedMenuCount += 1;
       }
 
       // A successful Menu Push becomes the new catalogue truth. Invalidate the
       // bounded storefront discovery/catalog caches only after the durable worker
       // has finished normalising every menu, so the next customer read refreshes
       // the combined catalogue instead of serving stale pre-publish data.
-      CommerceDiscoveryService.getInstance().clearCache();
+      if (publishedMenuCount > 0) {
+        CommerceDiscoveryService.getInstance().clearCache();
+      }
 
       await this.saveIngressRecord({
         ...processing,
@@ -887,7 +982,7 @@ export class ChannelMenuIngestionService {
           .filter(Boolean),
         menuCount: menus.length,
       });
-      return { processed: menus.length };
+      return { processed: publishedMenuCount };
     } catch (err: any) {
       await this.saveIngressRecord({
         ...processing,
@@ -1215,7 +1310,14 @@ export class ChannelMenuIngestionService {
             entry.channelLinkId === cleanChannelLinkId &&
             (!cleanMenuId || entry.menuId === cleanMenuId)
         )
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        .sort((a, b) =>
+          this.comparePublishedVersion(
+            b.receivedAt,
+            b.lastEventId,
+            a.receivedAt,
+            a.lastEventId
+          )
+        );
       normalizedStoragePath = candidates[0]?.normalizedStoragePath || '';
     } else {
       const db = getFirestoreDb();
