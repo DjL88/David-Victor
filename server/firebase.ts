@@ -526,7 +526,7 @@ export async function verifyAdminSessionWithStatus(
     const emailVerified = decoded.email_verified === true;
     const uid = decoded.uid;
     const name = decoded.name || (email ? email.split('@')[0] : 'Admin User');
-    const targetTenantId = tenantHeader || 'brand-alpha';
+    const targetTenantId = String(tenantHeader || decoded.tenantId || '').trim();
 
     // Bootstrap is a request-only break-glass path. The secret is resolved via
     // the server-side SecretManager abstraction and never persists claims or
@@ -553,7 +553,7 @@ export async function verifyAdminSessionWithStatus(
           uid,
           email,
           role: 'platformSuperAdmin',
-          tenantId: targetTenantId,
+          tenantId: targetTenantId || 'platform',
           name,
           isSuperAdmin: true,
         },
@@ -573,7 +573,7 @@ export async function verifyAdminSessionWithStatus(
         return {
           authenticated: true,
           authorized: true,
-          user: { uid, email, role: claimedRole, tenantId: targetTenantId, name, isSuperAdmin: true },
+          user: { uid, email, role: claimedRole, tenantId: targetTenantId || 'platform', name, isSuperAdmin: true },
           code: 'AUTHORIZED',
         };
       }
@@ -642,7 +642,7 @@ export async function verifyAdminSessionWithStatus(
           uid,
           email,
           role,
-          tenantId: isPlatform ? targetTenantId : membershipTenantId,
+          tenantId: isPlatform ? (targetTenantId || 'platform') : membershipTenantId,
           name: membership.name || name,
           isSuperAdmin: isPlatform,
         },
@@ -673,8 +673,9 @@ export async function verifyAdminSessionWithStatus(
         }
       }
 
-      const tenantDocId = `${uid}_${targetTenantId}`;
-      const tenantMembership = await readAdminMembership(tenantDocId, db);
+      const tenantMembership = targetTenantId
+        ? await readAdminMembership(`${uid}_${targetTenantId}`, db)
+        : null;
       if (tenantMembership) {
         if (!isActiveMembership(tenantMembership)) {
           return {
@@ -726,7 +727,9 @@ export async function verifyAdminSessionWithStatus(
           return authorizeMembership(platformInvite, role, 'platform', true, true);
         }
 
-        const tenantInvite = await readAdminMembership(`${email}_${targetTenantId}`, db);
+        const tenantInvite = targetTenantId
+          ? await readAdminMembership(`${email}_${targetTenantId}`, db)
+          : null;
         if (tenantInvite) {
           if (!isActiveMembership(tenantInvite)) {
             return {
