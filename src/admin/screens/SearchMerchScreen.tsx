@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   SearchOptimisationConfig,
   TypoAlias,
@@ -9,6 +9,12 @@ import {
 } from '../../commerce/searchMerchModels';
 import { DEFAULT_SEARCH_CONFIG, getActiveSearchConfig, setActiveSearchConfig } from '../../commerce/searchMerchEngine';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
+import { getCommerceClient } from '../../commerce/CommerceClientFactory';
+import {
+  buildSearchMerchEntityOptions,
+  resolveSearchMerchTargetName,
+  type SearchMerchEntityOptions,
+} from '../searchMerchEntityOptions';
 import {
   Search,
   ArrowRight,
@@ -28,27 +34,96 @@ interface SearchMerchScreenProps {
   tenantId: string;
 }
 
+type LoadState = 'loading' | 'ready' | 'empty' | 'error';
+
+const createEmptySearchConfig = (tenantId: string): SearchOptimisationConfig => ({
+  ...DEFAULT_SEARCH_CONFIG,
+  tenantId,
+  typoAliases: [],
+  synonyms: [],
+  queryRewrites: [],
+  pinnedProducts: [],
+  boostRules: [],
+  excludedProductPlus: [],
+});
+
+const EMPTY_ENTITY_OPTIONS: SearchMerchEntityOptions = {
+  products: [],
+  categories: [],
+  brands: [],
+};
+
 export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }) => {
-  const [config, setConfig] = useState<SearchOptimisationConfig>(() => getActiveSearchConfig());
+  const commerceClient = useMemo(() => getCommerceClient(tenantId), [tenantId]);
+  const [config, setConfig] = useState<SearchOptimisationConfig>(() => createEmptySearchConfig(tenantId));
   const [activeTab, setActiveTab] = useState<'typos' | 'synonyms' | 'rewrites' | 'pins' | 'boosts' | 'exclusions'>('typos');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [configLoadState, setConfigLoadState] = useState<LoadState>('loading');
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null);
+  const [catalogLoadState, setCatalogLoadState] = useState<LoadState>('loading');
+  const [catalogLoadError, setCatalogLoadError] = useState<string | null>(null);
+  const [entityOptions, setEntityOptions] = useState<SearchMerchEntityOptions>(EMPTY_ENTITY_OPTIONS);
 
   useEffect(() => {
     let isMounted = true;
-    defaultAdminClient.getSearchConfig?.(tenantId).then((remote: any) => {
-      if (isMounted && remote) {
-        setConfig(remote);
-        setActiveSearchConfig(remote);
-      }
-    }).catch((err: any) => {
-      console.warn('Could not load remote search config:', err);
-    });
+    setConfig(createEmptySearchConfig(tenantId));
+    setSaveSuccess(false);
+    setSaveError(null);
+    setConfigLoadError(null);
+    setConfigLoadState('loading');
+
+    Promise.resolve(defaultAdminClient.getSearchConfig?.(tenantId))
+      .then((remote: SearchOptimisationConfig | null | undefined) => {
+        if (!isMounted) return;
+        if (!remote) throw new Error('Search configuration returned no data.');
+        const scopedConfig = { ...remote, tenantId };
+        setConfig(scopedConfig);
+        setActiveSearchConfig(scopedConfig);
+        setConfigLoadState('ready');
+      })
+      .catch((err: any) => {
+        if (!isMounted) return;
+        setConfig(createEmptySearchConfig(tenantId));
+        setConfigLoadError(err?.message || 'Search configuration could not be loaded.');
+        setConfigLoadState('error');
+      });
+
     return () => {
       isMounted = false;
     };
   }, [tenantId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setEntityOptions(EMPTY_ENTITY_OPTIONS);
+    setCatalogLoadError(null);
+    setCatalogLoadState('loading');
+
+    commerceClient
+      .getRootCatalog()
+      .then((catalog) => {
+        if (!isMounted) return;
+        const next = buildSearchMerchEntityOptions(catalog.products || [], catalog.categories || []);
+        setEntityOptions(next);
+        setCatalogLoadState(
+          next.products.length > 0 || next.categories.length > 0 || next.brands.length > 0
+            ? 'ready'
+            : 'empty',
+        );
+      })
+      .catch((err: any) => {
+        if (!isMounted) return;
+        setEntityOptions(EMPTY_ENTITY_OPTIONS);
+        setCatalogLoadError(err?.message || 'Live catalogue suggestions could not be loaded.');
+        setCatalogLoadState('error');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [commerceClient, tenantId]);
 
   // New item draft states
   const [newTypo, setNewTypo] = useState({ typo: '', resolvesTo: '' });
@@ -64,13 +139,25 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   const [newExclusionPlu, setNewExclusionPlu] = useState('');
 
   const handleSave = async () => {
+    if (configLoadState !== 'ready') {
+      setSaveError('Search rules are not loaded for this tenant yet, so saving is disabled.');
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     try {
-      setActiveSearchConfig(config);
+      const scopedConfig = {
+        ...config,
+        tenantId,
+        updatedAt: new Date().toISOString(),
+      };
+      setActiveSearchConfig(scopedConfig);
       if (defaultAdminClient.updateSearchConfig) {
-        await defaultAdminClient.updateSearchConfig(tenantId, config);
+        await defaultAdminClient.updateSearchConfig(tenantId, scopedConfig);
+      } else {
+        throw new Error('Search configuration updates are not available in this Admin client.');
       }
+      setConfig(scopedConfig);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: any) {
@@ -188,6 +275,11 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
   // Add Boost
   const addBoost = () => {
     if (!newBoost.targetId.trim()) return;
+    const resolvedTargetName = resolveSearchMerchTargetName(
+      newBoost.type,
+      newBoost.targetId,
+      entityOptions,
+    );
     setConfig((prev) => ({
       ...prev,
       boostRules: [
@@ -196,7 +288,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
           id: `boost_${Date.now()}`,
           type: newBoost.type,
           targetId: newBoost.targetId.trim(),
-          targetName: newBoost.targetName.trim() || newBoost.targetId.trim(),
+          targetName: newBoost.targetName.trim() || resolvedTargetName || newBoost.targetId.trim(),
           boostMultiplier: Number(newBoost.boostMultiplier) || 1.5,
           isActive: true,
         },
