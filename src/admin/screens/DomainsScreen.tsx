@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TenantConfig } from '../../commerce/models';
 import { getAdminClient } from '../../commerce/AdminClient';
-import { resolveDomainLifecycle } from '../domainLifecycle';
+import { isCurrentTenantRequest, resolveDomainLifecycle } from '../domainLifecycle';
 import {
   Globe,
   CheckCircle2,
@@ -76,17 +76,17 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       const client = getAdminClient();
       if (!client.listAllDomains) throw new Error('Domain management is not available in this Admin client.');
       const data = await client.listAllDomains();
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       // The API already applies tenant scoping for tenant admins. Filter again
       // in the UI so even Platform Super Admin sees only the deliberately
       // selected tenant on this page.
       setDomains((data || []).filter((domain: DomainMapping) => domain.tenantId === requestTenantId));
     } catch (error) {
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       console.error('Failed to load domains:', error);
       setLoadError('Domain status is currently unavailable. Existing mappings have not been treated as missing or removed.');
     } finally {
-      if (activeTenantRef.current === requestTenantId) setIsLoading(false);
+      if (isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) setIsLoading(false);
     }
   };
 
@@ -113,37 +113,38 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     const hostname = cleanHostname(newHostname);
     if (!hostname) return;
 
+    const requestTenantId = tenantId;
     setIsSaving(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
       const client = getAdminClient();
       if (!client.addOrUpdateDomain) throw new Error('Domain management is not available in this Admin client.');
-      const requestTenantId = tenantId;
       await client.addOrUpdateDomain({ hostname, tenantId: requestTenantId, isPrimary });
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       setNewHostname('');
       setIsPrimary(false);
       setSuccessMessage(`"${hostname}" has been requested and claimed for this tenant. Verification, HTTPS and live routing remain separate until their status checks succeed.`);
       await loadDomains(requestTenantId);
-    } catch (error: any) {
+    } catch (error) {
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       console.error('Failed to save domain mapping:', error);
-      setErrorMessage(error?.message || 'Failed to save domain mapping.');
+      setErrorMessage('Failed to save domain mapping. No verification, HTTPS or live status has been assumed.');
     } finally {
-      setIsSaving(false);
+      if (isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) setIsSaving(false);
     }
   };
 
   const handleVerifyDomain = async (domainId: string, hostname: string) => {
+    const requestTenantId = tenantId;
     setVerifyingId(domainId);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
       const client = getAdminClient();
       if (!client.verifyDomainOwnership) throw new Error('Domain ownership verification is not available in this Admin client.');
-      const requestTenantId = tenantId;
       const result = await client.verifyDomainOwnership(domainId);
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       const resultDomain = result?.domain as DomainMapping | undefined;
       setSuccessMessage(
         resultDomain?.status === 'active'
@@ -154,20 +155,23 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
       );
       await loadDomains(requestTenantId);
     } catch (error: any) {
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       if (error?.code === 'DOMAIN_OWNERSHIP_NOT_VERIFIED') {
         setErrorMessage(`DNS has not propagated the TXT ownership record for "${hostname}" yet. Check the exact record below and retry.`);
       } else {
-        setErrorMessage(error?.message || 'Domain ownership verification failed.');
+        console.error('Domain ownership verification failed:', error);
+        setErrorMessage('Domain ownership verification failed. HTTPS and live routing remain unconfirmed.');
       }
     } finally {
-      setVerifyingId(null);
+      if (isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) setVerifyingId(null);
     }
   };
 
   const refreshAllStatuses = async () => {
+    const requestTenantId = tenantId;
     const pending = domains.filter((domain) => domain.status !== 'active');
     if (pending.length === 0) {
-      await loadDomains();
+      await loadDomains(requestTenantId);
       return;
     }
     setVerifyingId('all');
@@ -175,38 +179,38 @@ export const DomainsScreen: React.FC<DomainsScreenProps> = ({ tenantId, allTenan
     try {
       const client = getAdminClient();
       if (!client.verifyDomainOwnership) throw new Error('Domain status checks are not available in this Admin client.');
-      const requestTenantId = tenantId;
       await Promise.all(pending.map((domain) => client.verifyDomainOwnership!(domain.domainId || domain.hostname)));
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       await loadDomains(requestTenantId);
     } catch (error) {
-      if (activeTenantRef.current !== tenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       console.error('One or more domain status checks failed:', error);
       setErrorMessage('One or more domain status checks failed. No pending domain has been reported as verified, HTTPS-ready or live as a result.');
-      await loadDomains(tenantId);
+      await loadDomains(requestTenantId);
     } finally {
-      setVerifyingId(null);
+      if (isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) setVerifyingId(null);
     }
   };
 
   const handleDeleteDomain = async (domainId: string, hostname: string) => {
     if (!window.confirm(`Remove "${hostname}" from this tenant? The site content itself will not be deleted.`)) return;
+    const requestTenantId = tenantId;
     setDeletingId(domainId);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
       const client = getAdminClient();
       if (!client.deleteDomain) throw new Error('Domain management is not available in this Admin client.');
-      const requestTenantId = tenantId;
       await client.deleteDomain(domainId);
-      if (activeTenantRef.current !== requestTenantId) return;
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       setSuccessMessage(`"${hostname}" was unbound from this tenant.`);
       await loadDomains(requestTenantId);
-    } catch (error: any) {
+    } catch (error) {
+      if (!isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) return;
       console.error('Failed to delete domain:', error);
-      setErrorMessage(error?.message || 'Failed to remove domain mapping.');
+      setErrorMessage('Failed to remove domain mapping. The existing mapping remains authoritative.');
     } finally {
-      setDeletingId(null);
+      if (isCurrentTenantRequest(activeTenantRef.current, requestTenantId)) setDeletingId(null);
     }
   };
 
