@@ -107,80 +107,33 @@ export class HttpAnalyticsClient implements AnalyticsClient {
     const headers: Record<string, string> = {
       'x-tenant-id': tenantId,
     };
-    try {
-      const authHeader = await getAdminAuthorizationHeader();
-      if (authHeader) {
-        headers['Authorization'] = authHeader;
-      }
-    } catch {
-      // ignore
+    const authHeader = await getAdminAuthorizationHeader();
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
     }
 
-    try {
-      const res = await fetch(`/api/v1/analytics/insights?timeframe=${timeframe}`, {
-        headers,
-      });
-      if (!res.ok) {
-        console.warn(`[HttpAnalyticsClient] Insights request returned status ${res.status} ${res.statusText}`);
-        return {
-          timeframe,
-          totalSessions: 0,
-          activeStoresCount: 0,
-          totalOrders: 0,
-          totalGrossMerchandiseValue: 0,
-          averageOrderValue: 0,
-          overallConversionRate: 0,
-          serviceabilityRate: 0,
-          pickingSuccessRate: 100,
-          funnel: [],
-          products: [],
-          stories: [],
-          searches: [],
-          regions: [],
-          abandonedBasket: [],
-        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
-        };
-      }
-      return await res.json();
-    } catch (err) {
-      console.warn('[HttpAnalyticsClient] Network error fetching insights:', err);
-      return {
-        timeframe,
-        totalSessions: 0,
-        activeStoresCount: 0,
-        totalOrders: 0,
-        totalGrossMerchandiseValue: 0,
-        averageOrderValue: 0,
-        overallConversionRate: 0,
-        serviceabilityRate: 0,
-        pickingSuccessRate: 100,
-        funnel: [],
-        products: [],
-        stories: [],
-        searches: [],
-        regions: [],
-        abandonedBasket: [],
-        artieRecommendations: { presented: 0, accepted: 0, paid: 0, presentedToAcceptedRate: 0, presentedToPaidRate: 0, acceptedToPaidRate: 0, attributedRevenue: 0 },
-      };
+    const res = await fetch(`/api/v1/analytics/insights?timeframe=${timeframe}`, {
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`Insights request failed with status ${res.status}`);
     }
+    return await res.json();
   }
 
   async getRecentEvents(tenantId: string, limit: number = 50): Promise<AnalyticsEvent[]> {
-    try {
-      const headers: Record<string, string> = {
-        'x-tenant-id': tenantId,
-      };
-      const authHeader = await getAdminAuthorizationHeader();
-      if (authHeader) {
-        headers['Authorization'] = authHeader;
-      }
-      const res = await fetch(`/api/v1/analytics/events?limit=${limit}`, { headers });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('[HttpAnalyticsClient] Error fetching recent events:', err);
+    const headers: Record<string, string> = {
+      'x-tenant-id': tenantId,
+    };
+    const authHeader = await getAdminAuthorizationHeader();
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
     }
-    return [];
+
+    const res = await fetch(`/api/v1/analytics/events?limit=${limit}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Analytics events request failed with status ${res.status}`);
+    }
+    return await res.json();
   }
 }
