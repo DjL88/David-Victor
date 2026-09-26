@@ -43,7 +43,7 @@ describe('official channel identity registry', () => {
     }
   });
   it.each([
-    ['ACTIVE', true], ['active', true], ['ONBOARDING', true], ['on-boarding', true],
+    ['ACTIVE', true], ['active', true], ['SUBSCRIBED', true], ['ONBOARDING', true], ['on-boarding', true],
     ['INACTIVE', false], ['SUSPENDED', false], ['TESTING', false], ['', false], [undefined, false],
   ])('shows marketplace status %s only when customer-facing', (status, visible) => {
     expect(isStorefrontMarketplaceService({ name: 'Deliveroo', status })).toBe(visible);

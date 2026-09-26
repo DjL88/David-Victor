@@ -9,7 +9,13 @@ export interface ApiLogMenuEntry {
   receivedAt?: string;
   processedAt?: string;
   menuIds: string[];
+  menuNames: string[];
   channelLinkIds: string[];
+  channelNames: string[];
+  accountIds: string[];
+  accountNames: string[];
+  locationIds: string[];
+  locationNames: string[];
   hasError: boolean;
   reviewReason?: string;
 }
@@ -30,6 +36,9 @@ export interface ApiLogSnapshot {
     environment?: string;
     credentialMode?: string;
     accountId?: string;
+    accountName?: string;
+    channelName?: string;
+    publicBaseUrl?: string;
     allowedChannelLinkIds: string[] | null;
     grantedScopes: string[];
   } | null;
@@ -69,6 +78,9 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
       environment: text(integration.environment),
       credentialMode: text(integration.credentialMode),
       accountId: text(integration.accountId),
+      accountName: text(integration.accountName),
+      channelName: text(integration.channelName),
+      publicBaseUrl: text(integration.publicBaseUrl),
       allowedChannelLinkIds: Array.isArray(integration.allowedChannelLinkIds)
         ? strings(integration.allowedChannelLinkIds) : null,
       grantedScopes: strings(integration.grantedScopes),
@@ -87,7 +99,13 @@ export function readApiLogSnapshot(value: unknown, tenantId: string): ApiLogSnap
         receivedAt: text(item.receivedAt),
         processedAt: text(item.processedAt),
         menuIds: strings(item.menuIds),
+        menuNames: strings(item.menuNames),
         channelLinkIds: strings(item.channelLinkIds),
+        channelNames: strings(item.channelNames),
+        accountIds: strings(item.accountIds),
+        accountNames: strings(item.accountNames),
+        locationIds: strings(item.locationIds),
+        locationNames: strings(item.locationNames),
         hasError: Boolean(item.error),
         reviewReason: errorCode(record(item.review)?.reason),
       };

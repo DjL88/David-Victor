@@ -324,6 +324,23 @@ export interface StoreEligibilityResult {
   hasDeliveryCoverage: boolean;
 }
 
+export interface StoreSpecialOpeningHoursDay {
+  date: string;
+  holiday?: boolean;
+  openingHours?: Array<{ begin: string; end: string }>;
+}
+
+export interface StoreOpeningHours {
+  timezone?: string;
+  dayTimeRanges?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  specialHours?: Array<{
+    name?: string;
+    start?: string;
+    end?: string;
+    days?: StoreSpecialOpeningHoursDay[];
+  }>;
+}
+
 export interface Store {
   id: string;
   name: string;
@@ -367,7 +384,10 @@ export interface Store {
   };
   phone?: string;
   email?: string;
-  openingHours?: Record<string, { open: string; close: string }> | Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  openingHours?:
+    | Record<string, { open: string; close: string }>
+    | Array<{ dayOfWeek: number; startTime: string; endTime: string }>
+    | StoreOpeningHours;
   channelLinkId?: string;
   /** Channel-side store/location identifier when Deliverect exposes one. */
   channelLocationId?: string;

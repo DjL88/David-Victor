@@ -3115,8 +3115,8 @@ async function handleDeliverectChannelProvisioning(
       }
 
       const configuredOrigin =
-        profileOrigin ||
         process.env.CHANNEL_PUBLIC_BASE_URL ||
+        profileOrigin ||
         process.env.PUBLIC_BASE_URL ||
         '';
       if (!configuredOrigin) {
@@ -7047,15 +7047,84 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
     }
 
     const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
-    const [menuPushes, webhooks, context] = await Promise.all([
+    const [menuPushes, webhooks, context, mappings] = await Promise.all([
       ChannelMenuIngestionService.listRecentIngress(tenantId, limit),
       FirestorePlatformService.listRecentWebhookEvents(tenantId, limit),
       IntegrationContext.getContext(tenantId),
+      linkedAccountsAdapter.getTenantMappings(tenantId).catch(() => ({ accounts: [], locations: [], stores: [] } as any)),
     ]);
+    if (String(req.query.refreshOAuth || '').toLowerCase() === 'true') {
+      await context.tokenManager.invalidateCacheAndWait();
+    }
     const grantedScopes = await context.tokenManager.getGrantedScopes().catch(() => []);
     const circuitStats = Object.fromEntries(
       Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
     );
+
+    const unique = (values: unknown[]): string[] => Array.from(new Set(
+      values.filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+        .map((value) => value.trim())
+    ));
+    const accountByKey = new Map<string, any>();
+    for (const account of mappings.accounts || []) {
+      accountByKey.set(String(account.accountLinkId || ''), account);
+      accountByKey.set(String(account.deliverectAccountId || ''), account);
+    }
+    const locationByKey = new Map<string, any>();
+    for (const location of mappings.locations || []) {
+      locationByKey.set(String(location.physicalLocationId || ''), location);
+      locationByKey.set(String(location.deliverectLocationId || ''), location);
+    }
+    const storeByChannelLink = new Map<string, any>(
+      (mappings.stores || []).map((store: any) => [String(store.channelLinkId || ''), store])
+    );
+
+    const enrichedMenuPushes = menuPushes.map((entry) => {
+      const stores = entry.channelLinkIds
+        .map((id) => storeByChannelLink.get(String(id)))
+        .filter(Boolean);
+      const locations = stores
+        .map((store: any) => locationByKey.get(String(store.physicalLocationId || '')))
+        .filter(Boolean);
+      const accounts = stores
+        .map((store: any) => accountByKey.get(String(store.accountLinkId || '')))
+        .filter(Boolean);
+      const serviceNames = entry.channelLinkIds.flatMap((channelLinkId) => [
+        ...locations.flatMap((location: any) => location.services || []),
+        ...stores.flatMap((store: any) => store.services || []),
+      ]
+        .filter((service: any) => String(service?.id || '') === String(channelLinkId))
+        .map((service: any) => String(service?.name || '')));
+
+      return {
+        ...entry,
+        menuNames: unique(entry.menuNames || []),
+        accountIds: unique([
+          ...(entry.accountIds || []),
+          ...accounts.map((account: any) => account.deliverectAccountId),
+          context.deliverectAccountId,
+        ]),
+        accountNames: unique([
+          ...(entry.accountNames || []),
+          ...accounts.map((account: any) => account.displayName),
+        ]),
+        channelNames: unique([
+          ...(entry.channelNames || []),
+          ...serviceNames,
+          context.channelName,
+        ]),
+        locationIds: unique([
+          ...(entry.locationIds || []),
+          ...locations.map((location: any) => location.deliverectLocationId),
+        ]),
+        locationNames: unique([
+          ...(entry.locationNames || []),
+          ...locations.map((location: any) => location.name),
+          ...stores.map((store: any) => store.name),
+        ]),
+        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
+      };
+    });
 
     res.json({
       tenantId,
@@ -7065,15 +7134,21 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
         credentialMode: context.credentialMode,
         configured: context.isConfigured,
         accountId: context.deliverectAccountId || null,
+        accountName: mappings.accounts?.find((account: any) =>
+          String(account.deliverectAccountId || '') === String(context.deliverectAccountId || '')
+        )?.displayName || null,
+        channelName: context.channelName || null,
+        publicBaseUrl:
+          process.env.CHANNEL_PUBLIC_BASE_URL ||
+          context.publicBaseUrl ||
+          process.env.PUBLIC_BASE_URL ||
+          null,
         allowedChannelLinkIds: context.allowedChannelLinkIds || [],
         grantedScopes,
         commerceScopeGranted: grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce'),
       },
       circuits: circuitStats,
-      menuPushes: menuPushes.map((entry) => ({
-        ...entry,
-        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
-      })),
+      menuPushes: enrichedMenuPushes,
       webhooks: webhooks.map((event) => ({
         webhookEventId: event.webhookEventId,
         provider: event.provider,

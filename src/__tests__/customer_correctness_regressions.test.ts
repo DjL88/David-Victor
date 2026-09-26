@@ -14,7 +14,7 @@ describe('customer correctness regressions', () => {
   const routerSource = fs.readFileSync(
     path.resolve(process.cwd(), 'server/api/v1Router.ts'),
     'utf8'
-  );
+  ).replace(/\r\n/g, '\n');
   const firestoreSource = fs.readFileSync(
     path.resolve(process.cwd(), 'server/firestoreService.ts'),
     'utf8'

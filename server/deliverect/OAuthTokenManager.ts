@@ -222,13 +222,22 @@ export class OAuthTokenManager {
    */
   invalidateCache(): void {
     this.cachedToken = null;
+    void this.deleteSharedToken().catch((err) => {
+      console.warn('[OAuthTokenManager] Shared token invalidation failed:', err);
+    });
+  }
+
+  /** Admin diagnostics can await this to guarantee the next scope reading is
+   * minted after a Deliverect client grant has changed. */
+  async invalidateCacheAndWait(): Promise<void> {
+    this.cachedToken = null;
+    await this.deleteSharedToken();
+  }
+
+  private async deleteSharedToken(): Promise<void> {
     const db = getFirestoreDb();
     if (db && this.clientId && this.clientSecret) {
-      // Keep the public API synchronous for existing callers; invalidate the
-      // shared credential asynchronously so a 401 cannot poison other instances.
-      void db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey).delete().catch((err) => {
-        console.warn('[OAuthTokenManager] Shared token invalidation failed:', err);
-      });
+      await db.collection('integrationOAuthTokenCache').doc(this.sharedCacheKey).delete();
     }
   }
 

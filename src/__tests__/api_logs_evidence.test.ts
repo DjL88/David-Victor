@@ -72,6 +72,22 @@ describe('API Logs evidence boundary', () => {
     expect(snapshot.webhooks[0].verified).toBeNull();
   });
 
+  it('retains sanitized menu, account, channel and location labels for filtering', () => {
+    const snapshot = readApiLogSnapshot(response({ menuPushes: [{
+      eventId: 'event-labelled',
+      status: 'PROCESSED',
+      menuIds: ['menu-1'], menuNames: ['Market Lane'],
+      accountIds: ['account-1'], accountNames: ['Test Retailer'],
+      channelLinkIds: ['channel-1'], channelNames: ['LeitchTech'],
+      locationIds: ['location-1'], locationNames: ["Ewan's Store"],
+    }] }), 'tenant-a');
+
+    expect(snapshot.menuPushes[0]).toMatchObject({
+      menuNames: ['Market Lane'], accountNames: ['Test Retailer'],
+      channelNames: ['LeitchTech'], locationNames: ["Ewan's Store"],
+    });
+  });
+
   it('requires matching tenant evidence for diagnostics and preserves unknown HTTP status', () => {
     expect(() => readApiLogTrace({ tenantId: 'tenant-b', overallStatus: 'SUCCESS' }, 'tenant-a')).toThrow();
     expect(() => readApiLogTrace({ overallStatus: 'SUCCESS' }, 'tenant-a')).toThrow();

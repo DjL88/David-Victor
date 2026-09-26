@@ -119,7 +119,7 @@ describe('Deliverect Channel registration callback', () => {
     const body = await res.json();
     expect(body.registration.tenantId).toBe('brand-alpha');
   });
-  it('uses the trusted profile origin and ignores attacker-controlled forwarded hosts', async () => {
+  it('uses the stable deployment callback origin and ignores profile or forwarded-host drift', async () => {
     vi.mocked(FirestorePlatformService.getIntegrationProfile).mockResolvedValue({
       id: 'brand-alpha__staging',
       tenantId: 'brand-alpha',
@@ -148,7 +148,7 @@ describe('Deliverect Channel registration callback', () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    const expectedBase = 'https://brand-alpha.integrations.example.test/api/v1/webhooks/deliverect/brand-alpha';
+    const expectedBase = 'https://channel.example.test/api/v1/webhooks/deliverect/brand-alpha';
     expect(body.statusUpdateURL).toBe(expectedBase);
     expect(body.menuUpdateURL).toBe(`${expectedBase}/channel/menu_update`);
     expect(body.snoozeUnsnoozeURL).toBe(`${expectedBase}/channel/snooze`);

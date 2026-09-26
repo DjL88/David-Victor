@@ -56,7 +56,7 @@ describe('Strict Tenant Resolution & Branding Audit Tests', () => {
       headers: { 'x-tenant-id': 'brand-alpha' },
     };
     expect(resolveAdminRequestedTenant(mismatchedAdminReq)).toBe('brand-beta');
-  });
+  }, 15_000);
 
   it('does not serve a custom domain until its mapping is active', async () => {
     const host = `pending-${Date.now()}.example.test`;

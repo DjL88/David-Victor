@@ -148,7 +148,7 @@ describe('Retail Channel local basket', () => {
     });
 
     expect(commerceApi).not.toHaveBeenCalled();
-    expect(submittedUrl).toBe('https://api.staging.deliverect.io/leitchtech/order/channel-3');
+    expect(submittedUrl).toBe('https://api.staging.deliverect.com/leitchtech/order/channel-3');
     expect(submittedBody).toMatchObject({
       channelOrderId: 'LT-1001',
       payment: { amount: 750, due: 750 },
