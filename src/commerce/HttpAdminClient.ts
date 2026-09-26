@@ -814,7 +814,8 @@ export class HttpAdminClient implements AdminClient {
     const headers = await this.getHeadersAsync();
     const res = await fetch(`${this.baseUrl}/admin/tenants/${tId}/search-config`, { headers });
     if (res.ok) return res.json();
-    return null;
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.message || `Failed to load search config (HTTP ${res.status})`);
   }
 
   async updateSearchConfig(tenantId: string, config: any): Promise<any> {
