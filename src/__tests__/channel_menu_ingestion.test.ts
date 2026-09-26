@@ -265,7 +265,54 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     });
   });
 
-  it('soft-deletes products removed from a later Channel Menu as archived tombstones', async () => {
+  it('holds an empty small-catalogue snapshot until explicitly approved', async () => {
+    const tenantId = `tenant-small-empty-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+
+    const first = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: first,
+      rawBody: JSON.stringify(first),
+    });
+
+    const empty = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: [] }],
+      products: {},
+    });
+    const receipt = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: empty,
+      rawBody: JSON.stringify(empty),
+    });
+
+    expect(receipt.status).toBe('QUEUED');
+    const held = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(held?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })])
+    );
+
+    const reviews = await ChannelMenuIngestionService.listHeldReviews(tenantId);
+    expect(reviews).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventId: receipt.eventId,
+          review: expect.objectContaining({
+            previousProductCount: 1,
+            nextProductCount: 0,
+            removedProductCount: 1,
+            removedPercent: 100,
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('soft-deletes held removals only after explicit catalogue review approval', async () => {
     const tenantId = `tenant-archive-${Date.now()}`;
     ChannelMenuIngestionService.setQueueClient(null);
 
@@ -280,10 +327,15 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: [] }],
       products: {},
     });
-    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+    const receipt = await ChannelMenuIngestionService.acceptVerifiedMenuPush({
       tenantId,
       payload: removed,
       rawBody: JSON.stringify(removed),
+    });
+    await ChannelMenuIngestionService.approveReview({
+      tenantId,
+      eventId: receipt.eventId,
+      approvedBy: 'test-admin',
     });
 
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
@@ -688,6 +740,70 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     expect(after?.products).toHaveLength(120);
     expect(after?.products).toEqual(
       expect.arrayContaining([expect.objectContaining({ plu: 'SKU-119' })])
+    );
+  });
+
+  it('does not let an older queued job republish over a newer accepted menu', async () => {
+    const tenantId = `tenant-out-of-order-${Date.now()}`;
+    const older = sampleMenu({
+      products: {
+        'prod-old': {
+          _id: 'prod-old',
+          plu: 'OLD-1',
+          gtin: [],
+          name: 'Older product',
+          price: 100,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-old'] }],
+    });
+    const newer = sampleMenu({
+      products: {
+        'prod-new': {
+          _id: 'prod-new',
+          plu: 'NEW-1',
+          gtin: [],
+          name: 'Newer product',
+          price: 200,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-new'] }],
+    });
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: older,
+      rawBody: JSON.stringify(older),
+    });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: newer,
+      rawBody: JSON.stringify(newer),
+    });
+
+    expect(queue.jobs).toHaveLength(2);
+    const olderJob = queue.jobs[0];
+    const newerJob = queue.jobs[1];
+    olderJob.receivedAt = '2026-09-26T12:00:00.000Z';
+    newerJob.receivedAt = '2026-09-26T12:01:00.000Z';
+
+    await ChannelMenuIngestionService.processJob(newerJob);
+    const staleResult = await ChannelMenuIngestionService.processJob(olderJob);
+
+    expect(staleResult).toEqual({ processed: 0 });
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted?.receivedAt).toBe(newerJob.receivedAt);
+    expect(hosted?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'NEW-1', active: true })])
+    );
+    expect(hosted?.products).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'OLD-1', active: true })])
     );
   });
 
