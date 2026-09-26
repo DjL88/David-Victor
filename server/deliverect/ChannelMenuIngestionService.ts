@@ -10,6 +10,13 @@ import {
   getCloudTasksSecurityConfig,
 } from '../cloudTasksSecurity';
 import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
+import {
+  decodeApiActivityCursor,
+  encodeApiActivityCursor,
+  pageMemoryActivity,
+  safeApiActivityErrorCode,
+  type ApiActivityPage,
+} from '../apiActivityJournal';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -63,7 +70,31 @@ interface ChannelMenuIngressRecord {
   processedAt?: string;
   approvedAt?: string;
   approvedBy?: string;
+  /** Legacy-only detail. New failures store structured safe codes instead. */
   error?: string;
+  errorCode?: string;
+  errorStage?: 'QUEUE' | 'PROCESSING';
+}
+
+export interface ChannelMenuIngressListEntry {
+  eventId: string;
+  status: ChannelMenuIngressRecord['status'];
+  receivedAt: string;
+  updatedAt: string;
+  processedAt?: string;
+  menuIds: string[];
+  menuNames?: string[];
+  channelLinkIds: string[];
+  channelNames?: string[];
+  accountIds?: string[];
+  accountNames?: string[];
+  locationIds?: string[];
+  locationNames?: string[];
+  byteSize: number;
+  hasError: boolean;
+  errorCode?: string;
+  errorStage?: 'QUEUE' | 'PROCESSING';
+  review?: ChannelMenuIngressRecord['review'];
 }
 
 const memoryRaw = new Map<string, Buffer>();
@@ -492,6 +523,7 @@ export class ChannelMenuIngestionService {
     try {
       await queue.enqueue(job);
     } catch (err: any) {
+      const errorCode = safeApiActivityErrorCode(err, 'CHANNEL_MENU_QUEUE_FAILED');
       if (queue.execution === 'inline') {
         // processJob has already journalled FAILED. Propagate the error so
         // Deliverect reports the publish as failed and can retry it, rather than
@@ -501,7 +533,7 @@ export class ChannelMenuIngestionService {
           eventId,
           menuIds,
           channelLinkIds,
-          error: String(err?.message || err),
+          errorCode,
         });
         throw err;
       }
@@ -509,7 +541,9 @@ export class ChannelMenuIngestionService {
         ...record,
         status: 'QUEUE_FAILED',
         updatedAt: new Date().toISOString(),
-        error: String(err?.message || err),
+        error: undefined,
+        errorCode,
+        errorStage: 'QUEUE',
       });
       // The verified payload is already durably buffered and journalled. The
       // route returns a retryable 503 for this receipt so Deliverect redelivery
@@ -738,6 +772,8 @@ export class ChannelMenuIngestionService {
             review,
             updatedAt: new Date().toISOString(),
             error: undefined,
+            errorCode: undefined,
+            errorStage: undefined,
           });
           await this.recordReviewAlert(job.tenantId, job.eventId, review);
           // Preserve the last-known-good hosted menu. The raw candidate is
@@ -839,55 +875,22 @@ export class ChannelMenuIngestionService {
       });
       return { processed: menus.length };
     } catch (err: any) {
+      const errorCode = safeApiActivityErrorCode(err, 'CHANNEL_MENU_PROCESSING_FAILED');
       await this.saveIngressRecord({
         ...processing,
         status: 'FAILED',
-        error: String(err?.message || err),
+        error: undefined,
+        errorCode,
+        errorStage: 'PROCESSING',
         updatedAt: new Date().toISOString(),
       });
       throw err;
     }
   }
 
-  static async listRecentIngress(tenantId: string, limit: number = 100): Promise<Array<{
-    eventId: string;
-    status: ChannelMenuIngressRecord['status'];
-    receivedAt: string;
-    updatedAt: string;
-    processedAt?: string;
-    menuIds: string[];
-    menuNames?: string[];
-    channelLinkIds: string[];
-    channelNames?: string[];
-    accountIds?: string[];
-    accountNames?: string[];
-    locationIds?: string[];
-    locationNames?: string[];
-    byteSize: number;
-    error?: string;
-    review?: ChannelMenuIngressRecord['review'];
-  }>> {
-    const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return [];
-    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
-    const db = liveEnvironment() ? getFirestoreDb() : null;
-    let records: ChannelMenuIngressRecord[] = [];
-    if (db) {
-      const snap = await db
-        .collection('tenants')
-        .doc(cleanTenantId)
-        .collection('channelMenuIngress')
-        .orderBy('receivedAt', 'desc')
-        .limit(boundedLimit)
-        .get();
-      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
-    } else {
-      records = Array.from(memoryIngress.values())
-        .filter((record) => record.tenantId === cleanTenantId)
-        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
-        .slice(0, boundedLimit);
-    }
-    return records.map((record) => ({
+  private static projectIngressRecord(record: ChannelMenuIngressRecord): ChannelMenuIngressListEntry {
+    const legacyFailure = Boolean(record.error);
+    return {
       eventId: record.eventId,
       status: record.status,
       receivedAt: record.receivedAt,
@@ -902,9 +905,123 @@ export class ChannelMenuIngestionService {
       locationIds: record.locationIds,
       locationNames: record.locationNames,
       byteSize: record.byteSize,
-      error: record.error,
+      hasError: Boolean(record.errorCode) || legacyFailure,
+      errorCode: record.errorCode ||
+        (legacyFailure
+          ? record.status === 'QUEUE_FAILED'
+            ? 'CHANNEL_MENU_QUEUE_FAILED'
+            : 'CHANNEL_MENU_PROCESSING_FAILED'
+          : undefined),
+      errorStage: record.errorStage ||
+        (legacyFailure
+          ? record.status === 'QUEUE_FAILED' ? 'QUEUE' : 'PROCESSING'
+          : undefined),
       review: record.review,
-    }));
+    };
+  }
+
+  static async listRecentIngressPage(
+    tenantId: string,
+    options: { limit?: number; cursor?: string | null } = {}
+  ): Promise<ApiActivityPage<ChannelMenuIngressListEntry>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const observedAt = new Date().toISOString();
+    const boundedLimit = Math.min(200, Math.max(1, Number(options.limit) || 100));
+    if (!cleanTenantId) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'TENANT_ID_REQUIRED',
+      };
+    }
+
+    const memoryRecords = Array.from(memoryIngress.values())
+      .filter((record) => record.tenantId === cleanTenantId);
+    const memoryPage = pageMemoryActivity(memoryRecords, {
+      limit: boundedLimit,
+      cursor: options.cursor,
+      receivedAt: (record) => record.receivedAt,
+      id: (record) => record.eventId,
+    });
+    if (memoryPage.invalidCursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_ACTIVITY_CURSOR',
+      };
+    }
+
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) {
+      return {
+        items: memoryPage.items.map((record) => this.projectIngressRecord(record)),
+        status: liveEnvironment()
+          ? memoryPage.items.length > 0 ? 'PARTIAL' : 'UNAVAILABLE'
+          : 'AVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: memoryPage.nextCursor,
+        ...(liveEnvironment() ? { errorCode: 'FIRESTORE_READ_UNAVAILABLE' } : {}),
+      };
+    }
+
+    const cursor = options.cursor ? decodeApiActivityCursor(options.cursor) : null;
+    if (options.cursor && !cursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_ACTIVITY_CURSOR',
+      };
+    }
+
+    try {
+      let query: any = db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .orderBy('receivedAt', 'desc')
+        .orderBy('eventId', 'desc');
+      if (cursor) query = query.startAfter(cursor.receivedAt, cursor.id);
+      const snap = await query.limit(boundedLimit + 1).get();
+      const records = snap.docs.map((doc: any) => doc.data() as ChannelMenuIngressRecord);
+      const pageRecords = records.slice(0, boundedLimit);
+      const last = pageRecords[pageRecords.length - 1];
+      return {
+        items: pageRecords.map((record) => this.projectIngressRecord(record)),
+        status: 'AVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: records.length > boundedLimit && last
+          ? encodeApiActivityCursor({ receivedAt: last.receivedAt, id: last.eventId })
+          : null,
+      };
+    } catch (err) {
+      return {
+        items: memoryPage.items.map((record) => this.projectIngressRecord(record)),
+        status: memoryPage.items.length > 0 ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: memoryPage.nextCursor,
+        errorCode: safeApiActivityErrorCode(err, 'FIRESTORE_READ_UNAVAILABLE'),
+      };
+    }
+  }
+
+  static async listRecentIngress(
+    tenantId: string,
+    limit: number = 100
+  ): Promise<ChannelMenuIngressListEntry[]> {
+    const page = await this.listRecentIngressPage(tenantId, { limit });
+    return page.items;
   }
 
   static async listHeldReviews(tenantId: string): Promise<Array<{

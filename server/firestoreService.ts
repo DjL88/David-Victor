@@ -22,6 +22,13 @@ import {
   type IntegrationEnvironment,
   type TenantIntegrationProfile,
 } from './integrationProfile';
+import {
+  decodeApiActivityCursor,
+  encodeApiActivityCursor,
+  pageMemoryActivity,
+  safeApiActivityErrorCode,
+  type ApiActivityPage,
+} from './apiActivityJournal';
 
 export enum OperationType {
   CREATE = 'create',
@@ -3378,37 +3385,110 @@ export class FirestoreService {
     }
   }
 
+  static async listRecentWebhookEventPage(
+    tenantId: string,
+    options: { limit?: number; cursor?: string | null } = {}
+  ): Promise<ApiActivityPage<WebhookEvent>> {
+    const cleanTenantId = String(tenantId || '').trim();
+    const observedAt = new Date().toISOString();
+    const boundedLimit = Math.min(200, Math.max(1, Number(options.limit) || 100));
+    if (!cleanTenantId) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'TENANT_ID_REQUIRED',
+      };
+    }
+
+    const memoryValues = Object.values(inMemoryWebhookEvents)
+      .filter((event) => event.tenantId === cleanTenantId);
+    const memoryPage = pageMemoryActivity(memoryValues, {
+      limit: boundedLimit,
+      cursor: options.cursor,
+      receivedAt: (event) => String(event.receivedAt || ''),
+      id: (event) => String(event.webhookEventId || ''),
+    });
+    if (memoryPage.invalidCursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_ACTIVITY_CURSOR',
+      };
+    }
+
+    const db = getFirestoreDb();
+    if (!db) {
+      return {
+        items: memoryPage.items,
+        status: useLocalRuntimeData
+          ? 'AVAILABLE'
+          : memoryPage.items.length > 0 ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: memoryPage.nextCursor,
+        ...(!useLocalRuntimeData ? { errorCode: 'FIRESTORE_READ_UNAVAILABLE' } : {}),
+      };
+    }
+
+    const cursor = options.cursor ? decodeApiActivityCursor(options.cursor) : null;
+    if (options.cursor && !cursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_ACTIVITY_CURSOR',
+      };
+    }
+
+    try {
+      let query: any = db
+        .collection('webhookEvents')
+        .where('tenantId', '==', cleanTenantId)
+        .orderBy('receivedAt', 'desc')
+        .orderBy('webhookEventId', 'desc');
+      if (cursor) query = query.startAfter(cursor.receivedAt, cursor.id);
+      const snap = await query.limit(boundedLimit + 1).get();
+      const events = snap.docs
+        .map((doc: any) => doc.data() as WebhookEvent)
+        .filter((event: WebhookEvent) => event.tenantId === cleanTenantId);
+      const pageEvents = events.slice(0, boundedLimit);
+      const last = pageEvents[pageEvents.length - 1];
+      return {
+        items: pageEvents,
+        status: 'AVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: events.length > boundedLimit && last
+          ? encodeApiActivityCursor({ receivedAt: last.receivedAt, id: last.webhookEventId })
+          : null,
+      };
+    } catch (err) {
+      console.warn('[Firestore Admin] Tenant webhook activity is not fully available:', safeApiActivityErrorCode(err, 'FIRESTORE_READ_UNAVAILABLE'));
+      return {
+        items: memoryPage.items,
+        status: memoryPage.items.length > 0 ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: memoryPage.nextCursor,
+        errorCode: safeApiActivityErrorCode(err, 'FIRESTORE_READ_UNAVAILABLE'),
+      };
+    }
+  }
+
   static async listRecentWebhookEvents(
     tenantId: string,
     limit: number = 100
   ): Promise<WebhookEvent[]> {
-    const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return [];
-    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
-    const memory = Object.values(inMemoryWebhookEvents)
-      .filter((event) => event.tenantId === cleanTenantId)
-      .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
-      .slice(0, boundedLimit);
-
-    const db = getFirestoreDb();
-    if (!db) return memory;
-
-    try {
-      // Keep this query index-light; tenant filtering happens in Firestore and
-      // the bounded result set is sorted server-side afterwards.
-      const snap = await db
-        .collection('webhookEvents')
-        .where('tenantId', '==', cleanTenantId)
-        .limit(boundedLimit)
-        .get();
-      return snap.docs
-        .map((doc) => doc.data() as WebhookEvent)
-        .sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')))
-        .slice(0, boundedLimit);
-    } catch (err) {
-      console.warn('[Firestore Admin] Failed to list tenant webhook events:', err);
-      return memory;
-    }
+    const page = await this.listRecentWebhookEventPage(tenantId, { limit });
+    return page.items;
   }
 
   /**

@@ -37,6 +37,7 @@ import {
 import { SubstitutionCallbackService } from '../deliverect/SubstitutionCallbackService';
 import { ChannelProvisioningService, type ChannelProvisioningEventType } from '../deliverect/ChannelProvisioningService';
 import { ChannelMenuIngestionService } from '../deliverect/ChannelMenuIngestionService';
+import { safeApiActivityErrorCode } from '../apiActivityJournal';
 import { resolveDeliverectWebhookTenantHandover } from '../deliverect/DeliverectWebhookTenantResolution';
 import { PickingStatusIngressService, type PickingStatusIngressReceipt } from '../deliverect/PickingStatusIngressService';
 import { AnalyticsService } from '../analyticsService';
@@ -7129,131 +7130,258 @@ v1Router.post('/admin/tenants/:id/integration/discover-stores', requireAdminAuth
  * never bearer tokens, HMAC values, credentials, raw request bodies or PII.
  */
 v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.params.id;
-    const admin = (req as AuthenticatedRequest).adminUser;
-    if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== tenantId) {
-      return res.status(403).json({ error: 'Tenant access denied', code: 'TENANT_ACCESS_DENIED' });
-    }
-
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
-    const [menuPushes, webhooks, context, mappings] = await Promise.all([
-      ChannelMenuIngestionService.listRecentIngress(tenantId, limit),
-      FirestorePlatformService.listRecentWebhookEvents(tenantId, limit),
-      IntegrationContext.getContext(tenantId),
-      linkedAccountsAdapter.getTenantMappings(tenantId).catch(() => ({ accounts: [], locations: [], stores: [] } as any)),
-    ]);
-    if (String(req.query.refreshOAuth || '').toLowerCase() === 'true') {
-      await context.tokenManager.invalidateCacheAndWait();
-    }
-    const grantedScopes = await context.tokenManager.getGrantedScopes().catch(() => []);
-    const circuitStats = Object.fromEntries(
-      Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
-    );
-
-    const unique = (values: unknown[]): string[] => Array.from(new Set(
-      values.filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
-        .map((value) => value.trim())
-    ));
-    const accountByKey = new Map<string, any>();
-    for (const account of mappings.accounts || []) {
-      accountByKey.set(String(account.accountLinkId || ''), account);
-      accountByKey.set(String(account.deliverectAccountId || ''), account);
-    }
-    const locationByKey = new Map<string, any>();
-    for (const location of mappings.locations || []) {
-      locationByKey.set(String(location.physicalLocationId || ''), location);
-      locationByKey.set(String(location.deliverectLocationId || ''), location);
-    }
-    const storeByChannelLink = new Map<string, any>(
-      (mappings.stores || []).map((store: any) => [String(store.channelLinkId || ''), store])
-    );
-
-    const enrichedMenuPushes = menuPushes.map((entry) => {
-      const stores = entry.channelLinkIds
-        .map((id) => storeByChannelLink.get(String(id)))
-        .filter(Boolean);
-      const locations = stores
-        .map((store: any) => locationByKey.get(String(store.physicalLocationId || '')))
-        .filter(Boolean);
-      const accounts = stores
-        .map((store: any) => accountByKey.get(String(store.accountLinkId || '')))
-        .filter(Boolean);
-      const serviceNames = entry.channelLinkIds.flatMap((channelLinkId) => [
-        ...locations.flatMap((location: any) => location.services || []),
-        ...stores.flatMap((store: any) => store.services || []),
-      ]
-        .filter((service: any) => String(service?.id || '') === String(channelLinkId))
-        .map((service: any) => String(service?.name || '')));
-
-      return {
-        ...entry,
-        menuNames: unique(entry.menuNames || []),
-        accountIds: unique([
-          ...(entry.accountIds || []),
-          ...accounts.map((account: any) => account.deliverectAccountId),
-          context.deliverectAccountId,
-        ]),
-        accountNames: unique([
-          ...(entry.accountNames || []),
-          ...accounts.map((account: any) => account.displayName),
-        ]),
-        channelNames: unique([
-          ...(entry.channelNames || []),
-          ...serviceNames,
-          context.channelName,
-        ]),
-        locationIds: unique([
-          ...(entry.locationIds || []),
-          ...locations.map((location: any) => location.deliverectLocationId),
-        ]),
-        locationNames: unique([
-          ...(entry.locationNames || []),
-          ...locations.map((location: any) => location.name),
-          ...stores.map((store: any) => store.name),
-        ]),
-        error: entry.error ? String(entry.error).slice(0, 500) : undefined,
-      };
-    });
-
-    res.json({
-      tenantId,
-      generatedAt: new Date().toISOString(),
-      integration: {
-        environment: context.environment,
-        credentialMode: context.credentialMode,
-        configured: context.isConfigured,
-        accountId: context.deliverectAccountId || null,
-        accountName: mappings.accounts?.find((account: any) =>
-          String(account.deliverectAccountId || '') === String(context.deliverectAccountId || '')
-        )?.displayName || null,
-        channelName: context.channelName || null,
-        publicBaseUrl:
-          process.env.CHANNEL_PUBLIC_BASE_URL ||
-          context.publicBaseUrl ||
-          process.env.PUBLIC_BASE_URL ||
-          null,
-        allowedChannelLinkIds: context.allowedChannelLinkIds || [],
-        grantedScopes,
-        commerceScopeGranted: grantedScopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce'),
-      },
-      circuits: circuitStats,
-      menuPushes: enrichedMenuPushes,
-      webhooks: webhooks.map((event) => ({
-        webhookEventId: event.webhookEventId,
-        provider: event.provider,
-        environment: event.environment,
-        receivedAt: event.receivedAt,
-        processedAt: event.processedAt,
-        verified: event.verified,
-        eventType: event.eventType,
-        processingStatus: event.processingStatus,
-        errorCode: event.errorCode,
-      })),
-    });
-  } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to load integration API logs');
+  const tenantId = req.params.id;
+  const admin = (req as AuthenticatedRequest).adminUser;
+  if (admin?.role !== 'platformSuperAdmin' && admin?.tenantId !== tenantId) {
+    return res.status(403).json({ error: 'Tenant access denied', code: 'TENANT_ACCESS_DENIED' });
   }
+
+  const requestedLimit = Number(req.query.limit || 100);
+  const limit = Math.min(200, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
+  const generatedAt = new Date().toISOString();
+  const menuCursor = typeof req.query.menuCursor === 'string' ? req.query.menuCursor : undefined;
+  const webhookCursor = typeof req.query.webhookCursor === 'string' ? req.query.webhookCursor : undefined;
+
+  const [menuResult, webhookResult, contextResult, mappingsResult] = await Promise.allSettled([
+    ChannelMenuIngestionService.listRecentIngressPage(tenantId, { limit, cursor: menuCursor }),
+    FirestorePlatformService.listRecentWebhookEventPage(tenantId, { limit, cursor: webhookCursor }),
+    IntegrationContext.getContext(tenantId),
+    linkedAccountsAdapter.getTenantMappings(tenantId),
+  ]);
+
+  const menuPage = menuResult.status === 'fulfilled'
+    ? menuResult.value
+    : {
+        items: [] as any[],
+        status: 'UNAVAILABLE' as const,
+        source: 'MEMORY' as const,
+        observedAt: generatedAt,
+        nextCursor: null,
+        errorCode: safeApiActivityErrorCode(menuResult.reason, 'MENU_JOURNAL_UNAVAILABLE'),
+      };
+  const webhookPage = webhookResult.status === 'fulfilled'
+    ? webhookResult.value
+    : {
+        items: [] as any[],
+        status: 'UNAVAILABLE' as const,
+        source: 'MEMORY' as const,
+        observedAt: generatedAt,
+        nextCursor: null,
+        errorCode: safeApiActivityErrorCode(webhookResult.reason, 'WEBHOOK_JOURNAL_UNAVAILABLE'),
+      };
+  const context = contextResult.status === 'fulfilled' ? contextResult.value : null;
+  const mappings: any = mappingsResult.status === 'fulfilled'
+    ? mappingsResult.value
+    : { accounts: [], locations: [], stores: [] };
+
+  let scopeObservation: {
+    status: 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
+    source: 'CACHE' | 'ACTIVE_REFRESH' | 'NONE';
+    observedAt: string;
+    scopes: string[];
+    errorCode?: string;
+  } = {
+    status: 'UNKNOWN',
+    source: 'NONE',
+    observedAt: generatedAt,
+    scopes: [],
+  };
+
+  if (context) {
+    const refreshOAuth = String(req.query.refreshOAuth || '').toLowerCase() === 'true';
+    if (refreshOAuth) {
+      try {
+        await context.tokenManager.invalidateCacheAndWait();
+        const scopes = await context.tokenManager.getGrantedScopes();
+        scopeObservation = {
+          status: 'AVAILABLE',
+          source: 'ACTIVE_REFRESH',
+          observedAt: new Date().toISOString(),
+          scopes,
+        };
+      } catch (err) {
+        scopeObservation = {
+          status: 'UNAVAILABLE',
+          source: 'ACTIVE_REFRESH',
+          observedAt: new Date().toISOString(),
+          scopes: [],
+          errorCode: safeApiActivityErrorCode(err, 'OAUTH_SCOPE_REFRESH_FAILED'),
+        };
+      }
+    } else {
+      const cached = context.tokenManager.getCachedToken();
+      if (cached) {
+        const scopes = Array.from(new Set(
+          String(cached.scope || '')
+            .split(/\s+/)
+            .map((scope) => scope.trim())
+            .filter(Boolean)
+        ));
+        scopeObservation = {
+          status: 'AVAILABLE',
+          source: 'CACHE',
+          observedAt: generatedAt,
+          scopes,
+        };
+      }
+    }
+  }
+
+  const circuitStats = Object.fromEntries(
+    Object.entries(getCircuitBreakerStats()).filter(([key]) => key.startsWith(`${tenantId}:`))
+  );
+  const unique = (values: unknown[]): string[] => Array.from(new Set(
+    values
+      .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+      .map((value) => value.trim())
+  ));
+  const accountByKey = new Map<string, any>();
+  for (const account of mappings.accounts || []) {
+    accountByKey.set(String(account.accountLinkId || ''), account);
+    accountByKey.set(String(account.deliverectAccountId || ''), account);
+  }
+  const locationByKey = new Map<string, any>();
+  for (const location of mappings.locations || []) {
+    locationByKey.set(String(location.physicalLocationId || ''), location);
+    locationByKey.set(String(location.deliverectLocationId || ''), location);
+  }
+  const storeByChannelLink = new Map<string, any>(
+    (mappings.stores || []).map((store: any) => [String(store.channelLinkId || ''), store])
+  );
+
+  const enrichedMenuPushes = menuPage.items.map((entry: any) => {
+    const stores = entry.channelLinkIds
+      .map((id: string) => storeByChannelLink.get(String(id)))
+      .filter(Boolean);
+    const locations = stores
+      .map((store: any) => locationByKey.get(String(store.physicalLocationId || '')))
+      .filter(Boolean);
+    const accounts = stores
+      .map((store: any) => accountByKey.get(String(store.accountLinkId || '')))
+      .filter(Boolean);
+    const serviceNames = entry.channelLinkIds.flatMap((channelLinkId: string) => [
+      ...locations.flatMap((location: any) => location.services || []),
+      ...stores.flatMap((store: any) => store.services || []),
+    ]
+      .filter((service: any) => String(service?.id || '') === String(channelLinkId))
+      .map((service: any) => String(service?.name || '')));
+
+    return {
+      eventId: entry.eventId,
+      status: entry.status,
+      receivedAt: entry.receivedAt,
+      updatedAt: entry.updatedAt,
+      processedAt: entry.processedAt,
+      byteSize: entry.byteSize,
+      menuIds: unique(entry.menuIds || []),
+      menuNames: unique(entry.menuNames || []),
+      channelLinkIds: unique(entry.channelLinkIds || []),
+      channelNames: unique([
+        ...(entry.channelNames || []),
+        ...serviceNames,
+        context?.channelName,
+      ]),
+      accountIds: unique([
+        ...(entry.accountIds || []),
+        ...accounts.map((account: any) => account.deliverectAccountId),
+        context?.deliverectAccountId,
+      ]),
+      accountNames: unique([
+        ...(entry.accountNames || []),
+        ...accounts.map((account: any) => account.displayName),
+      ]),
+      locationIds: unique([
+        ...(entry.locationIds || []),
+        ...locations.map((location: any) => location.deliverectLocationId),
+      ]),
+      locationNames: unique([
+        ...(entry.locationNames || []),
+        ...locations.map((location: any) => location.name),
+        ...stores.map((store: any) => store.name),
+      ]),
+      hasError: entry.hasError === true,
+      errorCode: entry.errorCode,
+      errorStage: entry.errorStage,
+      review: entry.review,
+    };
+  });
+
+  return res.json({
+    tenantId,
+    generatedAt,
+    integration: context ? {
+      environment: context.environment,
+      credentialMode: context.credentialMode,
+      configured: context.isConfigured,
+      accountId: context.deliverectAccountId || null,
+      accountName: mappings.accounts?.find((account: any) =>
+        String(account.deliverectAccountId || '') === String(context.deliverectAccountId || '')
+      )?.displayName || null,
+      channelName: context.channelName || null,
+      publicBaseUrl:
+        process.env.CHANNEL_PUBLIC_BASE_URL ||
+        context.publicBaseUrl ||
+        process.env.PUBLIC_BASE_URL ||
+        null,
+      allowedChannelLinkIds: context.allowedChannelLinkIds || [],
+      grantedScopes: scopeObservation.scopes,
+      commerceScopeGranted: scopeObservation.status === 'AVAILABLE'
+        ? scopeObservation.scopes.some((scope) => String(scope).toLowerCase() === 'genericcommerce')
+        : null,
+    } : null,
+    circuits: circuitStats,
+    sources: {
+      menuPushes: {
+        status: menuPage.status,
+        source: menuPage.source,
+        observedAt: menuPage.observedAt,
+        nextCursor: menuPage.nextCursor,
+        errorCode: menuPage.errorCode,
+      },
+      webhooks: {
+        status: webhookPage.status,
+        source: webhookPage.source,
+        observedAt: webhookPage.observedAt,
+        nextCursor: webhookPage.nextCursor,
+        errorCode: webhookPage.errorCode,
+      },
+      integration: {
+        status: context ? 'AVAILABLE' : 'UNAVAILABLE',
+        source: 'PLATFORM',
+        observedAt: generatedAt,
+        ...(contextResult.status === 'rejected'
+          ? { errorCode: safeApiActivityErrorCode(contextResult.reason, 'INTEGRATION_CONTEXT_UNAVAILABLE') }
+          : {}),
+      },
+      mappings: {
+        status: mappingsResult.status === 'fulfilled' ? 'AVAILABLE' : 'UNAVAILABLE',
+        source: 'PLATFORM',
+        observedAt: generatedAt,
+        ...(mappingsResult.status === 'rejected'
+          ? { errorCode: safeApiActivityErrorCode(mappingsResult.reason, 'INTEGRATION_MAPPINGS_UNAVAILABLE') }
+          : {}),
+      },
+      oauthScopes: scopeObservation,
+    },
+    pagination: {
+      menuCursor: menuPage.nextCursor,
+      webhookCursor: webhookPage.nextCursor,
+    },
+    menuPushes: enrichedMenuPushes,
+    webhooks: webhookPage.items.map((event: any) => ({
+      webhookEventId: event.webhookEventId,
+      provider: event.provider,
+      environment: event.environment,
+      receivedAt: event.receivedAt,
+      processedAt: event.processedAt,
+      verified: event.verified,
+      eventType: event.eventType,
+      processingStatus: event.processingStatus,
+      errorCode: /^[A-Z][A-Z0-9_]{0,79}$/.test(String(event.errorCode || ''))
+        ? event.errorCode
+        : undefined,
+    })),
+  });
 });
 
 /**
