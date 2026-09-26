@@ -252,6 +252,12 @@ export interface PickingItem {
   bundlePricing?: PickingBundlePricing;
   substitution?: PickingSubstitution;
   amendment?: PickingAmendment;
+  /**
+   * Provider occurrence time for the newest accepted line mutation. Used only
+   * to prevent a late/older amendment callback from regressing newer line truth.
+   */
+  lastPickingMutationAt?: string;
+  lastPickingMutationEventId?: string;
   unit?: string;
 }
 
