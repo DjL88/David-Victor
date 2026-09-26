@@ -35,7 +35,7 @@ describe('checkout tenant ownership fence', () => {
         items: [],
       })
     ).rejects.toMatchObject({
-      code: 'TENANT_REQUIRED',
+      code: 'TENANT_SCOPE_REQUIRED',
       statusCode: 400,
     });
   });
