@@ -144,7 +144,7 @@ describe('Phase 8: Store Eligibility & Dispatch Validation', () => {
         expect(options.headers.Authorization).toBe('Bearer test_bearer_token_123');
         expect(JSON.parse(options.body)).toEqual({
           channelLinkId: 'channel-store-99',
-          pickupReadyTime: '2026-09-26T14:20:00.000Z',
+          pickupTime: '2026-09-26T14:20:00.000Z',
           deliveryLocations: {
             deliveryTime: '2026-09-26T14:45:00.000Z',
             street: 'Oxford Street',
