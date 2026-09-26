@@ -36,6 +36,7 @@ import { getCommerceClient } from '../../commerce/CommerceClientFactory';
 import { isProductMatchingFilters } from '../../domain/allergens';
 import {
   shouldBlockCatalog,
+  shouldShowCatalogSkeleton,
   shouldShowStaleCatalogNotice,
 } from '../catalog/catalogFreshnessPresentation';
 
@@ -277,6 +278,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
   const catalogBlocksProducts = shouldBlockCatalog(catalogFreshness);
   const showStaleCatalogNotice = shouldShowStaleCatalogNotice(catalogFreshness);
+  const showCatalogSkeleton = shouldShowCatalogSkeleton(
+    productsLoading,
+    products.length,
+    searchLoading
+  );
 
   const renderableBaseProducts = useMemo(() => {
     return getRenderableProducts(products).filter(matchesFilters);
@@ -791,7 +797,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </button>
                 )}
               </div>
-            ) : (productsLoading && products.length === 0) || searchLoading ? (
+            ) : showCatalogSkeleton ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
                 {[...Array(8)].map((_, i) => (
                   <ProductCardSkeleton key={i} />
