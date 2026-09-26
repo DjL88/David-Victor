@@ -130,7 +130,7 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
       },
       body: JSON.stringify({
         channelLinkId,
-        ...(params.pickupTime ? { pickupReadyTime: params.pickupTime } : {}),
+        ...(params.pickupTime ? { pickupTime: params.pickupTime } : {}),
         deliveryLocations,
       }),
     });
