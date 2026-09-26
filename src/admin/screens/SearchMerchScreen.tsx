@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { SearchOptimisationConfig } from '../../commerce/searchMerchModels';
+import type { SearchOptimisationConfig } from '../../commerce/searchMerchModels';
 import { DEFAULT_SEARCH_CONFIG, setActiveSearchConfig } from '../../commerce/searchMerchEngine';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import { getCommerceClient } from '../../commerce/CommerceClientFactory';
@@ -19,7 +19,6 @@ import {
   Check,
   AlertCircle,
   ShieldCheck,
-  RefreshCw,
   Loader2,
 } from 'lucide-react';
 
@@ -364,6 +363,11 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         </div>
       </div>
 
+      {configLoadState === 'loading' && (
+        <div aria-live="polite" className="rounded-xl border border-gray-200 bg-white p-3.5 text-xs font-semibold text-gray-600">
+          Loading saved search rules for this tenant…
+        </div>
+      )}
       {configLoadState === 'error' && (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-800">
           Search rules for this tenant are unavailable: {configLoadError || 'Unknown error'}. Existing settings have not been replaced; saving stays disabled until a successful reload.
@@ -414,7 +418,8 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         </span>
       </div>
 
-      <fieldset disabled={configLoadState !== 'ready'} className="min-w-0 space-y-6">
+      {configLoadState === 'ready' && (
+      <fieldset className="min-w-0 space-y-6">
       {/* TABS */}
       <div className="flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 pb-2">
         {[
@@ -842,6 +847,7 @@ export const SearchMerchScreen: React.FC<SearchMerchScreenProps> = ({ tenantId }
         </div>
       )}
       </fieldset>
+      )}
     </div>
   );
 };
