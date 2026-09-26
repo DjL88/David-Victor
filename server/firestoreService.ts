@@ -3881,7 +3881,6 @@ export class FirestoreService {
       throw BFFError.invalidInput('tenantId and channelLinkId are required for product snooze state.');
     }
 
-    if (!inMemoryStoreSnoozes[cleanTenantId]) inMemoryStoreSnoozes[cleanTenantId] = {};
     const next: Record<string, StoreProductSnoozeState> = {};
     for (const snooze of snoozes) {
       const plu = String(snooze?.plu || '').trim();
@@ -3905,25 +3904,31 @@ export class FirestoreService {
         413
       );
     }
-    inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = next;
 
-    // Read operational truth once, then compute the delta in memory. The old
-    // implementation called upsertStoreProductOperationalState once per PLU,
-    // producing thousands of serial Firestore round trips for large retailers.
+    // Read current operational truth once and compare observed timestamps before
+    // constructing any durable or in-memory mutation. Older bulk snapshots must
+    // never regress a newer per-PLU state.
     const previousOperational = await this.getStoreProductOperationalStates(
       cleanTenantId,
       cleanChannelLinkId
     );
-    if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
-      inMemoryStoreProductOperationalStates[cleanTenantId] = {};
-    }
-    if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
-    }
+    const incomingPluSet = new Set(nextStates.map((state) => state.plu));
+    const timestampMs = (value?: string) => {
+      const parsed = Date.parse(String(value || ''));
+      return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+    };
 
+    const acceptedNextStates: StoreProductSnoozeState[] = [];
     const operationalWrites: StoreProductOperationalState[] = [];
     for (const state of nextStates) {
       const previous = previousOperational[state.plu];
+      const incomingMs = timestampMs(state.updatedAt);
+      const previousMs = timestampMs(previous?.updatedAt);
+      if (previous && incomingMs < previousMs) {
+        continue;
+      }
+
+      acceptedNextStates.push(state);
       const nextOperational: StoreProductOperationalState = {
         tenantId: cleanTenantId,
         channelLinkId: cleanChannelLinkId,
@@ -3935,34 +3940,74 @@ export class FirestoreService {
         updatedAt: state.updatedAt,
         source: 'DELIVERECT_WEBHOOK',
       };
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][state.plu] = nextOperational;
       if (
-        previous?.availability !== 'SNOOZED' ||
-        previous?.snoozeStart !== state.snoozeStart ||
-        previous?.snoozeEnd !== state.snoozeEnd
+        !previous ||
+        incomingMs > previousMs ||
+        previous.availability !== 'SNOOZED' ||
+        previous.snoozeStart !== state.snoozeStart ||
+        previous.snoozeEnd !== state.snoozeEnd
       ) {
         operationalWrites.push(nextOperational);
       }
     }
 
-    const clearedAt = new Date().toISOString();
+    // Omission is only evidence for an unsnooze when this snapshot contains a
+    // strictly newer observed timestamp than the state being cleared. An empty
+    // or timestamp-less snapshot therefore preserves last-known-good state.
+    const snapshotObservedAt = acceptedNextStates
+      .map((state) => state.updatedAt)
+      .filter(Boolean)
+      .sort((a, b) => timestampMs(b) - timestampMs(a))[0];
+    const snapshotMs = timestampMs(snapshotObservedAt);
+
     for (const [plu, state] of Object.entries(previousOperational)) {
-      if (state.availability !== 'SNOOZED' || next[plu]) continue;
-      const active: StoreProductOperationalState = {
+      if (state.availability !== 'SNOOZED' || incomingPluSet.has(plu)) continue;
+      const previousMs = timestampMs(state.updatedAt);
+      if (!snapshotObservedAt || snapshotMs <= previousMs) continue;
+      operationalWrites.push({
         tenantId: cleanTenantId,
         channelLinkId: cleanChannelLinkId,
         plu,
         availability: 'ACTIVE',
         snoozed: false,
-        updatedAt: clearedAt,
+        updatedAt: snapshotObservedAt,
         source: 'DELIVERECT_WEBHOOK',
-      };
-      inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][plu] = active;
-      operationalWrites.push(active);
+      });
     }
 
+    const applyMemoryAfterSuccess = (deletedPlus: string[] = []) => {
+      if (!inMemoryStoreSnoozes[cleanTenantId]) inMemoryStoreSnoozes[cleanTenantId] = {};
+      const memorySnoozes = {
+        ...(inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] || {}),
+      };
+      for (const plu of deletedPlus) delete memorySnoozes[plu];
+      for (const state of acceptedNextStates) memorySnoozes[state.plu] = state;
+      inMemoryStoreSnoozes[cleanTenantId][cleanChannelLinkId] = memorySnoozes;
+
+      if (!inMemoryStoreProductOperationalStates[cleanTenantId]) {
+        inMemoryStoreProductOperationalStates[cleanTenantId] = {};
+      }
+      if (!inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId]) {
+        inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId] = {};
+      }
+      for (const state of operationalWrites) {
+        inMemoryStoreProductOperationalStates[cleanTenantId][cleanChannelLinkId][state.plu] = state;
+      }
+    };
+
     const db = getFirestoreDb();
-    if (!db) return;
+    if (!db) {
+      const memoryDeletes = Object.entries(
+        inMemoryStoreSnoozes[cleanTenantId]?.[cleanChannelLinkId] || {}
+      )
+        .filter(([plu, state]) => {
+          if (incomingPluSet.has(plu) || !snapshotObservedAt) return false;
+          return snapshotMs > timestampMs(state.updatedAt);
+        })
+        .map(([plu]) => plu);
+      applyMemoryAfterSuccess(memoryDeletes);
+      return;
+    }
 
     const storeRef = db
       .collection('tenants')
@@ -3986,26 +4031,47 @@ export class FirestoreService {
         );
       }
 
-      const nextIds = new Set(nextStates.map((state) => state.plu.replace(/\//g, '_')));
+      const acceptedIds = new Set(
+        acceptedNextStates.map((state) => state.plu.replace(/\//g, '_'))
+      );
+      const incomingIds = new Set(
+        nextStates.map((state) => state.plu.replace(/\//g, '_'))
+      );
+      const deletedPlus: string[] = [];
       const mutations: Array<(batch: any) => void> = [];
 
       existing.docs.forEach((doc: any) => {
-        if (!nextIds.has(String(doc.id))) mutations.push((batch) => batch.delete(doc.ref));
+        const data = doc.data() as StoreProductSnoozeState;
+        const plu = String(data?.plu || '').trim();
+        if (incomingIds.has(String(doc.id)) || incomingPluSet.has(plu)) return;
+        if (!snapshotObservedAt || snapshotMs <= timestampMs(data?.updatedAt)) return;
+        mutations.push((batch) => batch.delete(doc.ref));
+        if (plu) deletedPlus.push(plu);
       });
-      nextStates.forEach((state) => {
+      acceptedNextStates.forEach((state) => {
         const id = state.plu.replace(/\//g, '_');
-        mutations.push((batch) => batch.set(snoozeCollection.doc(id), cleanUndefined(state), { merge: true }));
+        if (!acceptedIds.has(id)) return;
+        mutations.push((batch) =>
+          batch.set(snoozeCollection.doc(id), cleanUndefined(state), { merge: true })
+        );
       });
       operationalWrites.forEach((state) => {
         const id = state.plu.replace(/\//g, '_');
-        mutations.push((batch) => batch.set(productStateCollection.doc(id), cleanUndefined(state), { merge: true }));
+        mutations.push((batch) =>
+          batch.set(productStateCollection.doc(id), cleanUndefined(state), { merge: true })
+        );
       });
 
       for (let index = 0; index < mutations.length; index += FIRESTORE_OPERATIONAL_BATCH_SIZE) {
         const batch = db.batch();
-        for (const apply of mutations.slice(index, index + FIRESTORE_OPERATIONAL_BATCH_SIZE)) apply(batch);
+        for (const apply of mutations.slice(index, index + FIRESTORE_OPERATIONAL_BATCH_SIZE)) {
+          apply(batch);
+        }
         await batch.commit();
       }
+
+      // Memory mirrors durable truth only after every Firestore chunk succeeds.
+      applyMemoryAfterSuccess(deletedPlus);
     } catch (err: any) {
       if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
@@ -4033,7 +4099,15 @@ export class FirestoreService {
         .collection('operationalStores')
         .doc(cleanChannelLinkId)
         .collection('snoozes')
+        .limit(MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE + 1)
         .get();
+      if (snap.docs.length > MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE) {
+        throw new BFFError(
+          'OPERATIONAL_STATE_LIMIT_EXCEEDED',
+          `Store ${cleanChannelLinkId} has more than ${MAX_OPERATIONAL_PRODUCT_STATES_PER_STORE} snooze records; refusing a partial read.`,
+          503
+        );
+      }
       const result: Record<string, StoreProductSnoozeState> = { ...fallback };
       snap.forEach((doc: any) => {
         const data = doc.data() as StoreProductSnoozeState;
@@ -4041,6 +4115,7 @@ export class FirestoreService {
       });
       return result;
     } catch (err: any) {
+      if (err instanceof BFFError && err.code === 'OPERATIONAL_STATE_LIMIT_EXCEEDED') throw err;
       if (isFirestorePermissionDeniedError(err)) markFirestorePermissionDenied(err);
       return fallback;
     }
