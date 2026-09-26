@@ -38,6 +38,25 @@ function generatedPrompt(): string {
 }
 
 describe('Altie actual chat caller reference integration', () => {
+  it('answers a published synonym in natural wording locally without exposing restricted facts', async () => {
+    vi.stubEnv('ALTIE_AI_MODE', 'local');
+    const note = { ...fact('cms', 'operators', 'Use Admin Pages for customer information. Save a draft, then publish.'), aliases: ['shop information'] };
+    boundary.readFacts.mockResolvedValue({ ...emptyAltieFactsState(), revision: 2, publishedRevision: 2,
+      published: [note, { ...note, id: 'private', audience: 'superAdmin', body: 'PRIVATE_REFERENCE_TEXT' },
+        { ...note, id: 'archived', active: false, body: 'ARCHIVED_REFERENCE_TEXT' }],
+      draft: [{ ...note, body: 'DRAFT_REFERENCE_TEXT' }],
+    });
+    const reply = await AdminAssistantChatService.chat({ ...args, attachments: [], message: 'Where do I put shop information?', context: { section: 'altie_facts' } });
+    expect(reply.provider).toBe('local-agent');
+    expect(reply.message).toContain('Use Admin Pages');
+    expect(reply.message).toContain('published owner reference');
+    expect(reply.message).not.toMatch(/PRIVATE_REFERENCE_TEXT|ARCHIVED_REFERENCE_TEXT|DRAFT_REFERENCE_TEXT/);
+    expect(reply.proposalIntent).toBeNull();
+    expect(boundary.executeRead).not.toHaveBeenCalled();
+    expect(boundary.generate).not.toHaveBeenCalled();
+    expect(boundary.secret).not.toHaveBeenCalled();
+  });
+
   it('answers every Admin page locally with model access disabled', async () => {
     vi.stubEnv('ALTIE_AI_MODE', 'local');
     const { ALTIE_PAGE_GUIDES } = await import('./altiePageGuide');

@@ -1304,7 +1304,8 @@ export class AdminAssistantChatService {
     const localReply = attachments.length === 0
       ? (summariseReadContext(readContext, args.message) ||
         (asksReferenceQuestion && references.length ? references.slice(0, 2).map(topic => `${topic.summary}: ${topic.facts.join(' ')}`).join('\n\n') : null) ||
-        guidedReply || (pageGuide ? `${pageGuide.label}: ${pageGuide.help}` : null))
+        guidedReply || (pageGuide ? `${pageGuide.label}: ${pageGuide.help}` : null) ||
+        (references.length ? references.slice(0, 2).map(topic => `${topic.summary}: ${topic.facts.join(' ')}`).join('\n\n') : null))
       : null;
 
     if (localReply) {
