@@ -351,6 +351,44 @@ describe('Phase 11: Deliverect Pay (DPay) Integration & Staging Test Matrix (PAY
     });
   });
 
+    it('rejects cross-tenant payment lookup before provider access', async () => {
+      const payment = await PaymentService.requestPayment(
+        {
+          channelLinkId: testChannelLinkId,
+          mode: { type: 'token', tokenId: 'tok_tenant_scope' },
+          amount: 1000,
+          currency: 'GBP',
+          captureMode: 'manual',
+        },
+        testTenant
+      );
+
+      await expect(
+        PaymentService.getPayment(payment.paymentId, 'brand-beta')
+      ).rejects.toThrow(/does not belong to the resolved tenant/i);
+    });
+
+    it('rejects reauthorization above the ceiling persisted with the original payment request', async () => {
+      const payment = await PaymentService.requestPayment(
+        {
+          channelLinkId: testChannelLinkId,
+          mode: { type: 'token', tokenId: 'tok_ceiling_guard' },
+          amount: 2000,
+          currency: 'GBP',
+          captureMode: 'manual',
+          customerApprovedMaxAmount: { amount: 2200, currency: 'GBP' },
+        },
+        testTenant
+      );
+
+      await expect(
+        PaymentService.reauthorize(payment.paymentId, 201, testTenant)
+      ).rejects.toThrow(/customer-approved authorization ceiling/i);
+
+      const unchanged = await PaymentService.getPayment(payment.paymentId, testTenant);
+      expect(unchanged.authorizedAmount).toBe(2000);
+    });
+
   // ========================================================
   // PAY-10: Checkout Integration with Authorized Payment ID
   // ========================================================
