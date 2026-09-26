@@ -141,3 +141,22 @@ body,
   border-radius: 12px;
   animation: admin-ai-highlight-pulse 1.15s ease-out 3;
 }
+
+
+/* Respect OS reduced-motion preferences without changing layout or hiding content. */
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
