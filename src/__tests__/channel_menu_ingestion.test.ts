@@ -743,8 +743,8 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     );
   });
 
-  it('does not let an older queued job republish over a newer accepted menu', async () => {
-    const tenantId = `tenant-out-of-order-${Date.now()}`;
+  it('atomically rejects an older worker that overlaps a newer publish', async () => {
+    const tenantId = `tenant-overlap-order-${Date.now()}`;
     const older = sampleMenu({
       products: {
         'prod-old': {
@@ -789,8 +789,32 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     olderJob.receivedAt = '2026-09-26T12:00:00.000Z';
     newerJob.receivedAt = '2026-09-26T12:01:00.000Z';
 
-    await ChannelMenuIngestionService.processJob(newerJob);
-    const staleResult = await ChannelMenuIngestionService.processJob(olderJob);
+    let olderReachedPublish!: () => void;
+    let releaseOlder!: () => void;
+    const olderAtPublish = new Promise<void>((resolve) => {
+      olderReachedPublish = resolve;
+    });
+    const olderRelease = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const operational = vi
+      .spyOn(DeliverectOperationalWebhookService, 'process')
+      .mockImplementation(async (_tenantId, _eventType, menu: any) => {
+        if (JSON.stringify(menu).includes('OLD-1')) {
+          olderReachedPublish();
+          await olderRelease;
+        }
+        return undefined as any;
+      });
+
+    const olderProcessing = ChannelMenuIngestionService.processJob(olderJob);
+    await olderAtPublish;
+    const newerResult = await ChannelMenuIngestionService.processJob(newerJob);
+    expect(newerResult).toEqual({ processed: 1 });
+
+    releaseOlder();
+    const staleResult = await olderProcessing;
+    operational.mockRestore();
 
     expect(staleResult).toEqual({ processed: 0 });
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
