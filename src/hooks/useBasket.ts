@@ -161,6 +161,22 @@ export function useBasket(
           return { success: false, reason: 'NO_STORE_SELECTED' };
         }
 
+        if (!currentBasket) {
+          const openStatus = evaluateStoreOpenNow(selectedStore);
+          if (!openStatus.isOpen && selectedStore?.scheduling?.acceptsPreOrders === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} is closed right now and isn't accepting pre-orders.`
+            );
+            return { success: false, reason: 'STORE_CLOSED' };
+          }
+          if (selectedStore?.supportsPickup === false) {
+            setSnoozeWarning(
+              `${selectedStore?.name || 'This store'} doesn't offer collection right now.`
+            );
+            return { success: false, reason: 'FULFILLMENT_NOT_SUPPORTED' };
+          }
+        }
+
         if (newQuantity > previousVisibleQty) {
           const snoozeStatus = checkProductSnooze(activeStoreId, product.plu);
           if (!snoozeStatus.isAvailable) {
@@ -682,6 +698,8 @@ export function useBasket(
   };
 
   const clearAllBaskets = () => {
+    optimisticQuantitiesRef.current = {};
+    setOptimisticQuantities({});
     rememberBasket(null);
   };
 
