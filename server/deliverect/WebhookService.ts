@@ -11,6 +11,7 @@ import { getFirestoreDb } from '../firebase';
 import { getDispatchAdapter } from './index';
 import { DispatchOrchestrationService } from './DispatchOrchestrationService';
 import { SecretManager } from '../secrets';
+import { calculateSubstitutionLineEconomics } from '../../src/commerce/substitutionPricing';
 
 export interface WebhookProcessingResult {
   success: boolean;
@@ -1121,14 +1122,20 @@ export class WebhookService {
           const existingItem = await FirestorePlatformService.getOrderLineItem(targetOrder.orderId, targetPlu);
           const subPlu = payload.substitutePlu || payload.substitute?.plu || payload.newPlu || 'SUB_PLU';
           const subName = payload.substituteName || payload.substitute?.name || 'Alternative Product';
+          const matchedCandidate = existingItem?.substituteCandidates?.find(
+            (candidate) => String(candidate.plu) === String(subPlu)
+          );
+
+          const candidatePriceRaw = matchedCandidate?.price;
           const subPriceRaw =
             payload.substitutePrice ??
             payload.substituteCatalogPrice ??
-            payload.substitute?.price;
+            payload.substitute?.price ??
+            candidatePriceRaw;
           const subPriceAmount =
             typeof subPriceRaw === 'object' && subPriceRaw !== null
-              ? subPriceRaw.amount
-              : Number(subPriceRaw || 0);
+              ? Number(subPriceRaw.amount)
+              : Number(subPriceRaw);
 
           const origPriceRaw =
             existingItem?.originalPrice ??
@@ -1136,8 +1143,19 @@ export class WebhookService {
             payload.item?.price;
           const origPriceAmount =
             typeof origPriceRaw === 'object' && origPriceRaw !== null
-              ? origPriceRaw.amount
-              : Number(origPriceRaw || 0);
+              ? Number(origPriceRaw.amount)
+              : Number(origPriceRaw);
+
+          if (!Number.isInteger(subPriceAmount) || subPriceAmount < 0) {
+            throw new Error(
+              `Substitution ${targetPlu} -> ${subPlu} is missing an authoritative integer replacement unit price.`
+            );
+          }
+          if (!Number.isInteger(origPriceAmount) || origPriceAmount < 0) {
+            throw new Error(
+              `Substitution ${targetPlu} is missing an authoritative integer original unit price.`
+            );
+          }
 
           const subType =
             rawStatus === 'CUSTOMER_SELECTED_SUBSTITUTION' ||
@@ -1146,58 +1164,94 @@ export class WebhookService {
               ? 'CUSTOMER_SELECTED'
               : 'BEST_MATCH';
 
-          // Lower-of-Original-and-Substitute guarantee for Best Match substitutions
-          const preferredApprovedRaw = existingItem?.preferredSubstitutePrice;
-          const preferredApprovedAmount =
-            typeof preferredApprovedRaw === 'object' && preferredApprovedRaw !== null
-              ? preferredApprovedRaw.amount
-              : typeof preferredApprovedRaw === 'number'
-                ? preferredApprovedRaw
-                : undefined;
+          const originalQuantity =
+            existingItem?.originalQuantity || (existingItem as any)?.orderedQuantity || 1;
+          // Quantity is owned by the persisted customer/merchant candidate choice.
+          // Do not reuse the original quantity and do not infer a provider callback
+          // field whose semantics have not been verified.
+          const replacementQuantityCandidate =
+            matchedCandidate?.quantity ??
+            (String(existingItem?.preferredSubstitutePlu || '') === String(subPlu)
+              ? existingItem?.preferredSubstituteQuantity
+              : undefined) ??
+            existingItem?.substitution?.replacementQuantity ??
+            1;
+          const replacementQuantity =
+            Number.isInteger(replacementQuantityCandidate) && Number(replacementQuantityCandidate) > 0
+              ? Number(replacementQuantityCandidate)
+              : 1;
 
-          const requestedChargedPrice =
-            payload.chargedPrice !== undefined
-              ? typeof payload.chargedPrice === 'object'
-                ? payload.chargedPrice.amount
-                : Number(payload.chargedPrice)
-              : subType === 'BEST_MATCH'
-                ? Math.min(origPriceAmount, subPriceAmount)
-                : subPriceAmount;
-
-          const chargedPriceAmount =
-            subType === 'CUSTOMER_SELECTED' &&
-            preferredApprovedAmount !== undefined
-              ? Math.min(requestedChargedPrice, preferredApprovedAmount)
-              : subType === 'BEST_MATCH'
-                ? Math.min(
-                    requestedChargedPrice,
-                    origPriceAmount,
-                    subPriceAmount
-                  )
-                : requestedChargedPrice;
-
-          const currency = (origPriceRaw as any)?.currency || (existingItem?.originalPrice as any)?.currency || 'GBP';
-          const finalPrice: Money = { amount: chargedPriceAmount, currency };
+          const currency =
+            (origPriceRaw as any)?.currency ||
+            (candidatePriceRaw as any)?.currency ||
+            (existingItem?.originalPrice as any)?.currency ||
+            'GBP';
           const substitutePrice: Money = { amount: subPriceAmount, currency };
-          const originalPrice: Money = typeof origPriceRaw === 'object' && origPriceRaw !== null && 'amount' in origPriceRaw
-            ? origPriceRaw
-            : { amount: origPriceAmount, currency };
-          const chargedPrice: Money = { amount: chargedPriceAmount, currency };
+          const originalPrice: Money =
+            typeof origPriceRaw === 'object' && origPriceRaw !== null && 'amount' in origPriceRaw
+              ? { amount: origPriceAmount, currency: (origPriceRaw as any).currency || currency }
+              : { amount: origPriceAmount, currency };
+
+          const originalPromotionProvenance = Array.from(
+            new Set(existingItem?.bundlePricing?.bundleInstanceIds || [])
+          );
+          const protectedOriginalUnitPrices =
+            existingItem?.bundlePricing?.protectedUnitPrices || [];
+
+          // A replacement promotion is eligible only when the original line was
+          // not promotional, and only when checkout/catalog logic persisted a
+          // verified effective replacement price. Provider webhook prices never
+          // create or re-run a promotion.
+          const replacementPromotionEligible = originalPromotionProvenance.length === 0;
+          const replacementEffectiveUnitPrice =
+            replacementPromotionEligible && matchedCandidate?.effectivePrice
+              ? matchedCandidate.effectivePrice
+              : undefined;
+          const replacementPromotionProvenance =
+            replacementPromotionEligible && replacementEffectiveUnitPrice
+              ? Array.from(new Set(matchedCandidate?.promotionProvenance || []))
+              : [];
+
+          const economics = calculateSubstitutionLineEconomics({
+            originalQuantity,
+            originalUnitPrice: originalPrice,
+            replacementQuantity,
+            replacementUnitPrice: substitutePrice,
+            replacementEffectiveUnitPrice,
+            protectedOriginalUnitPrices,
+          });
+
+          // Legacy per-unit display values remain non-authoritative. Settlement
+          // consumes economics.customerChargeLineTotal exactly once per line.
+          const chargedUnitAmount = Math.floor(
+            economics.customerChargeLineTotal.amount / replacementQuantity
+          );
+          const chargedPrice: Money = { amount: chargedUnitAmount, currency };
+          const finalPrice: Money = chargedPrice;
 
           await FirestorePlatformService.updateOrderPickingItem(targetOrder.orderId, targetPlu, {
             state: 'SUBSTITUTED',
-            pickedQuantity: existingItem?.originalQuantity || (existingItem as any)?.orderedQuantity || 1,
+            pickedQuantity: replacementQuantity,
             finalPrice,
             substitution: {
               type: subType,
+              decisionStatus: existingItem?.substitution?.decisionStatus,
+              proposedAt: existingItem?.substitution?.proposedAt,
+              decidedAt: existingItem?.substitution?.decidedAt,
               originalPlu: targetPlu,
               originalName: existingItem?.name || targetPlu,
               originalPrice,
               substitutePlu: subPlu,
               substituteName: subName,
               substitutePrice,
+              replacementQuantity,
               chargedPrice,
-              reason: payload.reason || 'Out of stock',
+              economics: {
+                ...economics,
+                originalPromotionProvenance,
+                replacementPromotionProvenance,
+              },
+              reason: payload.reason || existingItem?.substitution?.reason || 'Out of stock',
             },
           });
         }
