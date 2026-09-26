@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { v1Router } from './api/v1Router';
+import { altieFactsRouter } from './admin/altieFactsRouter';
 import { getDeliverectAdapter } from './deliverect';
 import { getFirestoreDb } from './firebase';
 import { BFFError } from './errors';
@@ -71,6 +72,8 @@ export async function createApp(options: CreateAppOptions = {}) {
   // SEC-02b: privileged Admin endpoints may require Firebase App Check and MFA.
   app.use('/api/v1/admin', adminSecurityMiddleware);
   app.use('/api/commerce/admin', adminSecurityMiddleware);
+  app.use('/api/v1/admin/altie-facts', altieFactsRouter);
+  app.use('/api/commerce/admin/altie-facts', altieFactsRouter);
   // Customer checkout App Check rolls out independently from Admin enforcement.
   app.post('/api/v1/checkouts', checkoutAppCheckMiddleware);
   app.post('/api/commerce/checkouts', checkoutAppCheckMiddleware);
