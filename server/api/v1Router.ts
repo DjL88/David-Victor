@@ -4117,6 +4117,8 @@ v1Router.post(
         details: JSON.stringify({
           changeSetId: changeSet.id,
           actions: changeSet.actions.map((action) => action.actionName),
+          approvalExpiresAt: changeSet.approvalExpiresAt,
+          approvalScopeHash: changeSet.approvalScopeHash,
         }),
         actorType: 'human',
         changeSetId: changeSet.id,
@@ -4130,6 +4132,7 @@ v1Router.post(
         changeSet,
         autonomousExecutionEnabled: false,
         applyAvailable: changeSet.applyAvailable,
+        approvalExpiresAt: changeSet.approvalExpiresAt,
         message: changeSet.applyAvailable
           ? 'Approved and recorded. This Branding change can now be applied explicitly.'
           : 'Approved and recorded. Apply remains disabled until a versioned resource adapter is connected.',
@@ -4162,6 +4165,7 @@ v1Router.post(
           code: 'ADMIN_CHANGESET_INVALID_STATE',
         });
       }
+      AdminChangeSetService.assertExecutableApproval(changeSet);
       if (
         changeSet.actions.length !== 1 ||
         changeSet.actions[0].actionName !== 'branding.proposeUpdate' ||
@@ -4190,12 +4194,27 @@ v1Router.post(
         revisionId: changeSet.revisionIds[0],
       });
 
+      const verified = await AdminResourceAdapterRegistry.verifyRevision({
+        tenantId,
+        actionName: changeSet.actions[0].actionName,
+        revisionId: execution.revisionId,
+      });
+      const verification = {
+        verified: true as const,
+        verifiedAt: verified.verifiedAt,
+        revisionId: verified.revisionId,
+        resourceType: verified.resourceType,
+        resourceId: verified.resourceId,
+        resultHash: verified.resultHash,
+      };
+
       const applied = await AdminChangeSetService.transitionChangeSet({
         tenantId,
         changeSetId: changeSet.id,
         actorId: authAdmin.uid,
         status: 'APPLIED',
-        afterSnapshot: execution.result,
+        afterSnapshot: verified.result,
+        verification,
       });
 
       await FirestorePlatformService.addAuditLog(tenantId, {
@@ -4208,6 +4227,9 @@ v1Router.post(
         details: JSON.stringify({
           changeSetId: applied.id,
           revisionId: execution.revisionId,
+          receiptId: applied.receipt?.receiptId,
+          verifiedAt: applied.verification?.verifiedAt,
+          resultHash: applied.verification?.resultHash,
         }),
         actorType: 'human',
         changeSetId: applied.id,
@@ -4220,7 +4242,9 @@ v1Router.post(
       res.json({
         changeSet: applied,
         revisionId: execution.revisionId,
-        result: execution.result,
+        result: verified.result,
+        verification: applied.verification,
+        receipt: applied.receipt,
         autonomousExecutionEnabled: false,
       });
     } catch (err: any) {
