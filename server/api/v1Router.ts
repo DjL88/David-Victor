@@ -173,6 +173,32 @@ function handleCommerceError(res: Response, err: any, defaultMessage: string = '
   });
 }
 
+function handleStorefrontCatalogError(res: Response, err: any): void {
+  const statusCode = Number(err?.status || err?.statusCode || 500);
+  const message = String(err?.message || '');
+  const providerDiagnostic =
+    statusCode === 401 ||
+    statusCode === 403 ||
+    statusCode === 429 ||
+    statusCode >= 500 ||
+    /deliverect|circuit\s+is\s+open|upstream|HTTP\s+[45]\d\d/i.test(message);
+
+  if (!providerDiagnostic) {
+    handleCommerceError(res, err, 'Catalogue operation failed');
+    return;
+  }
+
+  console.error('[Storefront Catalogue] Provider diagnostic hidden from customer:', {
+    statusCode,
+    code: err?.code || 'UPSTREAM_CATALOGUE_ERROR',
+    message: message.slice(0, 500),
+  });
+  res.status(503).json({
+    error: 'We are refreshing this store\'s catalogue. Please try again shortly.',
+    code: 'CATALOG_TEMPORARILY_UNAVAILABLE',
+  });
+}
+
 // Extend Request type to carry admin identity & resolved tenant
 interface AuthenticatedRequest extends Request {
   adminUser?: AuthenticatedAdmin;
@@ -676,7 +702,7 @@ v1Router.get('/catalog', async (req: Request, res: Response) => {
 
     sendConditionalJson(req, res, catalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to fetch catalog');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -703,7 +729,7 @@ v1Router.get('/stores/:storeId/catalog', async (req: Request, res: Response) => 
 
     sendConditionalJson(req, res, catalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, `Failed to fetch store catalog for store ${req.params.storeId}`);
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -732,7 +758,7 @@ v1Router.get('/bundles', async (req: Request, res: Response) => {
     };
     sendConditionalJson(req, res, bundleCatalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to fetch bundle catalog');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -764,7 +790,7 @@ v1Router.get('/stores/:storeId/bundles', async (req: Request, res: Response) => 
     };
     sendConditionalJson(req, res, bundleCatalog, cacheHeader);
   } catch (err: any) {
-    handleCommerceError(res, err, `Failed to fetch bundles for store ${req.params.storeId}`);
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -778,7 +804,7 @@ v1Router.post('/search', validateBody(SearchCatalogSchema), async (req: Request,
     const results = await adapter.searchProducts(query || '', storeId, { categoryId, limit });
     res.json(results);
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to execute search');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
@@ -813,7 +839,7 @@ v1Router.get('/products/:plu', async (req: Request, res: Response) => {
     }
     sendConditionalJson(req, res, result, 'public, max-age=60, stale-while-revalidate=300');
   } catch (err: any) {
-    handleCommerceError(res, err, 'Failed to retrieve product');
+    handleStorefrontCatalogError(res, err);
   }
 });
 
