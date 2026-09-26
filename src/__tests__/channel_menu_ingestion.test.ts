@@ -352,6 +352,73 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     vi.restoreAllMocks();
   });
 
+  it('strengthens pushed catalogue products with matching live Commerce evidence', async () => {
+    const tenantId = `tenant-overlay-match-${Date.now()}`;
+    const payload = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload,
+      rawBody: JSON.stringify(payload),
+    });
+    await ChannelMenuIngestionService.processJob(queue.jobs[0]);
+
+    const tokenManager = new OAuthTokenManager({
+      environment: 'staging',
+      clientId: 'stub-client',
+      clientSecret: 'stub-secret',
+    });
+    const client = new DeliverectApiClient(
+      tokenManager,
+      tenantId,
+      'account-1',
+      ['channel-1']
+    );
+    vi.spyOn(client as any, 'resolveAccountId').mockResolvedValue('account-1');
+    vi.spyOn(client as any, 'resolveStoreChannelLinkId').mockResolvedValue({
+      channelLinkId: 'channel-1',
+      store: { id: 'channel-1', channelLinkId: 'channel-1', name: 'Store' },
+    });
+    vi.spyOn(client, 'getRawStoreMenus').mockResolvedValue({
+      accountId: 'account-1',
+      channelLinkId: 'channel-1',
+      storeId: 'channel-1',
+      receivedAt: new Date().toISOString(),
+      payload: sampleMenu({
+        products: {
+          'prod-1': {
+            _id: 'prod-1',
+            plu: 'DRINK-1',
+            gtin: ['500000000001'],
+            name: 'Water',
+            price: 140,
+            productType: 1,
+          },
+        },
+      }),
+    });
+    vi.spyOn(client, 'getProductTagDefinitions').mockResolvedValue([]);
+    vi.spyOn(FirestorePlatformService, 'getStoreProductSnoozes').mockResolvedValue({});
+
+    const catalog = await client.getStoreCatalog('channel-1');
+
+    expect(catalog.products[0]).toMatchObject({
+      plu: 'DRINK-1',
+      priceMinor: 140,
+      metadata: {
+        catalogConfidence: 'HIGH',
+        catalogConfidenceScore: 100,
+        commerceVerified: true,
+      },
+    });
+    expect(catalog.diagnostics).toMatchObject({
+      commerceOverlayStatus: 'VERIFIED',
+      confidenceHighCount: 1,
+      confidenceLowCount: 0,
+    });
+
+    vi.restoreAllMocks();
+  });
+
   it('deduplicates retried Menu Pushes before creating another task', async () => {
     const tenantId = `tenant-dedupe-${Date.now()}`;
     const payload = sampleMenu();
