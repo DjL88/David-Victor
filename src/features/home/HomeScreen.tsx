@@ -153,9 +153,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 
   const [resultsTransitioning, setResultsTransitioning] = useState(false);
+  const productTransitionSignature = useMemo(
+    () =>
+      products
+        .map((product) => {
+          const rawPrice = product.price;
+          const price =
+            typeof rawPrice === 'number'
+              ? rawPrice
+              : rawPrice && typeof rawPrice === 'object' && 'amount' in rawPrice
+                ? rawPrice.amount
+                : product.priceMinor ?? '';
+          return [
+            product.plu,
+            price,
+            product.stockStatus || '',
+            product.active === false ? '0' : '1',
+          ].join(':');
+        })
+        .join('|'),
+    [products]
+  );
 
-  // Give catalogue/filter changes a restrained visual handoff without animating
-  // users who prefer reduced motion. The product data itself updates immediately.
+  // Give genuine catalogue/filter changes a restrained visual handoff without
+  // animating a no-op background refresh that only returned a new array instance.
   useEffect(() => {
     if (
       typeof window === 'undefined' ||
@@ -177,7 +198,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       window.cancelAnimationFrame(startFrame);
       if (settleFrame) window.cancelAnimationFrame(settleFrame);
     };
-  }, [selectedCategoryId, searchQuery, activeDealFilter?.id, filterSignature, products]);
+  }, [
+    selectedCategoryId,
+    searchQuery,
+    activeDealFilter?.id,
+    filterSignature,
+    productTransitionSignature,
+  ]);
 
   const bringProductsIntoView = useCallback(() => {
     const run = () => {
