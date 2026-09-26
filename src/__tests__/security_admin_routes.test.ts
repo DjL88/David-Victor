@@ -279,6 +279,63 @@ describe('Admin Security Hardening & Provisioning Fail-Closed Tests', () => {
         })
       );
     });
+
+    it('persists an explicit channel removal as an immediate deliberate unassignment', async () => {
+      setServerRuntimeMode('staging');
+      setMockAdminAuthForTest({
+        verifyIdToken: vi.fn().mockResolvedValue({
+          uid: 'super-admin-1',
+          email: 'super@bwydi.com',
+          role: 'platformSuperAdmin',
+          platformSuperAdmin: true,
+        }),
+      } as any);
+
+      vi.spyOn(LinkedAccountsAdapter.prototype, 'getTenantMappings').mockResolvedValue({
+        accounts: [
+          { deliverectAccountId: 'acc_123', accountLinkId: 'acclink_acc_123', displayName: 'Account 123' },
+        ],
+        stores: [
+          { channelLinkId: 'chn_store_1', accountLinkId: 'acclink_acc_123', name: 'Store 1' },
+          { channelLinkId: 'chn_store_2', accountLinkId: 'acclink_acc_123', name: 'Store 2' },
+        ],
+      } as any);
+      vi.spyOn(FirestorePlatformService, 'getIntegrationConfig').mockResolvedValue({
+        tenantId: 'brand-alpha',
+        environment: 'staging',
+        allowedChannelLinkIds: ['chn_store_1', 'chn_store_2'],
+      } as any);
+      vi.spyOn(FirestorePlatformService, 'getIntegrationProfile').mockResolvedValue(null);
+      const saveStoreSpy = vi.spyOn(FirestorePlatformService, 'saveTenantStore').mockResolvedValue({} as any);
+      vi.spyOn(FirestorePlatformService, 'updateIntegrationConfig').mockResolvedValue({} as any);
+      vi.spyOn(FirestorePlatformService, 'addAuditLog').mockResolvedValue({} as any);
+
+      const res = await fetch(`${baseUrl}/admin/tenants/brand-alpha/integration/select-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer real-jwt-token',
+          'X-Tenant-ID': 'brand-alpha',
+        },
+        body: JSON.stringify({
+          accountId: 'acc_123',
+          channelLinkIds: ['chn_store_1'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.allowedChannelLinkIds).toEqual(['chn_store_1']);
+      expect(data.explicitlyUnassignedChannelLinkIds).toEqual(['chn_store_2']);
+      expect(saveStoreSpy).toHaveBeenCalledWith(
+        'brand-alpha',
+        expect.objectContaining({
+          channelLinkId: 'chn_store_2',
+          assigned: false,
+          unassignedAt: expect.any(String),
+        })
+      );
+    });
   });
 
   describe('3b. Local location hard-delete', () => {

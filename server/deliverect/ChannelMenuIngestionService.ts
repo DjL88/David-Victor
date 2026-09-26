@@ -10,6 +10,13 @@ import {
   getCloudTasksSecurityConfig,
 } from '../cloudTasksSecurity';
 import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
+import {
+  decodeApiActivityCursor,
+  encodeApiActivityCursor,
+  pageMemoryActivity,
+  safeApiActivityErrorCode,
+  type ApiActivityPage,
+} from '../apiActivityJournal';
 
 export interface ChannelMenuIngressJob {
   jobId: string;
@@ -76,6 +83,8 @@ const memoryHostedIndex = new Map<string, {
   channelLinkId: string;
   menuId: string;
   normalizedStoragePath: string;
+  receivedAt: string;
+  lastEventId: string;
   updatedAt: string;
 }>();
 const pending = new Set<Promise<void>>();
@@ -570,6 +579,24 @@ export class ChannelMenuIngestionService {
     return String(product?.plu || product?.id || product?._id || product?.productId || '').trim();
   }
 
+  private static comparePublishedVersion(
+    leftReceivedAt: string,
+    leftEventId: string,
+    rightReceivedAt: string,
+    rightEventId: string
+  ): number {
+    const leftMs = Date.parse(leftReceivedAt);
+    const rightMs = Date.parse(rightReceivedAt);
+    if (Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs !== rightMs) {
+      return leftMs > rightMs ? 1 : -1;
+    }
+    const receivedAtCompare = String(leftReceivedAt || '').localeCompare(
+      String(rightReceivedAt || '')
+    );
+    if (receivedAtCompare !== 0) return receivedAtCompare;
+    return String(leftEventId || '').localeCompare(String(rightEventId || ''));
+  }
+
   static async destructiveDeltaReview(params: {
     tenantId: string;
     channelLinkId: string;
@@ -582,8 +609,6 @@ export class ChannelMenuIngestionService {
       params.menuId
     );
     const previousProducts = Array.isArray(previous?.products) ? previous.products : [];
-    if (previousProducts.length < 20) return undefined;
-
     const previousKeys = new Set<string>(
       previousProducts.map((product: any) => this.productKey(product)).filter(Boolean)
     );
@@ -646,6 +671,7 @@ export class ChannelMenuIngestionService {
 
       const fallbackChannelLinkId =
         existing?.channelLinkIds?.length === 1 ? existing.channelLinkIds[0] : '';
+      let publishedMenuCount = 0;
 
       for (const menu of menus) {
         const menuId = menuIdOf(menu);
@@ -677,6 +703,29 @@ export class ChannelMenuIngestionService {
           channelLinkId,
           menuId
         ).catch(() => null);
+        const previousReceivedAt = Date.parse(String(previousNormalized?.receivedAt || ''));
+        const candidateReceivedAt = Date.parse(String(job.receivedAt || ''));
+        if (
+          Number.isFinite(previousReceivedAt) &&
+          Number.isFinite(candidateReceivedAt) &&
+          candidateReceivedAt < previousReceivedAt
+        ) {
+          throw new BFFError(
+            'STALE_MENU_SNAPSHOT',
+            'Buffered Menu Push predates the currently published catalogue and was not applied.',
+            409
+          );
+        }
+        const previousProducts = Array.isArray(previousNormalized?.products)
+          ? previousNormalized.products
+          : [];
+        if (previousProducts.length > 0 && parsed.products.length === 0) {
+          throw new BFFError(
+            'EMPTY_MENU_SNAPSHOT_REJECTED',
+            'An empty Menu Push cannot replace a non-empty last-known-good catalogue.',
+            422
+          );
+        }
         const nextKeys = new Set(
           parsed.products.map((product: any) => this.productKey(product)).filter(Boolean)
         );
@@ -786,79 +835,152 @@ export class ChannelMenuIngestionService {
           JSON.stringify(operationalMenu)
         );
 
-        memoryHostedIndex.set(
-          hasFullScope
-            ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
-            : `${job.tenantId}:${channelLinkId}:${menuId}`,
-          {
-            tenantId: job.tenantId,
-            accountId,
-            locationId,
-            channelLinkId,
-            menuId,
-            normalizedStoragePath: normalizedPath,
-            updatedAt: normalized.processedAt,
-          }
-        );
+        const pointer = {
+          tenantId: job.tenantId,
+          ...(accountId ? { accountId } : {}),
+          ...(locationId ? { locationId } : {}),
+          identityScope: normalized.identityScope,
+          channelLinkId,
+          menuId,
+          menuName: normalized.menu,
+          menuType: normalized.menuType,
+          source: normalized.source,
+          rawStoragePath: job.storagePath,
+          normalizedStoragePath: normalizedPath,
+          categoryCount: parsed.categories.length,
+          productCount: normalizedProducts.length,
+          activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
+          archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
+          bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
+          byteSize: normalizedBody.length,
+          lastEventId: job.eventId,
+          receivedAt: job.receivedAt,
+          updatedAt: normalized.processedAt,
+        };
 
+        let published = false;
         if (db) {
           const collection = db
             .collection('tenants')
             .doc(job.tenantId)
             .collection('channelHostedMenus');
-          const pointer = {
-            tenantId: job.tenantId,
-            ...(accountId ? { accountId } : {}),
-            ...(locationId ? { locationId } : {}),
-            identityScope: normalized.identityScope,
-            channelLinkId,
-            menuId,
-            menuName: normalized.menu,
-            menuType: normalized.menuType,
-            source: normalized.source,
-            rawStoragePath: job.storagePath,
-            normalizedStoragePath: normalizedPath,
-            categoryCount: parsed.categories.length,
-            productCount: normalizedProducts.length,
-            activeProductCount: normalizedProducts.filter((product: any) => product?.active !== false).length,
-            archivedProductCount: normalizedProducts.filter((product: any) => product?.metadata?.lifecycleStatus === 'ARCHIVED').length,
-            bundleCount: parsed.bundleCatalog?.bundles?.length || 0,
-            byteSize: normalizedBody.length,
-            lastEventId: job.eventId,
-            receivedAt: job.receivedAt,
-            updatedAt: normalized.processedAt,
-          };
-          const batch = db.batch();
-          // Canonical aliases make the hot read path deterministic and bounded.
-          // The old channel+menu key is retained for backwards compatibility.
-          batch.set(
-            collection.doc(safeSegment(`${channelLinkId}_${menuId}`)),
-            { ...pointer, pointerType: 'MENU_ALIAS' },
-            { merge: true }
-          );
-          batch.set(
-            collection.doc(safeSegment(`${channelLinkId}__latest`)),
-            { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
-            { merge: true }
-          );
-          if (hasFullScope) {
-            batch.set(
-              collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`)),
-              { ...pointer, pointerType: 'SCOPED' },
+          const menuAliasRef = collection.doc(safeSegment(`${channelLinkId}_${menuId}`));
+          const channelLatestRef = collection.doc(safeSegment(`${channelLinkId}__latest`));
+          const scopedRef = hasFullScope
+            ? collection.doc(safeSegment(`${accountId}_${locationId}_${channelLinkId}_${menuId}`))
+            : null;
+
+          // The publish-time transaction is authoritative. A preflight stale
+          // check cannot prevent two workers from both passing before either
+          // writes; this compare-and-set closes that race.
+          published = await db.runTransaction(async (transaction: any) => {
+            const menuAlias = await transaction.get(menuAliasRef);
+            const currentMenu = menuAlias.exists ? menuAlias.data() || {} : null;
+            if (
+              currentMenu &&
+              this.comparePublishedVersion(
+                String(currentMenu.receivedAt || ''),
+                String(currentMenu.lastEventId || ''),
+                job.receivedAt,
+                job.eventId
+              ) >= 0
+            ) {
+              return false;
+            }
+
+            const channelLatest = await transaction.get(channelLatestRef);
+            const currentLatest = channelLatest.exists ? channelLatest.data() || {} : null;
+
+            transaction.set(
+              menuAliasRef,
+              { ...pointer, pointerType: 'MENU_ALIAS' },
               { merge: true }
             );
+            if (
+              !currentLatest ||
+              this.comparePublishedVersion(
+                job.receivedAt,
+                job.eventId,
+                String(currentLatest.receivedAt || ''),
+                String(currentLatest.lastEventId || '')
+              ) > 0
+            ) {
+              transaction.set(
+                channelLatestRef,
+                { ...pointer, pointerType: 'CHANNEL_LATEST_ALIAS' },
+                { merge: true }
+              );
+            }
+            if (scopedRef) {
+              transaction.set(
+                scopedRef,
+                { ...pointer, pointerType: 'SCOPED' },
+                { merge: true }
+              );
+            }
+            return true;
+          });
+        } else {
+          // In-memory staging/test publication must compare and set without an
+          // await, otherwise overlapping workers can both pass the preflight.
+          const current = Array.from(memoryHostedIndex.values())
+            .filter(
+              (entry) =>
+                entry.tenantId === job.tenantId &&
+                entry.channelLinkId === channelLinkId &&
+                entry.menuId === menuId
+            )
+            .sort((a, b) =>
+              this.comparePublishedVersion(
+                b.receivedAt,
+                b.lastEventId,
+                a.receivedAt,
+                a.lastEventId
+              )
+            )[0];
+
+          if (
+            !current ||
+            this.comparePublishedVersion(
+              current.receivedAt,
+              current.lastEventId,
+              job.receivedAt,
+              job.eventId
+            ) < 0
+          ) {
+            memoryHostedIndex.set(
+              hasFullScope
+                ? `${job.tenantId}:${accountId}:${locationId}:${channelLinkId}:${menuId}`
+                : `${job.tenantId}:${channelLinkId}:${menuId}`,
+              {
+                tenantId: job.tenantId,
+                accountId,
+                locationId,
+                channelLinkId,
+                menuId,
+                normalizedStoragePath: normalizedPath,
+                receivedAt: job.receivedAt,
+                lastEventId: job.eventId,
+                updatedAt: normalized.processedAt,
+              }
+            );
+            published = true;
           }
-          await batch.commit();
         }
 
-
+        if (!published) {
+          continue;
+        }
+        publishedMenuCount += 1;
       }
 
       // A successful Menu Push becomes the new catalogue truth. Invalidate the
       // bounded storefront discovery/catalog caches only after the durable worker
       // has finished normalising every menu, so the next customer read refreshes
       // the combined catalogue instead of serving stale pre-publish data.
-      CommerceDiscoveryService.getInstance().clearCache();
+      if (publishedMenuCount > 0) {
+        CommerceDiscoveryService.getInstance().clearCache();
+      }
 
       await this.saveIngressRecord({
         ...processing,
@@ -880,7 +1002,7 @@ export class ChannelMenuIngestionService {
           .filter(Boolean),
         menuCount: menus.length,
       });
-      return { processed: menus.length };
+      return { processed: publishedMenuCount };
     } catch (err: any) {
       await this.saveIngressRecord({
         ...processing,
@@ -892,7 +1014,10 @@ export class ChannelMenuIngestionService {
     }
   }
 
-  static async listRecentIngress(tenantId: string, limit: number = 100): Promise<Array<{
+  static async listRecentIngressPage(
+    tenantId: string,
+    options: { limit?: number; cursor?: string | null } = {}
+  ): Promise<ApiActivityPage<{
     eventId: string;
     status: ChannelMenuIngressRecord['status'];
     receivedAt: string;
@@ -907,30 +1032,35 @@ export class ChannelMenuIngestionService {
     locationIds?: string[];
     locationNames?: string[];
     byteSize: number;
-    error?: string;
+    hasError: boolean;
     review?: ChannelMenuIngressRecord['review'];
   }>> {
+    const observedAt = new Date().toISOString();
     const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return [];
-    const boundedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
-    const db = liveEnvironment() ? getFirestoreDb() : null;
-    let records: ChannelMenuIngressRecord[] = [];
-    if (db) {
-      const snap = await db
-        .collection('tenants')
-        .doc(cleanTenantId)
-        .collection('channelMenuIngress')
-        .orderBy('receivedAt', 'desc')
-        .limit(boundedLimit)
-        .get();
-      records = snap.docs.map((doc) => doc.data() as ChannelMenuIngressRecord);
-    } else {
-      records = Array.from(memoryIngress.values())
-        .filter((record) => record.tenantId === cleanTenantId)
-        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
-        .slice(0, boundedLimit);
+    const boundedLimit = Math.min(200, Math.max(1, Number(options.limit) || 100));
+    const cursor = options.cursor ? decodeApiActivityCursor(options.cursor) : null;
+    if (!cleanTenantId) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'TENANT_SCOPE_REQUIRED',
+      };
     }
-    return records.map((record) => ({
+    if (options.cursor && !cursor) {
+      return {
+        items: [],
+        status: 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        nextCursor: null,
+        errorCode: 'INVALID_CURSOR',
+      };
+    }
+
+    const toPublicRecord = (record: ChannelMenuIngressRecord) => ({
       eventId: record.eventId,
       status: record.status,
       receivedAt: record.receivedAt,
@@ -945,9 +1075,100 @@ export class ChannelMenuIngestionService {
       locationIds: record.locationIds,
       locationNames: record.locationNames,
       byteSize: record.byteSize,
-      error: record.error,
+      hasError: Boolean(record.error),
       review: record.review,
-    }));
+    });
+
+    const memoryPage = () => {
+      const page = pageMemoryActivity(
+        Array.from(memoryIngress.values()).filter((record) => record.tenantId === cleanTenantId),
+        {
+          limit: boundedLimit,
+          cursor: options.cursor,
+          receivedAt: (record) => record.receivedAt,
+          id: (record) => record.eventId,
+        }
+      );
+      return {
+        items: page.items.map(toPublicRecord),
+        nextCursor: page.nextCursor,
+      };
+    };
+
+    const db = liveEnvironment() ? getFirestoreDb() : null;
+    if (!db) {
+      const page = memoryPage();
+      const durableExpected = liveEnvironment();
+      return {
+        ...page,
+        status: durableExpected ? (page.items.length ? 'PARTIAL' : 'UNAVAILABLE') : 'AVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        ...(durableExpected ? { errorCode: 'FIRESTORE_UNAVAILABLE' } : {}),
+      };
+    }
+
+    try {
+      let query: any = db
+        .collection('tenants')
+        .doc(cleanTenantId)
+        .collection('channelMenuIngress')
+        .orderBy('receivedAt', 'desc')
+        .orderBy('eventId', 'desc');
+      if (cursor) query = query.startAfter(cursor.receivedAt, cursor.id);
+      const snap = await query.limit(boundedLimit + 1).get();
+      const rows = snap.docs.map((doc: any) => doc.data() as ChannelMenuIngressRecord);
+      const tenantRows = rows.filter((record) => record.tenantId === cleanTenantId);
+      const hasForeignRows = tenantRows.length !== rows.length;
+      const pageRows = tenantRows.slice(0, boundedLimit);
+      const hasMore = tenantRows.length > boundedLimit;
+      const last = pageRows[pageRows.length - 1];
+
+      return {
+        items: pageRows.map(toPublicRecord),
+        status: hasForeignRows ? 'PARTIAL' : 'AVAILABLE',
+        source: 'FIRESTORE',
+        observedAt,
+        nextCursor: hasMore && last
+          ? encodeApiActivityCursor({ receivedAt: last.receivedAt, id: last.eventId })
+          : null,
+        ...(hasForeignRows ? { errorCode: 'TENANT_MISMATCH_FILTERED' } : {}),
+      };
+    } catch (err: any) {
+      const page = memoryPage();
+      return {
+        ...page,
+        status: page.items.length ? 'PARTIAL' : 'UNAVAILABLE',
+        source: 'MEMORY',
+        observedAt,
+        errorCode: safeApiActivityErrorCode(err, 'FIRESTORE_READ_FAILED'),
+      };
+    }
+  }
+
+  static async listRecentIngress(
+    tenantId: string,
+    limit: number = 100
+  ): Promise<Array<{
+    eventId: string;
+    status: ChannelMenuIngressRecord['status'];
+    receivedAt: string;
+    updatedAt: string;
+    processedAt?: string;
+    menuIds: string[];
+    menuNames?: string[];
+    channelLinkIds: string[];
+    channelNames?: string[];
+    accountIds?: string[];
+    accountNames?: string[];
+    locationIds?: string[];
+    locationNames?: string[];
+    byteSize: number;
+    hasError: boolean;
+    review?: ChannelMenuIngressRecord['review'];
+  }>> {
+    const page = await this.listRecentIngressPage(tenantId, { limit });
+    return page.items;
   }
 
   static async listHeldReviews(tenantId: string): Promise<Array<{
