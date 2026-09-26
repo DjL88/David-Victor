@@ -20,7 +20,7 @@ import { BFFError } from '../errors';
  * Tokens are cached server-side and never exposed to the client.
  *
  * Verified public contract:
- * - POST /fulfillment/validate accepts channelLinkId, pickupReadyTime and
+ * - POST /fulfillment/validate accepts channelLinkId, pickupTime and
  *   deliveryLocations; a successful response exposes validationId, expiresAt,
  *   deliveryTimeETA, pickupTimeEta and price.
  * - The validation token is short-lived provider evidence and is not a courier
@@ -130,7 +130,7 @@ export class DeliverectDispatchAdapter implements DispatchAdapter {
       },
       body: JSON.stringify({
         channelLinkId,
-        ...(params.pickupTime ? { pickupReadyTime: params.pickupTime } : {}),
+        ...(params.pickupTime ? { pickupTime: params.pickupTime } : {}),
         deliveryLocations,
       }),
     });
