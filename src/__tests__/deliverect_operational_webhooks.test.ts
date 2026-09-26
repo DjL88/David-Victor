@@ -237,6 +237,90 @@ describe('Deliverect operational webhooks', () => {
     perSkuUpsert.mockRestore();
   }, 10_000);
 
+  it('does not let an older bulk snooze snapshot regress newer PLU state', async () => {
+    const tenantId = `tenant-snooze-order-${Date.now()}`;
+    const channelLinkId = 'channel-snooze-order';
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'SKU-1',
+        snoozed: true,
+        snoozeEnd: '2026-09-26T18:00:00.000Z',
+        updatedAt: '2026-09-26T12:05:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      '2026-09-26T12:05:00.000Z'
+    );
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'SKU-1',
+        snoozed: true,
+        snoozeEnd: '2026-09-26T13:00:00.000Z',
+        updatedAt: '2026-09-26T12:00:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      '2026-09-26T12:00:00.000Z'
+    );
+
+    const operational = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(operational['SKU-1']).toMatchObject({
+      availability: 'SNOOZED',
+      snoozed: true,
+      snoozeEnd: '2026-09-26T18:00:00.000Z',
+      updatedAt: '2026-09-26T12:05:00.000Z',
+    });
+  });
+
+  it('preserves last-known snoozes for an ambiguous empty replacement', async () => {
+    const tenantId = `tenant-snooze-empty-${Date.now()}`;
+    const channelLinkId = 'channel-snooze-empty';
+
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      [{
+        tenantId,
+        channelLinkId,
+        plu: 'SKU-1',
+        snoozed: true,
+        updatedAt: '2026-09-26T12:05:00.000Z',
+        source: 'DELIVERECT_WEBHOOK',
+      }],
+      '2026-09-26T12:05:00.000Z'
+    );
+
+    // No observedAt means this empty set carries no ordering evidence and must
+    // not silently clear a newer last-known-good operational state.
+    await FirestorePlatformService.replaceStoreProductSnoozes(
+      tenantId,
+      channelLinkId,
+      []
+    );
+
+    const snoozes = await FirestorePlatformService.getStoreProductSnoozes(
+      tenantId,
+      channelLinkId
+    );
+    expect(snoozes['SKU-1']?.snoozed).toBe(true);
+    const operational = await FirestorePlatformService.getStoreProductOperationalStates(
+      tenantId,
+      channelLinkId
+    );
+    expect(operational['SKU-1']?.availability).toBe('SNOOZED');
+  });
+
   it('fails closed rather than partially applying an operational snapshot above 15k SKUs', async () => {
     const tenantId = `tenant-over-limit-${Date.now()}`;
     const channelLinkId = 'channel-scale-over-limit';
