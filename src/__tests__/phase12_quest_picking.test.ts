@@ -591,6 +591,68 @@ describe('Phase 12: Quest / Picking Lifecycle, Substitutions & Callbacks (QST-01
       expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(150);
     });
 
+    it('uses a persisted replacement promotion only when the original line was not promotional', async () => {
+      const orderId = `quest_ord_${Date.now()}_replacement_promo`;
+      await FirestorePlatformService.saveOrderProjection({
+        orderId,
+        tenantId: testTenant,
+        channelLinkId: 'store-1',
+        status: 'PICKING',
+        total: 300,
+        authorizedMaximum: 300,
+        itemsCount: 1,
+        fulfillmentType: 'pickup',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        picking: {
+          status: 'IN_PROGRESS',
+          totalItems: 1,
+          itemsPicked: 0,
+          hasChanges: false,
+          items: [{
+            id: 'line-original-standard',
+            plu: 'ORIGINAL-STANDARD',
+            name: 'Original Standard Item',
+            originalQuantity: 1,
+            pickedQuantity: 0,
+            originalPrice: { amount: 300, currency: 'GBP' },
+            finalPrice: { amount: 300, currency: 'GBP' },
+            state: 'PENDING',
+            substituteCandidates: [{
+              plu: 'REPLACEMENT-PROMO-ELIGIBLE',
+              quantity: 2,
+              price: { amount: 130, currency: 'GBP' },
+              effectivePrice: { amount: 100, currency: 'GBP' },
+              promotionProvenance: ['promo:replacement-2-for-200'],
+            }],
+          }],
+        },
+      } as any, testTenant);
+
+      const payload = {
+        event: 'ITEM_SUBSTITUTED',
+        orderId,
+        originalPlu: 'ORIGINAL-STANDARD',
+        substitutePlu: 'REPLACEMENT-PROMO-ELIGIBLE',
+        substitutePrice: 130,
+      };
+      const raw = JSON.stringify(payload);
+      await WebhookService.processWebhook(payload, raw, buildSignatureHeaders(raw), testTenant);
+
+      const updated = await FirestorePlatformService.getOrderProjection(orderId);
+      const line = updated?.picking?.items?.find((item: any) => item.plu === 'ORIGINAL-STANDARD');
+      const economics = line?.substitution?.economics;
+      expect(economics?.replacementQuantity).toBe(2);
+      expect(economics?.replacementRetailLineTotal.amount).toBe(260);
+      expect(economics?.replacementEffectiveLineTotal.amount).toBe(200);
+      expect(economics?.customerChargeLineTotal.amount).toBe(200);
+      expect(economics?.retailValueDelta.amount).toBe(-40);
+      expect(economics?.customerPriceDelta.amount).toBe(-100);
+      expect(economics?.originalPromotionProvenance).toEqual([]);
+      expect(economics?.replacementPromotionProvenance).toEqual(['promo:replacement-2-for-200']);
+      expect(PaymentService.calculateAuthoritativeFinalAmount(updated as any)).toBe(200);
+    });
+
     it('resolves substitution preference & candidates via SubstitutionCallbackService', async () => {
       const orderId = `quest_ord_${Date.now()}_06`;
       const testOrder = {
