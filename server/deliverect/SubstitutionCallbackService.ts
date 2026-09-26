@@ -146,8 +146,11 @@ export class SubstitutionCallbackService {
         ? Math.max(0, configured!.maxPriceIncreaseMinor!)
         : 0,
       requireSharedCategory: configured?.requireSharedCategory !== false,
+      // Quest recommendation mode is deliberately capped at ten results.
+      // Tenant configuration may narrow this further but cannot widen the
+      // provider-facing response beyond the supported recommendation limit.
       maxCandidates: Number.isInteger(configured?.maxCandidates)
-        ? Math.min(50, Math.max(1, configured!.maxCandidates!))
+        ? Math.min(10, Math.max(1, configured!.maxCandidates!))
         : 10,
       learnedPluAffinity:
         configured?.learnedPluAffinity && typeof configured.learnedPluAffinity === 'object'

@@ -70,6 +70,43 @@ describe('Quest catalogue substitution candidate policy', () => {
     expect(candidates.map((candidate: any) => candidate.plu)).toEqual(['MAPPED', 'CLOSE']);
   });
 
+  it('never widens recommendation mode beyond ten candidates even when tenant config asks for more', async () => {
+    vi.mocked(FirestorePlatformService.getTenantConfig).mockResolvedValue({
+      tenantId,
+      featureFlags: {
+        substitutionCandidatePolicy: {
+          maxCandidates: 50,
+          maxPriceIncreaseMinor: 0,
+          requireSharedCategory: true,
+        },
+      },
+    } as any);
+
+    const products = [
+      { id: 'milk', plu: 'MILK', name: 'Milk', price: 200, categoryIds: ['dairy'], active: true },
+      ...Array.from({ length: 15 }, (_, index) => ({
+        id: `alt-${index}`,
+        plu: `ALT-${String(index).padStart(2, '0')}`,
+        name: `Milk alternative ${index}`,
+        price: 180 + index,
+        categoryIds: ['dairy'],
+        active: true,
+      })),
+    ];
+    setDeliverectAdapter({ getStoreCatalog: vi.fn().mockResolvedValue(catalog(products)) } as any, tenantId);
+
+    const candidates = await (SubstitutionCallbackService as any).storeCatalogCandidates({
+      tenantId,
+      channelLinkId: 'store-1',
+      originalPlu: 'MILK',
+      originalPriceMinor: 200,
+      chosen: [],
+    });
+
+    expect(candidates).toHaveLength(10);
+    expect(candidates.every((candidate: any) => candidate.price <= 200)).toBe(true);
+  });
+
   it('returns only the available customer-selected item and bypasses automatic price/category limits', async () => {
     const products = [
       { id: 'milk', plu: 'MILK', name: 'Milk', price: 200, categoryIds: ['dairy'], active: true },
