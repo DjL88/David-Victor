@@ -80,10 +80,11 @@ describe('Customer tracker evidence', () => {
     expect(observedMoney(undefined)).toBeNull();
     expect(observedMoney({ amount: NaN, currency: 'GBP' })).toBeNull();
   });
-  it('uses the known short reference without cutting arbitrary external IDs', () => {
+  it('shows only recognised LTx customer references and suppresses opaque upstream IDs', () => {
     expect(customerOrderReference({ displayId: 'LT2639000A' })).toBe('LT39000A');
-    expect(customerOrderReference({ displayId: 'LT39000A' })).toBe('LT39000A');
-    expect(customerOrderReference({ displayId: 'provider-123456789012' })).toBe('provider-123456789012');
+    expect(customerOrderReference({ displayId: 'lt39000a' })).toBe('LT39000A');
+    expect(customerOrderReference({ displayId: 'provider-123456789012' })).toBe('');
+    expect(customerOrderReference({ displayId: 'provider-123456789012', orderReference: 'LT2639000A' })).toBe('LT39000A');
     expect(customerOrderReference({ displayId: '' })).toBe('');
   });
   it('only resolves imagery for the exact product and accepts safe URLs', () => {
