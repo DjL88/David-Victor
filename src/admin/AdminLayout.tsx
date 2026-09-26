@@ -21,6 +21,7 @@ import { DomainsScreen } from './screens/DomainsScreen';
 import { CatalogAdminScreen } from './screens/CatalogAdminScreen';
 import { IntegrationsAdminScreen } from './screens/IntegrationsAdminScreen';
 import { ConnectionHealthScreen } from './screens/ConnectionHealthScreen';
+import { ApiLogsScreen } from './screens/ApiLogsScreen';
 import { MembershipsScreen } from './screens/MembershipsScreen';
 import { AdminWorkspaceProvider, type AdminGuideStep, type AdminNavigateOptions } from './AdminWorkspaceContext';
 import { AdminAssistantDrawer } from './AdminAssistantDrawer';
@@ -50,12 +51,14 @@ import {
   Flag,
   BotMessageSquare,
   ArrowUp,
+  ScrollText,
 } from 'lucide-react';
 
 export type AdminTab =
   | 'brands'
   | 'memberships'
   | 'connection_health'
+  | 'api_logs'
   | 'catalog'
   | 'integrations'
   | 'insights'
@@ -306,6 +309,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
       items: [
         { id: 'integrations', label: 'Deliverect Setup', icon: Link2 },
         { id: 'connection_health', label: 'Connection Status', icon: Activity, issueCount: connectionIssueCount },
+        { id: 'api_logs', label: 'API Logs', icon: ScrollText },
         { id: 'domains', label: 'Domains', icon: Globe },
         { id: 'media_health', label: 'Media Health', icon: ImageIcon },
       ],
@@ -565,6 +569,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onExitAdmin, initialUs
             )}
             {activeTab === 'catalog' && <CatalogAdminScreen key={currentTenantId} tenantId={currentTenantId} />}
             {activeTab === 'connection_health' && <ConnectionHealthScreen tenantId={currentTenantId} />}
+            {activeTab === 'api_logs' && <ApiLogsScreen tenantId={currentTenantId} />}
             {activeTab === 'integrations' && (
               <IntegrationsAdminScreen
                 tenantId={currentTenantId}
