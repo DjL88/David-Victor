@@ -62,6 +62,7 @@ export const LanguageTerminologyScreen: React.FC<LanguageTerminologyScreenProps>
   useEffect(() => {
     const requestTenantId = tenantId;
     setConfig(null);
+    setSaving(false);
     setSaved(false);
     void load(requestTenantId);
   }, [tenantId]);
