@@ -49,18 +49,6 @@ export function projectRetailQuestOrder(input: RetailQuestContractInput): any {
       : item.deliverectUnavailableActions?.length
         ? item.deliverectUnavailableActions
         : buildQuestItemUnavailableActions(preference);
-    const preferredPlu = String(item.preferredSubstitutePlu || '').trim();
-    const substituteCandidate =
-      String(preference).toUpperCase() === 'CUSTOMER_SELECTED' && preferredPlu
-        ? [{
-            plu: preferredPlu,
-            name: String(item.preferredSubstituteName || preferredPlu).trim(),
-            quantity: item.quantity,
-            ...(Number.isInteger(item.preferredSubstitutePriceMinor)
-              ? { price: item.preferredSubstitutePriceMinor }
-              : {}),
-          }]
-        : undefined;
     return {
       plu: item.plu,
       name: item.name || item.plu,
@@ -68,7 +56,10 @@ export function projectRetailQuestOrder(input: RetailQuestContractInput): any {
       quantity: item.quantity,
       ...(item.note ? { remark: item.note } : {}),
       itemUnavailableActions: actions,
-      ...(substituteCandidate ? { substituteCandidate } : {}),
+      // Match the proven Snappy Retail order shape. Customer-selected choices
+      // are deliberately served by our substitutions callback instead of the
+      // unsupported ITEM_SUBSTITUTION_CUSTOMER order action.
+      subItems: [],
     };
   });
 

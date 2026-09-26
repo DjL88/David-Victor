@@ -222,7 +222,6 @@ describe('individual-line bundle basket write', () => {
         itemUnavailableActions: [
           'ITEM_AMENDMENT',
           'ITEM_REMOVE',
-          'ITEM_SUBSTITUTION',
           'ITEM_SUBSTITUTION_CATALOG',
         ],
       }),
@@ -233,7 +232,6 @@ describe('individual-line bundle basket write', () => {
         itemUnavailableActions: [
           'ITEM_AMENDMENT',
           'ITEM_REMOVE',
-          'ITEM_SUBSTITUTION',
           'ITEM_SUBSTITUTION_CATALOG',
         ],
       }),
@@ -244,7 +242,6 @@ describe('individual-line bundle basket write', () => {
         itemUnavailableActions: [
           'ITEM_AMENDMENT',
           'ITEM_REMOVE',
-          'ITEM_SUBSTITUTION',
           'ITEM_SUBSTITUTION_CATALOG',
         ],
       }),

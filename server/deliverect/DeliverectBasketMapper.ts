@@ -86,7 +86,11 @@ export function buildQuestItemUnavailableActions(
 ): DeliverectItemUnavailableAction[] {
   switch (String(preference || 'BEST_MATCH').toUpperCase()) {
     case 'CUSTOMER_SELECTED':
-      return ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CUSTOMER'];
+      // Retail channels such as Snappy expose catalogue substitution rather
+      // than ITEM_SUBSTITUTION_CUSTOMER. Keep the customer's saved choice in
+      // our order projection and return it first from the substitutions
+      // callback; Quest still receives the proven catalogue action contract.
+      return ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG'];
     case 'CANCEL_ORDER_IF_UNAVAILABLE':
       return ['ITEM_AMENDMENT', 'CANCEL_ORDER'];
     case 'REMOVE_IF_UNAVAILABLE':
@@ -94,12 +98,7 @@ export function buildQuestItemUnavailableActions(
       return ['ITEM_AMENDMENT', 'ITEM_REMOVE'];
     case 'BEST_MATCH':
     default:
-      return [
-        'ITEM_AMENDMENT',
-        'ITEM_REMOVE',
-        'ITEM_SUBSTITUTION',
-        'ITEM_SUBSTITUTION_CATALOG',
-      ];
+      return ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG'];
   }
 }
 

@@ -153,6 +153,17 @@ export interface TenantFeatureFlags {
   showLtLaunchSplash?: boolean;
   /** Platform-only control. Defaults on until a commercial unbranded agreement applies. */
   showLtFooterWatermark?: boolean;
+  /** Brand controls for Quest catalogue substitute recommendations. */
+  substitutionCandidatePolicy?: {
+    /** Maximum permitted increase over the original unit price. 0 means same/lower only. */
+    maxPriceIncreaseMinor?: number;
+    /** Require a candidate to share at least one catalogue category with the original. */
+    requireSharedCategory?: boolean;
+    /** Maximum number of candidates returned to Quest. */
+    maxCandidates?: number;
+    /** Optional Altie/brand learned ordering, keyed by original PLU. */
+    learnedPluAffinity?: Record<string, string[]>;
+  };
 }
 
 export type FeatureFlags = TenantFeatureFlags;
@@ -1045,6 +1056,14 @@ export type VisualRuleAction =
   | { type: 'COMBINED_GROUP_LIMIT'; groupId: string; maximum: number; groupName?: string; params?: Record<string, unknown> }
   | { type: 'REQUIRES_COURIER_VERIFICATION'; verificationType?: string; params?: Record<string, unknown> }
   | { type: 'REQUIRES_ALLERGEN_DISPLAY'; params?: Record<string, unknown> }
+  | {
+      type: 'SUBSTITUTION_POLICY';
+      neverSubstitute?: boolean;
+      maxPriceIncreaseMinor?: number;
+      requireSameCategory?: boolean;
+      preferredSubstitutePlus?: string[];
+      params?: Record<string, unknown>;
+    }
   | { type: 'BADGE'; label: string; localizationKey?: string; params?: Record<string, unknown> }
   | { type: 'WARNING'; text: string; params?: Record<string, unknown> };
 

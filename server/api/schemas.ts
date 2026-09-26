@@ -295,6 +295,14 @@ export const VisualRuleActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('COMBINED_GROUP_LIMIT'), groupId: z.string().trim().min(1).max(128), maximum: z.number().int().min(1).max(9999), groupName: z.string().max(200).optional(), params: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('REQUIRES_COURIER_VERIFICATION'), verificationType: z.string().max(100).optional(), params: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('REQUIRES_ALLERGEN_DISPLAY'), params: z.record(z.string(), z.unknown()).optional() }),
+  z.object({
+    type: z.literal('SUBSTITUTION_POLICY'),
+    neverSubstitute: z.boolean().optional(),
+    maxPriceIncreaseMinor: z.number().int().min(0).max(100000).optional(),
+    requireSameCategory: z.boolean().optional(),
+    preferredSubstitutePlus: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
+  }),
   z.object({ type: z.literal('BADGE'), label: z.string().trim().min(1).max(80), localizationKey: z.string().max(200).optional(), params: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('WARNING'), text: z.string().trim().min(1).max(500), params: z.record(z.string(), z.unknown()).optional() }),
 ]);

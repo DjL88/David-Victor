@@ -27,12 +27,13 @@ describe('WP-03 Retail/Quest deterministic certification contract', () => {
     });
     expect(payload).not.toHaveProperty('placedTime');
     expect(payload.items[0].itemUnavailableActions).toEqual([
-      'ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION', 'ITEM_SUBSTITUTION_CATALOG',
+      'ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG',
     ]);
     expect(payload.items[1]).toMatchObject({
-      itemUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CUSTOMER'],
-      substituteCandidate: [{ plu: 'JOE-SUB', name: 'Joe Substitute', quantity: 1, price: 2100 }],
+      itemUnavailableActions: ['ITEM_AMENDMENT', 'ITEM_REMOVE', 'ITEM_SUBSTITUTION_CATALOG'],
+      subItems: [],
     });
+    expect(payload.items[1]).not.toHaveProperty('substituteCandidate');
   });
 
   it('keeps explicitly unpaid/COD semantics distinct instead of pretending payment succeeded', () => {
