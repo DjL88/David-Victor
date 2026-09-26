@@ -29,6 +29,29 @@ export interface DailyHours {
   close: string; // e.g. "23:00" or "22:00" (HH:MM 24h)
 }
 
+interface DeliverectDayTimeRange {
+  dayOfWeek?: number;
+  startTime?: string;
+  endTime?: string;
+}
+
+interface DeliverectSpecialHoursDay {
+  date?: string;
+  holiday?: boolean;
+  openingHours?: Array<{ begin?: string; end?: string }>;
+}
+
+interface DeliverectOpeningHours {
+  timezone?: string;
+  dayTimeRanges?: DeliverectDayTimeRange[];
+  specialHours?: Array<{
+    name?: string;
+    start?: string;
+    end?: string;
+    days?: DeliverectSpecialHoursDay[];
+  }>;
+}
+
 const DAY_NAMES: DayOfWeek[] = [
   'sunday',
   'monday',
@@ -71,6 +94,38 @@ const ISO_DAY_OF_WEEK: Record<number, DayOfWeek> = {
   7: 'sunday',
 };
 
+function normalizeClockTime(value: unknown): string | null {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function applyDeliverectRanges(
+  result: Record<DayOfWeek, DailyHours | null>,
+  ranges: DeliverectDayTimeRange[]
+): boolean {
+  let matchedAny = false;
+  for (const entry of ranges) {
+    const dayName = ISO_DAY_OF_WEEK[Number(entry?.dayOfWeek)];
+    const open = normalizeClockTime(entry?.startTime);
+    const close = normalizeClockTime(entry?.endTime);
+    if (!dayName || !open || !close) continue;
+
+    const existing = result[dayName];
+    result[dayName] = existing
+      ? {
+          open: open < existing.open ? open : existing.open,
+          close: close > existing.close ? close : existing.close,
+        }
+      : { open, close };
+    matchedAny = true;
+  }
+  return matchedAny;
+}
+
 export function normalizeOpeningHours(
   rawHours?:
     | Record<string, { open: string; close: string }>
@@ -98,23 +153,27 @@ export function normalizeOpeningHours(
 
   if (Array.isArray(rawHours)) {
     // Deliverect's real per-location shape: [{ dayOfWeek: 1-7 (ISO, Mon-Sun), startTime, endTime }]
-    let matchedAny = false;
-    for (const entry of rawHours) {
-      const dayName = ISO_DAY_OF_WEEK[entry?.dayOfWeek];
-      if (dayName && typeof entry.startTime === 'string' && typeof entry.endTime === 'string') {
-        result[dayName] = { open: entry.startTime.trim(), close: entry.endTime.trim() };
-        matchedAny = true;
-      }
-    }
-    if (matchedAny) return result;
+    if (applyDeliverectRanges(result, rawHours)) return result;
   }
 
   if (typeof rawHours === 'object') {
+    // Current Commerce Get Store response:
+    // { timezone, dayTimeRanges: [{ dayOfWeek, startTime, endTime }], specialHours }
+    const deliverectHours = rawHours as DeliverectOpeningHours;
+    if (
+      Array.isArray(deliverectHours.dayTimeRanges) &&
+      applyDeliverectRanges(result, deliverectHours.dayTimeRanges)
+    ) {
+      return result;
+    }
+
     // Deliverect per-day map, e.g. { monday: { open: "08:00", close: "22:00" } }
     for (const d of DAY_NAMES) {
       const match = rawHours[d] || rawHours[d.substring(0, 3)] || rawHours[d.toUpperCase()];
       if (match && typeof match.open === 'string' && typeof match.close === 'string') {
-        result[d] = { open: match.open.trim(), close: match.close.trim() };
+        const open = normalizeClockTime(match.open);
+        const close = normalizeClockTime(match.close);
+        if (open && close) result[d] = { open, close };
       }
     }
 
@@ -142,6 +201,48 @@ export function normalizeOpeningHours(
     result[d] = { open: '08:00', close: '22:00' };
   }
   return result;
+}
+
+/**
+ * Resolves the effective hours for one store-local calendar date. Deliverect's
+ * specialHours are exceptions, so an entry for the date replaces the weekly
+ * schedule instead of being combined with it.
+ */
+export function resolveOpeningHoursForDate(
+  rawHours: Store['openingHours'] | undefined,
+  dateString: string
+): DailyHours | null {
+  const deliverectHours = rawHours && typeof rawHours === 'object' && !Array.isArray(rawHours)
+    ? rawHours as DeliverectOpeningHours
+    : undefined;
+
+  for (const period of deliverectHours?.specialHours || []) {
+    const specialDay = Array.isArray(period?.days)
+      ? period.days.find((day) => day?.date === dateString)
+      : undefined;
+    if (!specialDay) continue;
+
+    if (specialDay.holiday === true) return null;
+
+    let effective: DailyHours | null = null;
+    for (const range of specialDay.openingHours || []) {
+      const open = normalizeClockTime(range?.begin);
+      const close = normalizeClockTime(range?.end);
+      if (!open || !close) continue;
+      effective = effective
+        ? {
+            open: open < effective.open ? open : effective.open,
+            close: close > effective.close ? close : effective.close,
+          }
+        : { open, close };
+    }
+
+    // A declared exception without usable intervals is closed for that date.
+    return effective;
+  }
+
+  const dayOfWeek = DAY_NAMES[weekdayIndexForDateString(dateString)];
+  return normalizeOpeningHours(rawHours)[dayOfWeek];
 }
 
 export interface StoreOpenEvaluation {
@@ -179,9 +280,7 @@ export function evaluateStoreOpenNow(
 
   const timeZone = resolveStoreTimeZone(store);
   const zonedNow = getZonedDateParts(targetDate, timeZone);
-  const dayOfWeek = DAY_NAMES[zonedNow.weekdayIndex];
-  const normalizedMap = normalizeOpeningHours(store.openingHours);
-  const todayHours = normalizedMap[dayOfWeek];
+  const todayHours = resolveOpeningHoursForDate(store.openingHours, zonedNow.dateString);
 
   if (!todayHours) {
     return {
@@ -238,14 +337,12 @@ export function computeNextOpeningTime(
 ): Date | null {
   if (!store) return null;
 
-  const normalizedMap = normalizeOpeningHours(store.openingHours);
   const timeZone = resolveStoreTimeZone(store);
   const current = getZonedDateParts(fromDate, timeZone);
 
   for (let offset = 0; offset <= 7; offset++) {
     const candidateDateString = addDaysToDateString(current.dateString, offset);
-    const dayOfWeek = DAY_NAMES[weekdayIndexForDateString(candidateDateString)];
-    const hours = normalizedMap[dayOfWeek];
+    const hours = resolveOpeningHoursForDate(store.openingHours, candidateDateString);
     if (!hours) continue;
 
     // On the current store-local day, only a still-upcoming opening counts.

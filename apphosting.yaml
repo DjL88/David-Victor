@@ -55,13 +55,13 @@ env:
   # One stable ingress host for every Deliverect tenant callback. Tenant
   # isolation remains in the signed webhook path identifier, not the hostname.
   - variable: CHANNEL_PUBLIC_BASE_URL
-    value: https://leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app
+    value: https://ltx.wtf
     availability:
       - RUNTIME
       - BUILD
 
   - variable: VITE_CHANNEL_PUBLIC_BASE_URL
-    value: https://leitch-store-staging--leitch-tech-nonprod.europe-west4.hosted.app
+    value: https://ltx.wtf
     availability:
       - BUILD
 

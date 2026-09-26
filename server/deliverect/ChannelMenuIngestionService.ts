@@ -42,7 +42,13 @@ interface ChannelMenuIngressRecord {
   byteSize: number;
   contentHash: string;
   menuIds: string[];
+  menuNames?: string[];
   channelLinkIds: string[];
+  channelNames?: string[];
+  accountIds?: string[];
+  accountNames?: string[];
+  locationIds?: string[];
+  locationNames?: string[];
   status: 'RECEIVED' | 'QUEUED' | 'PROCESSING' | 'PROCESSED' | 'REVIEW_REQUIRED' | 'QUEUE_FAILED' | 'FAILED';
   review?: {
     reason: 'DESTRUCTIVE_DELTA';
@@ -117,6 +123,16 @@ const channelLinkIdOf = (menu: any): string =>
     (typeof menu?.channelLink === 'string' ? menu.channelLink : '') ||
     ''
   ).trim();
+
+const metadataText = (...values: unknown[]): string => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+};
+
+const uniqueMetadata = (values: string[]): string[] =>
+  Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 
 class CloudTasksChannelMenuQueue implements ChannelMenuQueueClient {
   readonly execution = 'async' as const;
@@ -354,12 +370,40 @@ export class ChannelMenuIngestionService {
     const jobId = `menu_${eventId}`;
     const menus = menuArray(params.payload);
     const menuIds = Array.from(new Set(menus.map(menuIdOf).filter(Boolean)));
+    const menuNames = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.menuName,
+      menu?.menu,
+      menu?.name
+    )));
     const channelLinkIds = Array.from(
       new Set([
         ...menus.map(channelLinkIdOf).filter(Boolean),
         String(params.resolvedChannelLinkId || '').trim(),
       ].filter(Boolean))
     );
+    const channelNames = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.channelName,
+      menu?.channel?.name,
+      menu?.application
+    )));
+    const accountIds = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.accountId,
+      menu?.account?._id,
+      menu?.account?.id
+    )));
+    const accountNames = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.accountName,
+      menu?.account?.name
+    )));
+    const locationIds = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.locationId,
+      menu?.location?._id,
+      menu?.location?.id
+    )));
+    const locationNames = uniqueMetadata(menus.map((menu) => metadataText(
+      menu?.locationName,
+      menu?.location?.name
+    )));
 
     const queue = this.getQueueClient();
     const existing = await this.getIngressRecord(params.tenantId, eventId);
@@ -424,7 +468,13 @@ export class ChannelMenuIngestionService {
       byteSize: raw.length,
       contentHash,
       menuIds,
+      menuNames,
       channelLinkIds,
+      channelNames,
+      accountIds,
+      accountNames,
+      locationIds,
+      locationNames,
       status: 'RECEIVED',
       receivedAt: now,
       updatedAt: now,
@@ -806,7 +856,13 @@ export class ChannelMenuIngestionService {
     updatedAt: string;
     processedAt?: string;
     menuIds: string[];
+    menuNames?: string[];
     channelLinkIds: string[];
+    channelNames?: string[];
+    accountIds?: string[];
+    accountNames?: string[];
+    locationIds?: string[];
+    locationNames?: string[];
     byteSize: number;
     error?: string;
     review?: ChannelMenuIngressRecord['review'];
@@ -838,7 +894,13 @@ export class ChannelMenuIngestionService {
       updatedAt: record.updatedAt,
       processedAt: record.processedAt,
       menuIds: record.menuIds,
+      menuNames: record.menuNames,
       channelLinkIds: record.channelLinkIds,
+      channelNames: record.channelNames,
+      accountIds: record.accountIds,
+      accountNames: record.accountNames,
+      locationIds: record.locationIds,
+      locationNames: record.locationNames,
       byteSize: record.byteSize,
       error: record.error,
       review: record.review,

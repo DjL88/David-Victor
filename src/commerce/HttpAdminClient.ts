@@ -893,10 +893,14 @@ export class HttpAdminClient implements AdminClient {
     return [];
   }
 
-  async getIntegrationApiLogs(tenantId: string, limit: number = 100): Promise<any> {
+  async getIntegrationApiLogs(tenantId: string, limit: number = 100, refreshOAuth: boolean = false): Promise<any> {
     const headers = await this.getHeadersAsync();
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, limit))),
+      ...(refreshOAuth ? { refreshOAuth: 'true' } : {}),
+    });
     const res = await fetch(
-      `${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/api-logs?limit=${Math.min(200, Math.max(1, limit))}`,
+      `${this.baseUrl}/admin/tenants/${encodeURIComponent(tenantId)}/integration/api-logs?${query.toString()}`,
       { headers }
     );
     if (!res.ok) {

@@ -26,11 +26,10 @@ import {
 import type { CheckoutResult } from '../../src/domain/models';
 import { ensureNestedCategoryTree } from '../../src/commerce/categoryHierarchy';
 import { normaliseDeliverectTranslations } from '../../src/i18n/entityTranslations';
-import { evaluateStoreOpenNow, computeNextOpeningTime, normalizeOpeningHours } from '../../src/services/storeOpeningHoursService';
+import { evaluateStoreOpenNow, computeNextOpeningTime, resolveOpeningHoursForDate } from '../../src/services/storeOpeningHoursService';
 import {
   getZonedDateParts,
   resolveStoreTimeZone,
-  weekdayIndexForDateString,
   zonedLocalDateTimeToUtc,
 } from '../../src/utils/zonedTime';
 import {
@@ -73,6 +72,20 @@ import { projectRetailQuestOrder } from './RetailQuestOrderContract';
 
 export const FALLBACK_CATEGORY_ID = 'cat_other_fallback';
 export const FALLBACK_CATEGORY_NAME = 'Store Specials & Local Products';
+
+export function mergeStoreServices(
+  storeServices?: Store['services'],
+  locationServices?: Store['services']
+): Store['services'] | undefined {
+  const byId = new Map<string, NonNullable<Store['services']>[number]>();
+  for (const service of locationServices || []) {
+    if (service?.id) byId.set(String(service.id), service);
+  }
+  for (const service of storeServices || []) {
+    if (service?.id) byId.set(String(service.id), service);
+  }
+  return byId.size > 0 ? Array.from(byId.values()) : undefined;
+}
 
 export type DeliverectChannelNameSource =
   | 'integration_config'
@@ -703,8 +716,15 @@ export class DeliverectApiClient implements DeliverectAdapter {
         currency: (s as any).currency || (loc as any)?.currency || 'GBP',
         phone: s.phone || loc?.phone || undefined,
         email: s.email || loc?.email || undefined,
-        timezone: s.timezone || loc?.timezone || undefined,
-        services: s.services?.length ? s.services : loc?.services || undefined,
+        timezone:
+          s.timezone ||
+          loc?.timezone ||
+          (s as any).openingHours?.timezone ||
+          (loc as any)?.openingHours?.timezone ||
+          undefined,
+        // Commerce may return only the store's own channel while the correlated
+        // physical location contains its other active marketplaces. Preserve both.
+        services: mergeStoreServices(s.services, loc?.services),
         // Previously never passed through, so every real store silently fell back to
         // storeOpeningHoursService's demo-only default (07:00-23:00) regardless of its
         // actual Deliverect hours — fixed here.
@@ -3522,13 +3542,10 @@ export class DeliverectApiClient implements DeliverectAdapter {
     // Deliverect opening hours are location-local. Generate slot labels using the
     // store timezone rather than the Cloud Run process timezone so BST/DST cannot
     // shift displayed or submitted collection times.
-    const normalizedMap = normalizeOpeningHours(store.openingHours);
     const now = new Date();
     const timeZone = resolveStoreTimeZone(store);
     const localNow = getZonedDateParts(now, timeZone);
-    const dayNames: Array<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday'> =
-      ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const hours = normalizedMap[dayNames[weekdayIndexForDateString(localNow.dateString)]];
+    const hours = resolveOpeningHoursForDate(store.openingHours, localNow.dateString);
     const SLOT_MINUTES = store.scheduling?.slotLengthMinutes || 30;
     const leadTimeMinutes = Math.max(0, store.scheduling?.minimumLeadTimeMinutes || 0);
 

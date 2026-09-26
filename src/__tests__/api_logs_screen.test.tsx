@@ -121,4 +121,26 @@ describe('API Logs real component', () => {
     expect(container.textContent).not.toContain('discarded-account');
     expect(container.textContent).toContain('current-account');
   });
+
+  it('shows enriched Menu Push identities and filters by location', async () => {
+    client.getIntegrationApiLogs.mockResolvedValue({
+      ...snapshot('tenant-a'),
+      menuPushes: [{
+        eventId: 'event-1', status: 'PROCESSED', receivedAt: '2026-09-26T04:00:00Z',
+        menuIds: ['menu-1'], menuNames: ['Market Lane'],
+        accountIds: ['account-1'], accountNames: ['Test Retailer'],
+        channelLinkIds: ['channel-1'], channelNames: ['LeitchTech'],
+        locationIds: ['location-1'], locationNames: ["Ewan's Store"],
+      }],
+    });
+    await render('tenant-a');
+    expect(container.textContent).toContain('Market Lane');
+    expect(container.textContent).toContain("Ewan's Store");
+    const search = container.querySelector('input[placeholder="Name, ID or event"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'no-match');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(container.textContent).toContain('No Menu Push entries match the current filters.');
+  });
 });

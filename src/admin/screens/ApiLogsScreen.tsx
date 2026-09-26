@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Database, RefreshCw, Webhook } from 'lucide-react';
 import { defaultAdminClient } from '../../commerce/HttpAdminClient';
 import {
@@ -24,6 +24,12 @@ const formatDate = (value?: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
 };
+const displayIdentity = (names: string[], ids: string[]) => (
+  <div className="min-w-36">
+    <div className="font-medium text-slate-800">{names.join(', ') || 'Name not recorded'}</div>
+    <div className="mt-0.5 break-all font-mono text-[11px] text-slate-500">{ids.join(', ') || 'ID not recorded'}</div>
+  </div>
+);
 
 // A new tenant gets a new instance before paint: never render the previous
 // tenant's snapshot or diagnostic while its replacement request is pending.
@@ -38,6 +44,11 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
   const [tracing, setTracing] = useState(false);
   const [error, setError] = useState('');
   const [traceError, setTraceError] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [accountFilter, setAccountFilter] = useState('');
+  const [channelFilter, setChannelFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const loadGeneration = useRef(0);
   const traceGeneration = useRef(0);
 
@@ -87,11 +98,58 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
     }
   };
 
+  const refreshOAuth = async () => {
+    const generation = ++loadGeneration.current;
+    setLoading(true);
+    setError('');
+    try {
+      if (!defaultAdminClient.getIntegrationApiLogs) throw new Error('API logs unavailable');
+      const response = await defaultAdminClient.getIntegrationApiLogs(tenantId, 100, true);
+      if (generation !== loadGeneration.current) return;
+      setData(readApiLogSnapshot(response, tenantId));
+    } catch {
+      if (generation === loadGeneration.current) {
+        setError('OAuth evidence could not be refreshed. The previous snapshot is still shown.');
+      }
+    } finally {
+      if (generation === loadGeneration.current) setLoading(false);
+    }
+  };
+
   const scopeEvidence = getScopeEvidence(data);
   const commerceCircuit = data?.commerceCircuit;
   const scopeLabel = scopeEvidence === 'REPORTED' ? 'genericCommerce reported'
     : scopeEvidence === 'NOT_REPORTED' ? 'genericCommerce not reported' : 'Scope status unknown';
   const channelIds = data?.integration?.allowedChannelLinkIds;
+  const menuPushes = data?.menuPushes || [];
+  const filterOptions = useMemo(() => {
+    const values = (selector: (entry: typeof menuPushes[number]) => string[]) =>
+      Array.from(new Set(menuPushes.flatMap(selector))).filter(Boolean).sort();
+    return {
+      statuses: values((entry) => [entry.status]),
+      accounts: values((entry) => [...entry.accountNames, ...entry.accountIds]),
+      channels: values((entry) => [...entry.channelNames, ...entry.channelLinkIds]),
+      locations: values((entry) => [...entry.locationNames, ...entry.locationIds]),
+    };
+  }, [menuPushes]);
+  const filteredMenuPushes = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return menuPushes.filter((entry) => {
+      const allValues = [
+        entry.eventId, entry.status,
+        ...entry.menuNames, ...entry.menuIds,
+        ...entry.accountNames, ...entry.accountIds,
+        ...entry.channelNames, ...entry.channelLinkIds,
+        ...entry.locationNames, ...entry.locationIds,
+      ];
+      if (needle && !allValues.some((value) => value.toLowerCase().includes(needle))) return false;
+      if (statusFilter && entry.status !== statusFilter) return false;
+      if (accountFilter && ![...entry.accountNames, ...entry.accountIds].includes(accountFilter)) return false;
+      if (channelFilter && ![...entry.channelNames, ...entry.channelLinkIds].includes(channelFilter)) return false;
+      if (locationFilter && ![...entry.locationNames, ...entry.locationIds].includes(locationFilter)) return false;
+      return true;
+    });
+  }, [menuPushes, query, statusFilter, accountFilter, channelFilter, locationFilter]);
 
   if (loading && !data) return <div role="status" className="p-6 text-sm text-slate-500">Loading API activity…</div>;
 
@@ -106,6 +164,10 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
           {data && <p className="mt-1 text-xs text-slate-500">Snapshot: {formatDate(data.generatedAt)}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => void refreshOAuth()} disabled={loading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />Refresh OAuth evidence
+          </button>
           <button type="button" onClick={runTrace} disabled={tracing || !defaultAdminClient.traceRequest}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
             <Activity className="h-4 w-4" aria-hidden="true" />
@@ -128,6 +190,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Environment</div>
           <div className="mt-1 font-semibold text-slate-900">{data?.integration?.environment || 'Unknown'}</div>
           <div className="mt-1 text-xs text-slate-500">{data?.integration?.credentialMode ? `${data.integration.credentialMode} credentials` : 'Credential mode not observed'}</div>
+          <div className="mt-1 break-all text-xs text-slate-500">Callbacks: {data?.integration?.publicBaseUrl || 'Not observed'}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Commerce scope evidence</div>
@@ -147,7 +210,9 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Account / channels</div>
-          <div className="mt-1 break-all font-mono text-xs text-slate-800">{data?.integration?.accountId || (data?.integration ? 'Not mapped' : 'Not observed')}</div>
+          <div className="mt-1 text-sm font-medium text-slate-800">{data?.integration?.accountName || 'Account name not observed'}</div>
+          <div className="mt-0.5 break-all font-mono text-xs text-slate-600">{data?.integration?.accountId || (data?.integration ? 'Not mapped' : 'Not observed')}</div>
+          <div className="mt-1 text-xs text-slate-500">Channel: {data?.integration?.channelName || 'Not observed'}</div>
           <div className="mt-1 text-xs text-slate-500">{channelIds ? `${channelIds.length} assigned channel link(s)` : 'Channel assignments not observed'}</div>
         </div>
       </div>
@@ -167,28 +232,50 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
       </section>}
 
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
           <Database className="h-4 w-4 text-slate-500" aria-hidden="true" /><h2 className="font-semibold text-slate-900">Menu Push processing</h2>
-          {data && <span className="text-xs text-slate-500">{data.menuPushes.length} loaded</span>}
+          {data && <span className="text-xs text-slate-500">{filteredMenuPushes.length} shown / {data.menuPushes.length} loaded</span>}
+        </div>
+        <div className="grid gap-2 border-b border-slate-200 bg-slate-50/50 p-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Menu Push filters">
+          <label className="text-xs font-medium text-slate-600">Search
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, ID or event"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900" />
+          </label>
+          {([
+            ['Status', statusFilter, setStatusFilter, filterOptions.statuses],
+            ['Account', accountFilter, setAccountFilter, filterOptions.accounts],
+            ['Channel', channelFilter, setChannelFilter, filterOptions.channels],
+            ['Location', locationFilter, setLocationFilter, filterOptions.locations],
+          ] as Array<[string, string, React.Dispatch<React.SetStateAction<string>>, string[]]>).map(([label, value, setter, options]) => (
+            <label key={label} className="text-xs font-medium text-slate-600">{label}
+              <select value={value} onChange={(event) => setter(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900">
+                <option value="">All {label.toLowerCase()}s</option>
+                {options.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+          ))}
         </div>
         <div className="overflow-x-auto" role="region" aria-label="Menu Push activity" tabIndex={0}>
-          <table className="min-w-[760px] w-full text-left text-sm">
+          <table className="min-w-[1180px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>
-              {['Received', 'Status', 'Menu', 'Channel', 'Processed', 'Detail'].map((label) => <th key={label} scope="col" className="px-4 py-3">{label}</th>)}
+              {['Received', 'Status', 'Menu', 'Account', 'Channel', 'Location', 'Processed', 'Detail'].map((label) => <th key={label} scope="col" className="px-4 py-3">{label}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {(data?.menuPushes || []).map((entry) => <tr key={entry.eventId}>
+              {filteredMenuPushes.map((entry) => <tr key={entry.eventId}>
                 <td className="px-4 py-3 whitespace-nowrap">{formatDate(entry.receivedAt)}</td>
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(entry.status)}`}>{entry.status}</span></td>
-                <td className="px-4 py-3 font-mono text-xs">{entry.menuIds.join(', ') || 'Not recorded'}</td>
-                <td className="px-4 py-3 font-mono text-xs">{entry.channelLinkIds.join(', ') || 'Not recorded'}</td>
+                <td className="px-4 py-3 text-xs">{displayIdentity(entry.menuNames, entry.menuIds)}</td>
+                <td className="px-4 py-3 text-xs">{displayIdentity(entry.accountNames, entry.accountIds)}</td>
+                <td className="px-4 py-3 text-xs">{displayIdentity(entry.channelNames, entry.channelLinkIds)}</td>
+                <td className="px-4 py-3 text-xs">{displayIdentity(entry.locationNames, entry.locationIds)}</td>
                 <td className="px-4 py-3 whitespace-nowrap">{formatDate(entry.processedAt)}</td>
                 <td className="max-w-xs px-4 py-3 text-xs text-slate-600 break-words">
                   <p>{menuProcessingDetail(entry)}</p>
                   <details className="mt-1"><summary className="cursor-pointer underline">Event reference</summary><p className="mt-1 break-all font-mono">{entry.eventId}</p></details>
                 </td>
               </tr>)}
-              {!data?.menuPushes.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">{data ? 'No Menu Push entries returned for this tenant.' : 'Menu Push activity has not been loaded.'}</td></tr>}
+              {filteredMenuPushes.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{data?.menuPushes.length ? 'No Menu Push entries match the current filters.' : data ? 'No Menu Push entries returned for this tenant.' : 'Menu Push activity has not been loaded.'}</td></tr>}
             </tbody>
           </table>
         </div>

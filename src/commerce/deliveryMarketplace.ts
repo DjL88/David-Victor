@@ -138,7 +138,7 @@ export function marketplaceForStore(store: any): DeliveryMarketplaceIdentity {
 
 export function isStorefrontChannelStatusVisible(status: unknown): boolean {
   const normalized = String(status ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
-  return normalized === 'ACTIVE' || normalized === 'ONBOARDING' || normalized === 'ON_BOARDING';
+  return normalized === 'ACTIVE' || normalized === 'SUBSCRIBED' || normalized === 'ONBOARDING' || normalized === 'ON_BOARDING';
 }
 
 export function isStorefrontMarketplaceService(service: any): boolean {
