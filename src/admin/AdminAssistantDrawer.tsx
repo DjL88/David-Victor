@@ -117,6 +117,13 @@ type AssistantAttachment = {
   truncated?: boolean;
 };
 
+type AssistantProposalIntent = {
+  actionName: 'branding.proposeUpdate';
+  input: Record<string, unknown>;
+  mode: 'PROPOSE_ONLY';
+  requiresReview: true;
+};
+
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -137,6 +144,18 @@ type ChatMessage = {
       prefill?: Record<string, unknown>;
     }>;
   } | null;
+  proposalIntent?: AssistantProposalIntent | null;
+  proposalPrompt?: string;
+  proposalCreating?: boolean;
+  proposalError?: string;
+  proposalChangeSet?: {
+    id: string;
+    status: string;
+    diff?: unknown;
+    afterSnapshot?: unknown;
+    warnings?: string[];
+    affectedResources?: Array<{ type?: string; id?: string; label?: string }>;
+  };
 };
 
 type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content' | 'attachments'>;
@@ -308,6 +327,8 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
           degraded: response.degraded === true,
           provider: response.provider,
           navigation: response.navigation || null,
+          proposalIntent: response.proposalIntent || null,
+          proposalPrompt: userText,
         },
       ]);
     } catch (err: any) {
@@ -321,6 +342,77 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
   const retryLastMessage = async () => {
     if (!failedRequest || running) return;
     await sendMessage(failedRequest.message, failedRequest.history, false, failedRequest.attachments);
+  };
+
+  const createReviewProposal = async (messageIndex: number, message: ChatMessage) => {
+    const intent = message.proposalIntent;
+    if (
+      !intent ||
+      intent.mode !== 'PROPOSE_ONLY' ||
+      intent.requiresReview !== true ||
+      intent.actionName !== 'branding.proposeUpdate' ||
+      message.proposalCreating ||
+      message.proposalChangeSet
+    ) return;
+
+    if (!defaultAdminClient.createAssistantChangeSet) {
+      setMessages((current) => current.map((entry, index) =>
+        index === messageIndex
+          ? { ...entry, proposalError: 'Reviewable proposals are not available in this client.' }
+          : entry
+      ));
+      return;
+    }
+
+    const tenantId = workspace.tenantId;
+    setMessages((current) => current.map((entry, index) =>
+      index === messageIndex
+        ? { ...entry, proposalCreating: true, proposalError: undefined }
+        : entry
+    ));
+
+    try {
+      const response = await defaultAdminClient.createAssistantChangeSet(tenantId, {
+        prompt: message.proposalPrompt || message.content,
+        actions: [{ actionName: intent.actionName, input: intent.input }],
+      });
+      const changeSet = response?.changeSet;
+      if (!changeSet?.id || (changeSet.tenantId && changeSet.tenantId !== tenantId)) {
+        throw new Error('Proposal response did not match the active brand.');
+      }
+
+      setMessages((current) => current.map((entry, index) =>
+        index === messageIndex
+          ? {
+              ...entry,
+              proposalCreating: false,
+              proposalError: undefined,
+              proposalChangeSet: {
+                id: String(changeSet.id),
+                status: String(changeSet.status || 'APPROVAL_REQUIRED'),
+                diff: changeSet.diff,
+                afterSnapshot: changeSet.afterSnapshot,
+                warnings: Array.isArray(changeSet.warnings)
+                  ? changeSet.warnings.filter((item: unknown): item is string => typeof item === 'string')
+                  : [],
+                affectedResources: Array.isArray(changeSet.affectedResources)
+                  ? changeSet.affectedResources
+                  : [],
+              },
+            }
+          : entry
+      ));
+    } catch {
+      setMessages((current) => current.map((entry, index) =>
+        index === messageIndex
+          ? {
+              ...entry,
+              proposalCreating: false,
+              proposalError: 'The proposal could not be prepared. Nothing was approved or applied.',
+            }
+          : entry
+      ));
+    }
   };
 
   const downloadTranscript = () => {
@@ -575,6 +667,63 @@ export const AdminAssistantDrawer: React.FC<AdminAssistantDrawerProps> = ({ open
                       <span>{message.navigation.label}</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
+                  </div>
+                )}
+
+                {message.role === 'assistant' && message.proposalIntent && (
+                  <div className="mt-2 rounded-xl border border-indigo-200 bg-indigo-50 p-2.5">
+                    {message.proposalChangeSet ? (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-extrabold text-indigo-900">Proposal ready for review</p>
+                            <p className="mt-0.5 text-[9px] text-indigo-700">
+                              {message.proposalChangeSet.status} · nothing has been approved or applied.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-indigo-200 bg-white px-2 py-1 font-mono text-[9px] text-indigo-700">
+                            {message.proposalChangeSet.id}
+                          </span>
+                        </div>
+                        <details className="mt-2 text-[10px] text-indigo-900">
+                          <summary className="cursor-pointer font-bold">Review proposed change</summary>
+                          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-[9px] text-gray-800">
+                            {JSON.stringify(
+                              message.proposalChangeSet.diff ??
+                              message.proposalChangeSet.afterSnapshot ??
+                              message.proposalIntent.input,
+                              null,
+                              2
+                            )}
+                          </pre>
+                          {message.proposalChangeSet.warnings && message.proposalChangeSet.warnings.length > 0 && (
+                            <ul className="mt-2 list-disc space-y-1 pl-4">
+                              {message.proposalChangeSet.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                            </ul>
+                          )}
+                        </details>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void createReviewProposal(index, message)}
+                          disabled={message.proposalCreating}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-white px-2.5 py-1.5 text-[10px] font-extrabold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+                        >
+                          {message.proposalCreating ? 'Preparing…' : 'Review proposal'}
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                        <p className="mt-1.5 text-[9px] leading-relaxed text-indigo-700">
+                          This creates a server-derived ChangeSet for review only. It does not approve or apply anything.
+                        </p>
+                        {message.proposalError && (
+                          <p role="alert" className="mt-1.5 text-[9px] font-semibold text-rose-700">
+                            {message.proposalError}
+                          </p>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
 
