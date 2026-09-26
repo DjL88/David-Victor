@@ -356,6 +356,32 @@ export function resolveAdminRequestedTenant(req: AuthenticatedRequest): string |
   return typeof resolved === 'string' && resolved.trim() ? resolved.trim() : undefined;
 }
 
+function resolveAuthenticatedAdminTenantScope(
+  req: AuthenticatedRequest,
+  explicitTenantId?: unknown
+): string {
+  const admin = req.adminUser || (req as any).adminUser as AuthenticatedAdmin | undefined;
+  const explicit = String(explicitTenantId ?? '').trim();
+  const requested = explicit || resolveAdminRequestedTenant(req) || '';
+
+  if (admin?.isSuperAdmin || admin?.role === 'platformSuperAdmin') {
+    const adminTenant = String(admin.tenantId || '').trim();
+    const tenantId = String(
+      requested || (adminTenant && adminTenant !== 'platform' ? adminTenant : '')
+    ).trim();
+    if (tenantId) return tenantId;
+  } else {
+    const tenantId = String(admin?.tenantId || '').trim();
+    if (tenantId) return tenantId;
+  }
+
+  throw new BFFError(
+    'TENANT_SCOPE_REQUIRED',
+    'An explicit tenant scope is required for this admin operation.',
+    400
+  );
+}
+
 /**
  * RBAC Middleware to protect Admin endpoints
  */
@@ -3420,7 +3446,13 @@ v1Router.get('/orders/:orderId', async (req: Request, res: Response) => {
     let order = await adapter.getOrder(orderId);
 
     if (!order && proj) {
-      const tenant = await FirestorePlatformService.getTenantConfig(proj.tenantId || 'brand-alpha');
+      if (!proj.tenantId) {
+        return res.status(409).json({
+          error: 'Order tenant ownership is unavailable.',
+          code: 'ORDER_TENANT_SCOPE_UNKNOWN',
+        });
+      }
+      const tenant = await FirestorePlatformService.getTenantConfig(proj.tenantId);
       order = mapOrderProjectionToOrder(proj, tenant) as any;
     } else if (order && proj?.picking) {
       // Overwrite in-memory order picking state with authoritative Firestore projection
@@ -3448,7 +3480,10 @@ v1Router.post('/orders/:orderId/settle', requireAdminAuth('operationsEditor'), a
   try {
     const { orderId } = req.params;
     const admin = (req as AuthenticatedRequest).adminUser;
-    const tenantId = admin?.tenantId || (req.body?.tenantId as string) || resolveTenant(req);
+    const tenantId = resolveAuthenticatedAdminTenantScope(
+      req as AuthenticatedRequest,
+      req.body?.tenantId
+    );
     const reauthorizeIfNeeded = Boolean(req.body?.reauthorizeIfNeeded);
     const result = await PaymentService.settleOrderPayment(orderId, tenantId, {
       reauthorizeIfNeeded,
@@ -3468,7 +3503,10 @@ v1Router.post('/orders/:orderId/cancel', requireAdminAuth('operationsEditor'), a
   try {
     const { orderId } = req.params;
     const admin = (req as AuthenticatedRequest).adminUser;
-    const tenantId = admin?.tenantId || (req.body?.tenantId as string) || resolveTenant(req);
+    const tenantId = resolveAuthenticatedAdminTenantScope(
+      req as AuthenticatedRequest,
+      req.body?.tenantId
+    );
     const reason = req.body?.reason || 'Order cancelled';
     const result = await PaymentService.handleOrderCancellation(orderId, tenantId, reason, admin);
     res.json(result);
@@ -3484,8 +3522,9 @@ v1Router.post('/orders/:orderId/cancel', requireAdminAuth('operationsEditor'), a
 v1Router.get('/orders/:orderId/settlement', requireAdminAuth('operationsEditor'), async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
+    const tenantId = resolveAuthenticatedAdminTenantScope(req as AuthenticatedRequest);
     const order = await FirestorePlatformService.getOrderProjection(orderId);
-    if (!order) {
+    if (!order || !order.tenantId || order.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
     }
     const finalAmount = PaymentService.calculateAuthoritativeFinalAmount(order);
@@ -3722,7 +3761,13 @@ v1Router.post('/orders/:orderId/simulate-picking', async (req: Request, res: Res
 // 9.0 Current Admin Identity Check
 v1Router.get('/admin/auth/me', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
-  const tenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || 'brand-alpha';
+  const requestedTenantId = String(
+    (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || ''
+  ).trim();
+  const tenantId = requestedTenantId || (isDemoMode() ? 'brand-alpha' : undefined);
+  // Platform Super Admin identity can be verified in neutral "platform" scope
+  // when no retailer is selected. Tenant admins still require a real tenant
+  // membership; the auth resolver never invents one.
   const result = await verifyAdminSessionWithStatus(authHeader, tenantId);
 
   if (!result.authenticated) {
@@ -5841,12 +5886,9 @@ v1Router.post('/admin/assets/upload', requireAdminAuth(), requireAdminCapability
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, type, fileName, fileData, contentType, byteSize, width, height } = req.body;
 
-    // RBAC: Non-superadmin cannot upload into other tenant boundaries
-    if (authAdmin.role !== 'platformSuperAdmin') {
-      tenantId = authAdmin.tenantId; // Authoritative assignment from verified session
-    } else if (!tenantId) {
-      tenantId = authAdmin.tenantId || 'brand-alpha';
-    }
+    // RBAC: non-superadmins are pinned to their verified tenant; platform
+    // superadmins must select a tenant explicitly instead of inheriting a default.
+    tenantId = resolveAuthenticatedAdminTenantScope(req as AuthenticatedRequest, tenantId);
 
     const assetType = normalizeAssetType(type);
 
@@ -5886,11 +5928,7 @@ v1Router.post('/admin/assets/upload-url', requireAdminAuth(), requireAdminCapabi
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, type, fileName, contentType, byteSize } = req.body;
 
-    if (authAdmin.role !== 'platformSuperAdmin') {
-      tenantId = authAdmin.tenantId;
-    } else if (!tenantId) {
-      tenantId = authAdmin.tenantId || 'brand-alpha';
-    }
+    tenantId = resolveAuthenticatedAdminTenantScope(req as AuthenticatedRequest, tenantId);
 
     const assetType = normalizeAssetType(type);
 
@@ -5930,11 +5968,7 @@ v1Router.post('/admin/assets/finalize', requireAdminAuth(), requireAdminCapabili
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     let { tenantId, assetId } = req.body;
 
-    if (authAdmin.role !== 'platformSuperAdmin') {
-      tenantId = authAdmin.tenantId;
-    } else if (!tenantId) {
-      tenantId = authAdmin.tenantId || 'brand-alpha';
-    }
+    tenantId = resolveAuthenticatedAdminTenantScope(req as AuthenticatedRequest, tenantId);
 
     const finalized = await AssetService.finalizeAsset(tenantId, assetId);
 
@@ -5968,11 +6002,7 @@ v1Router.post(
       const authAdmin = (req as AuthenticatedRequest).adminUser!;
       let { tenantId, assetId } = req.body;
 
-      if (authAdmin.role !== 'platformSuperAdmin') {
-        tenantId = authAdmin.tenantId;
-      } else if (!tenantId) {
-        tenantId = authAdmin.tenantId || 'brand-alpha';
-      }
+      tenantId = resolveAuthenticatedAdminTenantScope(req as AuthenticatedRequest, tenantId);
 
       const analysis = await BrandProfileService.analyse(tenantId, assetId);
 
@@ -6237,7 +6267,7 @@ v1Router.get('/admin/health', async (req: Request, res: Response) => {
 
   try {
     if (db) {
-      await FirestorePlatformService.getTenantConfig('brand-alpha');
+      await db.collection('tenants').limit(1).get();
       firestoreWorking = true;
     }
   } catch (e) {
@@ -6267,10 +6297,10 @@ v1Router.post('/admin/test-oauth', requireAdminAuth(), requireAdminCapability('i
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { environment, tenantId: requestedTenantId, clientId, clientSecret } = req.body || {};
 
-  const targetTenantId =
-    authAdmin.role === 'platformSuperAdmin'
-      ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
-      : authAdmin.tenantId;
+  const targetTenantId = resolveAuthenticatedAdminTenantScope(
+    req as AuthenticatedRequest,
+    requestedTenantId
+  );
 
   console.log(`[Deliverect OAuth] POST /admin/test-oauth received for tenant "${targetTenantId}" (env: ${environment || 'staging'}) from admin ${authAdmin.email}`);
 
@@ -6359,11 +6389,11 @@ v1Router.post('/admin/test-connection', requireAdminAuth(), requireAdminCapabili
   const authAdmin = (req as AuthenticatedRequest).adminUser!;
   const { deliverectAccountId, environment, tenantId: requestedTenantId, clientId, clientSecret, channelLinkId, testType, oauthOnly } = req.body;
 
-  // Multi-tenant resolution: respect verified admin user's tenant boundary unless platformSuperAdmin
-  const targetTenantId =
-    authAdmin.role === 'platformSuperAdmin'
-      ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
-      : authAdmin.tenantId;
+  // Multi-tenant resolution: respect verified admin user's tenant boundary unless platformSuperAdmin.
+  const targetTenantId = resolveAuthenticatedAdminTenantScope(
+    req as AuthenticatedRequest,
+    requestedTenantId
+  );
 
   // If explicitly requested testType === 'oauth' or oauthOnly === true:
   if (testType === 'oauth' || oauthOnly === true) {
@@ -7443,7 +7473,13 @@ v1Router.get('/admin/tenants/:id/integration/api-logs', requireAdminAuth('tenant
  */
 v1Router.get('/admin/tenants/:id/integration/commerce-diagnostics', requireAdminAuth('tenantAdmin'), async (req: Request, res: Response) => {
   try {
-    const tenantId = req.params.id || 'brand-alpha';
+    const tenantId = String(req.params.id || '').trim();
+    if (!tenantId) {
+      return res.status(400).json({
+        error: 'An explicit tenant scope is required.',
+        code: 'TENANT_SCOPE_REQUIRED',
+      });
+    }
     const adapter = await getDeliverectAdapterAsync(tenantId);
 
     // 1. Stores
@@ -7582,10 +7618,10 @@ v1Router.get('/admin/connection/readiness', requireAdminAuth(), async (req: Requ
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const requestedTenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-    const tenantId =
-      authAdmin.role === 'platformSuperAdmin'
-        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
-        : authAdmin.tenantId || 'brand-alpha';
+    const tenantId = resolveAuthenticatedAdminTenantScope(
+      req as AuthenticatedRequest,
+      requestedTenantId
+    );
 
     // Readiness is intentionally derived only from persisted mappings/review state.
     // Do not call Deliverect or fetch catalogues here: Admin navigation must remain responsive.
@@ -7625,10 +7661,10 @@ v1Router.get('/admin/connection/health', requireAdminAuth(), async (req: Request
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const requestedTenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string);
-    const tenantId =
-      authAdmin.role === 'platformSuperAdmin'
-        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
-        : authAdmin.tenantId || 'brand-alpha';
+    const tenantId = resolveAuthenticatedAdminTenantScope(
+      req as AuthenticatedRequest,
+      requestedTenantId
+    );
 
     const health = await connectionHealthService.getConnectionHealth(tenantId, req.hostname);
     res.json(health);
@@ -7646,10 +7682,10 @@ v1Router.post('/admin/connection/trace', requireAdminAuth(), requireAdminCapabil
   try {
     const authAdmin = (req as AuthenticatedRequest).adminUser!;
     const requestedTenantId = (req.headers['x-tenant-id'] as string) || req.body?.tenantId;
-    const tenantId =
-      authAdmin.role === 'platformSuperAdmin'
-        ? requestedTenantId || authAdmin.tenantId || 'brand-alpha'
-        : authAdmin.tenantId || 'brand-alpha';
+    const tenantId = resolveAuthenticatedAdminTenantScope(
+      req as AuthenticatedRequest,
+      requestedTenantId
+    );
 
     const trace = await connectionHealthService.traceRequest(tenantId, {
       storeId: req.body?.storeId,
