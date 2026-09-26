@@ -665,6 +665,10 @@ export interface CatalogDiagnostics {
   renderableCount?: number;
   unmappedProductTagIds?: string[];
   hiddenByRuleCount?: number;
+  commerceOverlayStatus?: 'VERIFIED' | 'UNAVAILABLE';
+  commerceOnlyCount?: number;
+  confidenceHighCount?: number;
+  confidenceLowCount?: number;
   timestamp?: string;
 }
 
