@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CmsPage, CmsBlock, CmsBlockType } from '../../commerce/cmsModels';
 import { pageVariantMetadata } from '../../commerce/cmsVariants';
 import { auth } from '../../firebase';
@@ -43,46 +43,95 @@ export const PagesAdminScreen: React.FC<PagesAdminScreenProps> = ({ tenantId }) 
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [savedPageSignature, setSavedPageSignature] = useState<string>('');
+  const activeTenantRef = useRef(tenantId);
+  const selectedPageRef = useRef(selectedPage);
+  activeTenantRef.current = tenantId;
+  selectedPageRef.current = selectedPage;
   const pageSignature = (page: CmsPage) => JSON.stringify(page);
   const dirty = savedPageSignature !== pageSignature(selectedPage);
 
   useEffect(() => {
-    defaultAdminClient.getBranding(tenantId)
-      .then((tenant) => setTenantLocales(resolveEnabledLocales(tenant.enabledLocales, tenant.locale || 'en-GB')))
-      .catch(() => setTenantLocales(SUPPORTED_LOCALES));
+    const requestTenantId = tenantId;
+    defaultAdminClient.getBranding(requestTenantId)
+      .then((tenant) => {
+        if (activeTenantRef.current !== requestTenantId) return;
+        setTenantLocales(resolveEnabledLocales(tenant.enabledLocales, tenant.locale || 'en-GB'));
+      })
+      .catch(() => {
+        if (activeTenantRef.current === requestTenantId) setTenantLocales(SUPPORTED_LOCALES);
+      });
   }, [tenantId]);
 
   useEffect(() => {
+    const requestTenantId = tenantId;
+    const controller = new AbortController();
     setLoading(true);
     setError('');
-    auth.currentUser?.getIdToken().then((token) => fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId } }))
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to load pages')))
-      .then((data) => {
-        const loaded = data.pages || [];
+    setPages([]);
+    const nextBlank = blankPage();
+    setSelectedPage(nextBlank);
+    setSavedPageSignature('');
+    setSelectedBlockId(null);
+
+    void (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages`, {
+          headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('Failed to load pages');
+        const data = await res.json();
+        if (activeTenantRef.current !== requestTenantId) return;
+        const loaded = Array.isArray(data.pages) ? data.pages : [];
         const initialPage = loaded[0] || blankPage();
         setPages(loaded);
         setSelectedPage(initialPage);
         setSavedPageSignature(loaded[0] ? pageSignature(initialPage) : '');
-        setSelectedBlockId(null);
-      })
-      .catch((err) => { console.error(err); setPages([]); setSelectedPage(blankPage()); setError('Could not load CMS pages. Check your admin session and try again.'); })
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (controller.signal.aborted || activeTenantRef.current !== requestTenantId) return;
+        console.error(err);
+        setError('CMS pages are currently unavailable. Existing content has not been replaced or deleted. Retry before publishing changes.');
+      } finally {
+        if (activeTenantRef.current === requestTenantId) setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
   }, [tenantId]);
 
   const handleSavePage = async () => {
-    setSaving(true); setError('');
-    try {
+    const requestTenantId = tenantId;
+    const pageToSave = selectedPage;
+    const submittedSignature = pageSignature(pageToSave);
+    setSaving(true);
     setError('');
-    const token = await auth.currentUser?.getIdToken();
-    const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/pages/${encodeURIComponent(selectedPage.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId }, body: JSON.stringify(selectedPage) });
-    if (!response.ok) throw new Error('Failed to save CMS page');
-    const saved = await response.json();
-    setSelectedPage(saved);
-    setSavedPageSignature(pageSignature(saved));
-    setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
-    setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err) { console.error(err); setError('Could not save this page. Your edits are still on screen.'); }
-    finally { setSaving(false); }
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(requestTenantId)}/pages/${encodeURIComponent(pageToSave.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-tenant-id': requestTenantId },
+        body: JSON.stringify(pageToSave),
+      });
+      if (!response.ok) throw new Error('Failed to save CMS page');
+      const saved = await response.json();
+      if (activeTenantRef.current !== requestTenantId) return;
+      setPages((prev) => prev.some((p) => p.id === saved.id) ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved]);
+      setSavedPageSignature(pageSignature(saved));
+      if (pageSignature(selectedPageRef.current) === submittedSignature) {
+        setSelectedPage(saved);
+      }
+      setSaveSuccess(true);
+      setTimeout(() => {
+        if (activeTenantRef.current === requestTenantId) setSaveSuccess(false);
+      }, 2500);
+    } catch (err) {
+      if (activeTenantRef.current !== requestTenantId) return;
+      console.error(err);
+      setError('Could not save this page. Your edits are still on screen and have not been reported as published.');
+    } finally {
+      if (activeTenantRef.current === requestTenantId) setSaving(false);
+    }
   };
 
   const variant = pageVariantMetadata(selectedPage);
