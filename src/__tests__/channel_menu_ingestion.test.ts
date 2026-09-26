@@ -222,9 +222,9 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       accountId: 'account-a',
       locationId: 'location-a',
       products: {
-        'prod-2': { _id: 'prod-2', plu: 'DRINK-2', gtin: [], name: 'Replacement', price: 200, productType: 1 },
+        'prod-1': { _id: 'prod-1', plu: 'DRINK-1', gtin: [], name: 'Replacement', price: 200, productType: 1 },
       },
-      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-2'] }],
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-1'] }],
     });
 
     await expect(ChannelMenuIngestionService.acceptVerifiedMenuPush({
@@ -232,8 +232,12 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     })).rejects.toThrow(/operational handover failed/i);
 
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(tenantId, 'channel-1', 'menu-1');
-    expect(hosted?.products).toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })]));
-    expect(hosted?.products).not.toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-2' })]));
+    expect(hosted?.products).toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Water', priceMinor: 125, active: true }),
+    ]));
+    expect(hosted?.products).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Replacement', priceMinor: 200 }),
+    ]));
     failure.mockRestore();
   });
 
@@ -265,20 +269,32 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     });
   });
 
-  it('soft-deletes products removed from a later Channel Menu as archived tombstones', async () => {
+  it('archives an ordinary bounded removal while keeping the remaining catalogue live', async () => {
     const tenantId = `tenant-archive-${Date.now()}`;
     ChannelMenuIngestionService.setQueueClient(null);
-
-    const first = sampleMenu();
+    const productIds = Array.from({ length: 10 }, (_, index) => `prod-${index}`);
+    const products = Object.fromEntries(productIds.map((id, index) => [id, {
+      _id: id,
+      plu: `DRINK-${index}`,
+      gtin: [],
+      name: `Drink ${index}`,
+      price: 125 + index,
+      productType: 1,
+    }]));
+    const first = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: productIds }],
+      products,
+    });
     await ChannelMenuIngestionService.acceptVerifiedMenuPush({
       tenantId,
       payload: first,
       rawBody: JSON.stringify(first),
     });
 
+    const retainedIds = productIds.slice(0, 9);
     const removed = sampleMenu({
-      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: [] }],
-      products: {},
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: retainedIds }],
+      products: Object.fromEntries(retainedIds.map((id) => [id, products[id]])),
     });
     await ChannelMenuIngestionService.acceptVerifiedMenuPush({
       tenantId,
@@ -291,17 +307,93 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       'channel-1',
       'menu-1'
     );
-    const archived = hosted?.products?.find((product: any) => product.plu === 'DRINK-1');
+    const archived = hosted?.products?.find((product: any) => product.plu === 'DRINK-9');
 
+    expect(hosted?.products?.filter((product: any) => product.active !== false)).toHaveLength(9);
     expect(archived).toMatchObject({
-      plu: 'DRINK-1',
+      plu: 'DRINK-9',
       active: false,
       metadata: {
         lifecycleStatus: 'ARCHIVED',
         archiveReason: 'REMOVED_FROM_CHANNEL_MENU',
       },
     });
-    expect(archived?.metadata?.archivedAt).toBeTruthy();
+  });
+
+  it('rejects an empty replacement and preserves a non-empty last-known-good menu', async () => {
+    const tenantId = `tenant-empty-replacement-${Date.now()}`;
+    ChannelMenuIngestionService.setQueueClient(null);
+    const first = sampleMenu();
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: first,
+      rawBody: JSON.stringify(first),
+    });
+
+    const empty = sampleMenu({
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: [] }],
+      products: {},
+    });
+    await expect(ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: empty,
+      rawBody: JSON.stringify(empty),
+    })).rejects.toMatchObject({ code: 'EMPTY_MENU_SNAPSHOT_REJECTED', statusCode: 422 });
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })])
+    );
+  });
+
+  it('rejects a late buffered snapshot so it cannot overwrite newer catalogue truth', async () => {
+    const tenantId = `tenant-stale-snapshot-${Date.now()}`;
+    const older = sampleMenu({
+      products: {
+        'prod-old': { _id: 'prod-old', plu: 'OLD-1', gtin: [], name: 'Old', price: 100, productType: 1 },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-old'] }],
+    });
+    const newer = sampleMenu({
+      products: {
+        'prod-new': { _id: 'prod-new', plu: 'NEW-1', gtin: [], name: 'New', price: 200, productType: 1 },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-new'] }],
+    });
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: older,
+      rawBody: JSON.stringify(older),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: newer,
+      rawBody: JSON.stringify(newer),
+    });
+    const oldJob = queue.jobs[0];
+    const newJob = queue.jobs[1];
+
+    await ChannelMenuIngestionService.processJob(newJob);
+    await expect(ChannelMenuIngestionService.processJob(oldJob))
+      .rejects.toMatchObject({ code: 'STALE_MENU_SNAPSHOT', statusCode: 409 });
+
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'NEW-1', active: true })])
+    );
+    expect(hosted?.products).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'OLD-1', active: true })])
+    );
   });
 
   it('invalidates storefront catalogue caches only after worker processing', async () => {
@@ -688,6 +780,94 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     expect(after?.products).toHaveLength(120);
     expect(after?.products).toEqual(
       expect.arrayContaining([expect.objectContaining({ plu: 'SKU-119' })])
+    );
+  });
+
+  it('atomically rejects an older worker that overlaps a newer publish', async () => {
+    const tenantId = `tenant-overlap-order-${Date.now()}`;
+    const older = sampleMenu({
+      products: {
+        'prod-old': {
+          _id: 'prod-old',
+          plu: 'OLD-1',
+          gtin: [],
+          name: 'Older product',
+          price: 100,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-old'] }],
+    });
+    const newer = sampleMenu({
+      products: {
+        'prod-new': {
+          _id: 'prod-new',
+          plu: 'NEW-1',
+          gtin: [],
+          name: 'Newer product',
+          price: 200,
+          productType: 1,
+        },
+      },
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-new'] }],
+    });
+
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: older,
+      rawBody: JSON.stringify(older),
+    });
+    await ChannelMenuIngestionService.acceptVerifiedMenuPush({
+      tenantId,
+      payload: newer,
+      rawBody: JSON.stringify(newer),
+    });
+
+    expect(queue.jobs).toHaveLength(2);
+    const olderJob = queue.jobs[0];
+    const newerJob = queue.jobs[1];
+    olderJob.receivedAt = '2026-09-26T12:00:00.000Z';
+    newerJob.receivedAt = '2026-09-26T12:01:00.000Z';
+
+    let olderReachedPublish!: () => void;
+    let releaseOlder!: () => void;
+    const olderAtPublish = new Promise<void>((resolve) => {
+      olderReachedPublish = resolve;
+    });
+    const olderRelease = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const operational = vi
+      .spyOn(DeliverectOperationalWebhookService, 'process')
+      .mockImplementation(async (_tenantId, _eventType, menu: any) => {
+        if (JSON.stringify(menu).includes('OLD-1')) {
+          olderReachedPublish();
+          await olderRelease;
+        }
+        return undefined as any;
+      });
+
+    const olderProcessing = ChannelMenuIngestionService.processJob(olderJob);
+    await olderAtPublish;
+    const newerResult = await ChannelMenuIngestionService.processJob(newerJob);
+    expect(newerResult).toEqual({ processed: 1 });
+
+    releaseOlder();
+    const staleResult = await olderProcessing;
+    operational.mockRestore();
+
+    expect(staleResult).toEqual({ processed: 0 });
+    const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(
+      tenantId,
+      'channel-1',
+      'menu-1'
+    );
+    expect(hosted?.receivedAt).toBe(newerJob.receivedAt);
+    expect(hosted?.products).toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'NEW-1', active: true })])
+    );
+    expect(hosted?.products).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ plu: 'OLD-1', active: true })])
     );
   });
 

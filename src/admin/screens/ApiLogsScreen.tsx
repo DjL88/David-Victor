@@ -31,6 +31,16 @@ const displayIdentity = (names: string[], ids: string[]) => (
   </div>
 );
 
+const sourceEmptyMessage = (
+  label: string,
+  source: ApiLogSnapshot['sources']['menuPushes'] | undefined
+) => {
+  if (!source || source.status === 'UNKNOWN') return `${label} activity source has not been observed.`;
+  if (source.status === 'UNAVAILABLE') return `${label} activity source is unavailable; an empty result is not confirmed.`;
+  if (source.status === 'PARTIAL') return `${label} activity is partial; additional durable history may be unavailable.`;
+  return `No ${label} entries were returned by the available source.`;
+};
+
 // A new tenant gets a new instance before paint: never render the previous
 // tenant's snapshot or diagnostic while its replacement request is pending.
 export const ApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => (
@@ -234,7 +244,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
           <Database className="h-4 w-4 text-slate-500" aria-hidden="true" /><h2 className="font-semibold text-slate-900">Menu Push processing</h2>
-          {data && <span className="text-xs text-slate-500">{filteredMenuPushes.length} shown / {data.menuPushes.length} loaded</span>}
+          {data && <span className="text-xs text-slate-500">{filteredMenuPushes.length} shown / {data.menuPushes.length} loaded · source {data.sources.menuPushes.status.toLowerCase()}</span>}
         </div>
         <div className="grid gap-2 border-b border-slate-200 bg-slate-50/50 p-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Menu Push filters">
           <label className="text-xs font-medium text-slate-600">Search
@@ -275,7 +285,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
                   <details className="mt-1"><summary className="cursor-pointer underline">Event reference</summary><p className="mt-1 break-all font-mono">{entry.eventId}</p></details>
                 </td>
               </tr>)}
-              {filteredMenuPushes.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{data?.menuPushes.length ? 'No Menu Push entries match the current filters.' : data ? 'No Menu Push entries returned for this tenant.' : 'Menu Push activity has not been loaded.'}</td></tr>}
+              {filteredMenuPushes.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{data?.menuPushes.length ? 'No Menu Push entries match the current filters.' : data ? sourceEmptyMessage('Menu Push', data.sources.menuPushes) : 'Menu Push activity has not been loaded.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -284,7 +294,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
           <Webhook className="h-4 w-4 text-slate-500" aria-hidden="true" /><h2 className="font-semibold text-slate-900">Webhook processing</h2>
-          {data && <span className="text-xs text-slate-500">{data.webhooks.length} loaded</span>}
+          {data && <span className="text-xs text-slate-500">{data.webhooks.length} loaded · source {data.sources.webhooks.status.toLowerCase()}</span>}
         </div>
         <div className="overflow-x-auto" role="region" aria-label="Webhook activity" tabIndex={0}>
           <table className="min-w-[680px] w-full text-left text-sm">
@@ -298,7 +308,7 @@ const TenantApiLogsScreen: React.FC<ApiLogsScreenProps> = ({ tenantId }) => {
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(entry.processingStatus)}`}>{entry.processingStatus}</span></td>
                 <td className="px-4 py-3 text-xs text-slate-600">{entry.errorCode || 'Not recorded'}</td>
               </tr>)}
-              {!data?.webhooks.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">{data ? 'No webhook entries returned for this tenant.' : 'Webhook activity has not been loaded.'}</td></tr>}
+              {!data?.webhooks.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">{data ? sourceEmptyMessage('Webhook', data.sources.webhooks) : 'Webhook activity has not been loaded.'}</td></tr>}
             </tbody>
           </table>
         </div>
