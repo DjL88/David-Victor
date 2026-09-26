@@ -352,6 +352,95 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     vi.restoreAllMocks();
   });
 
+  it('does not use Commerce as a catalogue fallback for a Channel-scoped store', async () => {
+    const tenantId = `tenant-no-commerce-fallback-${Date.now()}`;
+    const tokenManager = new OAuthTokenManager({
+      environment: 'staging',
+      clientId: 'stub-client',
+      clientSecret: 'stub-secret',
+    });
+    const getAccessToken = vi
+      .spyOn(tokenManager, 'getAccessToken')
+      .mockResolvedValue('commerce-token');
+    const client = new DeliverectApiClient(
+      tokenManager,
+      tenantId,
+      'account-1',
+      ['channel-1']
+    );
+
+    vi.spyOn(client as any, 'resolveAccountId').mockResolvedValue('account-1');
+    vi.spyOn(client as any, 'resolveStoreChannelLinkId').mockResolvedValue({
+      channelLinkId: 'channel-1',
+      store: { id: 'channel-1', channelLinkId: 'channel-1', name: 'Store' },
+    });
+    vi.spyOn(
+      ChannelMenuIngestionService,
+      'getLatestNormalizedMenu'
+    ).mockResolvedValue(null);
+
+    await expect(client.getStoreCatalog('channel-1')).rejects.toMatchObject({
+      code: 'MENU_NOT_AVAILABLE',
+      statusCode: 503,
+    });
+    expect(getAccessToken).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the scoped root catalogue available when another location has not published', async () => {
+    const tokenManager = new OAuthTokenManager({
+      environment: 'staging',
+      clientId: 'stub-client',
+      clientSecret: 'stub-secret',
+    });
+    const client = new DeliverectApiClient(
+      tokenManager,
+      `tenant-partial-root-${Date.now()}`,
+      'account-1',
+      ['channel-1', 'channel-2']
+    );
+
+    vi.spyOn(client as any, 'resolveAccountId').mockResolvedValue('account-1');
+    vi.spyOn(client, 'getStores').mockResolvedValue([
+      { id: 'channel-1', channelLinkId: 'channel-1', name: 'Published' },
+      { id: 'channel-2', channelLinkId: 'channel-2', name: 'Not published' },
+    ] as any);
+    vi.spyOn(client, 'getStoreCatalog').mockImplementation(async (storeId) => {
+      if (storeId === 'channel-2') {
+        throw new Error('No published Channel catalogue is available for this store.');
+      }
+      return {
+        id: 'channel-1',
+        type: 'STORE',
+        storeId: 'channel-1',
+        menus: [{ menuId: 'menu-1', name: 'Published', productCount: 1, categoryCount: 1 }],
+        categories: [{ id: 'cat-1', name: 'Drinks' }],
+        products: [{
+          id: 'prod-1',
+          plu: 'DRINK-1',
+          gtin: [],
+          name: 'Water',
+          categoryIds: ['cat-1'],
+          productTags: [],
+          displayLabels: [],
+          allergens: [],
+          active: true,
+          priceMinor: 125,
+        }],
+        totalProducts: 1,
+        updatedAt: new Date().toISOString(),
+      } as any;
+    });
+
+    const catalog = await client.getRootCatalog();
+
+    expect(catalog.products.map((product) => product.plu)).toEqual(['DRINK-1']);
+    expect(catalog.totalProducts).toBe(1);
+
+    vi.restoreAllMocks();
+  });
+
   it('strengthens pushed catalogue products with matching live Commerce evidence', async () => {
     const tenantId = `tenant-overlay-match-${Date.now()}`;
     const payload = sampleMenu();
