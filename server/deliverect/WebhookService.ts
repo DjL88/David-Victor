@@ -76,7 +76,8 @@ const DELIVERECT_NUMERIC_ORDER_STATUS: Record<number, string> = {
   80: 'OUT_FOR_DELIVERY',
   90: 'FINALIZED',
   95: 'FINALIZED',
-  100: 'ORDER_CANCELLED',
+  // 100 is the outbound cancellation request. Only the POS 110 callback
+  // confirms cancellation, so an inbound 100 must remain unconfirmed.
   110: 'ORDER_CANCELLED',
   120: 'ORDER_FAILED',
   121: 'ORDER_FAILED',
