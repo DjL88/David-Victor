@@ -45,7 +45,8 @@ function normaliseSnoozeItem(
   tenantId: string,
   channelLinkId: string,
   item: any,
-  snoozed = true
+  snoozed = true,
+  observedAt = new Date().toISOString()
 ): StoreProductSnoozeState | null {
   const plu = String(item?.plu || item?.productPlu || '').trim();
   if (!plu) return null;
@@ -57,7 +58,7 @@ function normaliseSnoozeItem(
     snoozed,
     snoozeStart: item?.snoozeStart || item?.start || undefined,
     snoozeEnd: item?.snoozeEnd || item?.end || undefined,
-    updatedAt: new Date().toISOString(),
+    updatedAt: observedAt,
     source: 'DELIVERECT_WEBHOOK',
   };
 }
@@ -77,6 +78,7 @@ export class DeliverectOperationalWebhookService {
     payload: any,
     rawBody: Buffer | string
   ): Promise<DeliverectOperationalWebhookResult> {
+    const observedAt = new Date().toISOString();
     const channelLinkId = requiredChannelLinkId(payload);
     const rawBuffer = Buffer.isBuffer(rawBody)
       ? rawBody
@@ -209,7 +211,7 @@ export class DeliverectOperationalWebhookService {
         };
       } else if (type === 'menu_update') {
         const menuId = String(payload?.menuId || payload?._id || '').trim();
-        const now = new Date().toISOString();
+        const now = observedAt;
 
         await FirestorePlatformService.saveStoreOperationalState(
           tenantId,
@@ -223,7 +225,7 @@ export class DeliverectOperationalWebhookService {
         );
 
         const snoozes = menuSnoozeItems(payload)
-          .map((item) => normaliseSnoozeItem(tenantId, channelLinkId, item, true))
+          .map((item) => normaliseSnoozeItem(tenantId, channelLinkId, item, true, observedAt))
           .filter((item): item is StoreProductSnoozeState => Boolean(item));
 
         // A menu publish is a full current menu snapshot. If snoozedProducts is
@@ -233,7 +235,8 @@ export class DeliverectOperationalWebhookService {
           await FirestorePlatformService.replaceStoreProductSnoozes(
             tenantId,
             channelLinkId,
-            snoozes
+            snoozes,
+            { observedAt }
           );
         }
 
@@ -266,7 +269,8 @@ export class DeliverectOperationalWebhookService {
                 tenantId,
                 channelLinkId,
                 item,
-                true
+                true,
+                observedAt
               );
               if (normalized) next.set(normalized.plu, normalized);
             }
@@ -277,7 +281,8 @@ export class DeliverectOperationalWebhookService {
               tenantId,
               channelLinkId,
               item,
-              action === 'snooze'
+              action === 'snooze',
+              observedAt
             );
             if (!normalized) continue;
             if (action === 'unsnooze') next.delete(normalized.plu);
@@ -288,7 +293,8 @@ export class DeliverectOperationalWebhookService {
         await FirestorePlatformService.replaceStoreProductSnoozes(
           tenantId,
           channelLinkId,
-          Array.from(next.values())
+          Array.from(next.values()),
+          { observedAt }
         );
         CommerceDiscoveryService.getInstance().clearCache();
 
