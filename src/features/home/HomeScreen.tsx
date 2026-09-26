@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Product, ProductAvailabilitySummary, Story, Category, Store, BasketItem, moneyToMajor } from '../../commerce/models';
 import { DeliverectDeal } from '../../commerce/dealModels';
 import { BundleProduct } from '../../commerce/bundleModels';
@@ -139,7 +139,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onCatalogFilterStateChange?.(resolved);
   };
   const [buyAgainPlus, setBuyAgainPlus] = useState<Set<string>>(new Set());
-  const filterModalInitialSignatureRef = useRef('');
 
   const filterSignature = useMemo(
     () =>
@@ -443,7 +442,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onOpenStorePicker={onOpenStorePicker}
         filterState={filterState}
         onOpenFiltersModal={() => {
-          filterModalInitialSignatureRef.current = filterSignature;
           setIsFilterModalOpen(true);
         }}
         onOpenAislesModal={onOpenAislesModal}
