@@ -3873,7 +3873,8 @@ export class FirestoreService {
   static async replaceStoreProductSnoozes(
     tenantId: string,
     channelLinkId: string,
-    snoozes: StoreProductSnoozeState[]
+    snoozes: StoreProductSnoozeState[],
+    observedAt?: string
   ): Promise<void> {
     const cleanTenantId = String(tenantId || '').trim();
     const cleanChannelLinkId = String(channelLinkId || '').trim();
@@ -3954,9 +3955,11 @@ export class FirestoreService {
     // Omission is only evidence for an unsnooze when this snapshot contains a
     // strictly newer observed timestamp than the state being cleared. An empty
     // or timestamp-less snapshot therefore preserves last-known-good state.
-    const snapshotObservedAt = acceptedNextStates
-      .map((state) => state.updatedAt)
-      .filter(Boolean)
+    const snapshotObservedAt = [
+      observedAt,
+      ...acceptedNextStates.map((state) => state.updatedAt),
+    ]
+      .filter((value): value is string => Boolean(value))
       .sort((a, b) => timestampMs(b) - timestampMs(a))[0];
     const snapshotMs = timestampMs(snapshotObservedAt);
 
