@@ -4,6 +4,12 @@ import { getScopeEvidence, menuProcessingDetail, readApiLogSnapshot, readApiLogT
 const response = (extra: Record<string, unknown> = {}) => ({
   tenantId: 'tenant-a', generatedAt: '2026-09-26T04:00:00Z',
   menuPushes: [], webhooks: [], circuits: {},
+  sources: {
+    menuPushes: { status: 'AVAILABLE', source: 'FIRESTORE', observedAt: '2026-09-26T04:00:00Z' },
+    webhooks: { status: 'AVAILABLE', source: 'FIRESTORE', observedAt: '2026-09-26T04:00:00Z' },
+    integration: { status: 'AVAILABLE', observedAt: '2026-09-26T04:00:00Z' },
+    oauth: { status: 'UNKNOWN', mode: 'PASSIVE', observedAt: '2026-09-26T04:00:00Z' },
+  },
   integration: { grantedScopes: [], commerceScopeGranted: false }, ...extra,
 });
 
@@ -16,12 +22,14 @@ describe('API Logs evidence boundary', () => {
   });
 
   it('distinguishes a reported scope from one absent in a nonempty scope list', () => {
-    expect(getScopeEvidence(readApiLogSnapshot(response({ integration: {
-      grantedScopes: ['genericCommerce', 'genericChannel:test'],
-    } }), 'tenant-a'))).toBe('REPORTED');
-    expect(getScopeEvidence(readApiLogSnapshot(response({ integration: {
-      grantedScopes: ['genericChannel:test'],
-    } }), 'tenant-a'))).toBe('NOT_REPORTED');
+    expect(getScopeEvidence(readApiLogSnapshot(response({
+      sources: { oauth: { status: 'AVAILABLE', mode: 'ACTIVE' } },
+      integration: { grantedScopes: ['genericCommerce', 'genericChannel:test'] },
+    }), 'tenant-a'))).toBe('REPORTED');
+    expect(getScopeEvidence(readApiLogSnapshot(response({
+      sources: { oauth: { status: 'AVAILABLE', mode: 'ACTIVE' } },
+      integration: { grantedScopes: ['genericChannel:test'] },
+    }), 'tenant-a'))).toBe('NOT_REPORTED');
   });
 
   it('does not trust the legacy granted boolean without scope evidence', () => {
@@ -48,6 +56,20 @@ describe('API Logs evidence boundary', () => {
       'tenant-a:commerce': { state: 'CLOSED' },
     } }), 'tenant-a');
     expect(own.commerceCircuit).toEqual({ state: 'CLOSED', failures: null });
+  });
+
+  it('preserves per-source availability and does not treat partial or unavailable as empty truth', () => {
+    const snapshot = readApiLogSnapshot(response({
+      sources: {
+        menuPushes: { status: 'PARTIAL', source: 'MEMORY', observedAt: '2026-09-26T04:02:00Z', errorCode: 'FIRESTORE_READ_FAILED' },
+        webhooks: { status: 'UNAVAILABLE', source: 'MEMORY', observedAt: '2026-09-26T04:02:00Z', errorCode: 'PERMISSION_DENIED' },
+        integration: { status: 'UNAVAILABLE', observedAt: '2026-09-26T04:02:00Z' },
+        oauth: { status: 'UNKNOWN', mode: 'PASSIVE', observedAt: '2026-09-26T04:02:00Z' },
+      },
+    }), 'tenant-a');
+    expect(snapshot.sources.menuPushes).toMatchObject({ status: 'PARTIAL', source: 'MEMORY', errorCode: 'FIRESTORE_READ_FAILED' });
+    expect(snapshot.sources.webhooks).toMatchObject({ status: 'UNAVAILABLE', errorCode: 'PERMISSION_DENIED' });
+    expect(getScopeEvidence(snapshot)).toBe('UNKNOWN');
   });
 
   it('does not mark queued, failed or unknown menu processing as complete', () => {
