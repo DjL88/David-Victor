@@ -244,6 +244,11 @@ export interface AdminClient {
   ): Promise<void>;
 
   /**
+   * Downloads tenant-scoped authoritative substitution economics as CSV.
+   */
+  downloadSubstitutionEconomicsCsv?(tenantId?: string): Promise<void>;
+
+  /**
    * Get integration configuration for tenant.
    */
   getIntegration?(tenantId?: string): Promise<any>;
