@@ -2,6 +2,8 @@ export type CheckoutFailureKind =
   | 'dispatch_unavailable'
   | 'dispatch_check_failed'
   | 'checkout_start_failed'
+  | 'order_failed'
+  | 'checkout_request_unknown'
   | 'order_status_failed'
   | 'payment_status_failed'
   | 'direct_checkout_failed';
@@ -17,6 +19,14 @@ export function safeCheckoutFailureMessage(
       return 'We could not verify courier availability. Please retry before continuing.';
     case 'checkout_start_failed':
       return 'We could not start checkout. Please retry.';
+    case 'order_failed':
+      return isCollection
+        ? 'The collection order could not be placed.'
+        : 'The payment or order could not be completed.';
+    case 'checkout_request_unknown':
+      return isCollection
+        ? 'We could not confirm whether the collection order was placed.'
+        : 'We could not confirm the final payment and order status.';
     case 'order_status_failed':
       return isCollection
         ? 'We could not confirm that your collection order was placed.'
