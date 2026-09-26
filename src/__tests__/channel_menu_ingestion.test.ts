@@ -222,9 +222,9 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
       accountId: 'account-a',
       locationId: 'location-a',
       products: {
-        'prod-2': { _id: 'prod-2', plu: 'DRINK-2', gtin: [], name: 'Replacement', price: 200, productType: 1 },
+        'prod-1': { _id: 'prod-1', plu: 'DRINK-1', gtin: [], name: 'Replacement', price: 200, productType: 1 },
       },
-      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-2'] }],
+      categories: [{ _id: 'cat-1', name: 'Drinks', subProducts: ['prod-1'] }],
     });
 
     await expect(ChannelMenuIngestionService.acceptVerifiedMenuPush({
@@ -232,8 +232,12 @@ describe('durable Deliverect Channel Menu Push ingress', () => {
     })).rejects.toThrow(/operational handover failed/i);
 
     const hosted = await ChannelMenuIngestionService.getLatestNormalizedMenu(tenantId, 'channel-1', 'menu-1');
-    expect(hosted?.products).toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-1', active: true })]));
-    expect(hosted?.products).not.toEqual(expect.arrayContaining([expect.objectContaining({ plu: 'DRINK-2' })]));
+    expect(hosted?.products).toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Water', priceMinor: 125, active: true }),
+    ]));
+    expect(hosted?.products).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ plu: 'DRINK-1', name: 'Replacement', priceMinor: 200 }),
+    ]));
     failure.mockRestore();
   });
 
