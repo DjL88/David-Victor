@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Order, DemoScenario } from '../../commerce/models';
 import { useTenant } from '../../tenant/TenantContext';
-import { getCommerceClient } from '../../commerce/CommerceClientFactory';
-
-const defaultCommerceClient = getCommerceClient() as any;
 import { useTenantStyles } from '../../tenant/useTenant';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatCurrency } from '../../utils/formatters';
 import { OrderTrackingView } from './OrderTrackingView';
+import { customerOrderReference, customerTrackerStage } from './trackerEvidence';
+import { useTrackerCopy } from './trackerCopy';
+import { useOrdersCopy } from './ordersCopy';
 import {
   Clock,
   CheckCircle2,
@@ -28,57 +28,27 @@ export const OrdersScreen: React.FC<{
 }> = ({ initialOrderId, onNavigateOrder }) => {
   const { primaryBtnStyle, currencySymbol } = useTenantStyles();
   const { t } = useI18n();
-  const { appMode } = useTenant();
+  const trackerCopy = useTrackerCopy();
+  const ordersCopy = useOrdersCopy();
+  const { appMode, client, tenant } = useTenant();
+  const tenantId = tenant?.tenantId || '';
   const isDemo = appMode === 'demo';
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState(false);
+  const loadGeneration = useRef(0);
 
-  const getOrderStatusLabel = (status: string) => {
-    switch (status) {
-      case 'SUBMITTED':
-        return t('order.statusSubmitted');
-      case 'ACCEPTED':
-      case 'orderAccepted':
-      case 'STORE_ACCEPTED':
-      case 'CONFIRMED':
-      case 'ORDER_CONFIRMED':
-        return t('order.statusAccepted');
-      case 'PICKING':
-      case 'preparing':
-      case 'PICKING_STARTED':
-        return t('order.statusPicking');
-      case 'PICKING_WITH_CHANGES':
-        return t('order.statusPickingWithChanges');
-      case 'PICKED':
-      case 'PICKING_COMPLETE':
-      case 'readyForPickup':
-        return t('order.statusPickedPacked');
-      case 'READY':
-      case 'READY_FOR_PICKUP':
-        return t('order.statusReadyCollection');
-      case 'PAYMENT_FINALISING':
-        return t('order.statusPaymentFinalising');
-      case 'READY_FOR_COURIER':
-        return t('order.statusReadyCourier');
-      case 'COURIER_ASSIGNED':
-      case 'courierAssigned':
-        return t('order.statusCourierAssigned');
-      case 'courierAtStore':
-        return t('order.statusCourierAtStore');
-      case 'OUT_FOR_DELIVERY':
-      case 'outForDelivery':
-      case 'DISPATCHING':
-        return t('order.statusOutForDelivery');
-      case 'DELIVERED':
-      case 'delivered':
-        return t('order.statusDelivered');
-      case 'CANCELLED':
-      case 'ORDER_CANCELLED':
-      case 'ORDER_CANCELLED_UNAVAILABLE_ITEM':
-        return t('order.statusCancelled');
-      default:
-        return String(status);
+  const getOrderStatusLabel = (order: Order) => {
+    switch (customerTrackerStage(order)) {
+      case 'PLACED': return trackerCopy('tracker.placed');
+      case 'PREPARING': return trackerCopy('tracker.preparing');
+      case 'READY': return order.fulfillment?.type === 'pickup' ? t('order.statusReadyCollection') : t('order.statusReadyCourier');
+      case 'ON_THE_WAY': return t('order.statusOutForDelivery');
+      case 'COMPLETE': return order.fulfillment?.type === 'pickup' ? ordersCopy('orders.collected') : t('order.statusDelivered');
+      case 'CANCELLED': return t('order.statusCancelled');
+      case 'FAILED': return trackerCopy('tracker.failed');
+      default: return trackerCopy('tracker.unknown');
     }
   };
 
@@ -94,30 +64,85 @@ export const OrdersScreen: React.FC<{
       case 'TOKENIZED':
         return t('orders.paymentTokenized');
       default:
-        return state || t('orders.pending');
+        return t('orders.pending');
     }
   };
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
+    const requestId = ++loadGeneration.current;
+    const expectedTenantId = tenantId;
     setLoading(true);
+    setLoadError(false);
+
+    if (!expectedTenantId) {
+      setOrders([]);
+      setSelectedOrder(null);
+      setLoading(false);
+      setLoadError(true);
+      return;
+    }
+
     try {
-      const history = await defaultCommerceClient.getOrderHistory();
-      setOrders(history);
+      if (!client.getOrderHistory) throw new Error('Order history is unavailable');
+      const history = await client.getOrderHistory();
+      if (requestId !== loadGeneration.current) return;
+      if ((history || []).some((entry) => entry.tenantId !== expectedTenantId)) {
+        throw new Error('Order history scope mismatch');
+      }
+
+      const scopedHistory = history || [];
+      setOrders(scopedHistory);
       if (initialOrderId) {
-        const routedOrder = history.find((order) => order.id === initialOrderId);
+        const routedOrder = scopedHistory.find((entry) => entry.id === initialOrderId);
         if (routedOrder) {
           setSelectedOrder(routedOrder);
         } else {
-          // Guest orders are intentionally absent from account history. The
-          // explicit order route remains recoverable using its scoped order
-          // access credential; getOrder() attaches that credential when one
-          // was persisted by checkout.
-          const directOrder = await defaultCommerceClient.getOrder(initialOrderId);
+          const directOrder = await client.getOrder(initialOrderId);
+          if (requestId !== loadGeneration.current) return;
+          if (directOrder && directOrder.tenantId !== expectedTenantId) {
+            throw new Error('Direct order scope mismatch');
+          }
           setSelectedOrder(directOrder || null);
         }
       }
-      // If there are orders and none selected, or to sync
-      if (selectedOrder) {
+    } catch {
+      if (requestId !== loadGeneration.current) return;
+      setOrders([]);
+      setSelectedOrder(null);
+      setLoadError(true);
+    } finally {
+      if (requestId === loadGeneration.current) setLoading(false);
+    }
+  }, [client, initialOrderId, tenantId]);
+
+  useEffect(() => {
+    loadGeneration.current += 1;
+    setOrders([]);
+    setSelectedOrder(null);
+    setLoadError(false);
+    void loadOrders();
+    return () => { loadGeneration.current += 1; };
+  }, [loadOrders]);
+
+  const handleCreateDemo = async (scenario: DemoScenario) => {
+    const requestId = ++loadGeneration.current;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      if (!client.createDemoScenarioOrder) throw new Error('Demo scenarios are unavailable');
+      const newOrder = await client.createDemoScenarioOrder(scenario);
+      if (requestId !== loadGeneration.current) return;
+      if (!tenantId || newOrder.tenantId !== tenantId) throw new Error('Demo order scope mismatch');
+      setSelectedOrder(newOrder);
+      setOrders((previous) => [newOrder, ...previous.filter((entry) => entry.id !== newOrder.id)]);
+    } catch {
+      if (requestId === loadGeneration.current) setLoadError(true);
+    } finally {
+      if (requestId === loadGeneration.current) setLoading(false);
+    }
+  };
+
+  if (selectedOrder) {
         const found = history.find((o) => o.id === selectedOrder.id);
         if (found) setSelectedOrder(found);
       }
@@ -172,10 +197,11 @@ export const OrdersScreen: React.FC<{
         </div>
         <button
           type="button"
-          onClick={loadOrders}
-          className="text-xs font-semibold text-gray-500 hover:text-gray-900 flex items-center gap-1"
+          onClick={() => void loadOrders()}
+          disabled={loading}
+          className="text-xs font-semibold text-gray-500 hover:text-gray-900 flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>{t('orders.refresh')}</span>
         </button>
       </div>
@@ -261,7 +287,18 @@ export const OrdersScreen: React.FC<{
           {t('orders.recentActivity')} ({orders.length})
         </h2>
 
-        {orders.length === 0 ? (
+        {loading ? (
+          <div role="status" aria-live="polite" className="p-8 text-center bg-white rounded-3xl border border-gray-100 space-y-2">
+            <RotateCcw className="w-7 h-7 text-gray-300 mx-auto animate-spin" aria-hidden="true" />
+            <p className="text-xs font-bold text-gray-700">{ordersCopy('orders.loading')}</p>
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="p-6 text-center bg-amber-50 rounded-3xl border border-amber-200 space-y-3">
+            <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" aria-hidden="true" />
+            <p className="text-xs font-bold text-amber-950">{ordersCopy('orders.loadFailed')}</p>
+            <button type="button" onClick={() => void loadOrders()} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">{t('orders.refresh')}</button>
+          </div>
+        ) : orders.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 space-y-2">
             <Package className="w-10 h-10 text-gray-300 mx-auto" />
             <p className="text-xs font-bold text-gray-700">{t('orders.noActive')}</p>
@@ -271,23 +308,26 @@ export const OrdersScreen: React.FC<{
           </div>
         ) : (
           orders.map((order) => {
-            const finalTotal = order.finalOrder?.total ?? order.currentOrder.total;
+            const finalTotal = order.finalOrder?.total ?? order.currentOrder?.total;
+            const reference = customerOrderReference(order);
             const isReauthNeeded =
               order.status === 'PAYMENT_FINALISING' ||
               order.payment?.state === 'PAYMENT_ACTION_REQUIRED';
 
             return (
-              <div
+              <button
                 key={order.id}
+                type="button"
                 onClick={() => {
                   setSelectedOrder(order);
                   onNavigateOrder?.(order.id);
                 }}
-                className="p-4 rounded-3xl bg-white border border-gray-100 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-3 group"
+                aria-label={`${t('orders.trackOrder')}${reference ? ` · ${reference}` : ''}`}
+                className="w-full p-4 rounded-3xl bg-white border border-gray-100 shadow-2xs hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-all cursor-pointer space-y-3 group text-left"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-400">{order.displayId}</span>
+                    <span className="text-xs font-bold text-gray-400">{reference || trackerCopy('tracker.orderReference')}</span>
                     <span className="text-xs font-semibold text-gray-700">• {order.storeName}</span>
                   </div>
 
@@ -298,7 +338,7 @@ export const OrdersScreen: React.FC<{
                       </span>
                     )}
                     <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {getOrderStatusLabel(String(order.status))}
+                      {getOrderStatusLabel(order)}
                     </span>
                   </div>
                 </div>
@@ -325,7 +365,7 @@ export const OrdersScreen: React.FC<{
                     <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </span>
                 </div>
-              </div>
+              </button>
             );
           })
         )}
