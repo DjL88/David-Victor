@@ -41,6 +41,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
   const [loading, setLoading] = useState<boolean>(!isDemoMode);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterLifecycle, setFilterLifecycle] = useState<'all' | 'active' | 'archived' | 'inactive'>('all');
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -117,19 +118,27 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
         p.gtin?.some((g) => g.toLowerCase().includes(q));
 
       const matchesCat = filterCategory === 'all' || p.categoryIds.includes(filterCategory);
-      return matchesSearch && matchesCat;
+      const lifecycle = String((p.metadata as any)?.lifecycleStatus || '').toUpperCase();
+      const isArchived = lifecycle === 'ARCHIVED';
+      const matchesLifecycle =
+        filterLifecycle === 'all' ||
+        (filterLifecycle === 'archived' && isArchived) ||
+        (filterLifecycle === 'active' && !isArchived && p.active !== false) ||
+        (filterLifecycle === 'inactive' && !isArchived && p.active === false);
+      return matchesSearch && matchesCat && matchesLifecycle;
     });
-  }, [products, searchQuery, filterCategory]);
+  }, [products, searchQuery, filterCategory, filterLifecycle]);
 
-  useEffect(() => { setPage(1); }, [searchQuery, filterCategory, selectedLocationId, pageSize, tenantId]);
+  useEffect(() => { setPage(1); }, [searchQuery, filterCategory, filterLifecycle, selectedLocationId, pageSize, tenantId]);
   const pageCount = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pagedProducts = filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const inventorySummary = useMemo(() => ({
     total: filteredProducts.length,
-    active: filteredProducts.filter((product) => product.active === true).length,
-    inactive: filteredProducts.filter((product) => product.active === false).length,
+    active: filteredProducts.filter((product) => (product.metadata as any)?.lifecycleStatus !== 'ARCHIVED' && product.active !== false).length,
+    archived: filteredProducts.filter((product) => (product.metadata as any)?.lifecycleStatus === 'ARCHIVED').length,
+    inactive: filteredProducts.filter((product) => (product.metadata as any)?.lifecycleStatus !== 'ARCHIVED' && product.active === false).length,
     outOfStock: filteredProducts.filter((product) => product.stockStatus === 'OUT_OF_STOCK' || product.stockQuantity === 0).length,
     unknown: filteredProducts.filter((product) => product.stockStatus == null && product.stockQuantity == null).length,
   }), [filteredProducts]);
@@ -148,10 +157,11 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
         price == null ? '' : moneyToMajor(price).toFixed(2),
         typeof price === 'object' ? price.currency : price == null ? '' : 'GBP',
         product.active == null ? 'unknown' : product.active,
+        (product.metadata as any)?.lifecycleStatus || (product.active === false ? 'INACTIVE' : 'ACTIVE'),
         product.stockStatus ?? 'unknown', product.stockQuantity ?? '',
         product.categoryIds.join('|')];
     });
-    const headers = ['tenantId', 'storeId', 'productId', 'plu', 'name', 'priceMajor', 'currency', 'active', 'stockStatus', 'stockQuantity', 'categoryIds'];
+    const headers = ['tenantId', 'storeId', 'productId', 'plu', 'name', 'priceMajor', 'currency', 'active', 'lifecycleStatus', 'stockStatus', 'stockQuantity', 'categoryIds'];
     const content = kind === 'json'
       ? JSON.stringify({ tenantId, scope, exportedAt: new Date().toISOString(), products: filteredProducts }, null, 2)
       : '\uFEFF' + [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
@@ -254,6 +264,18 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
             </select>
 
             <select
+              value={filterLifecycle}
+              onChange={(e) => setFilterLifecycle(e.target.value as 'all' | 'active' | 'archived' | 'inactive')}
+              aria-label="Product lifecycle"
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 font-medium"
+            >
+              <option value="all">All states</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="inactive">Inactive</option>
+            </select>
+
+            <select
               value={selectedLocationId}
               onChange={(e) => setSelectedLocationId(e.target.value)}
               className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 font-medium"
@@ -269,7 +291,7 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
         </div>
 
         <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-          <span>Showing {filteredProducts.length} items from Deliverect master catalog</span>
+          <span>Showing {filteredProducts.length} items from pushed catalogue + live Commerce verification</span>
           <span className="flex items-center gap-1.5 text-indigo-600 font-medium">
             <Info className="w-3.5 h-3.5" />
             {isDemoMode ? 'Demo stock controls affect this sandbox only' : 'Manage stock in Deliverect or your POS'}
@@ -293,8 +315,9 @@ export const CatalogAdminScreen: React.FC<CatalogAdminScreenProps> = ({ tenantId
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm" aria-label="Catalogue availability summary">
-        <div className="rounded-xl border p-3"><strong>{inventorySummary.active} of {inventorySummary.total}</strong><p>Explicitly active</p></div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-sm" aria-label="Catalogue availability summary">
+        <div className="rounded-xl border p-3"><strong>{inventorySummary.active} of {inventorySummary.total}</strong><p>Active</p></div>
+        <div className="rounded-xl border p-3"><strong>{inventorySummary.archived} of {inventorySummary.total}</strong><p>Archived / soft deleted</p></div>
         <div className="rounded-xl border p-3"><strong>{inventorySummary.inactive} of {inventorySummary.total}</strong><p>Inactive</p></div>
         <div className="rounded-xl border p-3"><strong>{inventorySummary.outOfStock} of {inventorySummary.total}</strong><p>Out of stock / snoozed</p></div>
         <div className="rounded-xl border p-3"><strong>{inventorySummary.unknown} of {inventorySummary.total}</strong><p>Stock unknown</p></div>
