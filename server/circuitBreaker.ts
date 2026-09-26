@@ -118,9 +118,15 @@ export class CircuitBreaker {
   }
 
   private onFailure(error: any): void {
-    const status = Number(error?.statusCode ?? error?.status ?? error?.response?.status);
+    const explicitStatus = Number(error?.statusCode ?? error?.status ?? error?.response?.status);
+    const messageMatch = String(error?.message || '').match(/\bHTTP\s+(\d{3})\b/i);
+    const messageStatus = messageMatch ? Number(messageMatch[1]) : NaN;
+    const status = Number.isFinite(explicitStatus) ? explicitStatus : messageStatus;
     // Client/request failures do not indicate an unhealthy upstream and must not
-    // poison the circuit for this tenant/service.
+    // poison the circuit for this tenant/service. Some upstream adapters still
+    // throw plain Error objects containing "HTTP 4xx", so recognise that shape
+    // as well instead of turning repeated permission/configuration errors into
+    // a false circuit outage.
     if (Number.isFinite(status) && status >= 400 && status < 500 && status !== 429) {
       return;
     }
